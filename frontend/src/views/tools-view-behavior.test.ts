@@ -259,6 +259,42 @@ describe("tools view detail behavior", () => {
     wrapper.unmount();
   });
 
+  it("aligns 需处理 KPI with connection attention and keeps composite status pills", async () => {
+    integrationState.tools = [
+      { ...makeTool("tool-published-broken", "missing-connection", "已发布坏连接"), status: "Published" },
+      { ...makeTool("tool-published-ok", "connection-1", "已发布好连接"), status: "Published" },
+      { ...makeTool("tool-review", "connection-1", "待评审 Tool"), status: "Review" },
+    ];
+    integrationState.toolPageItems = [...integrationState.tools];
+    integrationState.toolPagination = { page: 1, pageSize: 10, total: 3, pageSizeOptions: [10, 20, 50] };
+
+    const wrapper = mountToolsView();
+    await flushPromises();
+
+    const summary = wrapper.get(".management-summary-strip").text();
+    // Missing connection on first published tool => 需处理 counts connection issues (1), not Review (1).
+    expect(summary).toMatch(/工具总数\s*3/);
+    expect(summary).toMatch(/已发布\s*2/);
+    expect(summary).toMatch(/需处理\s*1/);
+    expect(wrapper.find(".tool-connection-alert").exists()).toBe(false);
+
+    const statusPills = wrapper.findAll('td[data-column-key="status"] .tool-status-pill').map((node) => node.text());
+    expect(statusPills.some((text) => text.includes("已发布") && text.includes("连接缺失"))).toBe(true);
+
+    loadToolPageMock.mockClear();
+    await wrapper.get('button[aria-label="工具状态筛选"]').trigger("click");
+    await wrapper.get('button[role="option"][value="attention"]').trigger("click");
+    await flushPromises();
+    expect(loadToolPageMock).toHaveBeenLastCalledWith({
+      query: "",
+      status: "attention",
+      type: undefined,
+      page: 1,
+      pageSize: 10,
+    });
+    wrapper.unmount();
+  });
+
   it("sorts from page one while retaining the Tool page size and filters", async () => {
     integrationState.toolPagination = { page: 3, pageSize: 20, total: 60, pageSizeOptions: [10, 20, 50] };
     const wrapper = mountToolsView();

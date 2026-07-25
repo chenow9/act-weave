@@ -46,6 +46,8 @@ export function hasPassingToolTest(tool: Tool): boolean {
   return tool.status === "Tested" || tool.status === "Published";
 }
 
+const CONNECTION_DANGER_STATUSES = new Set(["Needs attention", "UNVERIFIED", "ERROR", "DISABLED"]);
+
 export function getToolRunStatus(tool: Tool, connection?: ServiceConnection): GovernanceStatusMeta {
   if (tool.status === "Disabled") {
     return { label: "已停用", tone: "neutral", description: "Tool 已停用，运行状态不再更新" };
@@ -53,13 +55,91 @@ export function getToolRunStatus(tool: Tool, connection?: ServiceConnection): Go
   if (!connection) {
     return { label: "连接缺失", tone: "danger", description: "找不到绑定的服务连接" };
   }
-  if (["Needs attention", "UNVERIFIED", "ERROR", "DISABLED"].includes(connection.status)) {
-    return { label: "连接需处理", tone: "danger", description: "服务连接不可用或认证需要处理" };
+  if (CONNECTION_DANGER_STATUSES.has(connection.status)) {
+    const reason = connectionStatusReason(connection.status);
+    return {
+      label: "连接需处理",
+      tone: "danger",
+      description: reason,
+    };
   }
   if (connection.status === "Expiring soon") {
     return { label: "凭证将过期", tone: "warning", description: "服务连接凭证即将过期" };
   }
   return { label: "暂无观测", tone: "neutral", description: "后端尚未提供运行健康、调用量和失败率" };
+}
+
+/** True when the Tool's bound connection blocks or degrades safe invocation. */
+export function toolHasConnectionAttention(tool: Tool, connection?: ServiceConnection): boolean {
+  if (tool.status === "Disabled") return false;
+  const run = getToolRunStatus(tool, connection);
+  return run.tone === "danger" || run.tone === "warning";
+}
+
+export interface ToolUnifiedStatusMeta extends GovernanceStatusMeta {
+  /** Lifecycle label alone (e.g. 已发布). */
+  lifecycleLabel: string;
+  /** Connection/run label when it overrides or composes the pill. */
+  runLabel?: string;
+  /** True when status is driven by connection health rather than pure lifecycle. */
+  connectionAttention: boolean;
+}
+
+/**
+ * Single table-status pill: keep lifecycle visible, but surface connection
+ * problems without dropping the published/draft signal.
+ */
+export function getToolUnifiedStatus(tool: Tool, connection?: ServiceConnection): ToolUnifiedStatusMeta {
+  const lifecycle = getToolLifecycleStatus(tool);
+  const test = getToolTestStatus(tool);
+  const run = getToolRunStatus(tool, connection);
+
+  if (run.tone === "danger" || run.tone === "warning") {
+    const publishedHint =
+      tool.status === "Published" ? "已发布但当前不可安全调用，请先处理服务连接" : lifecycle.description;
+    return {
+      label: `${lifecycle.label} · ${run.label}`,
+      tone: run.tone,
+      description: `${run.description}。${publishedHint}`,
+      lifecycleLabel: lifecycle.label,
+      runLabel: run.label,
+      connectionAttention: true,
+    };
+  }
+
+  if (test.tone === "danger") {
+    return {
+      label: `${lifecycle.label} · ${test.label}`,
+      tone: test.tone,
+      description: test.description,
+      lifecycleLabel: lifecycle.label,
+      runLabel: test.label,
+      connectionAttention: false,
+    };
+  }
+
+  return {
+    label: lifecycle.label,
+    tone: lifecycle.tone,
+    description: lifecycle.description,
+    lifecycleLabel: lifecycle.label,
+    connectionAttention: false,
+  };
+}
+
+function connectionStatusReason(status: string): string {
+  switch (status) {
+    case "UNVERIFIED":
+      return "服务连接尚未验证通过";
+    case "ERROR":
+      return "服务连接验证失败或运行异常";
+    case "DISABLED":
+      return "服务连接已停用";
+    case "Needs attention":
+      return "服务连接需要处理（认证、迁移或配置问题）";
+    default:
+      return "服务连接不可用或认证需要处理";
+  }
 }
 
 export function formatToolUpdatedAt(tool: Tool) {

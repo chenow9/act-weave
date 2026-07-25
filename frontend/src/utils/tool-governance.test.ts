@@ -5,6 +5,8 @@ import {
   getToolLifecycleStatus,
   getToolRunStatus,
   getToolTestStatus,
+  getToolUnifiedStatus,
+  toolHasConnectionAttention,
 } from "./tool-governance";
 import type { ServiceConnection, Tool } from "../types/domain";
 
@@ -116,6 +118,24 @@ describe("tool governance helpers", () => {
     expect(getToolLifecycleStatus(tool).label).toBe("已发布");
     expect(getToolTestStatus(tool).label).toBe("测试失败");
     expect(getToolRunStatus(tool, makeConnection({ status: "Needs attention" })).label).toBe("连接需处理");
+  });
+
+  it("keeps lifecycle visible when connection attention overrides the table status", () => {
+    const published = makeTool({ status: "Published" });
+    const broken = makeConnection({ status: "Needs attention" });
+    const unified = getToolUnifiedStatus(published, broken);
+
+    expect(toolHasConnectionAttention(published, broken)).toBe(true);
+    expect(unified.connectionAttention).toBe(true);
+    expect(unified.label).toBe("已发布 · 连接需处理");
+    expect(unified.lifecycleLabel).toBe("已发布");
+    expect(unified.tone).toBe("danger");
+    expect(unified.description).toContain("已发布但当前不可安全调用");
+
+    const healthy = getToolUnifiedStatus(published, makeConnection({ status: "VERIFIED" }));
+    expect(toolHasConnectionAttention(published, makeConnection({ status: "VERIFIED" }))).toBe(false);
+    expect(healthy.label).toBe("已发布");
+    expect(healthy.connectionAttention).toBe(false);
   });
 
   it("builds a publish checklist with blocking errors and non-blocking warnings", () => {
