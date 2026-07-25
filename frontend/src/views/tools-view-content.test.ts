@@ -120,8 +120,14 @@ describe("tools view", () => {
     expect(toolsView).toContain("toolUnifiedStatus");
     expect(toolsView).toContain("connectionIssueTools");
     expect(toolsView).toContain("tool-connection-alert");
+    expect(toolsView).toContain("connectionAlertTitle");
+    expect(toolsView).toContain("connectionAlertDetail");
     expect(toolsView).toContain("filterConnectionIssues");
     expect(toolsView).toContain("筛选连接异常");
+    // 方案 A: alert is a sibling of KPI strip, not inside the list card.
+    expect(toolsView).toMatch(
+      /ManagementSummaryStrip[\s\S]*?tool-connection-alert[\s\S]*?tool-runtime-card/,
+    );
     expect(toolsView).not.toContain("observabilityLabel");
     expect(toolsView).not.toContain("tool-observability-cell");
   });

@@ -276,9 +276,14 @@ describe("tools view detail behavior", () => {
     expect(summary).toMatch(/工具总数\s*3/);
     expect(summary).toMatch(/已发布\s*2/);
     expect(summary).toMatch(/需处理\s*1/);
-    expect(wrapper.get(".tool-connection-alert").text()).toContain("1 个 Tool");
-    expect(wrapper.get(".tool-connection-alert").text()).toContain("已发布");
-    expect(wrapper.get(".tool-connection-alert").text()).toContain("筛选连接异常");
+    const alert = wrapper.get(".tool-connection-alert");
+    expect(alert.classes()).toContain("span-12");
+    expect(alert.text()).toContain("1 个 Tool");
+    expect(alert.text()).toContain("已发布");
+    expect(alert.text()).toContain("筛选连接异常");
+    // Standalone between KPI and table — not nested inside the list card chrome.
+    expect(alert.element.closest(".tool-runtime-card")).toBeNull();
+    expect(wrapper.get(".management-summary-strip").element.nextElementSibling).toBe(alert.element);
 
     const statusPills = wrapper.findAll('td[data-column-key="status"] .tool-status-pill').map((node) => node.text());
     expect(statusPills.some((text) => text.includes("已发布") && text.includes("连接缺失"))).toBe(true);
