@@ -33,4 +33,22 @@ describe("normalizeServiceBaseURL", () => {
   it("returns empty for illegal scheme", () => {
     expect(normalizeServiceBaseURL({ domain: "ftp://x" })).toBe("");
   });
+
+  it("reproduces DEF-01 OpenAPI detail case without double port", () => {
+    // domain already absolute with :18080; port field still 18080 (historical dual storage).
+    expect(
+      normalizeServiceBaseURL({
+        domain: "http://127.0.0.1:18080",
+        port: "18080",
+        basePath: "",
+      }),
+    ).toBe("http://127.0.0.1:18080");
+    expect(
+      normalizeServiceBaseURL({
+        domain: "http://127.0.0.1:18080",
+        port: "18080",
+        basePath: "",
+      }),
+    ).not.toMatch(/:\d+:\d+/);
+  });
 });

@@ -9,6 +9,7 @@ import ManagementSegmentedFilter from "../components/ManagementSegmentedFilter.v
 import ToolSchemaTreeView from "../components/ToolSchemaTreeView.vue";
 import WorkspaceContextState from "../components/WorkspaceContextState.vue";
 import { useIntegrationStore } from "../stores/integration";
+import { normalizeServiceBaseURL } from "../utils/normalize-service-base-url";
 import { parseOpenAPIPreview } from "../utils/openapi-preview";
 import { buildBodyContractFromRequestParams, buildResponseContractFromFields } from "../utils/tool-schema-json";
 import { useWorkspaceStore } from "../stores/workspaces";
@@ -252,7 +253,17 @@ function importTime(record: OpenAPIImport) {
 
 function connectionAddress(connection?: ServiceConnection) {
   if (!connection) return "-";
-  return `${connection.protocolConfig.domain}:${connection.protocolConfig.port}${connection.protocolConfig.basePath}`;
+  // ZKL-56 DEF-01 / UX-05: never double-append port when domain is already absolute.
+  const normalized = normalizeServiceBaseURL({
+    domain: connection.protocolConfig.domain,
+    host: connection.protocolConfig.host,
+    port: connection.protocolConfig.port,
+    basePath: connection.protocolConfig.basePath,
+  });
+  if (normalized) return normalized;
+  // Illegal / incomplete config — do not invent a second port.
+  const domain = (connection.protocolConfig.domain || "").trim();
+  return domain || "未配置地址";
 }
 
 function selectedOpenAPIStatus() {

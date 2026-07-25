@@ -9,6 +9,7 @@ import ManagementSegmentedFilter from "../components/ManagementSegmentedFilter.v
 import WorkspaceContextState from "../components/WorkspaceContextState.vue";
 import { useIntegrationStore } from "../stores/integration";
 import { useWorkspaceStore } from "../stores/workspaces";
+import { normalizeServiceBaseURL } from "../utils/normalize-service-base-url";
 import {
   authModeForScheme,
   connectionAuthValues,
@@ -838,13 +839,26 @@ function defaultPortForScheme(scheme: string) {
 }
 
 function serviceEndpointAddress(connection: ServiceConnection, requireExplicitScheme = false) {
+  // ZKL-56 DEF-01: absolute domain is sole source; no double port.
+  const normalized = normalizeServiceBaseURL({
+    domain: connection.protocolConfig.domain,
+    host: connection.protocolConfig.host,
+    port: connection.protocolConfig.port,
+    basePath: connection.protocolConfig.basePath,
+  });
+  if (normalized) {
+    if (requireExplicitScheme && !/^https?:\/\//i.test(normalized)) return "";
+    return normalized;
+  }
   const parts = endpointUrlParts(connection.protocolConfig.domain);
   const port = connection.protocolConfig.port || defaultPortForScheme(parts.scheme);
   const basePath = connection.protocolConfig.basePath || "";
   if (!parts.host) return "";
   if (!parts.scheme && requireExplicitScheme) return "";
+  // If host already includes :port, do not append again.
+  const hostHasPort = /:\d+$/.test(parts.host.replace(/^\[|\]$/g, ""));
   const scheme = parts.scheme || (["443", "8443", "9443"].includes(port) ? "https" : "http");
-  return `${scheme}://${parts.host}${port ? `:${port}` : ""}${basePath}`;
+  return `${scheme}://${parts.host}${port && !hostHasPort ? `:${port}` : ""}${basePath}`;
 }
 
 function joinURLPath(basePath: string, childPath: string) {

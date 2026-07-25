@@ -582,12 +582,15 @@ async function generateDraft() {
         desc: v.message,
       }));
     }
+    // Toast is secondary; persistent recovery card (lastFailure) is the primary recovery surface.
     if (smart.lastErrorCode === "AGENT_MODEL_REQUIRED") {
       showToast("当前 Agent 未配置可用模型，请先在 Agent 中绑定 Model Config。", "error");
     } else if (smart.lastErrorCode === "SESSION_CLOSED") {
       showToast("生成会话已关闭，请新建会话后继续。", "error");
     } else if (smart.lastErrorCode === "GUARD_REJECTED") {
       showToast("本轮图校验未通过，已保留上一轮合法草稿。", "error");
+    } else if (smart.lastFailure?.message) {
+      showToast(smart.lastFailure.message, "error");
     } else {
       showToast(apiErrorMessage(error, "智能生成失败，未创建本地替代草稿。"), "error");
     }
@@ -595,6 +598,65 @@ async function generateDraft() {
     window.clearInterval(stepTimer);
     aiStatus.value = { isGenerating: false, activeStep: -1 };
   }
+}
+
+/** Explicit retry: GET-calibrate session when possible, reuse last user message, new turn IDs on server. */
+async function retryLastGenerateTurn() {
+  if (!smart.lastFailure?.retryable || !smart.recoveryActions.retry) {
+    showToast("当前失败不可重试，请关闭或新建会话。", "info");
+    return;
+  }
+  const message = (copilotPrompt.value || smart.goal || "").trim();
+  if (!message) {
+    showToast("没有可重试的用户意图，请重新输入。", "error");
+    return;
+  }
+  if (smart.workspaceId && smart.sessionId) {
+    try {
+      await smart.loadSession(smart.workspaceId, smart.sessionId);
+    } catch {
+      // Best-effort calibrate; turn still goes with current lock if any.
+    }
+  }
+  copilotPrompt.value = message;
+  await generateDraft();
+}
+
+async function closeGenerateSessionWithConfirm() {
+  if (smart.generating || aiStatus.value.isGenerating) {
+    showToast("生成进行中，不支持执行中取消。请等待结束后再关闭。", "info");
+    return;
+  }
+  if (!window.confirm("确认关闭当前生成会话？已保留的 Draft 不会删除，关闭后不可继续本会话。")) {
+    return;
+  }
+  try {
+    if (smart.sessionId && smart.sessionStatus === "OPEN") {
+      await smart.closeSession();
+    }
+    if (smart.lastFailure) {
+      smart.lastFailure = {
+        ...smart.lastFailure,
+        sessionStatus: "CLOSED",
+        retryable: false,
+      };
+    }
+    showToast("会话已关闭。可新建会话继续；上一合法 Draft 仍保留。", "info");
+  } catch (error) {
+    showToast(apiErrorMessage(error, "关闭生成会话失败。"), "error");
+  }
+}
+
+function startNewGenerateSession() {
+  // Clear session identity so ensureSession creates a new OPEN session; keep draft canvas if any.
+  smart.sessionId = "";
+  smart.sessionStatus = "";
+  smart.sessionLockVersion = 0;
+  smart.turns = [];
+  smart.lastFailure = undefined;
+  smart.lastErrorCode = "";
+  smart.lastGuardReport = undefined;
+  showToast("已准备新建会话。发送意图后将创建新的生成会话。", "info");
 }
 
 /** 「完成生成」→ close session → enter compile/trial/publish lifecycle (P1.5.5). */
@@ -1330,6 +1392,72 @@ onBeforeUnmount(() => {
             <p v-for="(v, idx) in smart.lastGuardReport.violations" :key="idx">{{ v.code }}：{{ v.message }}</p>
           </div>
 
+          <!-- ZKL-56 DEF-02 / UX-04: persistent recovery card (not toast-only). -->
+          <section
+            v-if="smart.lastFailure"
+            class="smart-recovery-card"
+            role="alert"
+            data-testid="smart-dag-recovery-card"
+            aria-live="assertive"
+          >
+            <header>
+              <strong>本轮生成未完成</strong>
+              <span class="smart-recovery-stage">{{ smart.lastFailure.stage || "UNKNOWN" }}</span>
+            </header>
+            <p class="smart-recovery-message">{{ smart.lastFailure.message }}</p>
+            <dl class="smart-recovery-meta">
+              <div v-if="smart.lastFailure.code"><dt>错误码</dt><dd>{{ smart.lastFailure.code }}</dd></div>
+              <div v-if="smart.lastFailure.sessionStatus || smart.sessionStatus">
+                <dt>会话</dt>
+                <dd>{{ smart.lastFailure.sessionStatus || smart.sessionStatus || "—" }}</dd>
+              </div>
+              <div v-if="smart.lastFailure.requestId"><dt>requestId</dt><dd>{{ smart.lastFailure.requestId }}</dd></div>
+              <div v-if="smart.lastFailure.traceId"><dt>traceId</dt><dd>{{ smart.lastFailure.traceId }}</dd></div>
+            </dl>
+            <p class="smart-recovery-hint">
+              上一合法 Draft 与输入已保留；失败不会自动发布。生成中不支持执行中取消。
+            </p>
+            <div class="smart-recovery-actions">
+              <button
+                v-if="smart.recoveryActions.retry"
+                type="button"
+                class="primary"
+                data-testid="smart-dag-retry"
+                :disabled="smart.generating || aiStatus.isGenerating"
+                @click="retryLastGenerateTurn"
+              >
+                重试本轮
+              </button>
+              <button
+                v-if="smart.recoveryActions.close"
+                type="button"
+                data-testid="smart-dag-close-session"
+                :disabled="smart.generating || aiStatus.isGenerating"
+                @click="closeGenerateSessionWithConfirm"
+              >
+                关闭会话
+              </button>
+              <button
+                v-if="smart.recoveryActions.fixConfig"
+                type="button"
+                data-testid="smart-dag-fix-config"
+                @click="showToast('请检查 Agent 模型绑定、工具目录或网络后重试。', 'info')"
+              >
+                修复配置
+              </button>
+              <button
+                v-if="smart.recoveryActions.createNew"
+                type="button"
+                class="primary"
+                data-testid="smart-dag-new-session"
+                :disabled="smart.generating"
+                @click="startNewGenerateSession"
+              >
+                新建会话
+              </button>
+            </div>
+          </section>
+
           <div v-if="smart.missingCapabilities.length" class="smart-missing-capabilities">
             <strong>能力缺口</strong>
             <p v-for="cap in smart.missingCapabilities" :key="cap.id">{{ cap.name }} — {{ cap.reason }}</p>
@@ -1341,7 +1469,7 @@ onBeforeUnmount(() => {
               v-model="copilotPrompt"
               rows="5"
               placeholder="输入业务目标或修订意图，例如：加审批节点、换支付查询工具。"
-              :disabled="!canSendGenerateTurn && !agentHasUsableModel"
+              :disabled="(!canSendGenerateTurn && !agentHasUsableModel) || smart.sessionStatus === 'CLOSED'"
             />
             <em>{{ copilotPrompt.length }} 字</em>
           </label>
@@ -1357,8 +1485,8 @@ onBeforeUnmount(() => {
             <button
               type="button"
               class="primary"
-              :disabled="!canSendGenerateTurn || !copilotPrompt.trim()"
-              :title="!agentHasUsableModel ? '请先为 Agent 配置模型' : '发送本轮生成'"
+              :disabled="!canSendGenerateTurn || !copilotPrompt.trim() || smart.sessionStatus === 'CLOSED'"
+              :title="!agentHasUsableModel ? '请先为 Agent 配置模型' : smart.sessionStatus === 'CLOSED' ? '会话已关闭，请新建会话' : '发送本轮生成'"
               @click="generateDraft"
             >
               <i class="fa-solid fa-wand-magic-sparkles" />
@@ -2389,7 +2517,8 @@ onBeforeUnmount(() => {
 }
 
 .smart-guard-report,
-.smart-missing-capabilities {
+.smart-missing-capabilities,
+.smart-recovery-card {
   margin-top: 12px;
   padding: 12px;
   border-radius: 12px;
@@ -2403,6 +2532,94 @@ onBeforeUnmount(() => {
   border-color: #fde68a;
   background: #fffbeb;
   color: #92400e;
+}
+
+.smart-recovery-card {
+  border-color: #fca5a5;
+  background: #fff1f2;
+}
+
+.smart-recovery-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.smart-recovery-stage {
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fee2e2;
+  color: #9f1239;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.smart-recovery-message {
+  margin: 0 0 8px;
+  font-weight: 500;
+  color: #7f1d1d;
+}
+
+.smart-recovery-meta {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 8px;
+}
+
+.smart-recovery-meta div {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 6px;
+}
+
+.smart-recovery-meta dt {
+  margin: 0;
+  color: #9f1239;
+  font-weight: 600;
+}
+
+.smart-recovery-meta dd {
+  margin: 0;
+  word-break: break-all;
+  color: #881337;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+}
+
+.smart-recovery-hint {
+  margin: 0 0 10px;
+  color: #9f1239;
+  opacity: 0.9;
+}
+
+.smart-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.smart-recovery-actions button {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid #fecdd3;
+  background: #fff;
+  color: #9f1239;
+  cursor: pointer;
+}
+
+.smart-recovery-actions button.primary {
+  border-color: #e11d48;
+  background: #e11d48;
+  color: #fff;
+}
+
+.smart-recovery-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .smart-copilot-panel select {
