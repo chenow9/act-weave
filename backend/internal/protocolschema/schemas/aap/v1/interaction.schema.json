@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.actweave.dev/aap/v1/interaction.schema.json",
+  "title": "AAP v1 Interaction",
+  "type": "object",
+  "required": ["id", "kind", "status", "targetItemId", "title", "reason", "risk", "allowedDecisions", "version", "expiresAt"],
+  "properties": {
+    "id": {"$ref": "common.schema.json#/$defs/uuid"},
+    "kind": {"type": "string", "enum": ["approval"]},
+    "status": {"type": "string", "enum": ["pending", "approved", "declined", "cancelled", "expired"]},
+    "targetItemId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "runId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "releaseId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "inputHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "connectionId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "planHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "title": {"type": "string", "minLength": 1, "maxLength": 240},
+    "reason": {"type": "string", "minLength": 1, "maxLength": 2048},
+    "risk": {
+      "type": "object",
+      "required": ["level", "reasons"],
+      "properties": {
+        "level": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
+        "reasons": {"type": "array", "maxItems": 100, "items": {"type": "string", "minLength": 1, "maxLength": 128}}
+      },
+      "additionalProperties": true
+    },
+    "inputSummary": {"type": "object"},
+    "allowedDecisions": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "enum": ["approve", "decline", "cancel"]}
+    },
+    "requiredDecider": {"type": "string", "enum": ["same_external_subject", "actweave_user", "service_principal"]},
+    "version": {"type": "integer", "minimum": 1},
+    "expiresAt": {"$ref": "common.schema.json#/$defs/timestamp"}
+  },
+  "additionalProperties": true
+}

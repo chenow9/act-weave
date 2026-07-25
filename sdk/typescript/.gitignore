@@ -1,0 +1,3 @@
+node_modules/
+dist/
+test/readme-quickstart.snippet.ts

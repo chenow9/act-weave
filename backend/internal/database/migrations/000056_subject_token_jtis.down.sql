@@ -1,0 +1,3 @@
+DROP TRIGGER IF EXISTS agent_access_subject_token_jtis_immutable ON agent_access_subject_token_jtis;
+DROP FUNCTION IF EXISTS enforce_agent_access_subject_token_jti_immutable();
+DROP TABLE IF EXISTS agent_access_subject_token_jtis;

@@ -1,0 +1,43 @@
+{
+  "name": "actweave-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+	"build": "vue-tsc --noEmit && vite build",
+	"type-check": "vue-tsc --noEmit",
+    "test": "vitest",
+    "e2e:workflow": "playwright test e2e/workflow.spec.ts --reporter=line",
+    "e2e:workflow:update": "playwright test e2e/workflow.spec.ts --update-snapshots --reporter=line"
+  },
+  "dependencies": {
+    "@codemirror/lang-json": "6.0.1",
+    "@codemirror/language": "6.11.3",
+    "@codemirror/merge": "6.12.2",
+    "@codemirror/state": "6.5.2",
+    "@codemirror/view": "6.38.6",
+    "@element-plus/icons-vue": "2.3.2",
+    "@fortawesome/fontawesome-free": "6.5.1",
+    "@shopify/lang-jsonc": "^1.0.1",
+    "@vue-flow/core": "1.48.2",
+    "axios": "1.18.0",
+    "element-plus": "2.14.2",
+    "json5": "^2.2.3",
+    "pinia": "3.0.4",
+    "vue": "3.5.38",
+    "vue-router": "5.1.0",
+    "vxe-table": "4.19.20",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.55.0",
+    "@vue/test-utils": "2.4.6",
+    "@vitejs/plugin-vue": "6.0.7",
+    "jsdom": "29.1.1",
+    "typescript": "6.0.3",
+    "vite": "7.3.5",
+    "vitest": "4.1.9",
+    "vue-tsc": "3.3.5"
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.actweave.dev/aap/v1/events.schema.json",
+  "title": "AAP v1 Event Data",
+  "$defs": {
+    "runAcceptedData": {"type": "object", "required": ["run"], "properties": {"run": {"$ref": "run.schema.json"}}, "additionalProperties": true},
+    "runStartedData": {"type": "object", "required": ["run"], "properties": {"run": {"$ref": "run.schema.json"}}, "additionalProperties": true},
+    "runWaitingData": {
+      "type": "object",
+      "required": ["run", "interactionIds"],
+      "properties": {
+        "run": {"$ref": "run.schema.json"},
+        "interactionIds": {"type": "array", "minItems": 1, "items": {"$ref": "common.schema.json#/$defs/uuid"}}
+      },
+      "additionalProperties": true
+    },
+    "runResumedData": {
+      "type": "object",
+      "required": ["run", "interactionId"],
+      "properties": {
+        "run": {"$ref": "run.schema.json"},
+        "interactionId": {"$ref": "common.schema.json#/$defs/uuid"}
+      },
+      "additionalProperties": true
+    },
+    "runCompletedData": {"type": "object", "required": ["run"], "properties": {"run": {"$ref": "run.schema.json"}}, "additionalProperties": true},
+    "runFailedData": {"type": "object", "required": ["run"], "properties": {"run": {"$ref": "run.schema.json"}}, "additionalProperties": true},
+    "runCancelledData": {"type": "object", "required": ["run"], "properties": {"run": {"$ref": "run.schema.json"}}, "additionalProperties": true},
+    "itemStartedData": {"type": "object", "required": ["item"], "properties": {"item": {"$ref": "item.schema.json"}}, "additionalProperties": true},
+    "itemDeltaData": {
+      "type": "object",
+      "required": ["itemId", "delta"],
+      "properties": {
+        "itemId": {"$ref": "common.schema.json#/$defs/uuid"},
+        "delta": {"$ref": "delta.schema.json"}
+      },
+      "additionalProperties": true
+    },
+    "itemCompletedData": {"type": "object", "required": ["item"], "properties": {"item": {"$ref": "item.schema.json"}}, "additionalProperties": true},
+    "interactionRequestedData": {
+      "type": "object",
+      "required": ["interaction"],
+      "properties": {"interaction": {"$ref": "interaction.schema.json"}},
+      "additionalProperties": true
+    },
+    "interactionResolvedData": {
+      "type": "object",
+      "required": ["interaction"],
+      "properties": {"interaction": {"$ref": "interaction.schema.json"}},
+      "additionalProperties": true
+    },
+    "interactionExpiredData": {
+      "type": "object",
+      "required": ["interaction"],
+      "properties": {"interaction": {"$ref": "interaction.schema.json"}},
+      "additionalProperties": true
+    },
+    "usageUpdatedData": {
+      "type": "object",
+      "required": ["usage"],
+      "properties": {
+        "usage": {
+          "type": "object",
+          "required": ["inputTokens", "outputTokens", "totalTokens"],
+          "properties": {
+            "inputTokens": {"type": "integer", "minimum": 0},
+            "outputTokens": {"type": "integer", "minimum": 0},
+            "totalTokens": {"type": "integer", "minimum": 0}
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "type": "object",
+  "additionalProperties": true
+}

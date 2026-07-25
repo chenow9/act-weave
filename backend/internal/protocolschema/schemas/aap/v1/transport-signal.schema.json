@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.actweave.dev/aap/v1/transport-signal.schema.json",
+  "title": "AAP v1 Transport Signal",
+  "type": "object",
+  "required": ["specVersion", "type", "occurredAt", "error"],
+  "properties": {
+    "specVersion": {"const": "1.0"},
+    "type": {"const": "stream.error"},
+    "occurredAt": {"$ref": "common.schema.json#/$defs/timestamp"},
+    "error": {"$ref": "error.schema.json"}
+  },
+  "not": {"anyOf": [{"required": ["eventId"]}, {"required": ["sequence"]}, {"required": ["streamId"]}]},
+  "additionalProperties": true
+}

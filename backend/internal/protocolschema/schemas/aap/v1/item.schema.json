@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.actweave.dev/aap/v1/item.schema.json",
+  "title": "AAP v1 Item",
+  "$defs": {
+    "status": {"type": "string", "enum": ["in_progress", "waiting", "completed", "failed", "declined", "cancelled"]},
+    "message": {
+      "type": "object",
+      "required": ["id", "type", "status", "role", "content"],
+      "properties": {
+        "id": {"$ref": "common.schema.json#/$defs/uuid"},
+        "type": {"const": "message"},
+        "status": {"$ref": "#/$defs/status"},
+        "role": {"type": "string", "enum": ["user", "assistant", "tool", "system"]},
+        "content": {"type": "array", "items": {"$ref": "content-part.schema.json"}}
+      },
+      "additionalProperties": true
+    },
+    "toolCall": {
+      "type": "object",
+      "required": ["id", "type", "status", "name"],
+      "properties": {
+        "id": {"$ref": "common.schema.json#/$defs/uuid"},
+        "type": {"const": "tool_call"},
+        "status": {"$ref": "#/$defs/status"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 128},
+        "arguments": {"type": ["object", "null"]},
+        "output": {"type": ["object", "string", "array", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "workflowStep": {
+      "type": "object",
+      "required": ["id", "type", "status", "nodeId", "nodeType"],
+      "properties": {
+        "id": {"$ref": "common.schema.json#/$defs/uuid"},
+        "type": {"const": "workflow_step"},
+        "status": {"$ref": "#/$defs/status"},
+        "nodeId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "nodeType": {"type": "string", "minLength": 1, "maxLength": 128},
+        "workflowExecutionId": {"$ref": "common.schema.json#/$defs/uuid"},
+        "stepSequence": {"type": "integer", "minimum": 1},
+        "toolCallItemIds": {
+          "type": "array",
+          "items": {"$ref": "common.schema.json#/$defs/uuid"},
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "interactionItem": {
+      "type": "object",
+      "required": ["id", "type", "status", "interaction"],
+      "properties": {
+        "id": {"$ref": "common.schema.json#/$defs/uuid"},
+        "type": {"const": "interaction"},
+        "status": {"$ref": "#/$defs/status"},
+        "interaction": {"$ref": "interaction.schema.json"}
+      },
+      "additionalProperties": true
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["id", "type", "status", "artifactId", "mediaType"],
+      "properties": {
+        "id": {"$ref": "common.schema.json#/$defs/uuid"},
+        "type": {"const": "artifact"},
+        "status": {"$ref": "#/$defs/status"},
+        "artifactId": {"$ref": "common.schema.json#/$defs/uuid"},
+        "mediaType": {"type": "string", "minLength": 1, "maxLength": 255}
+      },
+      "additionalProperties": true
+    },
+    "reasoningSummary": {
+      "type": "object",
+      "required": ["id", "type", "status", "text"],
+      "properties": {
+        "id": {"$ref": "common.schema.json#/$defs/uuid"},
+        "type": {"const": "reasoning_summary"},
+        "status": {"$ref": "#/$defs/status"},
+        "text": {"type": "string", "maxLength": 65536}
+      },
+      "additionalProperties": true
+    },
+    "notice": {
+      "type": "object",
+      "required": ["id", "type", "status", "code", "message"],
+      "properties": {
+        "id": {"$ref": "common.schema.json#/$defs/uuid"},
+        "type": {"const": "notice"},
+        "status": {"$ref": "#/$defs/status"},
+        "code": {"type": "string", "minLength": 1, "maxLength": 128},
+        "message": {"type": "string", "minLength": 1, "maxLength": 2048}
+      },
+      "additionalProperties": true
+    },
+    "unknown": {
+      "type": "object",
+      "required": ["id", "type", "status"],
+      "properties": {
+        "id": {"$ref": "common.schema.json#/$defs/uuid"},
+        "type": {"type": "string", "not": {"enum": ["message", "tool_call", "workflow_step", "interaction", "artifact", "reasoning_summary", "notice"]}},
+        "status": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    }
+  },
+  "oneOf": [
+    {"$ref": "#/$defs/message"},
+    {"$ref": "#/$defs/toolCall"},
+    {"$ref": "#/$defs/workflowStep"},
+    {"$ref": "#/$defs/interactionItem"},
+    {"$ref": "#/$defs/artifact"},
+    {"$ref": "#/$defs/reasoningSummary"},
+    {"$ref": "#/$defs/notice"},
+    {"$ref": "#/$defs/unknown"}
+  ]
+}

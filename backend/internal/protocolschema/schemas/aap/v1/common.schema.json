@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.actweave.dev/aap/v1/common.schema.json",
+  "title": "AAP v1 Common Types",
+  "$defs": {
+    "uuid": {"type": "string", "format": "uuid"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "principalRef": {
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": {"type": "string", "enum": ["user", "service_principal", "external_subject", "system"]},
+        "id": {"type": "string", "minLength": 1, "maxLength": 255}
+      },
+      "additionalProperties": true
+    }
+  },
+  "type": "object",
+  "additionalProperties": true
+}

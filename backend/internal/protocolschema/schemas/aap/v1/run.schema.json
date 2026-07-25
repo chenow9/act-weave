@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.actweave.dev/aap/v1/run.schema.json",
+  "title": "AAP v1 Run Snapshot",
+  "type": "object",
+  "required": ["id", "conversationId", "agentId", "status", "trigger", "startedAt"],
+  "properties": {
+    "id": {"$ref": "common.schema.json#/$defs/uuid"},
+    "conversationId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "agentId": {"$ref": "common.schema.json#/$defs/uuid"},
+    "status": {"type": "string", "enum": ["accepted", "running", "waiting_interaction", "completed", "failed", "cancelled"]},
+    "trigger": {"type": "string", "enum": ["message", "api", "workflow", "system"]},
+    "startedAt": {"$ref": "common.schema.json#/$defs/timestamp"},
+    "completedAt": {"oneOf": [{"$ref": "common.schema.json#/$defs/timestamp"}, {"type": "null"}]},
+    "error": {"oneOf": [{"$ref": "error.schema.json"}, {"type": "null"}]}
+  },
+  "additionalProperties": true
+}

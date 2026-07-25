@@ -1,0 +1,11 @@
+{
+  "run": {"id":"74000000-0000-4000-8000-000000000001","conversationId":"34000000-0000-4000-8000-000000000001","agentId":"22000000-0000-4000-8000-000000000001","status":"completed","trigger":"api","startedAt":"2026-07-20T04:00:00Z","completedAt":"2026-07-20T04:01:04Z"},
+  "items": [
+    {"id":"84000000-0000-4000-8000-000000000001","type":"tool_call","status":"completed","name":"payment.refund","arguments":{"orderId":"O-100","amount":88},"output":{"refundId":"R-900","status":"accepted"}}
+  ],
+  "interactions": [
+    {"id":"94000000-0000-4000-8000-000000000001","kind":"approval","status":"approved","targetItemId":"84000000-0000-4000-8000-000000000001","runId":"74000000-0000-4000-8000-000000000001","releaseId":"65000000-0000-4000-8000-000000000001","inputHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","connectionId":"66000000-0000-4000-8000-000000000001","planHash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","title":"批准退款","reason":"退款操作会改变外部支付状态","risk":{"level":"high","reasons":["external_side_effect","financial_change"]},"inputSummary":{"orderId":"O-100","amount":88,"currency":"CNY"},"allowedDecisions":["approve","decline"],"requiredDecider":"same_external_subject","version":2,"expiresAt":"2026-07-20T04:10:00Z"}
+  ],
+  "usage": {"inputTokens":40,"outputTokens":9,"totalTokens":49},
+  "lastSequence": 10
+}

@@ -1,0 +1,90 @@
+# Local-development configuration. Production deployments should use a protected
+# copy and override secrets through the documented ACTWEAVE_* environment variables.
+server:
+  address: ":8082"
+
+logging:
+  level: info
+  format: text
+
+database:
+  dsn: postgres://actweave:actweave-dev@127.0.0.1:15432/actweave?sslmode=disable
+
+authentication:
+  jwtSecret: actweave-development-jwt-secret-change-me
+
+agentAccess:
+  tokenEndpoint: http://127.0.0.1:8082/api/agent-access/v1/oauth/token
+  # Local/dev: open AAP fully. Production should default enabled=false and use
+  # workspace/client allowlists during gray rollout (see operator runbook).
+  feature:
+    enabled: true
+    allowAllWorkspaces: true
+    workspaceIds: []
+    allowAllClients: true
+    clientIds: []
+  signingKeys:
+    # Local development only. Production must mount a protected, stable PKCS#8
+    # Ed25519 key file and set generateIfMissing=false.
+    algorithm: EdDSA
+    activeKeyId: actweave-local-aap-ed25519-v1
+    privateKeyFile: .local/aap-signing-private.pem
+    generateIfMissing: true
+    maxTokenTtlSeconds: 900
+    prepublishedPublicKeys: []
+    retiredPublicKeys: []
+
+# Outbound Subject Assertion signing domain (T1=A). MUST use different key files
+# and kids from agentAccess.signingKeys. Public JWKS:
+# GET /api/outbound-identity/v1/.well-known/jwks.json
+outboundIdentity:
+  issuer: http://127.0.0.1:8082/outbound
+  signingKeys:
+    algorithm: EdDSA
+    activeKeyId: actweave-local-outbound-ed25519-v1
+    privateKeyFile: .local/outbound-signing-private.pem
+    generateIfMissing: true
+    maxAssertionTtlSeconds: 60
+    prepublishedPublicKeys: []
+    retiredPublicKeys: []
+
+# Agent full-trace debug audit (PLATFORM_ADMIN /logs). Default false.
+# Env override: ACTWEAVE_AGENT_AUDIT_DEBUG. Changes require process restart.
+agentAudit:
+  debug: true
+
+encryption:
+  masterKey: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+
+storage:
+  minio:
+    endpoint: 127.0.0.1:9000
+    accessKey: actweave
+    secretKey: actweave-minio-dev
+    useSSL: false
+    region: ""
+
+bootstrapAdmin:
+  username: admin
+  password: actweave-admin-dev-change-me
+  displayName: ACTWEAVE Administrator
+  locale: zh-CN
+  timezone: Asia/Singapore
+
+runtime:
+  # Agent engine: omitted runtime.agent loads as enabled=true +
+  # allowAllWorkspaces=true (ADK / chatruntimebridge). Always eino; emergency
+  # agent rollback = previous binary. See docs/runbooks/eino-agent-runtime-rollout.md.
+  agent:
+    enabled: true
+    allowAllWorkspaces: true
+  workflow:
+    # P0 default after Load: engine=eino (compose CoreGraphRunner). Omitted
+    # runtime.workflow stages the same. eino_core is an alias of eino.
+    # Emergency rollback: engine: wrapper (or ACTWEAVE_RUNTIME_WORKFLOW_ENGINE=wrapper).
+    # Gray: engine=eino, allowAllWorkspaces=false, workspaceIds: [...].
+    engine: eino
+    allowAllWorkspaces: true
+  eino:
+    maxIterations: 8
+    maxToolInvocations: 16

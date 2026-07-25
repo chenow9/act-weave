@@ -1,0 +1,16 @@
+id: 3
+event: item.started
+data: {"specVersion":"1.0","type":"item.started","eventId":"a1000000-0000-4000-8000-000000000003","streamId":"run:71000000-0000-4000-8000-000000000001","sequence":3,"occurredAt":"2026-07-20T01:00:02Z","workspaceId":"11000000-0000-4000-8000-000000000001","agentId":"22000000-0000-4000-8000-000000000001","conversationId":"31000000-0000-4000-8000-000000000001","runId":"71000000-0000-4000-8000-000000000001","traceId":"golden-text","data":{"item":{"id":"81000000-0000-4000-8000-000000000001","type":"message","status":"in_progress"}}}
+
+id: 4
+event: item.delta
+data: {"specVersion":"1.0","type":"item.delta","eventId":"a1000000-0000-4000-8000-000000000004","streamId":"run:71000000-0000-4000-8000-000000000001","sequence":4,"occurredAt":"2026-07-20T01:00:03Z","workspaceId":"11000000-0000-4000-8000-000000000001","agentId":"22000000-0000-4000-8000-000000000001","conversationId":"31000000-0000-4000-8000-000000000001","runId":"71000000-0000-4000-8000-000000000001","traceId":"golden-text","data":{"itemId":"81000000-0000-4000-8000-000000000001","delta":{"type":"text_delta","index":0,"text":"你好，"}}}
+
+id: 5
+event: future.annotation
+data: {"specVersion":"1.0","type":"future.annotation","eventId":"a1000000-0000-4000-8000-000000000005","streamId":"run:71000000-0000-4000-8000-000000000001","sequence":5,"occurredAt":"2026-07-20T01:00:04Z","workspaceId":"11000000-0000-4000-8000-000000000001","agentId":"22000000-0000-4000-8000-000000000001","conversationId":"31000000-0000-4000-8000-000000000001","runId":"71000000-0000-4000-8000-000000000001","traceId":"golden-text","data":{"annotation":{"kind":"additive_example"}}}
+
+id: 6
+event: item.delta
+data: {"specVersion":"1.0","type":"item.delta","eventId":"a1000000-0000-4000-8000-000000000006","streamId":"run:71000000-0000-4000-8000-000000000001","sequence":6,"occurredAt":"2026-07-20T01:00:05Z","workspaceId":"11000000-0000-4000-8000-000000000001","agentId":"22000000-0000-4000-8000-000000000001","conversationId":"31000000-0000-4000-8000-000000000001","runId":"71000000-0000-4000-8000-000000000001","traceId":"golden-text","data":{"itemId":"81000000-0000-4000-8000-000000000001","delta":{"type":"text_delta","index":0,"text":"欢迎使用 ActWeave。"}}}
+

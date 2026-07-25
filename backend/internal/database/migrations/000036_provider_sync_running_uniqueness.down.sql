@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS provider_sync_runs_provider_running_key;

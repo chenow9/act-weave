@@ -1,0 +1,49 @@
+name: protocol-compat
+
+on:
+  pull_request:
+    paths:
+      - "backend/internal/protocolschema/**"
+      - "backend/cmd/protocolgen/**"
+      - "backend/cmd/protocolcompat/**"
+      - "backend/internal/protocolcompat/**"
+      - "sdk/typescript/src/generated/**"
+      - "docs/openapi/generated/**"
+      - "Makefile"
+  push:
+    branches: [main, master, spec_harness]
+    paths:
+      - "backend/internal/protocolschema/**"
+      - "backend/cmd/protocolgen/**"
+      - "backend/cmd/protocolcompat/**"
+      - "backend/internal/protocolcompat/**"
+      - "sdk/typescript/src/generated/**"
+      - "docs/openapi/generated/**"
+      - "Makefile"
+
+jobs:
+  protocol-gate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - name: Unit tests (protocolcompat + protocolschema)
+        run: |
+          cd backend
+          go test ./internal/protocolcompat ./internal/protocolschema -count=1
+      - name: make generate (must be clean)
+        run: make generate && git diff --exit-code
+      - name: make protocol-compat-check
+        run: make protocol-compat-check
+      - name: Upload compatibility report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: protocol-compat-report
+          path: docs/verification/protocol-compat-report.md
+          if-no-files-found: ignore

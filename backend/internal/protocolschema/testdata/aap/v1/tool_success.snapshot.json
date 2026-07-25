@@ -1,0 +1,10 @@
+{
+  "run": {"id":"72000000-0000-4000-8000-000000000001","conversationId":"32000000-0000-4000-8000-000000000001","agentId":"22000000-0000-4000-8000-000000000001","status":"completed","trigger":"api","startedAt":"2026-07-20T02:00:00Z","completedAt":"2026-07-20T02:00:09Z"},
+  "items": [
+    {"id":"82000000-0000-4000-8000-000000000001","type":"tool_call","status":"completed","name":"weather.lookup","arguments":{"city":"Singapore"},"output":{"temperatureC":29,"condition":"cloudy"}},
+    {"id":"82000000-0000-4000-8000-000000000002","type":"message","status":"completed","role":"assistant","content":[{"type":"text","text":"Singapore 当前 29°C，多云。"}]}
+  ],
+  "interactions": [],
+  "usage": {"inputTokens":24,"outputTokens":13,"totalTokens":37},
+  "lastSequence": 10
+}

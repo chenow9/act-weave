@@ -1,0 +1,62 @@
+{
+  "01-simple.json": {
+    "error": null,
+    "finish": "stop",
+    "content_preview": "我是一个注重清晰、务实和严谨的 AI 助手，擅长分析问题并给出可执行的解决方案。\n",
+    "tool_calls": null,
+    "usage": {
+      "prompt_tokens": 5068,
+      "completion_tokens": 36,
+      "total_tokens": 5104,
+      "prompt_tokens_details": {
+        "cached_tokens": 4608
+      }
+    },
+    "model": "gpt-5.4"
+  },
+  "02-tools-auto.json": {
+    "error": null,
+    "finish": "tool_calls",
+    "content_preview": "",
+    "tool_calls": [
+      {
+        "id": "call_3BT6PygstMCzMMLJwS7xCHM8",
+        "type": "function",
+        "function": {
+          "name": "getme",
+          "arguments": "{}"
+        }
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 4769,
+      "completion_tokens": 14,
+      "total_tokens": 4783,
+      "prompt_tokens_details": {
+        "cached_tokens": 4352
+      }
+    },
+    "model": "gpt-5.4"
+  },
+  "03-tools-force.json": {
+    "error": null,
+    "finish": "tool_calls",
+    "content_preview": "",
+    "tool_calls": [
+      {
+        "id": "call_KrAoEgVVICph78HIUg0TqPao",
+        "type": "function",
+        "function": {
+          "name": "getme",
+          "arguments": "{}"
+        }
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 4420,
+      "completion_tokens": 14,
+      "total_tokens": 4434
+    },
+    "model": "gpt-5.4"
+  }
+}

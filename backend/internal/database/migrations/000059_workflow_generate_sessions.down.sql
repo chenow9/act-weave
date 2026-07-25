@@ -1,0 +1,8 @@
+DROP INDEX IF EXISTS workflow_generate_turns_workspace_created_idx;
+DROP INDEX IF EXISTS workflow_generate_turns_workspace_session_index_idx;
+DROP TABLE IF EXISTS workflow_generate_turns;
+
+DROP INDEX IF EXISTS workflow_generate_sessions_workspace_workflow_idx;
+DROP INDEX IF EXISTS workflow_generate_sessions_workspace_agent_updated_idx;
+DROP INDEX IF EXISTS workflow_generate_sessions_workspace_status_updated_idx;
+DROP TABLE IF EXISTS workflow_generate_sessions;

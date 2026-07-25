@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.actweave.dev/management/agent-access/agent-grant.schema.json",
+  "title": "ActWeave Agent Access Grant Configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["scopes", "policy"],
+  "properties": {
+    "scopes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 9,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "agent:read",
+          "conversation:create",
+          "conversation:read",
+          "run:create",
+          "run:read",
+          "run:cancel",
+          "event:read",
+          "interaction:decide",
+          "artifact:read"
+        ]
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "serviceDecision": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled"],
+              "properties": {"enabled": {"const": false}}
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled", "maxRisk"],
+              "properties": {
+                "enabled": {"const": true},
+                "maxRisk": {"type": "string", "enum": ["low", "medium"]}
+              }
+            }
+          ]
+        },
+        "subjectSharing": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled"],
+              "properties": {"enabled": {"const": false}}
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled", "resources"],
+              "properties": {
+                "enabled": {"const": true},
+                "resources": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 5,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "enum": ["conversation", "run", "event", "interaction", "artifact"]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,1213 @@
+{
+  "protocolVersion": "2026-07-20",
+  "specVersion": "1.0",
+  "schemaSetSha256": "10f0fe5fdc198f2f2c8babaca738ca5322d4121374b7aca812b4064752e00e94",
+  "documents": {
+    "common.schema.json": {
+      "path": "common.schema.json",
+      "types": [
+        "object"
+      ],
+      "additionalProperties": true
+    },
+    "common.schema.json#/$defs/principalRef": {
+      "path": "common.schema.json#/$defs/principalRef",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "id",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "types": [
+            "string"
+          ],
+          "required": true
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "required": true,
+          "enum": [
+            "external_subject",
+            "service_principal",
+            "system",
+            "user"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "common.schema.json#/$defs/timestamp": {
+      "path": "common.schema.json#/$defs/timestamp",
+      "types": [
+        "string"
+      ]
+    },
+    "common.schema.json#/$defs/uuid": {
+      "path": "common.schema.json#/$defs/uuid",
+      "types": [
+        "string"
+      ]
+    },
+    "content-part.schema.json": {
+      "path": "content-part.schema.json",
+      "types": [
+        "object"
+      ]
+    },
+    "delta.schema.json": {
+      "path": "delta.schema.json",
+      "types": [
+        "object"
+      ]
+    },
+    "error.schema.json": {
+      "path": "error.schema.json",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
+      "properties": {
+        "code": {
+          "types": [
+            "string"
+          ],
+          "required": true
+        },
+        "details": {
+          "types": [
+            "array"
+          ],
+          "required": false
+        },
+        "message": {
+          "types": [
+            "string"
+          ],
+          "required": true
+        },
+        "requestId": {
+          "types": [
+            "string"
+          ],
+          "required": false
+        },
+        "retryable": {
+          "types": [
+            "boolean"
+          ],
+          "required": true
+        },
+        "traceId": {
+          "types": [
+            "string"
+          ],
+          "required": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "event-envelope.schema.json": {
+      "path": "event-envelope.schema.json",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "agentId",
+        "conversationId",
+        "data",
+        "eventId",
+        "occurredAt",
+        "runId",
+        "sequence",
+        "specVersion",
+        "streamId",
+        "traceId",
+        "type",
+        "workspaceId"
+      ],
+      "properties": {
+        "agentId": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "conversationId": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "data": {
+          "types": [
+            "object"
+          ],
+          "required": true
+        },
+        "eventId": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "occurredAt": {
+          "types": [
+            "$ref:common.schema.json#/$defs/timestamp"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/timestamp"
+        },
+        "runId": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "sequence": {
+          "types": [
+            "integer"
+          ],
+          "required": true
+        },
+        "specVersion": {
+          "types": [
+            "const"
+          ],
+          "required": true,
+          "const": "1.0"
+        },
+        "streamId": {
+          "types": [
+            "string"
+          ],
+          "required": true
+        },
+        "traceId": {
+          "types": [
+            "string"
+          ],
+          "required": true
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "required": true
+        },
+        "workspaceId": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        }
+      },
+      "additionalProperties": true
+    },
+    "events.schema.json": {
+      "path": "events.schema.json",
+      "types": [
+        "object"
+      ],
+      "additionalProperties": true
+    },
+    "events.schema.json#/$defs/interactionExpiredData": {
+      "path": "events.schema.json#/$defs/interactionExpiredData",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "interaction"
+      ],
+      "properties": {
+        "interaction": {
+          "types": [
+            "$ref:interaction.schema.json"
+          ],
+          "required": true,
+          "ref": "interaction.schema.json"
+        }
+      },
+      "additionalProperties": true
+    },
+    "events.schema.json#/$defs/interactionRequestedData": {
+      "path": "events.schema.json#/$defs/interactionRequestedData",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "interaction"
+      ],
+      "properties": {
+        "interaction": {
+          "types": [
+            "$ref:interaction.schema.json"
+          ],
+          "required": true,
+          "ref": "interaction.schema.json"
+        }
+      },
+      "additionalProperties": true
+    },
+    "events.schema.json#/$defs/interactionResolvedData": {
+      "path": "events.schema.json#/$defs/interactionResolvedData",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "interaction"
+      ],
+      "properties": {
+        "interaction": {
+          "types": [
+            "$ref:interaction.schema.json"
+          ],
+          "required": true,
+          "ref": "interaction.schema.json"
+        }
+      },
+      "additionalProperties": true
+    },
+    "events.schema.json#/$defs/itemCompletedData": {
+      "path": "events.schema.json#/$defs/itemCompletedData",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "item"
+      ],
+      "properties": {
+        "item": {
+          "types": [
+            "$ref:item.schema.json"
+          ],
+          "required": true,
+          "ref": "item.schema.json"
+        }
+      },
+      "additionalProperties": true
+    },
+    "events.schema.json#/$defs/itemDeltaData": {
+      "path": "events.schema.json#/$defs/itemDeltaData",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "delta",
+        "itemId"
+      ],
+      "properties": {
+        "delta": {
+          "types": [
+            "$ref:delta.schema.json"
+          ],
+          "required": true,
+          "ref": "delta.schema.json"
+        },
+        "itemId": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        }
+      },
+      "additionalProperties": true
+    },
+    "events.schema.json#/$defs/itemStartedData": {
+      "path": "events.schema.json#/$defs/itemStartedData",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "item"
+      ],
+      "properties": {
+        "item": {
+          "types": [
+            "$ref:item.schema.json"
+          ],
+          "required": true,
+          "ref": "item.schema.json"
+        }
+      },
+      "additionalProperties": true
+    },
+    "events.schema.json#/$defs/runAcceptedData": {
+      "path": "events.schema.json#/$defs/runAcceptedData",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "run"
+      ],
+      "properties": {
+        "run": {
+          "types": [
+            "$ref:run.schema.json"
+          ],
+          "required": true,
+          "ref": "run.schema.json"
+        }
+      },
+      "additionalProperties": true
+    },
+    "events.schema.json#/$defs/runCancelledData": {
+      "path": "events.schema.json#/$defs/runCancelledData",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "run"
+      ],
+      "properties": {
+        "run": {
+          "types": [
+            "$ref:run.schema.json"
+          ],
+          "required": true,
+          "ref": "run.schema.json"
+        }
+      },
+      "additionalProperties": true
+    },
+    "events.schema.json#/$defs/runCompletedData": {
+      "path": "events.schema.json#/$defs/runCompletedData",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "run"
+      ],
+      "properties": {
+        "run": {
+          "types": [
+            "$ref:run.schema.json"
+          ],
+          "required": true,
+          "ref": "run.schema.json"
+        }
+      },
+      "additionalProperties": true
+    },
+    "events.schema.json#/$defs/runFailedData": {
+      "path": "events.schema.json#/$defs/runFailedData",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "run"
+      ],
+      "properties": {
+        "run": {
+          "types": [
+            "$ref:run.schema.json"
+          ],
+          "required": true,
+          "ref": "run.schema.json"
+        }
+      },
+      "additionalProperties": true
+    },
+    "events.schema.json#/$defs/runResumedData": {
+      "path": "events.schema.json#/$defs/runResumedData",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "interactionId",
+        "run"
+      ],
+      "properties": {
+        "interactionId": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "run": {
+          "types": [
+            "$ref:run.schema.json"
+          ],
+          "required": true,
+          "ref": "run.schema.json"
+        }
+      },
+      "additionalProperties": true
+    },
+    "events.schema.json#/$defs/runStartedData": {
+      "path": "events.schema.json#/$defs/runStartedData",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "run"
+      ],
+      "properties": {
+        "run": {
+          "types": [
+            "$ref:run.schema.json"
+          ],
+          "required": true,
+          "ref": "run.schema.json"
+        }
+      },
+      "additionalProperties": true
+    },
+    "events.schema.json#/$defs/runWaitingData": {
+      "path": "events.schema.json#/$defs/runWaitingData",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "interactionIds",
+        "run"
+      ],
+      "properties": {
+        "interactionIds": {
+          "types": [
+            "array"
+          ],
+          "required": true
+        },
+        "run": {
+          "types": [
+            "$ref:run.schema.json"
+          ],
+          "required": true,
+          "ref": "run.schema.json"
+        }
+      },
+      "additionalProperties": true
+    },
+    "events.schema.json#/$defs/usageUpdatedData": {
+      "path": "events.schema.json#/$defs/usageUpdatedData",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "usage"
+      ],
+      "properties": {
+        "usage": {
+          "types": [
+            "object"
+          ],
+          "required": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "interaction.schema.json": {
+      "path": "interaction.schema.json",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "allowedDecisions",
+        "expiresAt",
+        "id",
+        "kind",
+        "reason",
+        "risk",
+        "status",
+        "targetItemId",
+        "title",
+        "version"
+      ],
+      "properties": {
+        "allowedDecisions": {
+          "types": [
+            "array"
+          ],
+          "required": true
+        },
+        "connectionId": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": false,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "expiresAt": {
+          "types": [
+            "$ref:common.schema.json#/$defs/timestamp"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/timestamp"
+        },
+        "id": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "inputHash": {
+          "types": [
+            "string"
+          ],
+          "required": false
+        },
+        "inputSummary": {
+          "types": [
+            "object"
+          ],
+          "required": false
+        },
+        "kind": {
+          "types": [
+            "string"
+          ],
+          "required": true,
+          "enum": [
+            "approval"
+          ]
+        },
+        "planHash": {
+          "types": [
+            "string"
+          ],
+          "required": false
+        },
+        "reason": {
+          "types": [
+            "string"
+          ],
+          "required": true
+        },
+        "releaseId": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": false,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "requiredDecider": {
+          "types": [
+            "string"
+          ],
+          "required": false,
+          "enum": [
+            "actweave_user",
+            "same_external_subject",
+            "service_principal"
+          ]
+        },
+        "risk": {
+          "types": [
+            "object"
+          ],
+          "required": true
+        },
+        "runId": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": false,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "status": {
+          "types": [
+            "string"
+          ],
+          "required": true,
+          "enum": [
+            "approved",
+            "cancelled",
+            "declined",
+            "expired",
+            "pending"
+          ]
+        },
+        "targetItemId": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "title": {
+          "types": [
+            "string"
+          ],
+          "required": true
+        },
+        "version": {
+          "types": [
+            "integer"
+          ],
+          "required": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "item.schema.json": {
+      "path": "item.schema.json",
+      "types": [
+        "$ref:#/$defs/artifact",
+        "$ref:#/$defs/interactionItem",
+        "$ref:#/$defs/message",
+        "$ref:#/$defs/notice",
+        "$ref:#/$defs/reasoningSummary",
+        "$ref:#/$defs/toolCall",
+        "$ref:#/$defs/unknown",
+        "$ref:#/$defs/workflowStep"
+      ]
+    },
+    "item.schema.json#/$defs/artifact": {
+      "path": "item.schema.json#/$defs/artifact",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "artifactId",
+        "id",
+        "mediaType",
+        "status",
+        "type"
+      ],
+      "properties": {
+        "artifactId": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "id": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "mediaType": {
+          "types": [
+            "string"
+          ],
+          "required": true
+        },
+        "status": {
+          "types": [
+            "$ref:#/$defs/status"
+          ],
+          "required": true,
+          "ref": "#/$defs/status"
+        },
+        "type": {
+          "types": [
+            "const"
+          ],
+          "required": true,
+          "const": "artifact"
+        }
+      },
+      "additionalProperties": true
+    },
+    "item.schema.json#/$defs/interactionItem": {
+      "path": "item.schema.json#/$defs/interactionItem",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "id",
+        "interaction",
+        "status",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "interaction": {
+          "types": [
+            "$ref:interaction.schema.json"
+          ],
+          "required": true,
+          "ref": "interaction.schema.json"
+        },
+        "status": {
+          "types": [
+            "$ref:#/$defs/status"
+          ],
+          "required": true,
+          "ref": "#/$defs/status"
+        },
+        "type": {
+          "types": [
+            "const"
+          ],
+          "required": true,
+          "const": "interaction"
+        }
+      },
+      "additionalProperties": true
+    },
+    "item.schema.json#/$defs/message": {
+      "path": "item.schema.json#/$defs/message",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "content",
+        "id",
+        "role",
+        "status",
+        "type"
+      ],
+      "properties": {
+        "content": {
+          "types": [
+            "array"
+          ],
+          "required": true
+        },
+        "id": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "role": {
+          "types": [
+            "string"
+          ],
+          "required": true,
+          "enum": [
+            "assistant",
+            "system",
+            "tool",
+            "user"
+          ]
+        },
+        "status": {
+          "types": [
+            "$ref:#/$defs/status"
+          ],
+          "required": true,
+          "ref": "#/$defs/status"
+        },
+        "type": {
+          "types": [
+            "const"
+          ],
+          "required": true,
+          "const": "message"
+        }
+      },
+      "additionalProperties": true
+    },
+    "item.schema.json#/$defs/notice": {
+      "path": "item.schema.json#/$defs/notice",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "code",
+        "id",
+        "message",
+        "status",
+        "type"
+      ],
+      "properties": {
+        "code": {
+          "types": [
+            "string"
+          ],
+          "required": true
+        },
+        "id": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "message": {
+          "types": [
+            "string"
+          ],
+          "required": true
+        },
+        "status": {
+          "types": [
+            "$ref:#/$defs/status"
+          ],
+          "required": true,
+          "ref": "#/$defs/status"
+        },
+        "type": {
+          "types": [
+            "const"
+          ],
+          "required": true,
+          "const": "notice"
+        }
+      },
+      "additionalProperties": true
+    },
+    "item.schema.json#/$defs/reasoningSummary": {
+      "path": "item.schema.json#/$defs/reasoningSummary",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "id",
+        "status",
+        "text",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "status": {
+          "types": [
+            "$ref:#/$defs/status"
+          ],
+          "required": true,
+          "ref": "#/$defs/status"
+        },
+        "text": {
+          "types": [
+            "string"
+          ],
+          "required": true
+        },
+        "type": {
+          "types": [
+            "const"
+          ],
+          "required": true,
+          "const": "reasoning_summary"
+        }
+      },
+      "additionalProperties": true
+    },
+    "item.schema.json#/$defs/status": {
+      "path": "item.schema.json#/$defs/status",
+      "types": [
+        "string"
+      ],
+      "enum": [
+        "cancelled",
+        "completed",
+        "declined",
+        "failed",
+        "in_progress",
+        "waiting"
+      ]
+    },
+    "item.schema.json#/$defs/toolCall": {
+      "path": "item.schema.json#/$defs/toolCall",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "id",
+        "name",
+        "status",
+        "type"
+      ],
+      "properties": {
+        "arguments": {
+          "types": [
+            "null",
+            "object"
+          ],
+          "required": false
+        },
+        "id": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "name": {
+          "types": [
+            "string"
+          ],
+          "required": true
+        },
+        "output": {
+          "types": [
+            "array",
+            "null",
+            "object",
+            "string"
+          ],
+          "required": false
+        },
+        "status": {
+          "types": [
+            "$ref:#/$defs/status"
+          ],
+          "required": true,
+          "ref": "#/$defs/status"
+        },
+        "type": {
+          "types": [
+            "const"
+          ],
+          "required": true,
+          "const": "tool_call"
+        }
+      },
+      "additionalProperties": true
+    },
+    "item.schema.json#/$defs/unknown": {
+      "path": "item.schema.json#/$defs/unknown",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "id",
+        "status",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "status": {
+          "types": [
+            "string"
+          ],
+          "required": true
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "required": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "item.schema.json#/$defs/workflowStep": {
+      "path": "item.schema.json#/$defs/workflowStep",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "id",
+        "nodeId",
+        "nodeType",
+        "status",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "nodeId": {
+          "types": [
+            "string"
+          ],
+          "required": true
+        },
+        "nodeType": {
+          "types": [
+            "string"
+          ],
+          "required": true
+        },
+        "status": {
+          "types": [
+            "$ref:#/$defs/status"
+          ],
+          "required": true,
+          "ref": "#/$defs/status"
+        },
+        "stepSequence": {
+          "types": [
+            "integer"
+          ],
+          "required": false
+        },
+        "toolCallItemIds": {
+          "types": [
+            "array"
+          ],
+          "required": false
+        },
+        "type": {
+          "types": [
+            "const"
+          ],
+          "required": true,
+          "const": "workflow_step"
+        },
+        "workflowExecutionId": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": false,
+          "ref": "common.schema.json#/$defs/uuid"
+        }
+      },
+      "additionalProperties": true
+    },
+    "run.schema.json": {
+      "path": "run.schema.json",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "agentId",
+        "conversationId",
+        "id",
+        "startedAt",
+        "status",
+        "trigger"
+      ],
+      "properties": {
+        "agentId": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "completedAt": {
+          "types": [
+            "$ref:common.schema.json#/$defs/timestamp",
+            "null"
+          ],
+          "required": false
+        },
+        "conversationId": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "error": {
+          "types": [
+            "$ref:error.schema.json",
+            "null"
+          ],
+          "required": false
+        },
+        "id": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "startedAt": {
+          "types": [
+            "$ref:common.schema.json#/$defs/timestamp"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/timestamp"
+        },
+        "status": {
+          "types": [
+            "string"
+          ],
+          "required": true,
+          "enum": [
+            "accepted",
+            "cancelled",
+            "completed",
+            "failed",
+            "running",
+            "waiting_interaction"
+          ]
+        },
+        "trigger": {
+          "types": [
+            "string"
+          ],
+          "required": true,
+          "enum": [
+            "api",
+            "message",
+            "system",
+            "workflow"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "transport-signal.schema.json": {
+      "path": "transport-signal.schema.json",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "error",
+        "occurredAt",
+        "specVersion",
+        "type"
+      ],
+      "properties": {
+        "error": {
+          "types": [
+            "$ref:error.schema.json"
+          ],
+          "required": true,
+          "ref": "error.schema.json"
+        },
+        "occurredAt": {
+          "types": [
+            "$ref:common.schema.json#/$defs/timestamp"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/timestamp"
+        },
+        "specVersion": {
+          "types": [
+            "const"
+          ],
+          "required": true,
+          "const": "1.0"
+        },
+        "type": {
+          "types": [
+            "const"
+          ],
+          "required": true,
+          "const": "stream.error"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

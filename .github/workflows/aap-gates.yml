@@ -1,0 +1,179 @@
+name: aap-gates
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "sdk/typescript/**"
+      - "examples/agent-access/**"
+      - "frontend/**"
+      - "docs/openapi/**"
+      - "docs/verification/**"
+      - "Makefile"
+      - ".github/workflows/aap-gates.yml"
+  push:
+    branches: [main, master, spec_harness]
+    paths:
+      - "backend/**"
+      - "sdk/typescript/**"
+      - "examples/agent-access/**"
+      - "frontend/**"
+      - "docs/openapi/**"
+      - "docs/verification/**"
+      - "Makefile"
+      - ".github/workflows/aap-gates.yml"
+
+jobs:
+  backend-unit-no-db:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - name: go vet
+        working-directory: backend
+        run: go vet ./...
+      - name: unit packages (no DB)
+        working-directory: backend
+        run: |
+          go test ./internal/metrics ./internal/logging ./internal/agentaccessauth \
+            ./internal/transport/http -count=1 \
+            -run 'TestAAPObservability|TestAAPAbuseControls|TestAAPMetrics|TestCachedExact|TestAAPCORS|TestCORS'
+
+  backend-execution-db:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: actweave
+          POSTGRES_PASSWORD: actweave-dev
+          POSTGRES_DB: actweave
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U actweave -d actweave"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ACTWEAVE_TEST_POSTGRES_DSN: postgres://actweave:actweave-dev@127.0.0.1:5432/actweave?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - name: execution + migration + continuation lease gates
+        working-directory: backend
+        run: |
+          go test ./internal/execution ./internal/database ./internal/agentaccess \
+            ./internal/acceptance -count=1 \
+            -run 'TestContinuation|TestRuntimeContinue|TestChatAndRecovery|TestAAPFailure|TestMigration|TestCleanSchema|TestAgentAccess'
+
+  backend-race:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: actweave
+          POSTGRES_PASSWORD: actweave-dev
+          POSTGRES_DB: actweave
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U actweave -d actweave"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ACTWEAVE_TEST_POSTGRES_DSN: postgres://actweave:actweave-dev@127.0.0.1:5432/actweave?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - name: go test -race (full)
+        working-directory: backend
+        run: go test -race ./... -count=1
+        timeout-minutes: 45
+
+  sdk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: install
+        run: npm ci
+      - name: type-check + README Quickstart + unit + e2e
+        run: |
+          npm run type-check
+          npm run check:readme-quickstart
+          npm test
+          npm run test:e2e
+      - name: build + pack dry-run
+        run: |
+          npm run build
+          npm pack --dry-run 2>&1 | tee pack.log
+          grep -E 'package.json|README.md|LICENSE|dist/' pack.log
+          # private:false is required for registry publish
+          node -e "const p=require('./package.json'); if(p.private) process.exit(1)"
+          # Quickstart exports must exist on the built package surface
+          node -e "const m=require('./dist/index.js'); if(!m.AgentAccessClient||!m.StaticTokenProvider) process.exit(1); if(m.createAgentAccessClient||m.createStaticTokenProvider) process.exit(2)"
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: install
+        run: npm ci
+      - name: test + type-check + build
+        run: |
+          npm test
+          npm run type-check
+          npm run build
+
+  examples:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/agent-access
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: install (workspace + local SDK)
+        run: |
+          (cd ../../sdk/typescript && npm ci && npm run build)
+          npm ci
+      - name: test + security scan
+        run: |
+          npm test
+          npm run security-scan
+
+  protocol-compat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - name: protocol unit + generate clean + compat
+        run: |
+          cd backend && go test ./internal/protocolcompat ./internal/protocolschema -count=1
+          cd ..
+          make generate && git diff --exit-code
+          make protocol-compat-check

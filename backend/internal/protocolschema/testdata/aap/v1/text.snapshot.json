@@ -1,0 +1,23 @@
+{
+  "run": {
+    "id": "71000000-0000-4000-8000-000000000001",
+    "conversationId": "31000000-0000-4000-8000-000000000001",
+    "agentId": "22000000-0000-4000-8000-000000000001",
+    "status": "completed",
+    "trigger": "message",
+    "startedAt": "2026-07-20T01:00:00Z",
+    "completedAt": "2026-07-20T01:00:08Z"
+  },
+  "items": [
+    {
+      "id": "81000000-0000-4000-8000-000000000001",
+      "type": "message",
+      "status": "completed",
+      "role": "assistant",
+      "content": [{"type": "text", "text": "你好，欢迎使用 ActWeave。"}]
+    }
+  ],
+  "interactions": [],
+  "usage": {"inputTokens": 12, "outputTokens": 8, "totalTokens": 20},
+  "lastSequence": 9
+}

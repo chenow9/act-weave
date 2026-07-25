@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.actweave.dev/aap/v1/error.schema.json",
+  "title": "AAP v1 Error",
+  "type": "object",
+  "required": ["code", "message", "retryable"],
+  "properties": {
+    "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$"},
+    "message": {"type": "string", "minLength": 1, "maxLength": 2048},
+    "retryable": {"type": "boolean"},
+    "requestId": {"type": "string", "minLength": 1, "maxLength": 128},
+    "traceId": {"type": "string", "minLength": 1, "maxLength": 128},
+    "details": {"type": "array", "maxItems": 100, "items": {"type": "object"}}
+  },
+  "additionalProperties": true
+}

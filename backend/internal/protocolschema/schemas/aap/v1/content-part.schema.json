@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.actweave.dev/aap/v1/content-part.schema.json",
+  "title": "AAP v1 Content Part",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["type", "text"],
+      "properties": {
+        "type": {"const": "text"},
+        "text": {"type": "string", "maxLength": 1048576}
+      },
+      "additionalProperties": true
+    },
+    {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {"type": "string", "not": {"enum": ["text"]}}
+      },
+      "additionalProperties": true
+    }
+  ]
+}

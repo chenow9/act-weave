@@ -1,0 +1,14 @@
+id: 1
+event: run.accepted
+data: {"specVersion":"1.0","type":"run.accepted","eventId":"a1000000-0000-4000-8000-000000000001","streamId":"run:71000000-0000-4000-8000-000000000001","sequence":1,"occurredAt":"2026-07-20T01:00:00Z","workspaceId":"11000000-0000-4000-8000-000000000001","agentId":"22000000-0000-4000-8000-000000000001","conversationId":"31000000-0000-4000-8000-000000000001","runId":"71000000-0000-4000-8000-000000000001","traceId":"golden-text","data":{"run":{"id":"71000000-0000-4000-8000-000000000001","status":"accepted"}}}
+
+id: 2
+event: run.started
+data: {"specVersion":"1.0","type":"run.started","eventId":"a1000000-0000-4000-8000-000000000002","streamId":"run:71000000-0000-4000-8000-000000000001","sequence":2,"occurredAt":"2026-07-20T01:00:01Z","workspaceId":"11000000-0000-4000-8000-000000000001","agentId":"22000000-0000-4000-8000-000000000001","conversationId":"31000000-0000-4000-8000-000000000001","runId":"71000000-0000-4000-8000-000000000001","traceId":"golden-text","data":{"run":{"id":"71000000-0000-4000-8000-000000000001","status":"running"}}}
+
+: ping 2026-07-20T01:00:01.500Z
+
+id: 3
+event: item.started
+data: {"specVersion":"1.0","type":"item.started","eventId":"a1000000-0000-4000-8000-000000000003","streamId":"run:71000000-0000-4000-8000-000000000001","sequence":3,"occurredAt":"2026-07-20T01:00:02Z","workspaceId":"11000000-0000-4000-8000-000000000001","agentId":"22000000-0000-4000-8000-000000000001","conversationId":"31000000-0000-4000-8000-000000000001","runId":"71000000-0000-4000-8000-000000000001","traceId":"golden-text","data":{"item":{"id":"81000000-0000-4000-8000-000000000001","type":"message","status":"in_progress"}}}
+

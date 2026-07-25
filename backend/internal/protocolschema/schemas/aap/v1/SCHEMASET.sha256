@@ -1,0 +1,14 @@
+# AAP 1.0 / protocol date 2026-07-20
+# schema-set (the concatenated bytes of the JSON files below in filename order)
+10f0fe5fdc198f2f2c8babaca738ca5322d4121374b7aca812b4064752e00e94  schema-set
+
+f47c45bca563d3189817c481fd3023bfb86fefea491673af0e1424300bba66bf  common.schema.json
+7add816db8a5695d24096de118bc13be69dacddc755d1a141b9733ec3a9bf9ae  content-part.schema.json
+dae2fddf795d30b14a352df6e6aae4507892a24c107f7f7b7ca9e76ecc19a3ea  delta.schema.json
+b11932ef8cdbabd04263e1792cce5d67b6a952192c13684b568776eee8cc738f  error.schema.json
+b7f2365867fd0add3a5071387b70957e6afa06753d5f386cfef533391751d15f  event-envelope.schema.json
+934372181ea9a1f32cf4302d54770058273d13346a36bb448a3eff1f2b0ec131  events.schema.json
+49ab73b89f06aceba1afe0ecf14e41b76fdbb0d719f840823a1a871e566b66cd  interaction.schema.json
+4bd51c58caf3fe8b38d4b2cf2c174f6af6c34145f11d39128a2543e1187f2f96  item.schema.json
+d18782d680c83dc44d89178de848f4f436fb4816095a78288e774768a10f3e33  run.schema.json
+5217d93ddd08ebd48c9781ec66a9d523715c0e99907cdbaeb3458a85d85d4964  transport-signal.schema.json
