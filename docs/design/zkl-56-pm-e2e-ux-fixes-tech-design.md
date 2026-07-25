@@ -3,11 +3,12 @@
 | 字段 | 值 |
 |---|---|
 | Issue | ZKL-56 / `6563b563-60d1-4da7-9e90-eb293454187d` |
-| 版本 | v0.1 |
+| 版本 | v0.2 |
 | 状态 | Draft / Awaiting Approval |
-| 日期 | 2026-07-25 |
+| 日期 | 2026-07-26 |
 | 工作分支 | `fix/zkl-56-pm-e2e-ux-fixes` |
 | 产品输入 | `docs/design/zkl-56-pm-e2e-ux-fixes-product-design.md` v1.0 / Approved |
+| UI 输入 | `docs/design/zkl-56-pm-e2e-ux-fixes-ui-design.md` UI v0.1 / Ready for Knower merge |
 | 走查输入 | `docs/verification/pm-e2e-ux-report-2026-07-25.md` |
 | 冻结范围 | UX-01～07；AC-01～AC-15 |
 
@@ -16,6 +17,7 @@
 | 版本 | 日期 | 状态 | 说明 |
 |---|---|---|---|
 | v0.1 | 2026-07-25 | Awaiting Approval | 基于已批准产品设计、真实代码/API/测试和走查证据形成首版技术方案 |
+| v0.2 | 2026-07-26 | Awaiting Approval | 并入 Canvas UI v0.1 的页面态、关键文案、恢复动作、组件边界、可访问性与窄屏输入；不改变 T1～T10 推荐、冻结语义或 AC |
 
 ## 0. 结论摘要与批准边界
 
@@ -32,6 +34,7 @@
 5. OpenAPI 详情由服务端返回实时完整性投影，生成服务端再次校验；前端按 endpoint 展示和显式选择，URL 使用单一规范化函数。
 6. Tool 生命周期、历史测试和当前可调用性保持三个正交维度；后端以批量只读摘要返回真实历史测试，当前可调用性由 workspace-scoped Connection catalog 加载状态派生，实际调用仍以 Invocation Resolver 为安全权威。
 7. 前端权限门禁扩展为与后端 `VIEW/EDIT/TEST/PUBLISH/EXECUTE/MANAGE/DELETE` 同构并 fail closed；后端 RBAC 不放宽。
+8. Canvas UI v0.1 作为 §10 的呈现输入：复用现有 modal、status pill、Copilot 与管理页组件，采用 T10=A 的最小原位结构，不新增路由、wizard、恢复中心或设计系统。
 
 ### 0.2 本版不等于实施授权
 
@@ -52,8 +55,9 @@
 
 1. 当前分支真实实现、数据库迁移和测试；
 2. 已批准产品设计 v1.0 与负责人确认评论；
-3. 2026-07-25 真实 Chrome + 本地全栈走查报告和截图；
-4. `README.md`、相关 `docs/design`、`docs/runbooks` 与 `docs/openapi`。
+3. Canvas UI v0.1（仅作为不改变冻结产品语义的交互与呈现输入）；
+4. 2026-07-25 真实 Chrome + 本地全栈走查报告和截图；
+5. `README.md`、相关 `docs/design`、`docs/runbooks` 与 `docs/openapi`。
 
 进入设计时分支为 `fix/zkl-56-pm-e2e-ux-fixes`，仅存在未跟踪的运行上下文 `.agent_context/` 与 `AGENTS.md`；本方案不触碰它们。
 
@@ -756,25 +760,49 @@ shared runtime 的 lazy resolution 与 reliable `run.failed` 属于内部执行�
 
 ## 10. 前端/UI 状态
 
+Canvas UI v0.1 已并入本节。它是 T10=A 下的实现输入，不是新的产品契约；若与已批准产品设计、服务端状态机、安全门禁或本技术方案冲突，以后四者为准。唯一需要显式收敛的细节是：Canvas §4.5 提到 GET 校准后仍为 RUNNING 时可恢复输入；已批准产品 §5.2 明确 RUNNING 输入为 Disabled，因此本方案不采纳该点。此时允许刷新或离开页面，但不得发起同 Session 并发 Run。
+
 ### 10.1 状态矩阵
 
 | 页面 | Loading | Empty | Error | Success | Disabled |
 |---|---|---|---|---|---|
-| Workflow 详情 | 详情内 skeleton，保留 Workflow 名称 | 无 Draft 由后端真实 404/empty 处理 | requestId + 重试；不显示空图 | editor mount 后 handoff | 无 EDIT 不显示入口 |
-| Console | stream CONNECTING/RECONNECTING | 无消息沿用现状 | run failed 或 realtime degraded；GET 可校准 | terminal success/input enabled | RUNNING/WAITING 按现状禁用 |
-| Smart DAG | 阶段占位但不伪造真实进度 | 无成功 Draft 保留 preview | 持久恢复卡 | 新 Draft version | CLOSED/无 EDIT/无 model |
-| OpenAPI 详情 | modal skeleton | 合法零 endpoint 与 incomplete 分开 | requestId + retry | active endpoint contract | incomplete/无选择/无 EDIT 禁生成 |
-| Tool | catalog LOADING | loaded 后真实无 Connection 才 MISSING | UNKNOWN/NEEDS_ATTENTION | AVAILABLE | lifecycle/connection Disabled 分开 |
+| Workflow 详情 | modal 保持打开，显示“正在加载最新草稿”，写操作全组 Disabled | 真实无 Draft 显示“草稿不可用”，不挂载空图 | `role=alert` + requestId +“重试加载”；保留详情 | 先挂载 editor，下一 DOM flush 再关闭详情 | 无 EDIT 不渲染入口；stale response 无副作用 |
+| Console | Session skeleton；stream 为 CONNECTING/RECONNECTING/CALIBRATING | 无消息沿用现有引导 | FAILED 显示“运行失败/未完成”；断流显示校准 banner；Tool gate 用结构化气泡 | SUCCEEDED 显示“已完成/已完成”，输入 Enabled | PENDING/RUNNING/WAITING 输入 Disabled；服务端仍 RUNNING 时即使 DEGRADED 也不解锁 |
+| Smart DAG | `GENERATING` busy，不伪造百分比；关闭 Disabled | 无成功 Draft 保留 preview 和输入 | 持久恢复卡展示 stage/code/retryable/sessionStatus 与安全诊断 | 新 Draft version，移除失败卡 | CLOSED 只允许新建；无 EDIT 隐藏写动作；busy conflict 不改画布 |
+| OpenAPI 详情 | modal 的 endpoint/contract 双区 skeleton，禁止先闪“0 节点” | 合法 0 endpoint、合法空 schema 与 INCOMPLETE 分开 | 保留摘要；requestId + 刷新/重新导入引导 | active endpoint 契约可切换，多选 eligible endpoints | INCOMPLETE、load error、零选择或无 EDIT 时禁生成 |
+| Tool | catalog LOADING 显示“连接状态加载中” | 仅 LOADED 后绑定实体真实不存在才 MISSING | catalog ERROR 为 UNKNOWN；连接异常为 NEEDS_ATTENTION 等稳定状态 | 生命周期、真实 latestTest、AVAILABLE 三维分开 | Tool lifecycle Disabled 与 Connection Disabled 分开呈现 |
 
 ### 10.2 关键文案
 
-- Workflow：`加载 Workflow 草稿失败；原详情已保留。`
+- Workflow Loading：`正在加载最新草稿`；失败：`无法打开流程图` / `加载 Workflow 草稿失败；原详情已保留。`
+- Console terminal：FAILED 为 `运行失败` / `未完成`；Tool gate 为 `工具调用未执行 · 「{name}」当前不可调用（{reason}）`。
 - Console degraded：`实时状态连接中断，正在以持久记录校准。`
-- Smart retryable：`本轮在「{stage}」失败，未修改上一版合法草稿。`
+- Smart 标题：`本轮生成未完成`；retryable：`本轮在「{stage}」失败，未修改上一版合法草稿。`
 - Smart closed：`生成会话已关闭；历史与草稿已保留。`
 - OpenAPI valid empty：`该接口未声明请求体。`
 - OpenAPI incomplete：`导入详情不完整，已禁止生成 Tool；请重新导入或联系管理员。`
 - Tool：`已发布 · 当前不可调用（连接需处理）`
+
+所有错误面只展示 stable code、公开资源名、requestId/traceId 和安全文案；长错误可展开但不得透出 Secret、Token、credential locator、Broker body 或模型原文。
+
+### 10.3 组件与交互边界
+
+| 页面 | 实现形态 | 必须行为 |
+|---|---|---|
+| Workflow | 复用详情 modal；内联 `InlineLoadErrorBar` 可先局部实现 | detail 保持 → READY mount → close；失败/重试原位 |
+| Console | 基于现有 summary/status DOM 收敛为 `RuntimeStatusStrip`；复用消息 error 样式 | badge、意图、composer 同 tick 收敛；terminal 单调；Tool gate 气泡可行动 |
+| Smart DAG | Copilot 内新增 `SmartDagRecoveryCard` | 卡常驻至下一成功、新会话或 close；toast 不能作为唯一恢复面 |
+| OpenAPI | 详情 modal 内 `OpenAPIEndpointPicker` + `OpenAPIEndpointContractPane` | desktop 双栏、窄屏单列；active row 与生成多选是两个独立状态 |
+| Tool | 扩展 `tool-governance.ts` 的 `ToolAvailabilityMeta` | 不创建第三套状态源；列表可合成 pill，详情必须拆出三维 |
+
+不新增路由、全屏 wizard、统一恢复中心、全局 Toast 改造或新设计系统。样式复用现有 `status-pill`、modal/drawer、glass panel 与 focus token。
+
+### 10.4 可访问性与窄屏
+
+- modal 保持 focus trap；关闭后焦点回触发控件。Workflow Loading 使用 `aria-busy`/`role=status`，Error 和 Smart 恢复卡使用 `role=alert`。
+- Console 消息流继续 `aria-live=polite`，terminal 收敛不得重复播报整页。
+- Tool/OpenAPI 状态不得只靠颜色；endpoint、恢复动作和诊断复制控件必须有可见 focus。
+- 390×844 不新增另一套流程：modal 可全屏、OpenAPI 双栏改堆叠/横向 endpoint chip、三维 pill 可换行；重试、关闭会话和生成禁用原因必须可达。
 
 ## 11. 测试与验收
 
@@ -874,7 +902,7 @@ Smart request 新字段因旧后端 `DisallowUnknownFields` 无法识别，所�
 | OpenAPI schema 合法空与缺失误判 | 中 | JSON schema presence 规则 + parser/golden fixtures |
 | FE catalog/role 加载短暂抖动 | 低 | mutation fail closed、显式 LOADING，不误报 MISSING |
 | backend-first/frontend-second 顺序错误 | 中 | 部署门禁和 rollback 顺序测试 |
-| Canvas UI 输入尚未回传 | 中 | §10 采用已批准产品状态/文案的最小原位方案；T10 单独确认，收到输入后回版 |
+| UI 文档与技术状态机后续漂移 | 中 | Canvas UI v0.1 已并入 §10；服务端状态/产品门禁优先，特别锁定 RUNNING composer Disabled，并用 AC/组件测试双向校验 |
 
 ## 14. 待负责人确认的技术决策
 
@@ -972,13 +1000,13 @@ Smart request 新字段因旧后端 `DisallowUnknownFields` 无法识别，所�
 
 ### T10 UI 结构
 
-**事实：** 已批准产品设计要求原上下文内的 Loading/Error/Retry；Canvas 输入截至 v0.1 尚未回传。
+**事实：** 已批准产品设计要求原上下文内的 Loading/Error/Retry；Canvas UI v0.1 已交付并落实最小原位结构、完整状态矩阵、关键文案、恢复动作、可访问性与 390×844 输入，且声明无新增负责人未决项。本技术 v0.2 已将其并入 §10，并按冻结产品状态机收敛 RUNNING 输入门禁。
 
 - A（推荐）：最小原位方案——Workflow 详情内状态、Console 状态条、Smart Copilot 恢复卡、OpenAPI 双栏 endpoint/contract、Tool 三状态。
 - B：为五处入口新增全屏 wizard/统一恢复中心。
 - C：保持 toast-only。
 
-**影响：** A 不改变冻结流程且实现面可控；B 属于视觉/流程扩张；C 不满足 AC-02/07/08/11/13。
+**影响：** A 已有可实现 UI 输入，不改变冻结流程且实现面可控；B 属于视觉/流程扩张；C 不满足 AC-02/07/08/11/13。
 
 ## 15. 文件影响清单
 
@@ -1026,7 +1054,7 @@ Smart request 新字段因旧后端 `DisallowUnknownFields` 无法识别，所�
 负责人可按以下格式回复：
 
 ```text
-T1=A，T2=A，T3=A，T4=A，T5=A，T6=A，T7=A，T8=A，T9=A，T10=A，批准技术方案 v0.1
+T1=A，T2=A，T3=A，T4=A，T5=A，T6=A，T7=A，T8=A，T9=A，T10=A，批准技术方案 v0.2
 ```
 
 若任一项选择不同，请说明选项与附加约束。沉默、“看起来可以”或只批准部分项不视为当前技术方案批准。
