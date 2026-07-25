@@ -3,14 +3,15 @@
 | 字段 | 值 |
 |---|---|
 | Issue | ZKL-56 / `6563b563-60d1-4da7-9e90-eb293454187d` |
-| 版本 | v0.2 |
-| 状态 | Draft / Awaiting Approval |
+| 版本 | v1.0 |
+| 状态 | **Approved / Frozen** |
 | 日期 | 2026-07-26 |
 | 工作分支 | `fix/zkl-56-pm-e2e-ux-fixes` |
 | 产品输入 | `docs/design/zkl-56-pm-e2e-ux-fixes-product-design.md` v1.0 / Approved |
-| UI 输入 | `docs/design/zkl-56-pm-e2e-ux-fixes-ui-design.md` UI v0.1 / Ready for Knower merge |
+| UI 输入 | `docs/design/zkl-56-pm-e2e-ux-fixes-ui-design.md` UI v0.1 / 已并入批准内容 |
 | 走查输入 | `docs/verification/pm-e2e-ux-report-2026-07-25.md` |
 | 冻结范围 | UX-01～07；AC-01～AC-15 |
+| 负责人确认 | chenow 于 Issue 评论 `e068c88e-84ce-4fe7-b34c-5bcbfa6694f9` 明确批准技术方案 v0.2，T1～T10 均选 A |
 
 ## 修订记录
 
@@ -18,6 +19,7 @@
 |---|---|---|---|
 | v0.1 | 2026-07-25 | Awaiting Approval | 基于已批准产品设计、真实代码/API/测试和走查证据形成首版技术方案 |
 | v0.2 | 2026-07-26 | Awaiting Approval | 并入 Canvas UI v0.1 的页面态、关键文案、恢复动作、组件边界、可访问性与窄屏输入；不改变 T1～T10 推荐、冻结语义或 AC |
+| v1.0 | 2026-07-26 | **Approved / Frozen** | 负责人明确批准 v0.2，T1～T10 均为 A；仅升级状态并记录确认，不改变批准内容 |
 
 ## 0. 结论摘要与批准边界
 
@@ -36,16 +38,16 @@
 7. 前端权限门禁扩展为与后端 `VIEW/EDIT/TEST/PUBLISH/EXECUTE/MANAGE/DELETE` 同构并 fail closed；后端 RBAC 不放宽。
 8. Canvas UI v0.1 作为 §10 的呈现输入：复用现有 modal、status pill、Copilot 与管理页组件，采用 T10=A 的最小原位结构，不新增路由、wizard、恢复中心或设计系统。
 
-### 0.2 本版不等于实施授权
+### 0.2 批准状态与实施边界
 
-本文件仍有 §14 的 T1～T10 待负责人逐项确认。负责人明确批准当前版本前：
+负责人已在 Issue 评论 `e068c88e-84ce-4fe7-b34c-5bcbfa6694f9` 明确回复：
 
-- 不生成 implementation checklist；
-- 不交 Forge；
-- 不修改生产代码；
-- 不创建 Issue、子 Issue 或 Stage。
+> T1=A，T2=A，T3=A，T4=A，T5=A，T6=A，T7=A，T8=A，T9=A，T10=A，批准技术方案 v0.2
 
-若选择新增迁移、改变产品冻结 D1～D5、扩大 UX-08～10、修改 AAP 公共面，须先返回 Atlas 与负责人重新确认产品范围。
+因此 v0.2 的内容冻结为本 v1.0 / Approved，当前没有技术未决项。实施必须使用
+`docs/design/zkl-56-pm-e2e-ux-fixes-implementation-checklist.md`，严格按依赖顺序执行；每项经新的临时只读 verification subagent PASS 后才能继续。
+
+若实施需要新增迁移、改变产品冻结 D1～D5、偏离 T1～T10=A、扩大 UX-08～10、修改 AAP 公共面，或改变 AC-01～AC-15，必须停止并回到 Knower/Atlas 与负责人确认，不得由 Forge自行决定。
 
 ## 1. 现状证据
 
@@ -904,15 +906,15 @@ Smart request 新字段因旧后端 `DisallowUnknownFields` 无法识别，所�
 | backend-first/frontend-second 顺序错误 | 中 | 部署门禁和 rollback 顺序测试 |
 | UI 文档与技术状态机后续漂移 | 中 | Canvas UI v0.1 已并入 §10；服务端状态/产品门禁优先，特别锁定 RUNNING composer Disabled，并用 AC/组件测试双向校验 |
 
-## 14. 待负责人确认的技术决策
+## 14. 已批准的技术决策
 
-以下每项均给出事实、选项、推荐与影响。未明确确认时不得实施。
+负责人已批准本节 T1～T10 全部选择 A。下列事实、备选与影响继续保留作为实施变更控制依据；任何改选都必须重新确认。
 
 ### T1 Workflow editor context API
 
 **事实：** 现有 Readiness 已读取 latest Compilation 并返回当前性、合法性和 blockers；没有 GET Compilation detail。
 
-- A（推荐）：并行复用 Draft + Readiness，不新增 API。
+- A（已批准）：并行复用 Draft + Readiness，不新增 API。
 - B：新增 `GET .../editor-context` 聚合 Draft/Compilation/Readiness。
 - C：只修详情关闭时机，不加载 Readiness。
 
@@ -922,7 +924,7 @@ Smart request 新字段因旧后端 `DisallowUnknownFields` 无法识别，所�
 
 **事实：** Console/AAP 可共用 chatruntime bridge；AAP 公共契约冻结，但内部 runtime 行为可修复。
 
-- A（推荐）：shared bridge 全部 Run 在实际 Tool call 才 resolve，并跑 AAP 全回归。
+- A（已批准）：shared bridge 全部 Run 在实际 Tool call 才 resolve，并跑 AAP 全回归。
 - B：仅 `TriggeredByType=USER` 的 Console Run lazy，AAP 保持 eager。
 - C：模型前过滤不可用 Tool。
 
@@ -932,7 +934,7 @@ Smart request 新字段因旧后端 `DisallowUnknownFields` 无法识别，所�
 
 **事实：** status/message 与 protocol event 不在同一事务；现有 schema 没有 outbox。
 
-- A（推荐）：status/message 先提交，deterministic terminal event 幂等追加，前端 GET 兜底。
+- A（已批准）：status/message 先提交，deterministic terminal event 幂等追加，前端 GET 兜底。
 - B：新增 transactional outbox/migration，异步投影。
 - C：只做前端 GET，不补 `run.failed`。
 
@@ -942,7 +944,7 @@ Smart request 新字段因旧后端 `DisallowUnknownFields` 无法识别，所�
 
 **事实：** 已有 session/draft lock version，但没有 in-flight/pending 列；Draft 与 Turn 目前非原子。
 
-- A（推荐）：advisory lock + existing lock versions + 短事务 UoW；API additive optional expected lock。
+- A（已批准）：advisory lock + existing lock versions + 短事务 UoW；API additive optional expected lock。
 - B：新增 PENDING/idempotency/lease 列与 migration。
 - C：仅前端防双击。
 
@@ -952,7 +954,7 @@ Smart request 新字段因旧后端 `DisallowUnknownFields` 无法识别，所�
 
 **事实：** 通用 ErrorDTO 已有 `code/requestId/traceId/retryable/details`，Guard 另有历史顶层字段。
 
-- A（推荐）：扩展 `error.details`，GET Turn additive 派生字段，暂保留 Guard 旧顶层字段。
+- A（已批准）：扩展 `error.details`，GET Turn additive 派生字段，暂保留 Guard 旧顶层字段。
 - B：业务失败统一返回 HTTP 200 terminal result。
 - C：新增独立 failure/recovery endpoint。
 
@@ -962,7 +964,7 @@ Smart request 新字段因旧后端 `DisallowUnknownFields` 无法识别，所�
 
 **事实：** Import 完成本身事务化，但历史/异常行可能出现摘要与 detail 不一致；D4 禁止自动回填。
 
-- A（推荐）：服务端 additive integrity + generation fail closed；UI 显式多选，默认选中 eligible endpoints。
+- A（已批准）：服务端 additive integrity + generation fail closed；UI 显式多选，默认选中 eligible endpoints。
 - B：仅前端计数和禁用，后端仍信任请求。
 - C：读取时重解析/持久化或批量迁移。
 
@@ -972,7 +974,7 @@ Smart request 新字段因旧后端 `DisallowUnknownFields` 无法识别，所�
 
 **事实：** 实际 invocation 已由 resolver fail closed；列表当前已加载 Tool 与 Connection但缺加载状态，且把 Published 在没有 TestRecord 时推断成测试通过，无法提供真实测试时间。
 
-- A（推荐）：后端批量返回当前相关 version 的安全 `latestTest` 摘要；前端从 workspace-scoped catalog 状态派生 availability，resolver 保持执行权威。
+- A（已批准）：后端批量返回当前相关 version 的安全 `latestTest` 摘要；前端从 workspace-scoped catalog 状态派生 availability，resolver 保持执行权威。
 - B：后端新增 Tool+Connection+Test aggregate availability DTO，全部状态由服务端投影。
 - C：Connection 退化时自动修改 Tool lifecycle。
 
@@ -982,7 +984,7 @@ Smart request 新字段因旧后端 `DisallowUnknownFields` 无法识别，所�
 
 **事实：** 现有 Workspace DTO + members API 足以计算后端角色矩阵；当前前端 action 集不完整。
 
-- A（推荐）：复用 members，扩展 action matrix，加载未知时 mutation fail closed。
+- A（已批准）：复用 members，扩展 action matrix，加载未知时 mutation fail closed。
 - B：后端每个 Workspace 返回 `allowedActions`。
 - C：各页面自行硬编码角色。
 
@@ -992,7 +994,7 @@ Smart request 新字段因旧后端 `DisallowUnknownFields` 无法识别，所�
 
 **事实：** Smart 新 request 字段会被旧后端的 `DisallowUnknownFields` 拒绝。
 
-- A（推荐）：backend-first、frontend-second；无新 flag；rollback frontend-first。
+- A（已批准）：backend-first、frontend-second；无新 flag；rollback frontend-first。
 - B：为 lazy resolution、Smart UoW、OpenAPI gate 分别新增 feature flags。
 - C：前后端 big-bang。
 
@@ -1000,9 +1002,9 @@ Smart request 新字段因旧后端 `DisallowUnknownFields` 无法识别，所�
 
 ### T10 UI 结构
 
-**事实：** 已批准产品设计要求原上下文内的 Loading/Error/Retry；Canvas UI v0.1 已交付并落实最小原位结构、完整状态矩阵、关键文案、恢复动作、可访问性与 390×844 输入，且声明无新增负责人未决项。本技术 v0.2 已将其并入 §10，并按冻结产品状态机收敛 RUNNING 输入门禁。
+**事实：** 已批准产品设计要求原上下文内的 Loading/Error/Retry；Canvas UI v0.1 已交付并落实最小原位结构、完整状态矩阵、关键文案、恢复动作、可访问性与 390×844 输入，且声明无新增负责人未决项。批准内容 v0.2（本正式版 v1.0）已将其并入 §10，并按冻结产品状态机收敛 RUNNING 输入门禁。
 
-- A（推荐）：最小原位方案——Workflow 详情内状态、Console 状态条、Smart Copilot 恢复卡、OpenAPI 双栏 endpoint/contract、Tool 三状态。
+- A（已批准）：最小原位方案——Workflow 详情内状态、Console 状态条、Smart Copilot 恢复卡、OpenAPI 双栏 endpoint/contract、Tool 三状态。
 - B：为五处入口新增全屏 wizard/统一恢复中心。
 - C：保持 toast-only。
 
@@ -1051,17 +1053,10 @@ Smart request 新字段因旧后端 `DisallowUnknownFields` 无法识别，所�
 
 ## 16. 确认与变更控制
 
-负责人可按以下格式回复：
+- 批准内容版本：技术方案 v0.2。
+- 正式冻结版本：本文件 v1.0 / Approved（内容与 v0.2 相同，仅记录批准状态）。
+- 负责人确认：Issue 评论 `e068c88e-84ce-4fe7-b34c-5bcbfa6694f9`；T1～T10 均为 A。
+- 当前未决项：无。
+- 实施清单：`docs/design/zkl-56-pm-e2e-ux-fixes-implementation-checklist.md` v1.0。
 
-```text
-T1=A，T2=A，T3=A，T4=A，T5=A，T6=A，T7=A，T8=A，T9=A，T10=A，批准技术方案 v0.2
-```
-
-若任一项选择不同，请说明选项与附加约束。沉默、“看起来可以”或只批准部分项不视为当前技术方案批准。
-
-获明确批准后，Knower 才会：
-
-1. 将本文件升级为 Approved 版本并记录确认；
-2. 亲自生成 `docs/design/zkl-56-pm-e2e-ux-fixes-implementation-checklist.md`；
-3. 按依赖顺序、逐项独立 verification subagent、测试/回滚/证据要求完成实施交接；
-4. 由 Conductor 再交 Forge。
+Forge 可在不改变已批准方案的前提下，按 checklist 连续完成下一项，不需要逐项等待 Knower。只有 checklist 缺失、冲突、不可执行，或实现需要改变范围、架构、API、数据、权限、安全、迁移、兼容、部署或验收决定时，才必须暂停并回到本确认闭环。
