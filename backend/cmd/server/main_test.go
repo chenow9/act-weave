@@ -225,6 +225,13 @@ func validServerConfig() backendconfig.Config {
 			Algorithm: "EdDSA", ActiveKeyID: "startup-aap-key",
 			PrivateKeyFile: "/run/secrets/startup-aap-key.pem", MaxTokenTTLSeconds: 900,
 		}},
+		// runStartup validates runtime budgets without Load/defaults.
+		Runtime: backendconfig.RuntimeConfig{
+			Eino: backendconfig.EinoRuntimeTuning{
+				MaxIterations:      backendconfig.DefaultEinoMaxIterations,
+				MaxToolInvocations: backendconfig.DefaultEinoMaxToolInvocations,
+			},
+		},
 		Encryption: backendconfig.EncryptionConfig{MasterKey: validStartupSecretMasterKey},
 		Storage: backendconfig.StorageConfig{MinIO: backendconfig.MinIOConfig{
 			Endpoint: "127.0.0.1:9000", AccessKey: "access", SecretKey: "secret",

@@ -46,7 +46,9 @@ func NewManagementService(
 	}
 	service := &ManagementService{
 		repository: repository, pepper: append([]byte(nil), pepper...), random: rand.Reader,
-		now: func() time.Time { return time.Now().UTC() },
+		// Postgres timestamptz is microsecond precision; keep returned and stored
+		// times Equal() after round-trip on Linux (true nanosecond clocks).
+		now: func() time.Time { return time.Now().UTC().Truncate(time.Microsecond) },
 	}
 	for _, option := range options {
 		if option == nil {
@@ -302,7 +304,7 @@ func (service *ManagementService) AddCredential(
 		if replacedType != string(input.Type) || replacedLock != input.ReplacesExpectedLockVersion || revokedAt.Valid {
 			return IssuedCredential{}, ErrRepositoryConflict
 		}
-		deadline := now.Add(input.Overlap).UTC()
+		deadline := now.Add(input.Overlap).UTC().Truncate(time.Microsecond)
 		result, err := tx.ExecContext(ctx, `
 			UPDATE agent_access_credentials
 			SET expires_at=$4,lock_version=lock_version+1

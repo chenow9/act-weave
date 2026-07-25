@@ -34,7 +34,9 @@ func NewConfirmationService(
 	}
 	service := &ConfirmationService{
 		repository: repository,
-		now:        func() time.Time { return time.Now().UTC() },
+		// Truncate to Postgres timestamptz resolution so sealed binding hashes
+		// and stored expires_at stay equal after round-trip (Linux CI nanos).
+		now: func() time.Time { return time.Now().UTC().Truncate(time.Microsecond) },
 		newResumeToken: func() (string, error) {
 			buffer := make([]byte, 32)
 			if _, err := rand.Read(buffer); err != nil {
@@ -129,12 +131,12 @@ func (service *ConfirmationService) buildRequest(
 	if err != nil || len(resumeToken) < 32 {
 		return newExecutionConfirmation{}, "", ErrConfirmationTokenInvalid
 	}
-	createdAt := service.now().UTC()
+	createdAt := service.now().UTC().Truncate(time.Microsecond)
 	if createdAt.IsZero() {
 		return newExecutionConfirmation{}, "", ErrConfirmationInvalid
 	}
 	resumeHash := sha256.Sum256([]byte(resumeToken))
-	expiresAt := createdAt.Add(input.Decision.ExpiresIn)
+	expiresAt := createdAt.Add(input.Decision.ExpiresIn).UTC().Truncate(time.Microsecond)
 	bindingHash, err := interactionBindingHash(
 		input.WorkspaceID, input.RunID, input.TargetItemID, input.ReleaseID,
 		input.Decision.InputHash, input.ConnectionID, input.PlanHash,

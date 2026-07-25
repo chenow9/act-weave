@@ -78,6 +78,20 @@ export function connectionProviderAuthScheme(
 }
 
 export function authSchemeSummary(provider: CapabilityProvider) {
+  const identity = (provider.driverConfig as Record<string, unknown> | undefined)?.outboundIdentity;
+  if (identity && typeof identity === "object") {
+    const modes = Array.isArray((identity as { supportedModes?: unknown }).supportedModes)
+      ? (identity as { supportedModes: unknown[] }).supportedModes.map((mode) => String(mode).toUpperCase())
+      : [];
+    const labels = modes
+      .map((mode) => {
+        if (mode === "BROKER_OBO") return "Broker / OBO";
+        if (mode === "REQUEST_PASSTHROUGH") return "请求透传";
+        return "";
+      })
+      .filter(Boolean);
+    if (labels.length) return labels.join("、");
+  }
   const contract = providerAuthContract(provider);
   if (!contract) return "未配置认证契约";
   return contract.schemes.map((scheme) => scheme.displayName).join("、");

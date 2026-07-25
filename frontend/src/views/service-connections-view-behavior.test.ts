@@ -3,8 +3,6 @@ import { reactive } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CapabilityProvider, ProviderAsset, ServiceConnection, ServiceConnectionVerification } from "../types/domain";
-import AppSelect from "../components/AppSelect.vue";
-import { defaultOAuthContract } from "../utils/provider-auth";
 import ServiceConnectionsView from "./ServiceConnectionsView.vue";
 
 const secretID = "019f68d9-d405-7032-9b21-542a7bf46d22";
@@ -33,7 +31,12 @@ function createStore() {
     loadServiceConnectionPage: vi.fn(async () => store.serviceConnectionPageItems),
     loadServiceConnectionCatalog: vi.fn(async () => store.serviceConnectionCatalog),
     createCredentialSecret: vi.fn(async () => ({ id: secretID })),
-    createServiceConnection: vi.fn(async (draft: ServiceConnection) => ({ ...connection, ...draft, id: "connection-created", lockVersion: 1 })),
+    createServiceConnection: vi.fn(async (draft: ServiceConnection, _credential = "", _options = {}) => ({
+      ...connection,
+      ...draft,
+      id: "connection-created",
+      lockVersion: 1,
+    })),
     updateServiceConnection: vi.fn(async (_id: string, draft: ServiceConnection) => ({ ...draft, lockVersion: draft.lockVersion + 1 })),
     deleteServiceConnection: vi.fn(async () => undefined),
     verifyConnection: vi.fn(async () => verificationFixture()),
@@ -71,7 +74,7 @@ describe("service connections v1 behavior", () => {
     vi.clearAllMocks();
   });
 
-  it("renders Connection fields from the selected Provider authentication contract", async () => {
+  it("renders Connection fields from the selected Provider outbound-identity contract", async () => {
     const wrapper = mountView();
     await flushPromises();
 
@@ -79,9 +82,10 @@ describe("service connections v1 behavior", () => {
     expect(wrapper.text()).toContain("服务 API（Capability Provider）");
     expect(wrapper.findAll("input").some((input) => (input.element as HTMLInputElement).value === "https://orders.example")).toBe(true);
     expect(wrapper.html()).not.toContain("https://orders.example/openapi.json");
-    expect(wrapper.findAll("input").some((input) => (input.element as HTMLInputElement).value === "OAuth2 Client Credentials")).toBe(true);
-    expect(wrapper.text()).toContain("Token Endpoint（Provider）");
-    expect(wrapper.find('input[type="password"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="connection-outbound-strategy"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain("出站身份策略");
+    expect(wrapper.get('[data-testid="outbound-mode-REQUEST_PASSTHROUGH"]').attributes("aria-checked")).toBe("true");
+    expect(wrapper.get('[data-testid="outbound-passthrough-fields"]').exists()).toBe(true);
     expect(wrapper.html()).not.toMatch(/apiKeyValue|apiSecretValue|fixedToken|Token 值/);
   });
 
@@ -93,87 +97,98 @@ describe("service connections v1 behavior", () => {
     expect(fixture.router.push).toHaveBeenCalledWith("/providers");
   });
 
-  it("creates an OAuth2 connection with a Secret reference instead of raw credentials", async () => {
+  it("creates a REQUEST_PASSTHROUGH connection without orphan Secret provisioning", async () => {
     const wrapper = mountView();
     await flushPromises();
     await wrapper.get(".connection-header-actions .primary-button").trigger("click");
     await wrapper.get('input[placeholder="例如：昆仑平台"]').setValue("Billing production");
-    await wrapper.get('input[placeholder="客户端标识"]').setValue("billing-client");
-    await wrapper.get('input[type="password"]').setValue("billing-secret");
-    await wrapper.get('[data-testid="connection-save-draft"]').trigger("click");
-    await flushPromises();
-
-    expect(fixture.store.createServiceConnection).toHaveBeenCalledWith(
-      expect.objectContaining({ providerId: "provider-1", authConfig: expect.objectContaining({ values: expect.objectContaining({ clientId: "billing-client" }) }) }),
-      "billing-secret",
-    );
-  });
-
-  it("submits the credential with Connection provisioning instead of creating an orphan Secret first", async () => {
-    const wrapper = mountView();
-    await flushPromises();
-    await wrapper.get(".connection-header-actions .primary-button").trigger("click");
-    await wrapper.get('input[placeholder="例如：昆仑平台"]').setValue("OAuth billing");
-    await wrapper.get('input[placeholder="客户端标识"]').setValue("billing-client");
-    await wrapper.get('input[type="password"]').setValue("billing-secret");
+    await wrapper.get('[data-testid="passthrough-max-residence"]').setValue("900");
     await wrapper.get('[data-testid="connection-save-draft"]').trigger("click");
     await flushPromises();
 
     expect(fixture.store.createCredentialSecret).not.toHaveBeenCalled();
     expect(fixture.store.createServiceConnection).toHaveBeenCalledWith(
-      expect.objectContaining({ authConfig: expect.objectContaining({ values: expect.objectContaining({ clientId: "billing-client" }) }) }),
-      "billing-secret",
+      expect.objectContaining({
+        providerId: "provider-1",
+        name: "Billing production",
+        outboundMode: "REQUEST_PASSTHROUGH",
+        outboundIdentity: expect.objectContaining({
+          schemaVersion: "outbound-connection.v1",
+          mode: "REQUEST_PASSTHROUGH",
+          requestPassthrough: expect.objectContaining({ maxResidenceSeconds: 900 }),
+        }),
+      }),
+      "",
+      expect.any(Object),
     );
   });
 
-  it("treats a write-only credential as an unsaved form change", async () => {
+  it("creates a BROKER_OBO connection with machine credential options", async () => {
     const wrapper = mountView();
     await flushPromises();
     await wrapper.get(".connection-header-actions .primary-button").trigger("click");
-    await wrapper.get('input[type="password"]').setValue("unsaved-secret");
+    await wrapper.get('input[placeholder="例如：昆仑平台"]').setValue("Broker billing");
+    await wrapper.get('[data-testid="outbound-mode-BROKER_OBO"]').trigger("click");
+    await flushPromises();
+    await wrapper.get('[data-testid="broker-client-id"]').setValue("billing-client");
+    await wrapper.get('[data-testid="broker-machine-credential"]').setValue("-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----");
+    await wrapper.get('[data-testid="connection-save-draft"]').trigger("click");
+    await flushPromises();
+
+    expect(fixture.store.createCredentialSecret).not.toHaveBeenCalled();
+    expect(fixture.store.createServiceConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "provider-1",
+        name: "Broker billing",
+        outboundMode: "BROKER_OBO",
+        outboundIdentity: expect.objectContaining({
+          mode: "BROKER_OBO",
+          brokerObo: expect.objectContaining({ clientId: "billing-client" }),
+        }),
+      }),
+      "",
+      expect.objectContaining({
+        machineCredentialPlaintext: expect.stringContaining("BEGIN PRIVATE KEY"),
+      }),
+    );
+  });
+
+  it("treats an edited outbound form field as an unsaved form change", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get(".connection-header-actions .primary-button").trigger("click");
+    await wrapper.get('[data-testid="passthrough-max-residence"]').setValue("1200");
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     await flushPromises();
     expect(wrapper.text()).toContain("放弃未保存修改？");
   });
 
-  it("lets a new Connection choose a non-default Provider authentication scheme", async () => {
-    const contract = fixture.store.providers[0].driverConfig.authentication;
-    contract.schemes.push({ key: "none", type: "NONE", displayName: "Public access", fields: [] });
+  it("lets a new Connection choose Broker/OBO instead of the default passthrough mode", async () => {
     const wrapper = mountView();
     await flushPromises();
     await wrapper.get(".connection-header-actions .primary-button").trigger("click");
-    const authSelect = wrapper.findAllComponents(AppSelect).find((item) => item.props("ariaLabel") === "认证方式");
-    expect(authSelect).toBeDefined();
-    authSelect!.vm.$emit("update:modelValue", "none");
+    expect(wrapper.get('[data-testid="outbound-mode-REQUEST_PASSTHROUGH"]').attributes("aria-checked")).toBe("true");
+    await wrapper.get('[data-testid="outbound-mode-BROKER_OBO"]').trigger("click");
     await flushPromises();
-    expect(wrapper.find('input[type="password"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="outbound-mode-BROKER_OBO"]').attributes("aria-checked")).toBe("true");
+    expect(wrapper.get('[data-testid="outbound-broker-fields"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="outbound-passthrough-fields"]').exists()).toBe(false);
   });
 
-  it("keeps a flat OAuth Connection legacy after its Provider publishes a contract", async () => {
-    const legacy = legacyOAuthConnectionFixture();
+  it("keeps a migration-required Connection marked until the wizard form is used", async () => {
+    const legacy = migrationConnectionFixture();
     fixture.store.serviceConnectionPageItems = [legacy];
     fixture.store.serviceConnectionCatalog = [legacy];
     fixture.store.serviceConnectionRegistryTotal = 1;
-    const originalAuthConfig = structuredClone(legacy.authConfig);
     const wrapper = mountView();
     await flushPromises();
 
+    expect(wrapper.text()).toContain("需迁移");
     await wrapper.get('button[aria-label="更多操作"]').trigger("click");
     await wrapper.get('button[aria-label="编辑连接"]').trigger("click");
-    expect(wrapper.text()).toContain("这是旧版认证配置");
-    expect(wrapper.text()).toContain("即使 Provider 已升级认证契约");
-    expect(wrapper.text()).not.toContain("Token Endpoint（Provider）");
-
-    await wrapper.get('[data-testid="connection-save-draft"]').trigger("click");
-    await flushPromises();
-
-    expect(fixture.store.updateServiceConnection).toHaveBeenCalledOnce();
-    const savedDraft = fixture.store.updateServiceConnection.mock.calls[0][1] as ServiceConnection;
-    expect(savedDraft.authConfig).toEqual(originalAuthConfig);
-    expect(savedDraft.authConfig.schemeKey).toBeUndefined();
-    expect(savedDraft.authConfig.values).toBeUndefined();
-    expect(savedDraft.authConfig.tokenUrl).toBe("https://legacy.example/token");
-    expect(savedDraft.authConfig.clientAuth).toBe("client_secret_post");
+    expect(wrapper.get('[data-testid="connection-migration-wizard-hint"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain("迁移向导");
+    expect(wrapper.text()).toContain("旧认证只读对照");
   });
 
   it("uses the v1 verification result and stable diagnostics", async () => {
@@ -187,29 +202,123 @@ describe("service connections v1 behavior", () => {
   });
 });
 
+function outboundIdentityFixture(): Record<string, unknown> {
+  return {
+    schemaVersion: "outbound-identity.v1",
+    supportedModes: ["BROKER_OBO", "REQUEST_PASSTHROUGH"],
+    supportedSubjectTypes: ["USER"],
+    brokerObo: {
+      tokenEndpoint: "https://broker.example.com/oauth/token",
+      audience: "api://orders",
+      allowedScopes: ["orders.read"],
+      businessInjection: { headerName: "Authorization", prefix: "Bearer" },
+    },
+    requestPassthrough: {
+      credentialTypes: ["ACCESS_TOKEN"],
+      businessInjection: { headerName: "Authorization", prefix: "Bearer" },
+    },
+  };
+}
+
 function providerFixture(): CapabilityProvider {
-  return { id: "provider-1", name: "Orders API", kind: "HTTP_OPENAPI", driverKey: "http_openapi", transport: "HTTP", endpointConfig: { schemaVersion: 2, serviceBaseUrl: "https://orders.example", discovery: { documentUrl: "https://orders.example/openapi.json" }, verification: { method: "GET", path: "/health", expectedStatuses: [200] } }, driverConfig: { authentication: defaultOAuthContract("https://login.example/token") }, discoveryMode: "ON_DEMAND", status: "ACTIVE", createdBy: "user-1", updatedBy: "user-1", lockVersion: 1 };
+  return {
+    id: "provider-1",
+    name: "Orders API",
+    kind: "HTTP_OPENAPI",
+    driverKey: "http_openapi",
+    transport: "HTTP",
+    endpointConfig: {
+      schemaVersion: 2,
+      serviceBaseUrl: "https://orders.example",
+      discovery: { documentUrl: "https://orders.example/openapi.json" },
+      verification: { method: "GET", path: "/health", expectedStatuses: [200] },
+    },
+    driverConfig: { outboundIdentity: outboundIdentityFixture() },
+    discoveryMode: "ON_DEMAND",
+    status: "ACTIVE",
+    createdBy: "user-1",
+    updatedBy: "user-1",
+    lockVersion: 1,
+  };
 }
 
 function assetFixture(): ProviderAsset {
-  return { id: "asset-1", kind: "TOOL", externalId: "orders.get", name: "Get order", description: "", inputSchema: {}, outputSchema: {}, metadata: {}, sourceChecksum: "a".repeat(64), status: "ACTIVE" };
+  return {
+    id: "asset-1",
+    kind: "TOOL",
+    externalId: "orders.get",
+    name: "Get order",
+    description: "",
+    inputSchema: {},
+    outputSchema: {},
+    metadata: {},
+    sourceChecksum: "a".repeat(64),
+    status: "ACTIVE",
+  };
 }
 
 function connectionFixture(): ServiceConnection {
   return {
-    id: "connection-1", providerId: "provider-1", name: "Orders production", alias: "orders-prod", environment: "PRODUCTION", protocol: "HTTP",
-    protocolConfig: { domain: "https://orders.example/openapi.json", host: "orders.example", port: "", basePath: "/openapi.json", verificationMethod: "GET", verificationPath: "", expectedStatus: "200-299", expectedResponseContains: "", commonHeaders: {} },
-    protocolSchema: "provider.http-openapi.v1", authMode: "API_KEY",
-    authConfig: { mode: "api-key-secret", label: "API Key", tokenUrl: "", refreshUrl: "", refreshMode: "none", accessTokenPath: "", refreshTokenPath: "", expiresPath: "", injectionTemplate: "", retryOn401Policy: "", refreshFailurePolicy: "", credentialPlacement: "header", apiKeyName: "X-API-Key" },
-    credentialConfigured: true, credentialFingerprint: "sha256:abcd", grantedScopes: [], policy: {}, status: "UNVERIFIED", createdBy: "user-1", updatedBy: "user-1", lockVersion: 1,
+    id: "connection-1",
+    providerId: "provider-1",
+    name: "Orders production",
+    alias: "orders-prod",
+    environment: "PRODUCTION",
+    protocol: "HTTP",
+    protocolConfig: {
+      domain: "https://orders.example",
+      host: "orders.example",
+      port: "",
+      basePath: "",
+      verificationMethod: "GET",
+      verificationPath: "/health",
+      expectedStatus: "200",
+      expectedResponseContains: "",
+      commonHeaders: {},
+    },
+    protocolSchema: "http.connection.v1",
+    authMode: "REQUEST_PASSTHROUGH",
+    authConfig: {
+      mode: "",
+      label: "请求透传",
+      tokenUrl: "",
+      refreshUrl: "",
+      refreshMode: "none",
+      accessTokenPath: "",
+      refreshTokenPath: "",
+      expiresPath: "",
+      injectionTemplate: "",
+      retryOn401Policy: "",
+      refreshFailurePolicy: "",
+      credentialPlacement: "header",
+    },
+    outboundMode: "REQUEST_PASSTHROUGH",
+    outboundIdentity: {
+      schemaVersion: "outbound-connection.v1",
+      mode: "REQUEST_PASSTHROUGH",
+      requestPassthrough: { maxResidenceSeconds: 600 },
+    },
+    migrationState: "NONE",
+    credentialConfigured: true,
+    credentialFingerprint: "sha256:abcd",
+    grantedScopes: [],
+    policy: {},
+    status: "UNVERIFIED",
+    createdBy: "user-1",
+    updatedBy: "user-1",
+    lockVersion: 1,
   };
 }
 
-function legacyOAuthConnectionFixture(): ServiceConnection {
+function migrationConnectionFixture(): ServiceConnection {
   return {
     ...connectionFixture(),
-    id: "connection-legacy-oauth",
+    id: "connection-migration",
     name: "Legacy OAuth production",
+    status: "DISABLED",
+    migrationState: "MIGRATION_REQUIRED",
+    outboundMode: undefined,
+    outboundIdentity: undefined,
     authMode: "OAUTH2_CLIENT",
     authConfig: {
       mode: "oauth2-client",
@@ -234,5 +343,14 @@ function legacyOAuthConnectionFixture(): ServiceConnection {
 }
 
 function verificationFixture(): ServiceConnectionVerification {
-  return { id: "verify-1", workspaceId: "workspace-1", connectionId: "connection-1", status: "SUCCEEDED", diagnostics: { category: "OK", code: "CONNECTION_VERIFIED" }, latencyMs: 12, testedBy: "user-1", testedAt: "2026-07-15T03:00:00Z" };
+  return {
+    id: "verify-1",
+    workspaceId: "workspace-1",
+    connectionId: "connection-1",
+    status: "SUCCEEDED",
+    diagnostics: { category: "OK", code: "CONNECTION_VERIFIED" },
+    latencyMs: 12,
+    testedBy: "user-1",
+    testedAt: "2026-07-15T03:00:00Z",
+  };
 }

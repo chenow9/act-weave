@@ -1064,7 +1064,7 @@ describe("workflow trial run dialog", () => {
     });
 
     expect(wrapper.get('button[data-action="submit-trial-run"]').attributes("disabled")).toBeDefined();
-    expect(wrapper.text()).toContain("正在试运行");
+    expect(wrapper.text()).toContain("正在模拟试运行");
 
     await wrapper.get('button[data-action="submit-trial-run"]').trigger("click");
     await wrapper.get(".workflow-trial-run-header .ghost-button").trigger("click");
@@ -1126,6 +1126,26 @@ describe("workflow execution trace panel", () => {
   });
 });
 
+
+async function openWorkflowEditorFromMenu(wrapper: { findAll: (s: string) => any[]; vm: { $nextTick: () => Promise<void> } }, rowIndex = 0) {
+  const triggers = wrapper.findAll('button[aria-label="更多编排操作"]');
+  const trigger = triggers[rowIndex];
+  if (!trigger) {
+    throw new Error(`No workflow row actions trigger at index ${rowIndex}`);
+  }
+  await trigger.trigger("click");
+  await flushPromises();
+  const menuItem =
+    document.body.querySelector<HTMLButtonElement>('button[data-action-key="edit"]') ||
+    wrapper.findAll('button[data-action-key="edit"]')[0]?.element;
+  if (!menuItem) {
+    throw new Error("Edit workflow menu item not found");
+  }
+  menuItem.click();
+  await flushPromises();
+  await wrapper.vm.$nextTick();
+}
+
 describe("workflow graph editor", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
@@ -1171,7 +1191,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -1242,7 +1262,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -1331,7 +1351,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -1352,13 +1372,12 @@ describe("workflow graph editor", () => {
     expect(wrapper.find('[data-edge-id="edge-start-end"]').exists()).toBe(false);
 
     await wrapper.find('[data-node-id="end"]').trigger("click");
-    expect(wrapper.get(".workflow-inspector-meta").text()).toContain("X 100");
-    expect(wrapper.get(".workflow-inspector-meta").text()).toContain("Y 120");
+    expect(wrapper.get(".workflow-inspector-meta").text()).toContain("X 100 · Y 120");
 
     await wrapper.get('button[data-action="auto-layout-editor-graph"]').trigger("click");
 
-    expect(wrapper.get(".workflow-inspector-meta").text()).not.toContain("X 100");
-    expect(wrapper.get(".workflow-inspector-meta").text()).not.toContain("Y 120");
+    // Auto-layout repositions nodes onto the process spine; the original freehand coordinates must change.
+    expect(wrapper.get(".workflow-inspector-meta").text()).not.toContain("X 100 · Y 120");
   });
 
   it("does not load the removed Workflow approval compatibility resource when the editor opens", async () => {
@@ -1383,7 +1402,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -1458,7 +1477,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -1499,7 +1518,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -1544,7 +1563,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -1580,7 +1599,7 @@ describe("workflow graph editor", () => {
 
     await flushPromises();
     await wrapper.vm.$nextTick();
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -1620,7 +1639,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -1681,7 +1700,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -1699,13 +1718,13 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    expect(wrapper.get(".vue-flow__edge-text").text()).toBe("条件成立");
+    expect(wrapper.get(".workflow-flow-edge-label").text()).toBe("条件成立");
 
     await wrapper.get('.workflow-branch-select [data-value=""]').trigger("click");
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    expect(wrapper.find(".vue-flow__edge-text").exists()).toBe(false);
+    expect(wrapper.find(".workflow-flow-edge-label").exists()).toBe(false);
 
     await wrapper.get('button[data-action="save-editor-draft"]').trigger("click");
     await flushPromises();
@@ -1765,7 +1784,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -1842,7 +1861,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -1952,7 +1971,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -2115,7 +2134,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -2209,7 +2228,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -2280,7 +2299,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -2337,7 +2356,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -2396,7 +2415,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -2465,7 +2484,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -2622,7 +2641,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -2696,7 +2715,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -2741,7 +2760,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -2820,7 +2839,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -3089,8 +3108,14 @@ describe("workflow graph editor", () => {
     const row = wrapper.get(".data-table tbody tr");
     expect(row.text()).toContain("开发中草稿");
     expect(row.find(".workflow-status-badge.draft").exists()).toBe(true);
-    expect(row.get('button[data-action-key="edit"]').attributes("aria-label")).toBe("编辑流程图");
-    expect(row.get('button[data-action-key="edit"]').text()).toBe("编辑流程");
+    await row.get('button[aria-label="更多编排操作"]').trigger("click");
+    const editMenuItem = document.body.querySelector<HTMLButtonElement>('button[data-action-key="edit"]');
+    expect(editMenuItem).toBeTruthy();
+    expect(editMenuItem?.getAttribute("aria-label")).toBe("编辑流程图");
+    expect(editMenuItem?.textContent || "").toContain("编辑流程图");
+    // Close the overflow menu before opening the detail drawer.
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await flushPromises();
 
     await row.trigger("click");
     await flushPromises();
@@ -3126,7 +3151,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -3184,7 +3209,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -3222,8 +3247,8 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
-    await wrapper.findAll('button[title="编辑流程图"]')[1]?.trigger("click");
+    await openWorkflowEditorFromMenu(wrapper, 0);
+    await openWorkflowEditorFromMenu(wrapper, 1);
 
     secondDraft.resolve({
       data: draftFixtureFor("wf-second", "Second Start"),
@@ -3270,7 +3295,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button[title="编辑流程图"]').trigger("click");
+    await openWorkflowEditorFromMenu(wrapper);
     await wrapper.find('button.primary-button').trigger("click");
 
     firstDraft.resolve({
@@ -3316,14 +3341,16 @@ describe("workflow graph editor", () => {
     await wrapper.find(".data-table tbody tr").trigger("click");
     await flushPromises();
     await wrapper.vm.$nextTick();
+    expect(wrapper.find(".workflow-detail-modal-card").exists()).toBe(true);
 
-    const editButton = wrapper.findAll("button").find((button) => button.text() === "编辑流程图");
-    expect(editButton).toBeTruthy();
-    await editButton?.trigger("click");
+    // Opening the editor closes the detail modal immediately (same z-index stack).
+    await openWorkflowEditorFromMenu(wrapper);
+    expect(wrapper.find(".workflow-detail-modal-card").exists()).toBe(false);
 
-    const closeButton = wrapper.findAll("button").find((button) => button.text() === "关闭");
-    expect(closeButton).toBeTruthy();
-    await closeButton?.trigger("click");
+    // Abandon the pending draft load by entering create mode.
+    await wrapper.find("button.primary-button").trigger("click");
+    await flushPromises();
+    await wrapper.vm.$nextTick();
 
     pendingDraft.resolve({
       data: {

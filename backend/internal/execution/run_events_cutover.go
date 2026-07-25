@@ -111,7 +111,7 @@ func (r *RunEventRepository) appendProtocolEvent(
 	if err != nil {
 		return RunEvent{}, ErrRunInvalid
 	}
-	occurredAt := time.Now().UTC()
+	occurredAt := time.Now().UTC().Truncate(time.Microsecond)
 	appended, err := protocolevent.NewEventAppender().AppendInTx(ctx, tx, []protocolevent.NewProtocolEvent{{
 		ID: input.ID, EventStreamID: streamID,
 		WorkspaceID: input.WorkspaceID, AgentID: run.AgentID,

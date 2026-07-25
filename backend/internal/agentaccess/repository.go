@@ -600,6 +600,11 @@ func repositoryTimePointer(value sql.NullTime) *time.Time {
 	if !value.Valid {
 		return nil
 	}
-	result := value.Time.UTC()
+	result := value.Time.UTC().Truncate(time.Microsecond)
 	return &result
+}
+
+// repositoryTime normalizes wall times to Postgres timestamptz resolution.
+func repositoryTime(value time.Time) time.Time {
+	return value.UTC().Truncate(time.Microsecond)
 }

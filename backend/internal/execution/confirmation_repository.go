@@ -575,8 +575,8 @@ func scanConfirmationRecord(scanner confirmationScanner) (confirmationRepository
 		cancelled := cancelledAt.Time.UTC()
 		value.CancelledAt = &cancelled
 	}
-	value.CreatedAt = value.CreatedAt.UTC()
-	value.ExpiresAt = value.ExpiresAt.UTC()
+	value.CreatedAt = value.CreatedAt.UTC().Truncate(time.Microsecond)
+	value.ExpiresAt = value.ExpiresAt.UTC().Truncate(time.Microsecond)
 	return value, nil
 }
 

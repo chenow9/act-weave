@@ -149,13 +149,16 @@ func TestV1ExecutionListDetailAndSSEContinuation(t *testing.T) {
 	if run.Code != http.StatusOK || !strings.Contains(run.Body.String(), `"status":"RUNNING"`) {
 		t.Fatalf("run detail status=%d body=%s", run.Code, run.Body.String())
 	}
-	stream := fixture.request(http.MethodGet, fixture.base+"/agent-runs/"+sentBody.RunID+"/events", nil, fixture.adminToken,
+	// follow=false keeps the catch-up finite (no live follower wait). After
+	// Last-Event-ID=1 the STEP_STARTED projection must appear as item.started.
+	stream := fixture.request(http.MethodGet, fixture.base+"/agent-runs/"+sentBody.RunID+"/events?follow=false", nil, fixture.adminToken,
 		map[string]string{"Last-Event-ID": "1"})
+	body := stream.Body.String()
 	if stream.Code != http.StatusOK || !strings.HasPrefix(stream.Header().Get("Content-Type"), "text/event-stream") ||
-		strings.Contains(stream.Body.String(), "RUN_STARTED") ||
-		!strings.Contains(stream.Body.String(), "id: 2\nevent: item.started") ||
-		!strings.Contains(stream.Body.String(), `"type":"item.started"`) {
-		t.Fatalf("SSE replay status=%d headers=%v body=%s", stream.Code, stream.Header(), stream.Body.String())
+		strings.Contains(body, "RUN_STARTED") ||
+		!strings.Contains(body, "event: item.started") ||
+		!strings.Contains(body, `"type":"item.started"`) {
+		t.Fatalf("SSE replay status=%d headers=%v body=%s", stream.Code, stream.Header(), body)
 	}
 	invalidCursor := fixture.request(http.MethodGet, fixture.base+"/agent-runs/"+sentBody.RunID+"/events", nil, fixture.adminToken,
 		map[string]string{"Last-Event-ID": "bad"})

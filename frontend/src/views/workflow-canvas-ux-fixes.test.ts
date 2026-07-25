@@ -71,7 +71,9 @@ describe("workflow canvas UX safeguards", () => {
     expect(styles).toContain(".workflow-flow-handle::before");
     expect(styles).toContain("inset: -12px");
     expect(graphCanvas).toContain(":aria-label=\"`");
-    expect(graphCanvas).toContain("port.label");
+    // Single exit handle per side: accessible name uses node label + input/output direction.
+    expect(graphCanvas).toContain("port.direction === 'input' ? '输入' : '输出'");
+    expect(graphCanvas).toContain("visiblePortsForNode");
   });
 
   it("does not force fit-view after users manually adjust the viewport", () => {

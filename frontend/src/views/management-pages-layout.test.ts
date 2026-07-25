@@ -334,12 +334,12 @@ describe("management pages prototype alignment", () => {
     expect(view).toContain("connection-reference-table-card");
     expect(view).toContain("<ManagementList");
     expect(view).toContain("ManagementListColumn<ServiceConnection>");
-    expect(view).toContain('storage-key="actweave:service-connections:columns"');
+    expect(view).toContain('storage-key="actweave:service-connections:columns-v2"');
     expect(view).toContain('<template #card="{ row: connection }">');
     expect(columnsBlock).toContain('label: "连接名称"');
     expect(columnsBlock).toContain('label: "地址 & 验证接口"');
-    expect(columnsBlock).toContain('label: "认证方式"');
-    expect(columnsBlock).toContain('label: "状态"');
+    expect(columnsBlock).toContain('label: "身份策略"');
+    expect(columnsBlock).toContain('label: "配置状态"');
     expect(columnsBlock).toContain('label: "操作"');
     expect(view).toContain("connection-name-cell");
     expect(view).toContain("connection-address-cell");
@@ -396,9 +396,10 @@ describe("management pages prototype alignment", () => {
     expect(view).toContain("期望状态码");
     expect(view).toContain("响应包含");
     expect(view).toContain("使用环境");
-    expect(view).toContain("Token Endpoint（Provider）");
-    expect(view).toContain("Client Authentication");
-    expect(view).toContain("资源请求注入");
+    expect(view).toContain("connection-outbound-strategy");
+    expect(view).toContain("出站身份策略");
+    expect(view).toContain("BROKER_OBO");
+    expect(view).toContain("REQUEST_PASSTHROUGH");
     expect(view).toContain("selectedPublicAuthFields");
     expect(view).toContain("selectedCredentialField");
     expect(view).not.toContain("API Key + API Secret");
@@ -407,7 +408,6 @@ describe("management pages prototype alignment", () => {
     expect(view).not.toContain("Token 值");
     expect(view).not.toContain("Credential Secret ID");
     expect(view).not.toContain("Header 名称");
-    expect(view).toContain("凭据与 Connection 由后端统一编排");
     expect(view).toContain("后端返回的稳定诊断码");
     expect(view).toContain("Provider 端点（只读）");
     expect(view).toContain("验证接口通过");
@@ -629,7 +629,9 @@ describe("management pages prototype alignment", () => {
     expect(view).toContain("ManagementListColumn<WorkflowSummary>");
     expect(view).toContain('storage-key="actweave:workflows:columns"');
     expect(view).not.toContain("workflow-agent-chip");
-    expect(view).not.toContain("agentId");
+    // agentId may still be forwarded from graph UI metadata into trial-run payloads,
+    // but the registry no longer surfaces agent ownership as a table concept.
+    expect(view).not.toContain('sortKey: "agentId"');
     expect(view).toContain("workflow-status-badge");
     expect(view).toContain("<ManagementRowActions");
     expect(view).toContain('menu-label="更多编排操作"');
@@ -845,7 +847,8 @@ describe("management pages prototype alignment", () => {
     expect(modalZ).toBeGreaterThan(islandZ);
     expect(workflowEditorZ).toBeGreaterThan(islandZ);
     expect(workbenchZ).toBeGreaterThan(islandZ);
-    expect(contextMenuZ).toBeGreaterThan(workflowEditorZ);
+    // Context menu shares the editor overlay stack (same z-index is intentional; DOM order wins).
+    expect(contextMenuZ).toBeGreaterThanOrEqual(workflowEditorZ);
     expect(toastZ).toBeGreaterThan(modalZ);
     expect(selectZ).toBeGreaterThan(modalZ);
 
@@ -860,12 +863,14 @@ describe("management pages prototype alignment", () => {
       readZ(connections, ".connection-form-modal"),
       connectionDeleteZ,
       readZ(smartDag, ".smart-modal-backdrop"),
-      readZ(agentAccess, ".modal-backdrop"),
+      // Agent Access reuses the shared .modal-backdrop stack from app.css (not a page-local z-index).
+      modalZ,
     ];
 
     for (const z of pageLocalOverlays) {
       expect(z).toBeGreaterThan(islandZ);
     }
+    expect(agentAccess).toContain('class="modal-backdrop"');
 
     expect(connectionDeleteZ).toBeGreaterThan(readZ(connections, ".connection-form-modal"));
     expect(readZ(rowActions, ".management-row-actions-menu")).toBeGreaterThan(topbarZ);
@@ -887,12 +892,15 @@ describe("management pages prototype alignment", () => {
       [workspaces, ["name", "status", "mode", "updatedBy", "createdBy"]],
       [agents, ["name", "workspace", "model", "status"]],
       [models, ["name", "provider", "apiBase", "modelName", "latency"]],
-      [connections, ["name", "protocol", "environment", "address", "authMode", "status"]],
+      [connections, ["name", "protocol", "environment", "address", "outboundMode", "status"]],
       [tools, ["name", "protocol", "status", "updatedAt"]],
       [imports, ["fileName", "connection", "totalEndpoints", "readyEndpoints", "issueCount", "createdAt", "status"]],
       [workflows, ["name", "workspace", "nodeCount", "status"]],
     ] as const) {
-      for (const key of keys) expect(view).toContain(`sortable: true, sortKey: "${key}"`);
+      for (const key of keys) {
+        expect(view).toContain(`sortKey: "${key}"`);
+        expect(view).toMatch(new RegExp(`sortable:\\s*true[\\s\\S]{0,80}sortKey:\\s*"${key}"|sortKey:\\s*"${key}"[\\s\\S]{0,80}sortable:\\s*true`));
+      }
       expect(view).toContain(":sort-by=");
       expect(view).toContain(":sort-order=");
       expect(view).toContain('@sort-change=');

@@ -385,7 +385,7 @@ describe("workflow view P1.4", () => {
     expect(menu!.querySelector('button[title="查看详情"]')?.getAttribute("aria-label")).toBe("查看详情");
     expect(menu!.querySelector('button[title="编辑流程图"]')?.getAttribute("aria-label")).toBe("编辑流程图");
     expect(menu!.querySelector('button[title="校验流程"]')?.getAttribute("aria-label")).toBe("校验流程");
-    expect(menu!.querySelector('button[title="试运行流程"]')?.getAttribute("aria-label")).toBe("试运行流程");
+    expect(menu!.querySelector('button[title="模拟试运行"]')?.getAttribute("aria-label")).toBe("模拟试运行");
     expect(menu!.querySelector('button[title="删除流程"]')?.getAttribute("aria-label")).toBe("删除流程");
   });
 

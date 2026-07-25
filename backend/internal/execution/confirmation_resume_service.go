@@ -36,7 +36,8 @@ func NewConfirmationResumeService(
 	}
 	return &ConfirmationResumeService{
 		checkpoints: checkpoints, confirmations: confirmations, runs: runs, executors: executors,
-		now: func() time.Time { return time.Now().UTC() }, claimLease: 30 * time.Second,
+		now: func() time.Time { return time.Now().UTC().Truncate(time.Microsecond) },
+		claimLease: 30 * time.Second,
 	}, nil
 }
 

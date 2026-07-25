@@ -33,13 +33,13 @@ describe("service connections view", () => {
     expect(serviceConnectionsView).toContain('import ManagementList, { type ManagementListColumn }');
     expect(serviceConnectionsView).toContain("connectionColumns");
     expect(serviceConnectionsView).toContain("<ManagementList");
-    expect(serviceConnectionsView).toContain('storage-key="actweave:service-connections:columns"');
+    expect(serviceConnectionsView).toContain('storage-key="actweave:service-connections:columns-v2"');
     expect(serviceConnectionsView).toContain(':sticky-left-keys="[\'name\']"');
     expect(serviceConnectionsView).toContain(':sticky-right-keys="[\'actions\']"');
     expect(serviceConnectionsView).toContain(':selectable="false"');
     expect(serviceConnectionsView).toContain(':has-loaded="connectionsHasLoaded"');
     expect(serviceConnectionsView).toContain(':error="connectionLoadError"');
-    expect(serviceConnectionsView).toContain(':rows="integration.serviceConnectionPageItems"');
+    expect(serviceConnectionsView).toContain(':rows="filteredConnectionRows"');
     expect(serviceConnectionsView).toContain(':pagination="integration.serviceConnectionPagination"');
     expect(serviceConnectionsView).toContain('@update:search="updateConnectionSearch"');
     expect(serviceConnectionsView).toContain('@page-change="changeConnectionPage"');
@@ -57,7 +57,7 @@ describe("service connections view", () => {
     expect(serviceConnectionsView).toContain("connection-status-pill");
     expect(serviceConnectionsView).toContain('label: "协议"');
     expect(serviceConnectionsView).toContain('label: "环境"');
-    expect(serviceConnectionsView).toContain('label: "认证方式"');
+    expect(serviceConnectionsView).toContain('label: "身份策略"');
     expect(serviceConnectionsView).toContain("ManagementRowActions");
     expect(serviceConnectionsView).toContain("connectionMenuActions");
     expect(serviceConnectionsView).toContain("handleConnectionRowAction");

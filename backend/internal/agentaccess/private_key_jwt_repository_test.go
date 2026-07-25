@@ -49,7 +49,7 @@ func TestPrivateKeyJWTAuthenticationRepository(t *testing.T) {
 		!bytes.Equal(record.Credentials[0].JWKThumbprint, thumbprint[:]) {
 		t.Fatalf("private_key_jwt record=%+v err=%v", record, err)
 	}
-	usedAt := time.Now().UTC().Add(time.Second)
+	usedAt := time.Now().UTC().Add(time.Second).Truncate(time.Microsecond)
 	if err := repository.RecordPrivateKeyJWTAuthenticated(context.Background(), registration.Credential.ID,
 		registration.Client.ClientID, usedAt); err != nil {
 		t.Fatal(err)
@@ -57,7 +57,7 @@ func TestPrivateKeyJWTAuthenticationRepository(t *testing.T) {
 	credential, err := repository.GetCredential(context.Background(), repositoryWorkspaceID,
 		registration.Client.ID, registration.Credential.ID)
 	if err != nil || credential.LastUsedAt == nil || !credential.LastUsedAt.Equal(usedAt) {
-		t.Fatalf("private_key_jwt last use=%v err=%v", credential.LastUsedAt, err)
+		t.Fatalf("private_key_jwt last use=%v want=%v err=%v", credential.LastUsedAt, usedAt, err)
 	}
 	if _, _, err := management.SetClientStatus(context.Background(), repositoryWorkspaceID,
 		registration.Client.ID, repositoryOwnerID, agentaccess.StatusDisabled,

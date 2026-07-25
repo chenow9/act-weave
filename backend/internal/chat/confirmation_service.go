@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"time"
 
 	"actweave/backend/internal/execution"
 	"actweave/backend/internal/principal"
@@ -296,7 +297,8 @@ func chatInteractionDecisionBinding(value ChatConfirmation) execution.Interactio
 		RunID: value.RunID, TargetItemID: value.TargetItemID,
 		ReleaseID: value.TargetReleaseID, InputHash: value.InputHash,
 		ConnectionID: value.ConnectionID, PlanHash: value.PlanHash,
-		Version: value.ExecutionLockVersion, ExpiresAt: value.ExpiresAt,
+		Version: value.ExecutionLockVersion,
+		ExpiresAt:   value.ExpiresAt.UTC().Truncate(time.Microsecond),
 		BindingHash: value.InteractionBindingHash,
 	}
 }

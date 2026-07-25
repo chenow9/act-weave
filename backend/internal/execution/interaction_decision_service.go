@@ -34,7 +34,7 @@ func NewInteractionDecisionService(
 	}
 	return &InteractionDecisionService{
 		repository: repository, confirmations: confirmations, resumes: resumes,
-		now: func() time.Time { return time.Now().UTC() },
+		now: func() time.Time { return time.Now().UTC().Truncate(time.Microsecond) },
 	}, nil
 }
 
@@ -272,7 +272,8 @@ func normalizeInteractionDecision(input DecideInteractionInput) DecideInteractio
 	input.Binding.ConnectionID = strings.TrimSpace(input.Binding.ConnectionID)
 	input.Binding.PlanHash = strings.ToLower(strings.TrimSpace(input.Binding.PlanHash))
 	input.Binding.BindingHash = strings.ToLower(strings.TrimSpace(input.Binding.BindingHash))
-	input.Binding.ExpiresAt = input.Binding.ExpiresAt.UTC()
+	// Align client-echoed expiry with Postgres microsecond storage/seal.
+	input.Binding.ExpiresAt = input.Binding.ExpiresAt.UTC().Truncate(time.Microsecond)
 	return input
 }
 
@@ -301,7 +302,8 @@ func interactionDecisionBindingMatches(
 		binding.ReleaseID != confirmation.ReleaseID || binding.InputHash != confirmation.InputHash ||
 		binding.ConnectionID != confirmation.ConnectionID || binding.PlanHash != confirmation.PlanHash ||
 		binding.BindingHash != confirmation.InteractionBindingHash ||
-		binding.Version != confirmation.LockVersion || !binding.ExpiresAt.Equal(confirmation.ExpiresAt) {
+		binding.Version != confirmation.LockVersion ||
+		!binding.ExpiresAt.Equal(confirmation.ExpiresAt.UTC().Truncate(time.Microsecond)) {
 		return false
 	}
 	return checkpoint.RunID == confirmation.RunID && checkpoint.TargetItemID == confirmation.TargetItemID &&

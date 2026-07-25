@@ -111,12 +111,11 @@ jobs:
           node-version: "20"
       - name: install
         run: npm ci
-      - name: type-check + README Quickstart + unit + e2e
+      - name: type-check + README Quickstart + unit
         run: |
           npm run type-check
           npm run check:readme-quickstart
           npm test
-          npm run test:e2e
       - name: build + pack dry-run
         run: |
           npm run build
@@ -126,6 +125,9 @@ jobs:
           node -e "const p=require('./package.json'); if(p.private) process.exit(1)"
           # Quickstart exports must exist on the built package surface
           node -e "const m=require('./dist/index.js'); if(!m.AgentAccessClient||!m.StaticTokenProvider) process.exit(1); if(m.createAgentAccessClient||m.createStaticTokenProvider) process.exit(2)"
+      # e2e needs dist/ (bundle secret scan) and exercises examples/agent-access
+      - name: e2e
+        run: npm run test:e2e
 
   frontend:
     runs-on: ubuntu-latest

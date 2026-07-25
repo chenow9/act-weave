@@ -46,7 +46,8 @@ describe("app shell content", () => {
     expect(appShell).toContain("workspaceDisplayName");
     expect(appShell).not.toContain("未初始化");
     expect(appShell).not.toContain("1,284 req/min");
-    expect(appShell).toContain("if (workspaces.activeWorkspaceId) {");
+    expect(appShell).toContain("workspaces.items.length && activeModule !== 'overview'");
+    expect(appShell).toContain("workspaceId !== workspaces.activeWorkspaceId");
   });
 
   it("lets the chat console occupy the full shell workspace", () => {

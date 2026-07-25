@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"actweave/backend/internal/principal"
 )
@@ -200,8 +201,8 @@ func scanChatConfirmation(row scanner) (ChatConfirmation, error) {
 		timestamp := confirmedAt.Time.UTC()
 		value.ConfirmedAt = &timestamp
 	}
-	value.CreatedAt = value.CreatedAt.UTC()
-	value.ExpiresAt = value.ExpiresAt.UTC()
+	value.CreatedAt = value.CreatedAt.UTC().Truncate(time.Microsecond)
+	value.ExpiresAt = value.ExpiresAt.UTC().Truncate(time.Microsecond)
 	return value, nil
 }
 

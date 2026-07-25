@@ -188,7 +188,7 @@ func (repository *Repository) RecordClientSecretAuthenticated(
 		  AND k.valid_from <= $3 AND (k.expires_at IS NULL OR k.expires_at > $3)
 		  AND k.revoked_at IS NULL
 		  AND (k.last_used_at IS NULL OR k.last_used_at < $3 - interval '1 minute')
-	`, credentialID, publicClientID, usedAt.UTC())
+	`, credentialID, publicClientID, repositoryTime(usedAt))
 	if err != nil {
 		return mapRepositoryWrite("record Client Secret authentication", err)
 	}

@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import AppSelect from "../components/AppSelect.vue";
 import type { CapabilityProvider, ProviderAsset } from "../types/domain";
-import { defaultOAuthContract } from "../utils/provider-auth";
 import ProvidersView from "./ProvidersView.vue";
 
 const fixture = vi.hoisted(() => ({ integration: null as any, workspaces: null as any }));
@@ -89,10 +88,11 @@ describe("providers management view", () => {
     expect(wrapper.text()).toContain("运行中");
     expect(wrapper.text()).toContain("https://api.example.com/v1");
     expect(wrapper.text()).toContain("https://docs.example.com/openapi.json");
-    expect(wrapper.text()).toContain("Platform OAuth2");
+    expect(wrapper.text()).toContain("Broker / OBO");
+    expect(wrapper.text()).toContain("请求透传");
   });
 
-  it("creates a schema-version 2 Provider with a schema-driven OAuth2 contract", async () => {
+  it("creates a schema-version 2 Provider with outbound-identity.v1 dual-mode contract", async () => {
     const wrapper = mountView();
     await flushPromises();
 
@@ -103,17 +103,13 @@ describe("providers management view", () => {
     await setAppSelect(wrapper, "provider-verification-method", "HEAD");
     await wrapper.get('[data-testid="provider-verification-path"]').setValue("health");
     await wrapper.get('[data-testid="provider-expected-statuses"]').setValue("200, 204");
-    await wrapper.get('[data-testid="provider-auth-oauth"]').setValue(true);
-    await wrapper.get('[data-testid="provider-scheme-name"]').setValue("Billing OAuth2");
-    await wrapper.get('[data-testid="provider-token-url-template"]').setValue("https://login.billing.example.com/{{tenantId}}/token");
-    await setAppSelect(wrapper, "provider-client-auth-method", "client_secret_post");
-    await wrapper.get('[data-testid="provider-add-auth-field"]').trigger("click");
-    await wrapper.get('[data-testid="provider-extra-field-key-0"]').setValue("tenantId");
-    await wrapper.get('[data-testid="provider-extra-field-label-0"]').setValue("Tenant ID");
-    await wrapper.get('[data-testid="provider-add-token-parameter"]').trigger("click");
-    await wrapper.get('[data-testid="provider-token-parameter-name-0"]').setValue("audience");
-    await setAppSelect(wrapper, "provider-token-parameter-field-0", "tenantId");
-    await wrapper.get('[data-testid="provider-access-token-path"]').setValue("data.access_token");
+
+    // Default create draft enables REQUEST_PASSTHROUGH; also enable Broker/OBO fields.
+    await wrapper.get('[data-testid="provider-mode-broker"]').setValue(true);
+    await flushPromises();
+    await wrapper.get('[data-testid="provider-broker-token-endpoint"]').setValue("https://broker.billing.example.com/oauth/token");
+    await wrapper.get('[data-testid="provider-broker-audience"]').setValue("api://billing");
+    await wrapper.get('[data-testid="provider-broker-scopes"]').setValue("orders.read inventory.read");
     await wrapper.get('[data-testid="provider-injection-header"]').setValue("X-Platform-Token");
     await wrapper.get('[data-testid="provider-injection-prefix"]').setValue("Token");
     await wrapper.get('[data-testid="provider-save"]').trigger("submit");
@@ -127,24 +123,21 @@ describe("providers management view", () => {
       discovery: { documentUrl: "https://docs.billing.example.com/openapi.json" },
       verification: { method: "HEAD", path: "/health", expectedStatuses: [200, 204] },
     });
-    expect(submitted.driverConfig.authentication).toMatchObject({
-      version: "service-auth.v1",
-      defaultSchemeKey: "oauth2-client",
-      schemes: [{
-        type: "OAUTH2_CLIENT",
-        displayName: "Billing OAuth2",
-        fields: expect.arrayContaining([
-          expect.objectContaining({ key: "clientSecret", kind: "SECRET" }),
-          expect.objectContaining({ key: "tenantId", kind: "TEXT" }),
-        ]),
-        oauth2: expect.objectContaining({
-          tokenUrlTemplate: "https://login.billing.example.com/{{tenantId}}/token",
-          clientAuthMethod: "client_secret_post",
-          tokenParameters: [{ name: "audience", field: "tenantId" }],
-          response: expect.objectContaining({ accessTokenPath: "data.access_token" }),
-          injection: { headerName: "X-Platform-Token", prefix: "Token" },
-        }),
-      }],
+    expect(submitted.driverConfig.authentication).toBeUndefined();
+    expect(submitted.driverConfig.outboundIdentity).toMatchObject({
+      schemaVersion: "outbound-identity.v1",
+      supportedModes: ["BROKER_OBO", "REQUEST_PASSTHROUGH"],
+      supportedSubjectTypes: ["USER"],
+      brokerObo: expect.objectContaining({
+        tokenEndpoint: "https://broker.billing.example.com/oauth/token",
+        audience: "api://billing",
+        allowedScopes: ["orders.read", "inventory.read"],
+        businessInjection: { headerName: "X-Platform-Token", prefix: "Token" },
+      }),
+      requestPassthrough: expect.objectContaining({
+        credentialTypes: ["ACCESS_TOKEN"],
+        businessInjection: { headerName: "X-Platform-Token", prefix: "Token" },
+      }),
     });
     expect(wrapper.find('[data-testid="provider-name"]').exists()).toBe(false);
   });
@@ -170,6 +163,10 @@ describe("providers management view", () => {
       schemaVersion: 2,
       serviceBaseUrl: "https://private.example.com/api",
       verification: { method: "GET", expectedStatuses: [200, 204] },
+    });
+    expect(submitted.driverConfig.outboundIdentity).toMatchObject({
+      schemaVersion: "outbound-identity.v1",
+      supportedModes: ["REQUEST_PASSTHROUGH"],
     });
   });
 
@@ -208,7 +205,8 @@ describe("providers management view", () => {
     await wrapper.get('[aria-label="Orders Platform 更多操作"]').trigger("click");
     await wrapper.get('[data-action-key="edit"]').trigger("click");
     expect((wrapper.get('[data-testid="provider-service-base-url"]').element as HTMLInputElement).value).toBe("https://api.example.com/v1");
-    expect((wrapper.get('[data-testid="provider-token-url-template"]').element as HTMLInputElement).value).toBe("https://login.example.com/{{tenantId}}/token");
+    expect((wrapper.get('[data-testid="provider-broker-token-endpoint"]').element as HTMLInputElement).value).toBe("https://broker.example.com/oauth/token");
+    expect((wrapper.get('[data-testid="provider-broker-audience"]').element as HTMLInputElement).value).toBe("api://orders");
     await wrapper.get('[data-testid="provider-name"]').setValue("Orders Platform v2");
     await wrapper.get('[data-testid="provider-save"]').trigger("submit");
     await flushPromises();
@@ -222,6 +220,12 @@ describe("providers management view", () => {
         egress: {
           allowedHosts: ["api.example.com"], allowedPorts: [443], allowedCIDRs: ["10.20.0.0/16"], maxRedirects: 1,
         },
+      }),
+      driverConfig: expect.objectContaining({
+        outboundIdentity: expect.objectContaining({
+          schemaVersion: "outbound-identity.v1",
+          supportedModes: expect.arrayContaining(["BROKER_OBO", "REQUEST_PASSTHROUGH"]),
+        }),
       }),
     }));
   });
@@ -247,26 +251,30 @@ describe("providers management view", () => {
     });
   });
 
-  it("edits a legacy Provider without forcing an authentication migration", async () => {
+  it("edits a legacy Provider and hard-cuts authentication to outbound-identity.v1", async () => {
     const legacy = providerFixture();
     legacy.id = "legacy-provider";
     legacy.name = "Legacy API";
-    legacy.driverConfig = { adapterOption: "preserve-me" };
+    legacy.driverConfig = { adapterOption: "preserve-me", authentication: { version: "service-auth.v1", defaultSchemeKey: "oauth2-client", schemes: [] } };
     fixture.integration.providers = [legacy];
     const wrapper = mountView();
     await flushPromises();
 
     await wrapper.get('[aria-label="Legacy API 更多操作"]').trigger("click");
     await wrapper.get('[data-action-key="edit"]').trigger("click");
-    expect(wrapper.text()).toContain("原样保留旧认证");
+    expect(wrapper.text()).toContain("outbound-identity.v1");
     await wrapper.get('[data-testid="provider-name"]').setValue("Legacy API renamed");
     await wrapper.get('[data-testid="provider-save"]').trigger("submit");
     await flushPromises();
 
-    expect(fixture.integration.updateProvider).toHaveBeenCalledWith(expect.objectContaining({
-      name: "Legacy API renamed",
-      driverConfig: { adapterOption: "preserve-me" },
-    }));
+    const updated = fixture.integration.updateProvider.mock.calls[0][0] as CapabilityProvider;
+    expect(updated.name).toBe("Legacy API renamed");
+    expect(updated.driverConfig.adapterOption).toBe("preserve-me");
+    expect(updated.driverConfig.authentication).toBeUndefined();
+    expect(updated.driverConfig.outboundIdentity).toMatchObject({
+      schemaVersion: "outbound-identity.v1",
+      supportedModes: expect.arrayContaining(["REQUEST_PASSTHROUGH"]),
+    });
   });
 
   it("shows a failed sync result instead of reporting success", async () => {
@@ -308,10 +316,26 @@ describe("providers management view", () => {
   });
 });
 
+function outboundIdentityFixture(): Record<string, unknown> {
+  return {
+    schemaVersion: "outbound-identity.v1",
+    supportedModes: ["BROKER_OBO", "REQUEST_PASSTHROUGH"],
+    supportedSubjectTypes: ["USER"],
+    brokerObo: {
+      tokenEndpoint: "https://broker.example.com/oauth/token",
+      audience: "api://orders",
+      grantType: "urn:ietf:params:oauth:grant-type:token-exchange",
+      allowedScopes: ["orders.read"],
+      businessInjection: { headerName: "Authorization", prefix: "Bearer" },
+    },
+    requestPassthrough: {
+      credentialTypes: ["ACCESS_TOKEN"],
+      businessInjection: { headerName: "Authorization", prefix: "Bearer" },
+    },
+  };
+}
+
 function providerFixture(): CapabilityProvider {
-  const authentication = defaultOAuthContract("https://login.example.com/{{tenantId}}/token");
-  authentication.schemes[0].displayName = "Platform OAuth2";
-  authentication.schemes[0].fields.splice(0, 0, { key: "tenantId", label: "Tenant ID", kind: "TEXT", required: true });
   return {
     id: "provider-1",
     name: "Orders Platform",
@@ -324,7 +348,7 @@ function providerFixture(): CapabilityProvider {
       discovery: { documentUrl: "https://docs.example.com/openapi.json" },
       verification: { method: "GET", path: "/health", expectedStatuses: [200, 204] },
     },
-    driverConfig: { authentication },
+    driverConfig: { outboundIdentity: outboundIdentityFixture() },
     discoveryMode: "ON_DEMAND",
     status: "ACTIVE",
     lastSyncedAt: "2026-07-16T02:00:00Z",

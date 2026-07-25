@@ -73,6 +73,10 @@ func interactionBindingHash(
 	if requestPrincipal.Validate() != nil || interactionVersion < 1 || expiresAt.IsZero() {
 		return "", ErrConfirmationInvalid
 	}
+	// Postgres timestamptz is microsecond precision. Seal the same truncated
+	// instant that will be stored so verifyInteractionBinding survives round-trip
+	// on platforms where time.Now has sub-microsecond resolution (Linux CI).
+	expiresAt = expiresAt.UTC().Truncate(time.Microsecond)
 	value := binding{
 		SpecVersion: interactionBindingSpecVersion,
 		WorkspaceID: strings.TrimSpace(workspaceID),
@@ -84,7 +88,7 @@ func interactionBindingHash(
 		RunID:              strings.TrimSpace(runID), TargetItemID: strings.TrimSpace(targetItemID),
 		ReleaseID: strings.TrimSpace(releaseID), InputHash: strings.ToLower(strings.TrimSpace(inputHash)),
 		ConnectionID: strings.TrimSpace(connectionID), PlanHash: strings.ToLower(strings.TrimSpace(planHash)),
-		Version: interactionVersion, ExpiresAt: expiresAt.UTC().Format(time.RFC3339Nano),
+		Version: interactionVersion, ExpiresAt: expiresAt.Format(time.RFC3339Nano),
 	}
 	if requestPrincipal.Identity.Subject != nil {
 		value.SubjectType = string(requestPrincipal.Identity.Subject.Type)

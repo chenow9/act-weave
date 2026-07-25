@@ -57,9 +57,9 @@ describe("ManagementSegmentedFilter", () => {
     expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual(["Attention"]);
   });
 
-  it("owns the prototype 38px trigger and floating menu visual contract", () => {
+  it("owns the prototype 40px trigger and floating menu visual contract", () => {
     const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "ManagementSegmentedFilter.vue"), "utf8");
-    expect(source).toContain("height: 38px;");
+    expect(source).toContain("height: 40px;");
     expect(source).toContain("flex: 0 0 auto;");
     expect(source).toContain("min-width: 134px;");
     expect(source).toContain("align-items: center;");
