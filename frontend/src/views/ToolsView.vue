@@ -202,19 +202,6 @@ const toolSummaryItems = computed<ManagementSummaryItem[]>(() => {
   ];
 });
 const hasWorkspaceContext = computed(() => Boolean(workspaces.activeWorkspaceId || workspaces.items[0]?.id));
-const connectionAlertTitle = computed(() => {
-  const total = connectionIssueTools.value.length;
-  if (!total) return "";
-  const publishedIssues = publishedWithConnectionIssueCount.value;
-  if (publishedIssues > 0) {
-    return `${total} 个 Tool 的服务连接需要处理（其中 ${publishedIssues} 个已发布，当前不可安全调用）`;
-  }
-  return `${total} 个 Tool 的服务连接需要处理`;
-});
-const connectionAlertDetail = computed(() => {
-  if (!connectionIssueTools.value.length) return "";
-  return "可筛选「连接异常」查看受影响 Tool，或前往服务连接页修复。";
-});
 const workspaceOptions = computed(() =>
   workspaces.items.map((workspace) => ({
     label: `${workspace.name} (${workspace.displayName})`,
@@ -518,10 +505,6 @@ function governanceToneClass(tone: string) {
 
 function toolUnifiedStatus(tool: Tool) {
   return getToolUnifiedStatus(tool, connectionForTool(tool));
-}
-
-function filterConnectionIssues() {
-  selectStatusFilter("attention");
 }
 
 function latestTool(tool: Tool) {
@@ -1296,23 +1279,6 @@ async function publishDraftTool() {
     </ManagementPageHeader>
 
     <ManagementSummaryStrip class="span-12" :items="toolSummaryItems" />
-
-    <!-- Standalone between KPI and table card so alert never sits on the list toolbar. -->
-    <div
-      v-if="hasWorkspaceContext && connectionIssueTools.length"
-      class="span-12 tool-connection-alert"
-      role="status"
-    >
-      <i class="fa-solid fa-triangle-exclamation" aria-hidden="true" />
-      <div class="tool-connection-alert-copy">
-        <strong class="tool-connection-alert-title">{{ connectionAlertTitle }}</strong>
-        <span class="tool-connection-alert-detail">{{ connectionAlertDetail }}</span>
-      </div>
-      <div class="tool-connection-alert-actions">
-        <button type="button" class="tool-connection-alert-filter" @click="filterConnectionIssues">筛选连接异常</button>
-        <button type="button" @click="router.push('/connections')">检查连接</button>
-      </div>
-    </div>
 
     <section class="span-12 tool-runtime-card management-list-card">
       <WorkspaceContextState
@@ -2195,87 +2161,6 @@ async function publishDraftTool() {
 .tool-reset-button:hover {
   background: #f8fafc;
   color: #0f172a;
-}
-
-/* Independent band between KPI strip and table card (方案 A). */
-.tool-connection-alert {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 0;
-  padding: 14px 18px;
-  border: 1px solid #fecdd3;
-  border-radius: 1.25rem;
-  background: #fff1f2;
-  box-shadow: 0 4px 20px -4px rgba(190, 24, 93, 0.08);
-  color: #be123c;
-}
-
-.tool-connection-alert > i {
-  flex: 0 0 auto;
-  width: 1.75rem;
-  height: 1.75rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: #ffe4e6;
-  color: #e11d48;
-  font-size: 0.85rem;
-}
-
-.tool-connection-alert-copy {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.tool-connection-alert-title {
-  color: #9f1239;
-  font-size: 0.9rem;
-  font-weight: 700;
-  line-height: 1.35;
-}
-
-.tool-connection-alert-detail {
-  color: #be123c;
-  font-size: 0.78rem;
-  font-weight: 500;
-  line-height: 1.4;
-  opacity: 0.9;
-}
-
-.tool-connection-alert-actions {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  flex-shrink: 0;
-}
-
-.tool-connection-alert-filter {
-  border-color: rgba(190, 24, 93, 0.28) !important;
-  background: #fff !important;
-  color: #9f1239 !important;
-}
-
-.tool-connection-alert button {
-  min-height: 34px;
-  flex: 0 0 auto;
-  padding: 0 12px;
-  border: 1px solid #fecdd3;
-  border-radius: 10px;
-  background: #fff;
-  color: #be123c;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.tool-connection-alert button:hover {
-  border-color: #fb7185;
-  background: #ffe4e6;
 }
 
 .tool-name-cell {

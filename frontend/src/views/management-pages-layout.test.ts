@@ -76,7 +76,8 @@ describe("management pages prototype alignment", () => {
     expect(registryTableBlock).not.toContain("<span>调用量 / 失败率</span>");
     expect(view).toContain("tool-summary-meta");
     expect(view).toContain("tool-endpoint-summary");
-    expect(view).toContain("tool-connection-alert");
+    expect(view).toContain("toolHasConnectionAttention");
+    expect(view).not.toContain("tool-connection-alert");
     expect(registryTableBlock).not.toContain("业务空间");
     expect(registryTableBlock).toContain("tool-protocol-cell");
     expect(registryTableBlock).not.toContain("参数摘要");

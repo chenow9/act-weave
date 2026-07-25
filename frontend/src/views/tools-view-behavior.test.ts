@@ -259,7 +259,7 @@ describe("tools view detail behavior", () => {
     wrapper.unmount();
   });
 
-  it("aligns 需处理 KPI and alert with connection attention, not lifecycle Review alone", async () => {
+  it("aligns 需处理 KPI with connection attention and keeps composite status pills", async () => {
     integrationState.tools = [
       { ...makeTool("tool-published-broken", "missing-connection", "已发布坏连接"), status: "Published" },
       { ...makeTool("tool-published-ok", "connection-1", "已发布好连接"), status: "Published" },
@@ -276,20 +276,14 @@ describe("tools view detail behavior", () => {
     expect(summary).toMatch(/工具总数\s*3/);
     expect(summary).toMatch(/已发布\s*2/);
     expect(summary).toMatch(/需处理\s*1/);
-    const alert = wrapper.get(".tool-connection-alert");
-    expect(alert.classes()).toContain("span-12");
-    expect(alert.text()).toContain("1 个 Tool");
-    expect(alert.text()).toContain("已发布");
-    expect(alert.text()).toContain("筛选连接异常");
-    // Standalone between KPI and table — not nested inside the list card chrome.
-    expect(alert.element.closest(".tool-runtime-card")).toBeNull();
-    expect(wrapper.get(".management-summary-strip").element.nextElementSibling).toBe(alert.element);
+    expect(wrapper.find(".tool-connection-alert").exists()).toBe(false);
 
     const statusPills = wrapper.findAll('td[data-column-key="status"] .tool-status-pill').map((node) => node.text());
     expect(statusPills.some((text) => text.includes("已发布") && text.includes("连接缺失"))).toBe(true);
 
     loadToolPageMock.mockClear();
-    await wrapper.get(".tool-connection-alert-filter").trigger("click");
+    await wrapper.get('button[aria-label="工具状态筛选"]').trigger("click");
+    await wrapper.get('button[role="option"][value="attention"]').trigger("click");
     await flushPromises();
     expect(loadToolPageMock).toHaveBeenLastCalledWith({
       query: "",
