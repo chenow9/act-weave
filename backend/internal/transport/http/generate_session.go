@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime"
+	"strings"
 	"time"
 
 	"actweave/backend/internal/authz"
@@ -22,6 +23,7 @@ type GenerateSessionService interface {
 	ApplySessionTurn(context.Context, smartdag.ApplySessionTurnRequest) (smartdag.ApplySessionTurnResult, error)
 	GetSession(context.Context, string, string) (smartdag.SessionDetail, error)
 	CloseSession(context.Context, string, string) (smartdag.GenerateSession, error)
+	CloseSessionWith(context.Context, smartdag.CloseSessionRequest) (smartdag.GenerateSession, error)
 }
 
 // GenerateSessionRoutes registers Console additive workflow-generate-sessions APIs.
@@ -102,6 +104,9 @@ type applyGenerateTurnRequest struct {
 	Feedback json.RawMessage `json:"feedback"`
 	// ModelConfigID is rejected (D2 no body bypass).
 	ModelConfigID string `json:"modelConfigId"`
+	// ExpectedSessionLockVersion is optional for old clients (ZKL-56 T4 / checklist #3–4).
+	// New frontend always sends it; omission is accepted for publish compatibility.
+	ExpectedSessionLockVersion *int64 `json:"expectedSessionLockVersion"`
 }
 
 func (r *GenerateSessionRoutes) applyTurn(c *gin.Context) {
@@ -117,17 +122,19 @@ func (r *GenerateSessionRoutes) applyTurn(c *gin.Context) {
 	requestContext, _ := RequestContextFrom(c.Request.Context())
 	traceID := requestContext.TraceID
 	result, err := r.sessions.ApplySessionTurn(c.Request.Context(), smartdag.ApplySessionTurnRequest{
-		WorkspaceID:          c.Param("wid"),
-		SessionID:            c.Param("sid"),
-		Message:              request.Message,
-		RequestModelConfigID: request.ModelConfigID,
-		CreatedBy:            actor(c),
-		TraceID:              traceID,
-		Feedback:             request.Feedback,
+		WorkspaceID:                c.Param("wid"),
+		SessionID:                  c.Param("sid"),
+		Message:                    request.Message,
+		RequestModelConfigID:       request.ModelConfigID,
+		CreatedBy:                  actor(c),
+		TraceID:                    traceID,
+		Feedback:                   request.Feedback,
+		ExpectedSessionLockVersion: request.ExpectedSessionLockVersion,
 	})
 	latency := time.Since(startedAt)
 	if err != nil {
 		// Attach guardReport when available for GUARD_REJECTED responses.
+		// Legacy top-level guard fields are retained; standard details also include stage.
 		var guardErr *smartdag.GuardError
 		if errors.As(err, &guardErr) {
 			metrics.SmartDag().ObserveGenerate("guard_rejected", latency)
@@ -141,19 +148,21 @@ func (r *GenerateSessionRoutes) applyTurn(c *gin.Context) {
 				"trace_id", traceID,
 				"duration_ms", latency.Milliseconds(),
 			)
-			RespondErrorWithDetails(c, err, gin.H{
-				"guardReport":  guardErr.Report,
-				"sessionId":    result.SessionID,
-				"turnId":       result.TurnID,
-				"generationId": result.GenerationID,
-				"agentId":      result.AgentID,
-				"promptHash":   result.Audit.PromptHash,
-				"traceId":      traceID,
+			RespondSmartDagTurnError(c, err, smartDagTurnErrorContext{
+				SessionID:    result.SessionID,
+				TurnID:       result.TurnID,
+				GenerationID: result.GenerationID,
+				AgentID:      result.AgentID,
+				PromptHash:   result.Audit.PromptHash,
+				TraceID:      traceID,
+				GuardReport:  &guardErr.Report,
 			})
 			return
 		}
 		resultCode := "failed"
-		if errors.Is(err, smartdag.ErrAgentModelRequired) {
+		if tf, ok := smartdag.AsTurnFailure(err); ok && tf != nil {
+			resultCode = strings.ToLower(tf.Code)
+		} else if errors.Is(err, smartdag.ErrAgentModelRequired) {
 			resultCode = "agent_model_required"
 		}
 		metrics.SmartDag().ObserveGenerate(resultCode, latency)
@@ -165,7 +174,13 @@ func (r *GenerateSessionRoutes) applyTurn(c *gin.Context) {
 			"trace_id", traceID,
 			"duration_ms", latency.Milliseconds(),
 		)
-		RespondError(c, err)
+		RespondSmartDagTurnError(c, err, smartDagTurnErrorContext{
+			SessionID:    firstNonEmpty(result.SessionID, c.Param("sid")),
+			TurnID:       result.TurnID,
+			GenerationID: result.GenerationID,
+			AgentID:      result.AgentID,
+			TraceID:      traceID,
+		})
 		return
 	}
 
@@ -249,19 +264,37 @@ func (r *GenerateSessionRoutes) getSession(c *gin.Context) {
 	c.JSON(http.StatusOK, body)
 }
 
+type closeGenerateSessionRequest struct {
+	// ExpectedSessionLockVersion is optional; old clients may send {} (ZKL-56).
+	ExpectedSessionLockVersion *int64 `json:"expectedSessionLockVersion"`
+}
+
 func (r *GenerateSessionRoutes) closeSession(c *gin.Context) {
 	if !r.authorize(c, authz.ActionEdit) {
 		return
 	}
-	session, err := r.sessions.CloseSession(c.Request.Context(), c.Param("wid"), c.Param("sid"))
+	// Optional body; empty/{} remains valid for old clients.
+	var request closeGenerateSessionRequest
+	if c.Request.ContentLength != 0 {
+		if decodeJSON(c, &request) != nil {
+			// Tolerate empty body decode issues by treating as no expected version.
+			request = closeGenerateSessionRequest{}
+		}
+	}
+	session, err := r.sessions.CloseSessionWith(c.Request.Context(), smartdag.CloseSessionRequest{
+		WorkspaceID:                c.Param("wid"),
+		SessionID:                  c.Param("sid"),
+		ExpectedSessionLockVersion: request.ExpectedSessionLockVersion,
+	})
 	if err != nil {
 		RespondError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"sessionId": session.ID,
-		"status":    session.Status,
-		"closedAt":  session.ClosedAt,
+		"sessionId":   session.ID,
+		"status":      session.Status,
+		"closedAt":    session.ClosedAt,
+		"lockVersion": session.LockVersion,
 	})
 }
 
@@ -271,6 +304,7 @@ type generateSessionDTO struct {
 	ModelConfigID string          `json:"modelConfigId"`
 	WorkflowID    *string         `json:"workflowId,omitempty"`
 	Status        string          `json:"status"`
+	LockVersion   int64           `json:"lockVersion"`
 	PromptID      string          `json:"promptId,omitempty"`
 	PromptHash    string          `json:"promptHash,omitempty"`
 	Constraints   json.RawMessage `json:"constraints,omitempty"`
@@ -286,6 +320,7 @@ func generateSessionDTOFor(session smartdag.GenerateSession) generateSessionDTO 
 		ModelConfigID: session.ModelConfigID,
 		WorkflowID:    session.WorkflowID,
 		Status:        session.Status,
+		LockVersion:   session.LockVersion,
 		PromptID:      session.PromptID,
 		PromptHash:    session.PromptHash,
 		Constraints:   session.Constraints,
@@ -306,13 +341,16 @@ type generateTurnDTO struct {
 	DraftVersion     *int64               `json:"draftVersion,omitempty"`
 	Status           string               `json:"status"`
 	ErrorCode        string               `json:"errorCode,omitempty"`
-	PromptID         string               `json:"promptId,omitempty"`
-	PromptHash       string               `json:"promptHash,omitempty"`
-	CreatedAt        time.Time            `json:"createdAt"`
+	// FailureStage / Retryable are derived from errorCode at read time (no backfill).
+	FailureStage *string    `json:"failureStage,omitempty"`
+	Retryable    *bool      `json:"retryable,omitempty"`
+	PromptID     string     `json:"promptId,omitempty"`
+	PromptHash   string     `json:"promptHash,omitempty"`
+	CreatedAt    time.Time  `json:"createdAt"`
 }
 
 func generateTurnDTOFor(turn smartdag.GenerateTurn) generateTurnDTO {
-	return generateTurnDTO{
+	dto := generateTurnDTO{
 		TurnID:           turn.ID,
 		TurnIndex:        turn.TurnIndex,
 		UserMessage:      turn.UserMessage,
@@ -327,6 +365,104 @@ func generateTurnDTOFor(turn smartdag.GenerateTurn) generateTurnDTO {
 		PromptHash:       turn.PromptHash,
 		CreatedAt:        turn.CreatedAt,
 	}
+	// Only terminal non-success turns expose failure projection.
+	if turn.Status == smartdag.TurnStatusFailed || turn.Status == smartdag.TurnStatusGuardRejected ||
+		strings.TrimSpace(turn.ErrorCode) != "" {
+		stage, retryable, _ := smartdag.ClassifyTurnErrorCode(turn.ErrorCode)
+		stageStr := string(stage)
+		dto.FailureStage = &stageStr
+		dto.Retryable = &retryable
+	}
+	return dto
+}
+
+// smartDagTurnErrorContext carries additive public correlation for turn failures.
+type smartDagTurnErrorContext struct {
+	SessionID          string
+	SessionStatus      string
+	SessionLockVersion *int64
+	TurnID             string
+	GenerationID       string
+	AgentID            string
+	PromptHash         string
+	TraceID            string
+	GuardReport        *smartdag.GuardReport
+}
+
+// RespondSmartDagTurnError writes a standard ErrorDTO with SMART_DAG_TURN_FAILURE
+// details, while retaining legacy Guard top-level fields for one compatibility version.
+func RespondSmartDagTurnError(c *gin.Context, err error, ctx smartDagTurnErrorContext) {
+	mapped := mapError(err)
+	_, file, line, _ := runtime.Caller(1)
+	c.Set(requestFailureKey, requestFailure{err: err, mapped: mapped, file: file, line: line})
+	request, _ := RequestContextFrom(c.Request.Context())
+	retryable := mappedRetryable(mapped)
+	stage := string(smartdag.FailureStageUnknown)
+	code := mapped.code
+	message := mapped.message
+	if tf, ok := smartdag.AsTurnFailure(err); ok && tf != nil {
+		retryable = tf.Retryable
+		stage = string(tf.Stage)
+		code = tf.Code
+		if strings.TrimSpace(tf.Message) != "" {
+			message = tf.Message
+		}
+	} else if errors.Is(err, smartdag.ErrGuardRejected) {
+		stage = string(smartdag.FailureStageGuard)
+		retryable = true
+	}
+	detail := map[string]any{
+		"kind":  "SMART_DAG_TURN_FAILURE",
+		"stage": stage,
+	}
+	if strings.TrimSpace(ctx.SessionID) != "" {
+		detail["sessionId"] = ctx.SessionID
+	}
+	if strings.TrimSpace(ctx.SessionStatus) != "" {
+		detail["sessionStatus"] = ctx.SessionStatus
+	}
+	if ctx.SessionLockVersion != nil {
+		detail["sessionLockVersion"] = *ctx.SessionLockVersion
+	}
+	if strings.TrimSpace(ctx.TurnID) != "" {
+		detail["turnId"] = ctx.TurnID
+	}
+	if strings.TrimSpace(ctx.GenerationID) != "" {
+		detail["generationId"] = ctx.GenerationID
+	}
+	body := gin.H{
+		"error": ErrorDTO{
+			Code:      code,
+			Message:   message,
+			RequestID: request.RequestID,
+			TraceID:   firstNonEmpty(request.TraceID, ctx.TraceID),
+			Retryable: retryable,
+			Details:   []map[string]any{detail},
+		},
+	}
+	// Legacy Guard top-level fields retained one version (ZKL-56 §6.1).
+	if ctx.GuardReport != nil {
+		body["guardReport"] = *ctx.GuardReport
+	}
+	if strings.TrimSpace(ctx.SessionID) != "" {
+		body["sessionId"] = ctx.SessionID
+	}
+	if strings.TrimSpace(ctx.TurnID) != "" {
+		body["turnId"] = ctx.TurnID
+	}
+	if strings.TrimSpace(ctx.GenerationID) != "" {
+		body["generationId"] = ctx.GenerationID
+	}
+	if strings.TrimSpace(ctx.AgentID) != "" {
+		body["agentId"] = ctx.AgentID
+	}
+	if strings.TrimSpace(ctx.PromptHash) != "" {
+		body["promptHash"] = ctx.PromptHash
+	}
+	if strings.TrimSpace(ctx.TraceID) != "" {
+		body["traceId"] = ctx.TraceID
+	}
+	c.AbortWithStatusJSON(mapped.status, body)
 }
 
 // RespondErrorWithDetails maps err and merges extra top-level fields into the error response.
@@ -342,7 +478,7 @@ func RespondErrorWithDetails(c *gin.Context, err error, details gin.H) {
 			Message:   mapped.message,
 			RequestID: request.RequestID,
 			TraceID:   request.TraceID,
-			Retryable: isRetryableHTTPStatus(mapped.status),
+			Retryable: mappedRetryable(mapped),
 			Details:   []map[string]any{},
 		},
 	}
@@ -350,4 +486,13 @@ func RespondErrorWithDetails(c *gin.Context, err error, details gin.H) {
 		body[key] = value
 	}
 	c.AbortWithStatusJSON(mapped.status, body)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
 }

@@ -208,9 +208,12 @@ export const useWorkflowStore = defineStore("workflow", {
     },
     async loadWorkflowDraft(workflowId: string) {
       const workspaceID = this.workspaceIDFor(workflowId);
-      const response = await apiClient.get<WorkflowDraftDTO>(`/workspaces/${workspaceID}/workflows/${workflowId}/draft`);
+      // ZKL-56: Draft + Readiness in parallel; no new editor-context API.
+      const [response, readiness] = await Promise.all([
+        apiClient.get<WorkflowDraftDTO>(`/workspaces/${workspaceID}/workflows/${workflowId}/draft`),
+        this.loadWorkflowReadiness(workflowId),
+      ]);
       const draft = draftFromDTO(response.data, workspaceID, workflowId, response.headers?.etag);
-      const readiness = await this.loadWorkflowReadiness(workflowId);
       return {
         draft,
         latestCompilation: this.activeCompilation?.workflowId === workflowId ? this.activeCompilation : undefined,

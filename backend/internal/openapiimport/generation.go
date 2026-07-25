@@ -101,6 +101,32 @@ func (s *GenerationService) Generate(
 		return nil, ErrConflict
 	}
 
+	// ZKL-56: re-evaluate full import integrity inside the FOR UPDATE transaction
+	// before trusting any client-selected endpoint IDs.
+	allEndpoints, err := listEndpointsInTx(ctx, tx, request.WorkspaceID, request.ImportID)
+	if err != nil {
+		return nil, err
+	}
+	impSnapshot := Import{
+		ID: request.ImportID, WorkspaceID: request.WorkspaceID, Status: status,
+		// Summary counts loaded from the locked import row would be ideal; when
+		// unavailable, use actual list lengths so COMPLETE/INCOMPLETE stays consistent.
+		TotalEndpoints: len(allEndpoints),
+		ReadyEndpoints: countReadyEligible(allEndpoints),
+	}
+	// Prefer live summary from locked import if columns available via re-query.
+	var totalEndpoints, readyEndpoints int
+	if scanErr := tx.QueryRowContext(ctx, `
+		SELECT total_endpoints, ready_endpoints FROM openapi_imports
+		WHERE workspace_id=$1 AND id=$2
+	`, request.WorkspaceID, request.ImportID).Scan(&totalEndpoints, &readyEndpoints); scanErr == nil {
+		impSnapshot.TotalEndpoints = totalEndpoints
+		impSnapshot.ReadyEndpoints = readyEndpoints
+	}
+	if err := AssertImportComplete(impSnapshot, allEndpoints); err != nil {
+		return nil, err
+	}
+
 	endpoints, err := loadGenerationEndpoints(ctx, tx, request.WorkspaceID, request.ImportID, request.EndpointIDs)
 	if err != nil {
 		return nil, err
@@ -112,6 +138,10 @@ func (s *GenerationService) Generate(
 	for _, endpoint := range endpoints {
 		if !endpoint.Ready || endpoint.GeneratedCapabilityID != nil {
 			return nil, ErrConflict
+		}
+		// Fail closed: selected endpoints must pass the same integrity gates.
+		if !endpointEligibleForGeneration(endpoint) {
+			return nil, ErrImportIncomplete
 		}
 		ids, err := s.newIDs()
 		if err != nil {
@@ -172,6 +202,37 @@ func (s *GenerationService) Generate(
 		return nil, mapWrite("commit generated openapi tools", err)
 	}
 	return generated, nil
+}
+
+func listEndpointsInTx(ctx context.Context, tx *sql.Tx, workspaceID, importID string) ([]Endpoint, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT `+endpointColumns+` FROM openapi_endpoints e
+		WHERE e.workspace_id=$1 AND e.import_id=$2
+		ORDER BY e.path,e.method,e.id
+	`, workspaceID, importID)
+	if err != nil {
+		return nil, fmt.Errorf("list openapi endpoints for integrity: %w", err)
+	}
+	defer rows.Close()
+	values := make([]Endpoint, 0)
+	for rows.Next() {
+		value, err := scanEndpoint(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan openapi endpoint for integrity: %w", err)
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
+
+func countReadyEligible(endpoints []Endpoint) int {
+	n := 0
+	for _, ep := range endpoints {
+		if ep.Ready && endpointEligibleForGeneration(ep) {
+			n++
+		}
+	}
+	return n
 }
 
 func loadGenerationEndpoints(

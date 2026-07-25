@@ -68,15 +68,23 @@ func (b *Bridge) pauseForInterrupt(
 		return fmt.Errorf("gated capability %q not found in run snapshot", confirm.ToolName)
 	}
 
-	if b.toolInvoker == nil {
-		return fmt.Errorf("tool invoker is not configured")
-	}
-	resolved, err := b.toolInvoker.ResolveInvocation(ctx, execution.ResolveRequest{
-		WorkspaceID: job.WorkspaceID, CapabilityID: capability.CapabilityID,
-		ReleaseID: capability.ReleaseID, BindingConnectionID: capability.ConnectionID,
-	})
-	if err != nil {
-		return fmt.Errorf("resolve gated capability: %w", err)
+	// Prefer the non-sensitive resolved snapshot captured on first actual tool
+	// call (lazy resolve). Re-resolve only if the pending hook lacked it
+	// (legacy/in-flight interrupt safety for older process state).
+	resolved := confirm.Resolved
+	if strings.TrimSpace(resolved.Snapshot.CapabilityID) == "" ||
+		strings.TrimSpace(resolved.Snapshot.ReleaseID) == "" {
+		if b.toolInvoker == nil {
+			return fmt.Errorf("tool invoker is not configured")
+		}
+		var resolveErr error
+		resolved, resolveErr = b.toolInvoker.ResolveInvocation(ctx, execution.ResolveRequest{
+			WorkspaceID: job.WorkspaceID, CapabilityID: capability.CapabilityID,
+			ReleaseID: capability.ReleaseID, BindingConnectionID: capability.ConnectionID,
+		})
+		if resolveErr != nil {
+			return fmt.Errorf("resolve gated capability: %w", resolveErr)
+		}
 	}
 
 	input, err := normalizeToolArgs(confirm.ArgsJSON)

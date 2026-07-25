@@ -29,6 +29,9 @@ type ToolStore interface {
 	ListVersions(context.Context, string, string) ([]tool.Version, error)
 	UpdateDraft(context.Context, string, string, string, tool.DraftUpdate) (tool.Version, error)
 	CreateDraftFromPublished(context.Context, string, string, string, string, string) (tool.Version, error)
+	// BatchLatestTestSummaries returns non-sensitive latest test facts keyed by capability id.
+	// Optional for backwards-compatible fakes; when nil, latestTest is omitted/null.
+	BatchLatestTestSummaries(context.Context, string, []string) (map[string]*tool.LatestTestSummary, error)
 }
 type ToolTestRunner interface {
 	Run(context.Context, tool.RunToolTestInput) (tool.TestRecord, error)
@@ -139,10 +142,32 @@ type toolDTO struct {
 	CreatedAt           time.Time `json:"createdAt"`
 	UpdatedAt           time.Time `json:"updatedAt"`
 	LockVersion         int64     `json:"lockVersion"`
+	// LatestTest is additive (ZKL-56). null/omitted means historical test unknown —
+	// never inferred from Published lifecycle.
+	LatestTest *latestTestDTO `json:"latestTest"`
+}
+
+type latestTestDTO struct {
+	Status    string    `json:"status"`
+	TestedAt  time.Time `json:"testedAt"`
+	TestedBy  string    `json:"testedBy"`
+	ErrorCode *string   `json:"errorCode,omitempty"`
 }
 
 func toolDTOFor(v tool.Tool) toolDTO {
-	return toolDTO{v.CapabilityID, v.ProviderID, v.SourceAssetID, v.DefaultConnectionID, v.SourceEndpointID, v.Name, v.Slug, v.Description, v.Status, v.ActiveReleaseID, v.CreatedBy, v.UpdatedBy, v.CreatedAt, v.UpdatedAt, v.LockVersion}
+	return toolDTO{v.CapabilityID, v.ProviderID, v.SourceAssetID, v.DefaultConnectionID, v.SourceEndpointID, v.Name, v.Slug, v.Description, v.Status, v.ActiveReleaseID, v.CreatedBy, v.UpdatedBy, v.CreatedAt, v.UpdatedAt, v.LockVersion, nil}
+}
+
+func latestTestDTOFor(summary *tool.LatestTestSummary) *latestTestDTO {
+	if summary == nil {
+		return nil
+	}
+	return &latestTestDTO{
+		Status:    summary.Status,
+		TestedAt:  summary.TestedAt,
+		TestedBy:  summary.TestedBy,
+		ErrorCode: summary.ErrorCode,
+	}
 }
 
 type versionDTO struct {
@@ -210,9 +235,19 @@ func (r *ToolOpenAPIRoutes) listTools(c *gin.Context) {
 		RespondError(c, e)
 		return
 	}
+	ids := make([]string, len(v))
+	for i := range v {
+		ids[i] = v[i].CapabilityID
+	}
+	summaries, sumErr := r.tools.BatchLatestTestSummaries(c.Request.Context(), c.Param("wid"), ids)
+	if sumErr != nil {
+		// Fail closed to null latestTest rather than failing the whole list.
+		summaries = map[string]*tool.LatestTestSummary{}
+	}
 	items := make([]toolDTO, len(v))
 	for i := range v {
 		items[i] = toolDTOFor(v[i])
+		items[i].LatestTest = latestTestDTOFor(summaries[v[i].CapabilityID])
 	}
 	c.JSON(200, gin.H{"items": items})
 }
@@ -251,7 +286,13 @@ func (r *ToolOpenAPIRoutes) getTool(c *gin.Context) {
 		RespondError(c, e)
 		return
 	}
-	c.JSON(200, toolDTOFor(v))
+	dto := toolDTOFor(v)
+	if summaries, sumErr := r.tools.BatchLatestTestSummaries(
+		c.Request.Context(), c.Param("wid"), []string{v.CapabilityID},
+	); sumErr == nil {
+		dto.LatestTest = latestTestDTOFor(summaries[v.CapabilityID])
+	}
+	c.JSON(200, dto)
 }
 
 type updateToolRequest struct {
@@ -695,7 +736,16 @@ func (r *ToolOpenAPIRoutes) getImport(c *gin.Context) {
 	for i := range endpoints {
 		items[i] = endpointDTOFor(endpoints[i])
 	}
-	c.JSON(200, gin.H{"import": importDTOFor(v), "endpoints": items})
+	// ZKL-56: real-time integrity projection — read-only, never write-back.
+	integrity := openapiimport.EvaluateIntegrity(v, endpoints)
+	requestContext, _ := RequestContextFrom(c.Request.Context())
+	c.JSON(200, gin.H{
+		"import":    importDTOFor(v),
+		"endpoints": items,
+		"integrity": integrity,
+		"requestId": requestContext.RequestID,
+		"traceId":   requestContext.TraceID,
+	})
 }
 func (r *ToolOpenAPIRoutes) deleteImport(c *gin.Context) {
 	if !r.authorize(c, authz.ActionDelete) {

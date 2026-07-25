@@ -95,9 +95,17 @@ function makeConnection(overrides: Partial<ServiceConnection> = {}): ServiceConn
 }
 
 describe("tool governance helpers", () => {
-  it("treats backend TESTED/PUBLISHED lifecycle as proof of a passing exact-version test", () => {
-    expect(getToolTestStatus(makeTool({ status: "Tested", lastTestResult: undefined })).label).toBe("测试通过");
-    expect(getToolTestStatus(makeTool({ status: "Published", lastTestResult: undefined })).label).toBe("测试通过");
+  it("does not infer passing tests from Published lifecycle alone (ZKL-56)", () => {
+    expect(getToolTestStatus(makeTool({ status: "Tested", lastTestResult: undefined })).label).toBe("历史测试未知");
+    expect(getToolTestStatus(makeTool({ status: "Published", lastTestResult: undefined })).label).toBe("历史测试未知");
+    expect(
+      getToolTestStatus(
+        makeTool({
+          status: "Published",
+          latestTest: { status: "SUCCEEDED", testedAt: "2026-07-01T00:00:00Z", testedBy: "u1" },
+        }),
+      ).label,
+    ).toBe("测试通过");
   });
 
   it("separates lifecycle, test, and run status instead of deriving one mixed tag", () => {

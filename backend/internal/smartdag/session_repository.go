@@ -103,10 +103,11 @@ func (r *SQLSessionRepository) CloseSession(ctx context.Context, workspaceID, se
 }
 
 // SetSessionWorkflow binds workflow_id after first successful turn.
+// Does not bump lock_version — claim/advance/close own session concurrency (ZKL-56).
 func (r *SQLSessionRepository) SetSessionWorkflow(ctx context.Context, workspaceID, sessionID, workflowID string) (GenerateSession, error) {
 	row := r.db.QueryRowContext(ctx, `
 		UPDATE workflow_generate_sessions
-		SET workflow_id=$3, updated_at=CURRENT_TIMESTAMP, lock_version=lock_version+1
+		SET workflow_id=$3, updated_at=CURRENT_TIMESTAMP
 		WHERE workspace_id=$1 AND id=$2
 		RETURNING id, workspace_id, agent_id, workflow_id, model_config_id, status,
 			prompt_id, prompt_hash, constraints, created_by, created_at, updated_at, closed_at, lock_version
@@ -119,6 +120,62 @@ func (r *SQLSessionRepository) SetSessionWorkflow(ctx context.Context, workspace
 		return GenerateSession{}, mapSessionWrite("set session workflow", err)
 	}
 	return session, nil
+}
+
+// ClaimSessionLockVersion CAS-advances lock_version expected→expected+1.
+func (r *SQLSessionRepository) ClaimSessionLockVersion(
+	ctx context.Context, workspaceID, sessionID string, expected *int64,
+) (GenerateSession, error) {
+	session, err := r.GetSession(ctx, workspaceID, sessionID)
+	if err != nil {
+		return GenerateSession{}, err
+	}
+	if session.Status == SessionStatusClosed {
+		return GenerateSession{}, ErrSessionClosed
+	}
+	want := session.LockVersion
+	if expected != nil {
+		want = *expected
+	}
+	if session.LockVersion != want {
+		return GenerateSession{}, ErrSessionVersionConflict
+	}
+	row := r.db.QueryRowContext(ctx, `
+		UPDATE workflow_generate_sessions
+		SET lock_version=lock_version+1, updated_at=CURRENT_TIMESTAMP
+		WHERE workspace_id=$1 AND id=$2 AND status='OPEN' AND lock_version=$3
+		RETURNING id, workspace_id, agent_id, workflow_id, model_config_id, status,
+			prompt_id, prompt_hash, constraints, created_by, created_at, updated_at, closed_at, lock_version
+	`, workspaceID, sessionID, want)
+	updated, err := scanSession(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return GenerateSession{}, ErrSessionVersionConflict
+		}
+		return GenerateSession{}, mapSessionWrite("claim session lock version", err)
+	}
+	return updated, nil
+}
+
+// AdvanceSessionLockVersion CAS-advances claimed version → claimed+1 after terminal.
+func (r *SQLSessionRepository) AdvanceSessionLockVersion(
+	ctx context.Context, workspaceID, sessionID string, expected int64,
+) (GenerateSession, error) {
+	row := r.db.QueryRowContext(ctx, `
+		UPDATE workflow_generate_sessions
+		SET lock_version=lock_version+1, updated_at=CURRENT_TIMESTAMP
+		WHERE workspace_id=$1 AND id=$2 AND lock_version=$3
+		RETURNING id, workspace_id, agent_id, workflow_id, model_config_id, status,
+			prompt_id, prompt_hash, constraints, created_by, created_at, updated_at, closed_at, lock_version
+	`, workspaceID, sessionID, expected)
+	updated, err := scanSession(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return GenerateSession{}, ErrSessionVersionConflict
+		}
+		return GenerateSession{}, mapSessionWrite("advance session lock version", err)
+	}
+	return updated, nil
 }
 
 // CreateTurn inserts a turn row.

@@ -95,6 +95,21 @@ type SmartDAGTurnHTTPResponse = SmartDAGTurnResponse & WorkflowCreateResponseDTO
 
 type CreateSessionResponse = SmartGenerateSession;
 
+/** ZKL-56 recovery card state (persistent until next success / new session / close). */
+export interface SmartDagFailureState {
+  stage: string;
+  code: string;
+  retryable: boolean;
+  message: string;
+  requestId: string;
+  traceId: string;
+  sessionId?: string;
+  sessionStatus?: "OPEN" | "CLOSED";
+  sessionLockVersion?: number;
+  turnId?: string;
+  generationId?: string;
+}
+
 interface SmartDagState {
   generating: boolean;
   goal: string;
@@ -102,10 +117,12 @@ interface SmartDagState {
   agentId: string;
   sessionId: string;
   sessionStatus: "OPEN" | "CLOSED" | "";
+  sessionLockVersion: number;
   modelConfigId: string;
   turns: SmartGenerateTurn[];
   lastGuardReport?: SmartDAGGuardReport;
   lastErrorCode: string;
+  lastFailure?: SmartDagFailureState;
   generatedWorkflow?: Workflow;
   generatedDraft?: WorkflowDraftRecord;
   /** Canvas SoT version token: increments when draft is replaced from a turn. */
@@ -127,10 +144,12 @@ export const useSmartDagStore = defineStore("smartdag", {
     agentId: "",
     sessionId: "",
     sessionStatus: "",
+    sessionLockVersion: 0,
     modelConfigId: "",
     turns: [],
     lastGuardReport: undefined,
     lastErrorCode: "",
+    lastFailure: undefined,
     generatedWorkflow: undefined,
     generatedDraft: undefined,
     canvasEpoch: 0,
@@ -146,6 +165,19 @@ export const useSmartDagStore = defineStore("smartdag", {
     hasOpenSession: (state) => state.sessionId !== "" && state.sessionStatus === "OPEN",
     canSendTurn: (state) =>
       Boolean(state.workspaceId && state.agentId && state.modelConfigId && state.sessionStatus !== "CLOSED"),
+    /** Recovery actions matrix for the persistent failure card. */
+    recoveryActions(state): { retry: boolean; close: boolean; createNew: boolean; fixConfig: boolean } {
+      if (!state.lastFailure) {
+        return { retry: false, close: false, createNew: false, fixConfig: false };
+      }
+      if (state.sessionStatus === "CLOSED") {
+        return { retry: false, close: false, createNew: true, fixConfig: false };
+      }
+      if (state.lastFailure.retryable) {
+        return { retry: true, close: true, createNew: false, fixConfig: false };
+      }
+      return { retry: false, close: true, createNew: true, fixConfig: true };
+    },
   },
   actions: {
     setContext(workspaceId: string, agentId: string, modelConfigId = "") {
@@ -200,6 +232,9 @@ export const useSmartDagStore = defineStore("smartdag", {
       this.turns = [];
       this.lastGuardReport = undefined;
       this.lastErrorCode = "";
+      this.lastFailure = undefined;
+      const lockVersion = (response.data as CreateSessionResponse & { lockVersion?: number }).lockVersion;
+      if (typeof lockVersion === "number") this.sessionLockVersion = lockVersion;
       return response.data;
     },
 
@@ -209,6 +244,7 @@ export const useSmartDagStore = defineStore("smartdag", {
     async sendTurn(request: SmartDAGTurnRequest): Promise<SmartDAGTurnResult> {
       this.generating = true;
       this.lastErrorCode = "";
+      this.lastFailure = undefined;
       this.lastGuardReport = undefined;
       this.workspaceId = request.workspaceId.trim();
       this.agentId = request.agentId.trim();
@@ -241,6 +277,9 @@ export const useSmartDagStore = defineStore("smartdag", {
       this.generatedWorkflow = created;
       this.generatedDraft = workflows.activeDraft ? cloneDraft(workflows.activeDraft) : undefined;
       this.canvasEpoch += 1;
+      // Success clears persistent failure card (ZKL-56).
+      this.lastFailure = undefined;
+      this.lastErrorCode = "";
 
       this.reasoningSteps = data.reasoningSteps || [];
       this.missingCapabilities = data.missingCapabilities || [];
@@ -295,9 +334,17 @@ export const useSmartDagStore = defineStore("smartdag", {
     captureTurnError(error: unknown) {
       const anyErr = error as {
         code?: string;
+        message?: string;
         response?: {
           data?: {
-            error?: { code?: string };
+            error?: {
+              code?: string;
+              message?: string;
+              retryable?: boolean;
+              requestId?: string;
+              traceId?: string;
+              details?: Array<Record<string, unknown>>;
+            };
             guardReport?: SmartDAGGuardReport;
             sessionId?: string;
             turnId?: string;
@@ -308,9 +355,35 @@ export const useSmartDagStore = defineStore("smartdag", {
           };
         };
       };
-      const code = anyErr?.response?.data?.error?.code || anyErr?.code || "";
-      this.lastErrorCode = code;
       const body = anyErr?.response?.data;
+      const errDTO = body?.error;
+      const code = errDTO?.code || anyErr?.code || "";
+      this.lastErrorCode = code;
+      // ZKL-56: parse standard SMART_DAG_TURN_FAILURE detail (+ legacy Guard fields).
+      const detail = Array.isArray(errDTO?.details)
+        ? errDTO!.details!.find((d) => d?.kind === "SMART_DAG_TURN_FAILURE")
+        : undefined;
+      const stage = typeof detail?.stage === "string" ? detail.stage : stageFromErrorCode(code);
+      const retryable =
+        typeof errDTO?.retryable === "boolean"
+          ? errDTO.retryable
+          : typeof detail?.retryable === "boolean"
+            ? Boolean(detail.retryable)
+            : isRetryableSmartDagCode(code);
+      this.lastFailure = {
+        stage,
+        code,
+        retryable,
+        message: errDTO?.message || anyErr?.message || "生成失败，本轮未修改草稿。",
+        requestId: errDTO?.requestId || "",
+        traceId: errDTO?.traceId || body?.traceId || "",
+        sessionId: (typeof detail?.sessionId === "string" ? detail.sessionId : body?.sessionId) || this.sessionId,
+        sessionStatus: this.sessionStatus === "CLOSED" ? "CLOSED" : "OPEN",
+        sessionLockVersion:
+          typeof detail?.sessionLockVersion === "number" ? detail.sessionLockVersion : this.sessionLockVersion,
+        turnId: (typeof detail?.turnId === "string" ? detail.turnId : body?.turnId) || "",
+        generationId: (typeof detail?.generationId === "string" ? detail.generationId : body?.generationId) || "",
+      };
       const report = body?.guardReport;
       if (report) {
         this.lastGuardReport = report;
@@ -431,9 +504,11 @@ export const useSmartDagStore = defineStore("smartdag", {
       this.generatedDraft = undefined;
       this.sessionId = "";
       this.sessionStatus = "";
+      this.sessionLockVersion = 0;
       this.turns = [];
       this.lastGuardReport = undefined;
       this.lastErrorCode = "";
+      this.lastFailure = undefined;
       this.canvasEpoch += 1;
       this.reasoningSteps = [];
       this.missingCapabilities = [];
@@ -445,3 +520,37 @@ export const useSmartDagStore = defineStore("smartdag", {
     },
   },
 });
+
+function stageFromErrorCode(code: string): string {
+  switch (code) {
+    case "SESSION_CLOSED":
+    case "SMART_DAG_TURN_IN_PROGRESS":
+    case "SMART_DAG_SESSION_VERSION_CONFLICT":
+      return "SESSION";
+    case "AGENT_MODEL_REQUIRED":
+    case "SMART_DAG_MODEL_TIMEOUT":
+    case "SMART_DAG_MODEL_UNAVAILABLE":
+      return "MODEL_CALL";
+    case "SMART_DAG_OUTPUT_INVALID":
+      return "OUTPUT_PARSE";
+    case "GUARD_REJECTED":
+      return "GUARD";
+    case "SMART_DAG_DRAFT_CONFLICT":
+    case "SMART_DAG_DRAFT_PERSIST_FAILED":
+      return "DRAFT_PERSIST";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+function isRetryableSmartDagCode(code: string): boolean {
+  return (
+    code === "SMART_DAG_SESSION_VERSION_CONFLICT" ||
+    code === "SMART_DAG_MODEL_TIMEOUT" ||
+    code === "SMART_DAG_MODEL_UNAVAILABLE" ||
+    code === "SMART_DAG_OUTPUT_INVALID" ||
+    code === "GUARD_REJECTED" ||
+    code === "SMART_DAG_DRAFT_CONFLICT" ||
+    code === "SMART_DAG_DRAFT_PERSIST_FAILED"
+  );
+}

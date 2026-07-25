@@ -120,6 +120,16 @@ type TestRecord struct {
 	TestedAt             time.Time
 }
 
+// LatestTestSummary is the non-sensitive historical test projection for list/detail
+// (ZKL-56 UX-07). Never includes request/response body, headers, Secret, or Token.
+// Nil means no TestRecord for the relevant version — do not infer success from lifecycle.
+type LatestTestSummary struct {
+	Status    string
+	TestedAt  time.Time
+	TestedBy  string
+	ErrorCode *string
+}
+
 type RecordTestInput struct {
 	ID                   string
 	WorkspaceID          string

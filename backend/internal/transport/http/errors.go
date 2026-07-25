@@ -78,10 +78,22 @@ func RespondError(c *gin.Context, err error) {
 	_, file, line, _ := runtime.Caller(1)
 	c.Set(requestFailureKey, requestFailure{err: err, mapped: mapped, file: file, line: line})
 	request, _ := RequestContextFrom(c.Request.Context())
+	retryable := mappedRetryable(mapped)
+	details := []map[string]any{}
+	// Prefer TurnFailure public message when present (never include Cause).
+	if tf, ok := smartdag.AsTurnFailure(err); ok && tf != nil {
+		if strings.TrimSpace(tf.Message) != "" {
+			mapped.message = tf.Message
+		}
+		retryable = tf.Retryable
+		if mapped.code == "" {
+			mapped.code = tf.Code
+		}
+	}
 	c.AbortWithStatusJSON(mapped.status, ErrorResponse{Error: ErrorDTO{
 		Code: mapped.code, Message: mapped.message,
 		RequestID: request.RequestID, TraceID: request.TraceID,
-		Retryable: mappedRetryable(mapped), Details: []map[string]any{},
+		Retryable: retryable, Details: details,
 	}})
 }
 
@@ -93,6 +105,21 @@ func mappedRetryable(mapped mappedError) bool {
 		outboundidentity.CodeCredentialCapacityExceeded,
 		outboundidentity.CodeBrokerUnavailable:
 		return true
+	// ZKL-56 §6.2 Smart DAG: retryable independent of HTTP status class.
+	case smartdag.CodeSessionVersionConflict,
+		smartdag.CodeModelTimeout,
+		smartdag.CodeModelUnavailable,
+		smartdag.CodeOutputInvalid,
+		smartdag.CodeGuardRejected,
+		smartdag.CodeDraftConflict,
+		smartdag.CodeDraftPersistFailed:
+		return true
+	case smartdag.CodeSessionClosed,
+		smartdag.CodeTurnInProgress,
+		smartdag.CodeAgentModelRequired,
+		smartdag.CodeUnknownFailure,
+		"OPENAPI_IMPORT_INCOMPLETE":
+		return false
 	}
 	return isRetryableHTTPStatus(mapped.status)
 }
@@ -231,6 +258,34 @@ func mapError(err error) mappedError {
 	if mapped, ok := mapOutboundIdentityError(err); ok {
 		return mapped
 	}
+	// ZKL-56: typed Smart DAG TurnFailure maps first so unknown internal errors
+	// can still be safely projected without leaking Cause.
+	if tf, ok := smartdag.AsTurnFailure(err); ok && tf != nil {
+		switch tf.Code {
+		case smartdag.CodeSessionClosed:
+			return mappedError{http.StatusConflict, tf.Code, tf.Message}
+		case smartdag.CodeTurnInProgress:
+			return mappedError{http.StatusConflict, tf.Code, tf.Message}
+		case smartdag.CodeSessionVersionConflict:
+			return mappedError{http.StatusConflict, tf.Code, tf.Message}
+		case smartdag.CodeAgentModelRequired:
+			return mappedError{http.StatusUnprocessableEntity, tf.Code, tf.Message}
+		case smartdag.CodeModelTimeout:
+			return mappedError{http.StatusGatewayTimeout, tf.Code, tf.Message}
+		case smartdag.CodeModelUnavailable:
+			return mappedError{http.StatusServiceUnavailable, tf.Code, tf.Message}
+		case smartdag.CodeOutputInvalid:
+			return mappedError{http.StatusUnprocessableEntity, tf.Code, tf.Message}
+		case smartdag.CodeGuardRejected:
+			return mappedError{http.StatusUnprocessableEntity, tf.Code, tf.Message}
+		case smartdag.CodeDraftConflict:
+			return mappedError{http.StatusConflict, tf.Code, tf.Message}
+		case smartdag.CodeDraftPersistFailed:
+			return mappedError{http.StatusServiceUnavailable, tf.Code, tf.Message}
+		default:
+			return mappedError{http.StatusInternalServerError, smartdag.CodeUnknownFailure, "The generate request failed."}
+		}
+	}
 	switch {
 	case errors.Is(err, ErrAAPRunIdempotencyConflict),
 		errors.Is(err, workflow.ErrIdempotencyConflict):
@@ -238,16 +293,32 @@ func mapError(err error) mappedError {
 	case errors.Is(err, workflow.ErrRevisionNotActive),
 		errors.Is(err, workflow.ErrRevisionNotExecutable):
 		return mappedError{http.StatusConflict, "REVISION_NOT_EXECUTABLE", "The workflow revision is not the active published revision or is not executable."}
+	case errors.Is(err, openapiimport.ErrImportIncomplete):
+		return mappedError{http.StatusConflict, "OPENAPI_IMPORT_INCOMPLETE", "The OpenAPI import is incomplete and cannot generate tools."}
 	case errors.Is(err, smartdag.ErrAgentModelRequired):
 		// D2: Agent without usable LLM cannot generate; 422 AGENT_MODEL_REQUIRED, no Draft.
-		return mappedError{http.StatusUnprocessableEntity, "AGENT_MODEL_REQUIRED", "The agent has no usable model configuration for smart orchestration generation."}
+		return mappedError{http.StatusUnprocessableEntity, smartdag.CodeAgentModelRequired, "The agent has no usable model configuration for smart orchestration generation."}
 	case errors.Is(err, smartdag.ErrModelConfigBypassRejected):
 		return mappedError{http.StatusUnprocessableEntity, "VALIDATION_ERROR", "modelConfigId must not be supplied on generate requests; use the agent binding."}
 	case errors.Is(err, smartdag.ErrGuardRejected):
-		return mappedError{http.StatusUnprocessableEntity, "GUARD_REJECTED", "The generated workflow graph failed deterministic validation."}
+		return mappedError{http.StatusUnprocessableEntity, smartdag.CodeGuardRejected, "The generated workflow graph failed deterministic validation."}
 	case errors.Is(err, smartdag.ErrSessionClosed):
 		// P1.3.4: close 后 turn → 409
-		return mappedError{http.StatusConflict, "SESSION_CLOSED", "The workflow generate session is closed."}
+		return mappedError{http.StatusConflict, smartdag.CodeSessionClosed, "The workflow generate session is closed."}
+	case errors.Is(err, smartdag.ErrTurnInProgress):
+		return mappedError{http.StatusConflict, smartdag.CodeTurnInProgress, "A generate turn is already in progress for this session."}
+	case errors.Is(err, smartdag.ErrSessionVersionConflict):
+		return mappedError{http.StatusConflict, smartdag.CodeSessionVersionConflict, "The generate session version has changed; refresh and retry explicitly."}
+	case errors.Is(err, smartdag.ErrModelTimeout):
+		return mappedError{http.StatusGatewayTimeout, smartdag.CodeModelTimeout, "The model generation timed out; the draft was not modified."}
+	case errors.Is(err, smartdag.ErrModelUnavailable):
+		return mappedError{http.StatusServiceUnavailable, smartdag.CodeModelUnavailable, "The model service is temporarily unavailable; the draft was not modified."}
+	case errors.Is(err, smartdag.ErrOutputInvalid):
+		return mappedError{http.StatusUnprocessableEntity, smartdag.CodeOutputInvalid, "The model output could not be parsed into a workflow graph; the draft was not modified."}
+	case errors.Is(err, smartdag.ErrDraftConflict):
+		return mappedError{http.StatusConflict, smartdag.CodeDraftConflict, "The workflow draft version changed during generation; the draft was not overwritten."}
+	case errors.Is(err, smartdag.ErrDraftPersistFailed):
+		return mappedError{http.StatusServiceUnavailable, smartdag.CodeDraftPersistFailed, "Persisting the generated draft failed; the draft was not modified."}
 	case errors.Is(err, smartdag.ErrSessionNotFound):
 		return mappedError{http.StatusNotFound, "NOT_FOUND", "The requested resource was not found."}
 	case errors.Is(err, smartdag.ErrAgentNotInWorkspace):

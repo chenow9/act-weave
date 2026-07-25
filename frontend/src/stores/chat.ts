@@ -29,6 +29,14 @@ import type {
   WorkspaceChatSession,
 } from "../types/domain";
 
+/** ZKL-56: per-run stream health for calibration / DEGRADED UX. */
+export type RunStreamHealth =
+  | "CONNECTING"
+  | "HEALTHY"
+  | "RECONNECTING"
+  | "CALIBRATING"
+  | "DEGRADED";
+
 interface ChatState {
   sessions: WorkspaceChatSession[];
   activeSessionId: string;
@@ -42,12 +50,16 @@ interface ChatState {
   latestRun?: AgentRun;
   latestRunSteps: AgentRunStep[];
   runStatus?: AgentRunStatus;
+  /** Per-run stream health (ZKL-56 UX-03). */
+  streamHealthByRun: Record<string, RunStreamHealth>;
   runEventCursorByRun: Record<string, number>;
   loading: boolean;
   runStreamAbort?: AbortController;
   runStreamReconnect?: ReturnType<typeof setTimeout>;
   streamRunId?: string;
 }
+
+const calibrationInflight = new Map<string, Promise<void>>();
 
 const activeSessionStorageKey = "actweave.chat.active-session.v1";
 const confirmationStoragePrefix = "actweave.chat.confirmation.v1";
@@ -69,6 +81,7 @@ export const useChatStore = defineStore("chat", {
     latestRun: undefined,
     latestRunSteps: [],
     runStatus: undefined,
+    streamHealthByRun: {},
     runEventCursorByRun: {},
     loading: false,
     runStreamAbort: undefined,
@@ -78,6 +91,10 @@ export const useChatStore = defineStore("chat", {
   getters: {
     activeSession(state): WorkspaceChatSession | undefined {
       return state.sessions.find((session) => session.id === state.activeSessionId);
+    },
+    activeStreamHealth(state): RunStreamHealth | undefined {
+      const runId = state.streamRunId || state.latestRunId;
+      return runId ? state.streamHealthByRun[runId] : undefined;
     },
   },
   actions: {
@@ -291,6 +308,7 @@ export const useChatStore = defineStore("chat", {
       if (this.streamRunId === runId && this.runStreamAbort) return;
       this.closeRunStream();
       if (!projectors.has(runId)) projectors.set(runId, createProjectionState());
+      this.streamHealthByRun[runId] = "CONNECTING";
       const controller = new AbortController();
       this.runStreamAbort = controller;
       this.streamRunId = runId;
@@ -349,6 +367,7 @@ export const useChatStore = defineStore("chat", {
           notReadyAttempts = 0;
           networkAttempts = 0;
           authRetried = false;
+          this.streamHealthByRun[runId] = "HEALTHY";
 
           for await (const frame of readSSEFrames(response.body, runId)) {
             if (controller.signal.aborted || this.streamRunId !== runId) return;
@@ -361,19 +380,78 @@ export const useChatStore = defineStore("chat", {
 
           // Stream ended while run still active — reconnect with Last-Event-ID.
           networkAttempts += 1;
-          if (networkAttempts > NETWORK_MAX_ATTEMPTS) return;
+          if (networkAttempts > NETWORK_MAX_ATTEMPTS) {
+            // Exhausted reconnect budget: calibrate GET within 5s (ZKL-56).
+            await this.calibrateRunTerminal(runId, workspaceId, "stream_eof");
+            return;
+          }
+          this.streamHealthByRun[runId] = "RECONNECTING";
           await sleep(networkDelayMs(networkAttempts), controller.signal);
         } catch (error) {
           if (controller.signal.aborted || this.streamRunId !== runId) return;
           if (isAbortError(error)) return;
           networkAttempts += 1;
-          if (networkAttempts > NETWORK_MAX_ATTEMPTS) return;
+          if (networkAttempts > NETWORK_MAX_ATTEMPTS) {
+            await this.calibrateRunTerminal(runId, workspaceId, "network_exhausted");
+            return;
+          }
+          this.streamHealthByRun[runId] = "RECONNECTING";
           try {
             await sleep(networkDelayMs(networkAttempts), controller.signal);
           } catch {
             return;
           }
         }
+      }
+    },
+    /**
+     * ZKL-56 GET calibration: singleflight per run, up to 3 attempts
+     * (immediate / ~1.5s / ~3.5s) within a 5s deadline. Terminal is absorbing —
+     * late RUNNING must not demote. Does not invent FAILED if server still RUNNING.
+     */
+    async calibrateRunTerminal(runId: string, workspaceId: string, _reason: string) {
+      if (!runId || !workspaceId) return;
+      const existing = calibrationInflight.get(runId);
+      if (existing) {
+        await existing;
+        return;
+      }
+      const work = this.runCalibrationLoop(runId, workspaceId);
+      calibrationInflight.set(runId, work);
+      try {
+        await work;
+      } finally {
+        calibrationInflight.delete(runId);
+      }
+    },
+    async runCalibrationLoop(runId: string, workspaceId: string) {
+      if (isTerminalRunStatus(this.runStatus) && this.latestRunId === runId) {
+        return;
+      }
+      this.streamHealthByRun[runId] = "CALIBRATING";
+      const started = Date.now();
+      // immediate / ~1.5s / ~3.5s from start (design §4.3.2).
+      const attemptAt = [0, 1500, 3500];
+      for (let attempt = 0; attempt < attemptAt.length; attempt += 1) {
+        const wait = attemptAt[attempt]! - (Date.now() - started);
+        if (wait > 0) {
+          await sleep(Math.min(wait, 5000 - (Date.now() - started))).catch(() => undefined);
+        }
+        if (Date.now() - started > 5000) break;
+        try {
+          await this.loadRun(runId, workspaceId);
+          if (isTerminalRunStatus(this.runStatus)) {
+            this.closeRunStream();
+            this.streamHealthByRun[runId] = "HEALTHY";
+            return;
+          }
+        } catch {
+          // continue bounded retries
+        }
+      }
+      // Still non-terminal after budget: DEGRADED, do not forge FAILED; composer stays gated by server status.
+      if (!isTerminalRunStatus(this.runStatus)) {
+        this.streamHealthByRun[runId] = "DEGRADED";
       }
     },
     closeRunStream() {
@@ -403,11 +481,21 @@ export const useChatStore = defineStore("chat", {
       const terminal = isTerminalRunStatus(this.runStatus);
       if (terminal) {
         this.closeRunStream();
-        // Calibrate run/steps from API after terminal; message text already projected
-        // from item.delta / item.completed. Full loadSession remains available via refresh.
+        this.streamHealthByRun[frame.runId] = "HEALTHY";
+        // Light calibrate: one GET for run/steps. Full bounded loop is for stream loss.
         const session = this.activeSession;
-        if (session) void this.loadRun(frame.runId, session.workspaceId).catch(() => undefined);
+        if (session) {
+          void this.loadRun(frame.runId, session.workspaceId).catch(() => undefined);
+        }
         return;
+      }
+
+      // item.failed without terminal run → start bounded calibration.
+      if (frame.type === "item.failed" && !isTerminalRunStatus(this.runStatus)) {
+        const session = this.activeSession;
+        if (session) {
+          void this.calibrateRunTerminal(frame.runId, session.workspaceId, "item_failed");
+        }
       }
 
       // Avoid mid-stream loadRun: a racing GET can overwrite live status (e.g. SUCCEEDED)
@@ -448,6 +536,13 @@ export const useChatStore = defineStore("chat", {
       }
     },
     applyRunUpdate(run: AgentRun) {
+      // Terminal is absorbing: late RUNNING/PENDING GET must not demote (ZKL-56).
+      if (isTerminalRunStatus(this.runStatus) && !isTerminalRunStatus(run.status)) {
+        this.latestRun = { ...run, status: this.runStatus! };
+        this.latestRunId = run.id;
+        this.upsertActiveSession({ latestRunId: run.id });
+        return;
+      }
       this.latestRun = run;
       this.latestRunId = run.id;
       this.runStatus = run.status;

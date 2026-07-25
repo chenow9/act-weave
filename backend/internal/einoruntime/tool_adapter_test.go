@@ -40,6 +40,41 @@ func (s *spyInvoker) InvokeResolved(
 	}, nil
 }
 
+// spyResolver counts ResolveInvocation calls for lazy-resolution assertions.
+type spyResolver struct {
+	calls    atomic.Int64
+	resolved execution.ResolvedInvocation
+	err      error
+	fn       func(context.Context, execution.ResolveRequest) (execution.ResolvedInvocation, error)
+}
+
+func (s *spyResolver) ResolveInvocation(
+	ctx context.Context,
+	req execution.ResolveRequest,
+) (execution.ResolvedInvocation, error) {
+	s.calls.Add(1)
+	if s.fn != nil {
+		return s.fn(ctx, req)
+	}
+	if s.err != nil {
+		return execution.ResolvedInvocation{}, s.err
+	}
+	if strings.TrimSpace(s.resolved.Snapshot.CapabilityID) != "" {
+		return s.resolved, nil
+	}
+	return execution.ResolvedInvocation{
+		Snapshot: execution.ReleaseSnapshot{
+			WorkspaceID:  req.WorkspaceID,
+			CapabilityID: req.CapabilityID,
+			ReleaseID:    req.ReleaseID,
+			InputSchema:  json.RawMessage(`{"type":"object"}`),
+		},
+		Connection: execution.ConnectionSnapshot{
+			ID: req.BindingConnectionID, WorkspaceID: req.WorkspaceID,
+		},
+	}, nil
+}
+
 func baseToolConfig(pipeline ResolvedInvoker, requiresConfirmation bool) PipelineToolConfig {
 	return PipelineToolConfig{
 		Info: &schema.ToolInfo{
@@ -62,6 +97,7 @@ func baseToolConfig(pipeline ResolvedInvoker, requiresConfirmation bool) Pipelin
 				WorkspaceID:  "ws-1",
 				CapabilityID: "cap-1",
 				ReleaseID:    "rel-1",
+				InputSchema:  json.RawMessage(`{"type":"object"}`),
 			},
 			RequiresConfirmation: requiresConfirmation,
 		},
@@ -436,5 +472,206 @@ func TestPipelineToolForwardsPrincipalSnapshot(t *testing.T) {
 	}
 	if string(gotRequest.AuthorizationSnapshot) != string(authz) {
 		t.Fatalf("AuthorizationSnapshot = %s, want %s", gotRequest.AuthorizationSnapshot, authz)
+	}
+}
+
+// ZKL-56 UX-02: Resolver is called once on first actual call, then Invoke once.
+func TestPipelineToolLazyResolve_ThenInvokeOnce(t *testing.T) {
+	t.Parallel()
+	invoker := &spyInvoker{}
+	resolver := &spyResolver{}
+	cfg := baseToolConfig(invoker, false)
+	cfg.Resolved = execution.ResolvedInvocation{} // force lazy path
+	cfg.Resolver = resolver
+	tl, err := NewPipelineTool(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, runErr := tl.InvokableRun(context.Background(), `{"x":1}`)
+	if runErr != nil {
+		t.Fatalf("InvokableRun: %v", runErr)
+	}
+	if got := resolver.calls.Load(); got != 1 {
+		t.Fatalf("ResolveInvocation calls = %d, want 1", got)
+	}
+	if got := invoker.calls.Load(); got != 1 {
+		t.Fatalf("InvokeResolved calls = %d, want 1", got)
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(out), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["ok"] != true {
+		t.Fatalf("body=%v", body)
+	}
+}
+
+// ZKL-56 UX-02: resolution failure maps to tool error; zero InvokeResolved.
+func TestPipelineToolLazyResolve_FailureNoInvoke(t *testing.T) {
+	t.Parallel()
+	invoker := &spyInvoker{}
+	resolver := &spyResolver{
+		err: execution.NewError(execution.ErrorCodeResolve, "RESOLUTION", false, 0, errors.New("conn not ready")),
+	}
+	cfg := baseToolConfig(invoker, false)
+	cfg.Resolved = execution.ResolvedInvocation{}
+	cfg.Resolver = resolver
+	tl, err := NewPipelineTool(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, runErr := tl.InvokableRun(context.Background(), `{}`)
+	if runErr != nil {
+		t.Fatalf("want tool result string, got Go err: %v", runErr)
+	}
+	if resolver.calls.Load() != 1 {
+		t.Fatalf("resolve = %d, want 1", resolver.calls.Load())
+	}
+	if invoker.calls.Load() != 0 {
+		t.Fatalf("invoke = %d, want 0", invoker.calls.Load())
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(out), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["ok"] != false || body["errorCode"] != execution.ErrorCodeResolve {
+		t.Fatalf("body=%v", body)
+	}
+}
+
+// ZKL-56 UX-02: resume with platform data must not resolve or invoke.
+func TestPipelineToolResumeWithData_NoResolve(t *testing.T) {
+	origState := readInterruptState
+	origResume := readResumeContext
+	t.Cleanup(func() {
+		readInterruptState = origState
+		readResumeContext = origResume
+	})
+
+	saved := ToolConfirmInterruptState{
+		SchemaVersion: ToolConfirmInterruptSchemaVersion,
+		InvocationID:  "inv-fixed",
+		ReleaseID:     "rel-1",
+		CapabilityID:  "cap-1",
+		StepID:        "step-1",
+	}
+	resumePayload := formatToolSuccessResult(json.RawMessage(`{"done":true}`), map[string]any{
+		"invocationId": "inv-fixed",
+		"confirmed":    true,
+	})
+	readInterruptState = func(context.Context) (bool, bool, ToolConfirmInterruptState) {
+		return true, true, saved
+	}
+	readResumeContext = func(context.Context) (bool, bool, string) {
+		return true, true, resumePayload
+	}
+
+	invoker := &spyInvoker{}
+	resolver := &spyResolver{}
+	cfg := baseToolConfig(invoker, true)
+	cfg.Resolved = execution.ResolvedInvocation{}
+	cfg.Resolver = resolver
+	tl, err := NewPipelineTool(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, runErr := tl.InvokableRun(context.Background(), `{"x":1}`)
+	if runErr != nil {
+		t.Fatalf("resume: %v", runErr)
+	}
+	if out != resumePayload {
+		t.Fatalf("out mismatch")
+	}
+	if resolver.calls.Load() != 0 {
+		t.Fatalf("resolve on resume = %d, want 0", resolver.calls.Load())
+	}
+	if invoker.calls.Load() != 0 {
+		t.Fatalf("invoke on resume = %d, want 0", invoker.calls.Load())
+	}
+}
+
+// ZKL-56 UX-02: confirm path resolves once, never invokes, attaches Resolved to pending.
+func TestPipelineToolLazyResolve_ConfirmAttachesResolved(t *testing.T) {
+	t.Parallel()
+	invoker := &spyInvoker{}
+	resolver := &spyResolver{
+		resolved: execution.ResolvedInvocation{
+			Snapshot: execution.ReleaseSnapshot{
+				WorkspaceID: "ws-1", CapabilityID: "cap-1", ReleaseID: "rel-1",
+				InputSchema: json.RawMessage(`{"type":"object"}`),
+			},
+			Connection:           execution.ConnectionSnapshot{ID: "conn-1", WorkspaceID: "ws-1"},
+			RequiresConfirmation: true,
+			RiskLevel:            "HIGH",
+		},
+	}
+	var pending PendingConfirmInterrupt
+	cfg := baseToolConfig(invoker, false) // snapshot flag false; resolved requires confirm
+	cfg.Resolved = execution.ResolvedInvocation{}
+	cfg.Resolver = resolver
+	cfg.OnConfirmInterrupt = func(_ context.Context, p PendingConfirmInterrupt) {
+		pending = p
+	}
+	tl, err := NewPipelineTool(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, runErr := tl.InvokableRun(context.Background(), `{"x":1}`)
+	if runErr == nil {
+		t.Fatal("expected interrupt")
+	}
+	if _, ok := compose.IsInterruptRerunError(runErr); !ok {
+		t.Fatalf("expected interrupt, got %v", runErr)
+	}
+	if resolver.calls.Load() != 1 {
+		t.Fatalf("resolve = %d, want 1", resolver.calls.Load())
+	}
+	if invoker.calls.Load() != 0 {
+		t.Fatalf("invoke = %d, want 0", invoker.calls.Load())
+	}
+	if pending.Resolved.Connection.ID != "conn-1" {
+		t.Fatalf("pending.Resolved not attached: %+v", pending.Resolved)
+	}
+	if pending.InvocationID != "inv-fixed" {
+		t.Fatalf("invocationId = %q", pending.InvocationID)
+	}
+}
+
+// Schema validation before confirmation: illegal args → TOOL_ARGS_INVALID, no interrupt, no invoke.
+func TestPipelineToolSchemaInvalid_BeforeConfirm(t *testing.T) {
+	t.Parallel()
+	invoker := &spyInvoker{}
+	resolver := &spyResolver{
+		resolved: execution.ResolvedInvocation{
+			Snapshot: execution.ReleaseSnapshot{
+				WorkspaceID: "ws-1", CapabilityID: "cap-1", ReleaseID: "rel-1",
+				InputSchema: json.RawMessage(`{"type":"object","required":["orderId"],"properties":{"orderId":{"type":"string"}},"additionalProperties":false}`),
+			},
+			RequiresConfirmation: true,
+		},
+	}
+	cfg := baseToolConfig(invoker, true)
+	cfg.Resolved = execution.ResolvedInvocation{}
+	cfg.Resolver = resolver
+	cfg.OnConfirmInterrupt = func(context.Context, PendingConfirmInterrupt) {
+		t.Fatal("must not confirm with invalid args")
+	}
+	tl, err := NewPipelineTool(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, runErr := tl.InvokableRun(context.Background(), `{"wrong":1}`)
+	if runErr != nil {
+		t.Fatalf("want tool result, got %v", runErr)
+	}
+	if invoker.calls.Load() != 0 {
+		t.Fatalf("invoke = %d", invoker.calls.Load())
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(out), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["errorCode"] != "TOOL_ARGS_INVALID" {
+		t.Fatalf("body=%v", body)
 	}
 }

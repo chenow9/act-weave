@@ -92,7 +92,7 @@ func (s *MemorySessionStore) SetSessionWorkflow(_ context.Context, workspaceID, 
 	wf := workflowID
 	session.WorkflowID = &wf
 	session.UpdatedAt = time.Now().UTC()
-	session.LockVersion++
+	// lock_version is owned by claim/advance/close (ZKL-56); bind must not race it.
 	s.sessions[key] = session
 	return session, nil
 }
@@ -144,6 +144,54 @@ func (s *MemorySessionStore) NextTurnIndex(_ context.Context, workspaceID, sessi
 		}
 	}
 	return maxIndex + 1, nil
+}
+
+// ClaimSessionLockVersion CAS-advances lock_version expected→expected+1.
+func (s *MemorySessionStore) ClaimSessionLockVersion(
+	_ context.Context, workspaceID, sessionID string, expected *int64,
+) (GenerateSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := sessionKey(workspaceID, sessionID)
+	session, ok := s.sessions[key]
+	if !ok {
+		return GenerateSession{}, ErrSessionNotFound
+	}
+	if session.Status == SessionStatusClosed {
+		return GenerateSession{}, ErrSessionClosed
+	}
+	current := session.LockVersion
+	want := current
+	if expected != nil {
+		want = *expected
+	}
+	if current != want {
+		return GenerateSession{}, ErrSessionVersionConflict
+	}
+	session.LockVersion = current + 1
+	session.UpdatedAt = time.Now().UTC()
+	s.sessions[key] = session
+	return session, nil
+}
+
+// AdvanceSessionLockVersion CAS-advances claimed version → claimed+1.
+func (s *MemorySessionStore) AdvanceSessionLockVersion(
+	_ context.Context, workspaceID, sessionID string, expected int64,
+) (GenerateSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := sessionKey(workspaceID, sessionID)
+	session, ok := s.sessions[key]
+	if !ok {
+		return GenerateSession{}, ErrSessionNotFound
+	}
+	if session.LockVersion != expected {
+		return GenerateSession{}, ErrSessionVersionConflict
+	}
+	session.LockVersion = expected + 1
+	session.UpdatedAt = time.Now().UTC()
+	s.sessions[key] = session
+	return session, nil
 }
 
 // CountSessions is a test helper.

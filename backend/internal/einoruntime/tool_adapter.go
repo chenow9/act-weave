@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"actweave/backend/internal/execution"
+	"actweave/backend/internal/outboundidentity"
 	"actweave/backend/internal/principal"
 
 	"github.com/cloudwego/eino/components/tool"
@@ -31,6 +32,13 @@ type ResolvedInvoker interface {
 	) (execution.PipelineResult, error)
 }
 
+// InvocationResolver resolves capability/connection readiness for a tool call.
+// Production wiring uses the shared ToolInvoker; buildPipelineTools must not
+// call this (ZKL-56 UX-02 lazy resolution).
+type InvocationResolver interface {
+	ResolveInvocation(context.Context, execution.ResolveRequest) (execution.ResolvedInvocation, error)
+}
+
 // PendingConfirmInterrupt is emitted immediately before StatefulInterrupt so
 // chatruntimebridge can prepare platform confirmation rows without stuffing
 // tool args into gob interrupt state (IDs-only gob contract, design Appendix B).
@@ -47,6 +55,10 @@ type PendingConfirmInterrupt struct {
 	AgentRunID string
 	// WorkspaceID is the tenant scope for the pending confirm.
 	WorkspaceID string
+	// Resolved is the non-sensitive resolution snapshot from the single
+	// first-call ResolveInvocation. pauseForInterrupt must reuse it and must
+	// not resolve again.
+	Resolved execution.ResolvedInvocation
 }
 
 // ConfirmInterruptHook is invoked on first-run confirmation gate, before
@@ -80,15 +92,22 @@ type ToolCompleteEvent struct {
 type ToolCompleteHook func(ctx context.Context, event ToolCompleteEvent)
 
 // PipelineToolConfig constructs one InvokableTool bound to a capability release
-// for a single agent run. RequiresConfirmation is pre-evaluated by the engine
-// builder (capability flag and/or side-effect policy) — the tool does not
-// re-run confirmation policy.
+// for a single agent run.
+//
+// Lazy resolution (ZKL-56 / UX-02):
+//   - Prefer Resolver; ResolveInvocation runs only on first actual tool call.
+//   - Resolved may be pre-set for unit tests without a Resolver.
+//   - RequiresConfirmation is the capability-snapshot flag; OR with resolved
+//     RequiresConfirmation after the single resolve.
 type PipelineToolConfig struct {
 	// Info is the Eino ToolInfo (from tooltranslator). Required; Name must be set.
 	Info *schema.ToolInfo
 	// Pipeline executes InvokeResolved on the no-confirm first-run path.
 	Pipeline ResolvedInvoker
-	// RequiresConfirmation gates first-run StatefulInterrupt before any Invoke.
+	// Resolver performs Connection/identity resolution on first actual call.
+	// When nil, Resolved must already be populated (test path).
+	Resolver InvocationResolver
+	// RequiresConfirmation is the capability-snapshot flag only.
 	RequiresConfirmation bool
 
 	// Immutable invoke identity (IDs only — no secrets).
@@ -105,7 +124,8 @@ type PipelineToolConfig struct {
 	PrincipalSnapshot *principal.ExecutionSnapshot
 	// AuthorizationSnapshot is optional evidence attached to the durable invocation.
 	AuthorizationSnapshot json.RawMessage
-	// Resolved is the immutable resolution snapshot for InvokeResolved.
+	// Resolved is an optional pre-baked resolution for tests. Production
+	// chatruntimebridge leaves this empty and supplies Resolver instead.
 	Resolved execution.ResolvedInvocation
 
 	// InvocationID, when set, is used for interrupt state / invoke request.
@@ -115,7 +135,7 @@ type PipelineToolConfig struct {
 	StepID string
 
 	// OnConfirmInterrupt is optional; chatruntimebridge uses it to capture
-	// tool args for platform confirmation prepare (PR7).
+	// tool args + non-sensitive resolved snapshot for platform confirmation prepare.
 	OnConfirmInterrupt ConfirmInterruptHook
 	// OnToolComplete is optional; chatruntimebridge persists TOOL agent_run_steps
 	// for Agent 审计中心 (arguments + result).
@@ -123,10 +143,11 @@ type PipelineToolConfig struct {
 }
 
 // pipelineTool implements tool.InvokableTool with interrupt-before-invoke and
-// resume-without-reinvoke semantics (design §3.6.3).
+// resume-without-reinvoke semantics (design §3.6.3), plus lazy resolution (UX-02).
 type pipelineTool struct {
 	info                 *schema.ToolInfo
 	pipeline             ResolvedInvoker
+	resolver             InvocationResolver
 	requiresConfirmation bool
 
 	workspaceID           string
@@ -139,18 +160,20 @@ type pipelineTool struct {
 	bindingConnectionID   string
 	principalSnapshot     *principal.ExecutionSnapshot
 	authorizationSnapshot json.RawMessage
-	resolved              execution.ResolvedInvocation
-	fixedInvocationID     string
-	stepID                string
-	onConfirmInterrupt    ConfirmInterruptHook
-	onToolComplete        ToolCompleteHook
+	// resolved holds pre-baked test resolution or empty for lazy path.
+	resolved          execution.ResolvedInvocation
+	fixedInvocationID string
+	stepID            string
+	onConfirmInterrupt ConfirmInterruptHook
+	onToolComplete     ToolCompleteHook
 }
 
 // Ensure pipelineTool satisfies InvokableTool at compile time.
 var _ tool.InvokableTool = (*pipelineTool)(nil)
 
 // NewPipelineTool builds an InvokableTool that routes execution through
-// ResolvedInvoker with the HITL ownership rules from design §3.6.3.
+// ResolvedInvoker with the HITL ownership rules from design §3.6.3 and
+// lazy ResolveInvocation on first actual tool call (ZKL-56 UX-02).
 func NewPipelineTool(cfg PipelineToolConfig) (tool.InvokableTool, error) {
 	if cfg.Info == nil || strings.TrimSpace(cfg.Info.Name) == "" {
 		return nil, errors.New("pipeline tool: Info with Name is required")
@@ -158,9 +181,15 @@ func NewPipelineTool(cfg PipelineToolConfig) (tool.InvokableTool, error) {
 	if cfg.Pipeline == nil {
 		return nil, errors.New("pipeline tool: Pipeline invoker is required")
 	}
+	if cfg.Resolver == nil && strings.TrimSpace(cfg.Resolved.Snapshot.CapabilityID) == "" &&
+		strings.TrimSpace(cfg.CapabilityID) == "" {
+		// Allow empty Resolved for pure-metadata tests only when CapabilityID is set
+		// for identity; resolve path will fail closed if both missing at call time.
+	}
 	return &pipelineTool{
 		info:                  cfg.Info,
 		pipeline:              cfg.Pipeline,
+		resolver:              cfg.Resolver,
 		requiresConfirmation:  cfg.RequiresConfirmation,
 		workspaceID:           strings.TrimSpace(cfg.WorkspaceID),
 		capabilityID:          strings.TrimSpace(cfg.CapabilityID),
@@ -187,17 +216,12 @@ func (t *pipelineTool) Info(context.Context) (*schema.ToolInfo, error) {
 
 // InvokableRun implements tool.InvokableTool.
 //
-// Pseudocode (design §3.6.3):
+// Order (ZKL-56 §4.2.2 + design §3.6.3):
 //
-//	wasInterrupted, _, st := GetInterruptState[ToolConfirmInterruptState](ctx)
-//	isTarget, hasData, data := GetResumeContext[string](ctx)
-//	if wasInterrupted {
-//	  if !isTarget { re-StatefulInterrupt }
-//	  if hasData { return data } // NO InvokeResolved
-//	  return error missing data
-//	}
-//	if needsConfirmation { StatefulInterrupt } // NO InvokeResolved
-//	return map(InvokeResolved(...))
+//	resume with platform data → return (no resolve, no invoke)
+//	first call → invocationID → normalize args → resolve once →
+//	  schema validate → confirm interrupt OR InvokeResolved
+//	resolution failure → structured tool error (zero successful Invocation)
 func (t *pipelineTool) InvokableRun(ctx context.Context, args string, _ ...tool.Option) (string, error) {
 	wasInterrupted, _, st := readInterruptState(ctx)
 	isTarget, hasData, data := readResumeContext(ctx)
@@ -208,7 +232,7 @@ func (t *pipelineTool) InvokableRun(ctx context.Context, args string, _ ...tool.
 			return "", tool.StatefulInterrupt(ctx, toolConfirmInterruptInfo, st)
 		}
 		if hasData {
-			// Platform already InvokeResolved during Dispatch — DO NOT call pipeline again.
+			// Platform already InvokeResolved during Dispatch — DO NOT resolve or invoke.
 			return data, nil
 		}
 		return "", fmt.Errorf("eino tool resume missing result data")
@@ -220,7 +244,37 @@ func (t *pipelineTool) InvokableRun(ctx context.Context, args string, _ ...tool.
 		return "", err
 	}
 
-	if t.requiresConfirmation {
+	input, err := normalizeToolArgs(args)
+	if err != nil {
+		out := formatToolErrorResult("TOOL_ARGS_INVALID", err.Error())
+		t.emitToolComplete(ctx, args, out, invocationID, false, "TOOL_ARGS_INVALID")
+		return out, nil
+	}
+
+	resolved, resolveErr := t.resolveOnce(ctx)
+	if resolveErr != nil {
+		code, message := mapResolutionFailure(resolveErr)
+		out := formatToolErrorResult(code, message)
+		t.emitToolComplete(ctx, args, out, invocationID, false, code)
+		return out, nil
+	}
+
+	// Same projection + schema rules as InvocationPipeline, before confirmation.
+	// Empty schema skips pre-check (test fixtures / missing declaration); the
+	// real InvocationPipeline still enforces schema on InvokeResolved.
+	if len(resolved.Snapshot.InputSchema) > 0 {
+		if projected, ok := execution.ProjectToolInputOntoSchema(resolved.Snapshot.InputSchema, input); ok {
+			input = projected
+		}
+		if !execution.MatchToolInputSchema(ctx, resolved.Snapshot.InputSchema, input) {
+			out := formatToolErrorResult("TOOL_ARGS_INVALID", "tool arguments failed input schema validation")
+			t.emitToolComplete(ctx, args, out, invocationID, false, "TOOL_ARGS_INVALID")
+			return out, nil
+		}
+	}
+
+	needsConfirm := t.requiresConfirmation || resolved.RequiresConfirmation
+	if needsConfirm {
 		if t.onConfirmInterrupt != nil {
 			toolName := ""
 			if t.info != nil {
@@ -235,6 +289,7 @@ func (t *pipelineTool) InvokableRun(ctx context.Context, args string, _ ...tool.
 				ToolName:     toolName,
 				AgentRunID:   t.agentRunID,
 				WorkspaceID:  t.workspaceID,
+				Resolved:     resolved,
 			})
 		}
 		return "", tool.StatefulInterrupt(ctx, toolConfirmInterruptInfo, ToolConfirmInterruptState{
@@ -246,7 +301,37 @@ func (t *pipelineTool) InvokableRun(ctx context.Context, args string, _ ...tool.
 		})
 	}
 
-	return t.invokeResolved(ctx, args, invocationID)
+	return t.invokeResolved(ctx, input, args, invocationID, resolved)
+}
+
+func (t *pipelineTool) resolveOnce(ctx context.Context) (execution.ResolvedInvocation, error) {
+	if t.resolver != nil {
+		return t.resolver.ResolveInvocation(ctx, execution.ResolveRequest{
+			WorkspaceID:         t.workspaceID,
+			CapabilityID:        t.capabilityID,
+			ReleaseID:           t.releaseID,
+			BindingConnectionID: t.bindingConnectionID,
+		})
+	}
+	// Test / legacy path: pre-baked Resolved without a live resolver.
+	if strings.TrimSpace(t.resolved.Snapshot.WorkspaceID) == "" &&
+		strings.TrimSpace(t.resolved.Snapshot.CapabilityID) == "" &&
+		strings.TrimSpace(t.resolved.Snapshot.ReleaseID) == "" {
+		// Fill identity from tool config so InvokeResolved pin checks can pass
+		// when tests only set CapabilityID on the tool config.
+		resolved := t.resolved
+		if strings.TrimSpace(resolved.Snapshot.WorkspaceID) == "" {
+			resolved.Snapshot.WorkspaceID = t.workspaceID
+		}
+		if strings.TrimSpace(resolved.Snapshot.CapabilityID) == "" {
+			resolved.Snapshot.CapabilityID = t.capabilityID
+		}
+		if strings.TrimSpace(resolved.Snapshot.ReleaseID) == "" {
+			resolved.Snapshot.ReleaseID = t.releaseID
+		}
+		return resolved, nil
+	}
+	return t.resolved, nil
 }
 
 func (t *pipelineTool) invocationID() (string, error) {
@@ -260,14 +345,13 @@ func (t *pipelineTool) invocationID() (string, error) {
 	return id.String(), nil
 }
 
-func (t *pipelineTool) invokeResolved(ctx context.Context, args string, invocationID string) (string, error) {
-	input, err := normalizeToolArgs(args)
-	if err != nil {
-		out := formatToolErrorResult("TOOL_ARGS_INVALID", err.Error())
-		t.emitToolComplete(ctx, args, out, invocationID, false, "TOOL_ARGS_INVALID")
-		return out, nil
-	}
-
+func (t *pipelineTool) invokeResolved(
+	ctx context.Context,
+	input json.RawMessage,
+	argsJSON string,
+	invocationID string,
+	resolved execution.ResolvedInvocation,
+) (string, error) {
 	request := execution.InvokeRequest{
 		InvocationID:          invocationID,
 		WorkspaceID:           t.workspaceID,
@@ -283,21 +367,18 @@ func (t *pipelineTool) invokeResolved(ctx context.Context, args string, invocati
 		AuthorizationSnapshot: append(json.RawMessage(nil), t.authorizationSnapshot...),
 	}
 
-	result, invokeErr := t.pipeline.InvokeResolved(ctx, request, t.resolved)
+	result, invokeErr := t.pipeline.InvokeResolved(ctx, request, resolved)
 	if invokeErr != nil {
-		code := execution.ErrorCode(invokeErr)
-		if code == "" {
-			code = "TOOL_INVOKE_FAILED"
-		}
-		out := formatToolErrorResult(code, invokeErr.Error())
-		t.emitToolComplete(ctx, args, out, firstNonEmpty(result.InvocationID, invocationID), false, code)
+		code, message := mapInvocationFailure(invokeErr)
+		out := formatToolErrorResult(code, message)
+		t.emitToolComplete(ctx, argsJSON, out, firstNonEmpty(result.InvocationID, invocationID), false, code)
 		return out, nil
 	}
 	out := formatToolSuccessResult(result.Output, map[string]any{
 		"invocationId": result.InvocationID,
 		"cached":       result.Cached,
 	})
-	t.emitToolComplete(ctx, args, out, firstNonEmpty(result.InvocationID, invocationID), true, "")
+	t.emitToolComplete(ctx, argsJSON, out, firstNonEmpty(result.InvocationID, invocationID), true, "")
 	return out, nil
 }
 
@@ -337,6 +418,45 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// mapResolutionFailure returns a stable public code + safe message for tool
+// resolution failures. Never includes Secret/Token/Broker body material.
+func mapResolutionFailure(err error) (code, message string) {
+	if err == nil {
+		return execution.ErrorCodeResolve, "tool resolution failed"
+	}
+	var outbound *outboundidentity.Error
+	if errors.As(err, &outbound) && outbound != nil && strings.TrimSpace(outbound.Code) != "" {
+		msg := strings.TrimSpace(outbound.Message)
+		if msg == "" {
+			msg = outbound.Code
+		}
+		return outbound.Code, msg
+	}
+	if code := execution.ErrorCode(err); code != "" {
+		return code, code
+	}
+	// Last resort: prefer a stable resolve code over raw error text.
+	return execution.ErrorCodeResolve, "tool resolution failed"
+}
+
+func mapInvocationFailure(err error) (code, message string) {
+	if err == nil {
+		return "TOOL_INVOKE_FAILED", "tool invocation failed"
+	}
+	var outbound *outboundidentity.Error
+	if errors.As(err, &outbound) && outbound != nil && strings.TrimSpace(outbound.Code) != "" {
+		msg := strings.TrimSpace(outbound.Message)
+		if msg == "" {
+			msg = outbound.Code
+		}
+		return outbound.Code, msg
+	}
+	if code := execution.ErrorCode(err); code != "" {
+		return code, code
+	}
+	return "TOOL_INVOKE_FAILED", "tool invocation failed"
 }
 
 // normalizeToolArgs parses model tool-call arguments into a JSON object.

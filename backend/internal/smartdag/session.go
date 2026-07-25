@@ -76,6 +76,13 @@ type SessionStore interface {
 	CreateTurn(ctx context.Context, turn GenerateTurn) (GenerateTurn, error)
 	ListTurns(ctx context.Context, workspaceID, sessionID string) ([]GenerateTurn, error)
 	NextTurnIndex(ctx context.Context, workspaceID, sessionID string) (int, error)
+	// ClaimSessionLockVersion CAS-advances lock_version from expected→expected+1.
+	// When expected is nil, uses the current version (old-client compatibility).
+	// Returns ErrSessionVersionConflict on mismatch.
+	ClaimSessionLockVersion(ctx context.Context, workspaceID, sessionID string, expected *int64) (GenerateSession, error)
+	// AdvanceSessionLockVersion CAS-advances lock_version from expected→expected+1
+	// after a terminal turn commit (claimed N+1 → final N+2).
+	AdvanceSessionLockVersion(ctx context.Context, workspaceID, sessionID string, expected int64) (GenerateSession, error)
 }
 
 // DraftReader loads the current workflow draft for multi-turn Prior state.
@@ -91,6 +98,7 @@ type SessionService struct {
 	gate     *AgentModelGate
 	prompts  SystemPromptStore
 	drafts   DraftReader
+	locker   SessionLocker
 	nextID   IDGenerator
 	now      func() time.Time
 }
@@ -102,8 +110,10 @@ type SessionServiceDeps struct {
 	Gate     *AgentModelGate
 	Prompts  SystemPromptStore
 	Drafts   DraftReader
-	NextID   IDGenerator
-	Now      func() time.Time
+	// Locker is optional; when nil, MemorySessionLocker is used (safe for single-process tests).
+	Locker SessionLocker
+	NextID IDGenerator
+	Now    func() time.Time
 }
 
 // NewSessionService constructs a session orchestrator.
@@ -115,12 +125,17 @@ func NewSessionService(deps SessionServiceDeps) (*SessionService, error) {
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}
+	locker := deps.Locker
+	if locker == nil {
+		locker = NewMemorySessionLocker()
+	}
 	return &SessionService{
 		sessions: deps.Sessions,
 		turns:    deps.Turns,
 		gate:     deps.Gate,
 		prompts:  deps.Prompts,
 		drafts:   deps.Drafts,
+		locker:   locker,
 		nextID:   deps.NextID,
 		now:      now,
 	}, nil
@@ -223,6 +238,9 @@ type ApplySessionTurnRequest struct {
 	// Feedback is optional FailureFeedback JSON (D14 seed+feedback revise).
 	// On success: draftVersion bump only; never auto-publish (D5).
 	Feedback json.RawMessage
+	// ExpectedSessionLockVersion is optional for old clients (ZKL-56).
+	// When set, must match current lock_version before claim (N → N+1).
+	ExpectedSessionLockVersion *int64
 }
 
 // ApplySessionTurnResult is the HTTP-facing turn success payload.
@@ -251,6 +269,8 @@ type ApplySessionTurnResult struct {
 }
 
 // ApplySessionTurn runs gate → model → guard → Create/UpdateDraft and records the turn.
+// ZKL-56: holds session advisory lock, claims lock_version N→N+1, advances to N+2 on
+// terminal turn persist. Model/parse/guard run outside DB transactions.
 func (s *SessionService) ApplySessionTurn(ctx context.Context, request ApplySessionTurnRequest) (ApplySessionTurnResult, error) {
 	if s == nil {
 		return ApplySessionTurnResult{}, errors.New("session service is nil")
@@ -274,6 +294,13 @@ func (s *SessionService) ApplySessionTurn(ctx context.Context, request ApplySess
 		return ApplySessionTurnResult{}, ErrInvalid
 	}
 
+	// Session-scoped try-lock: concurrent turn/close returns busy immediately.
+	lock, err := s.locker.TryLock(ctx, request.WorkspaceID, request.SessionID)
+	if err != nil {
+		return ApplySessionTurnResult{}, err
+	}
+	defer func() { _ = lock.Unlock(context.WithoutCancel(ctx)) }()
+
 	session, err := s.sessions.GetSession(ctx, request.WorkspaceID, request.SessionID)
 	if err != nil {
 		return ApplySessionTurnResult{}, err
@@ -282,7 +309,16 @@ func (s *SessionService) ApplySessionTurn(ctx context.Context, request ApplySess
 		return ApplySessionTurnResult{}, ErrSessionClosed
 	}
 
-	// Mid-session model revalidation (D2).
+	// Claim lock version N→N+1 (old clients omit expected → use current).
+	session, err = s.sessions.ClaimSessionLockVersion(
+		ctx, request.WorkspaceID, request.SessionID, request.ExpectedSessionLockVersion,
+	)
+	if err != nil {
+		return ApplySessionTurnResult{}, err
+	}
+	claimedVersion := session.LockVersion // N+1
+
+	// Mid-session model revalidation (D2) — outside DB tx.
 	if _, err := s.gate.Resolve(ctx, session.WorkspaceID, session.AgentID, request.RequestModelConfigID); err != nil {
 		return ApplySessionTurnResult{}, err
 	}
@@ -335,6 +371,8 @@ func (s *SessionService) ApplySessionTurn(ctx context.Context, request ApplySess
 		return ApplySessionTurnResult{}, errors.New("id generator returned invalid UUID")
 	}
 
+	// Model + guard + draft write (draft CAS lives in TurnService; long model call
+	// stays outside a DB transaction while the advisory lock is held).
 	result, err := s.turns.ApplyTurn(ctx, ApplyTurnRequest{
 		WorkspaceID:          session.WorkspaceID,
 		AgentID:              session.AgentID,
@@ -367,9 +405,11 @@ func (s *SessionService) ApplySessionTurn(ctx context.Context, request ApplySess
 			turn.Status = TurnStatusGuardRejected
 			turn.GuardOK = false
 			turn.GuardReport = guardErr.Report
-			turn.ErrorCode = "GUARD_REJECTED"
+			turn.ErrorCode = CodeGuardRejected
 			turn.AssistantMessage = "生成结果未通过图校验，已保留上一轮合法草稿。"
-			_, _ = s.sessions.CreateTurn(ctx, turn)
+			if _, createErr := s.sessions.CreateTurn(ctx, turn); createErr == nil {
+				_, _ = s.sessions.AdvanceSessionLockVersion(ctx, session.WorkspaceID, session.ID, claimedVersion)
+			}
 			return ApplySessionTurnResult{
 				SessionID:     session.ID,
 				TurnID:        turnID,
@@ -388,16 +428,30 @@ func (s *SessionService) ApplySessionTurn(ctx context.Context, request ApplySess
 		}
 		turn.Status = TurnStatusFailed
 		turn.GuardOK = false
-		turn.ErrorCode = "FAILED"
+		turn.ErrorCode = stableFailedTurnCode(err)
 		turn.AssistantMessage = "本轮生成失败，未覆盖草稿。"
-		_, _ = s.sessions.CreateTurn(ctx, turn)
-		return ApplySessionTurnResult{}, err
+		if _, createErr := s.sessions.CreateTurn(ctx, turn); createErr == nil {
+			_, _ = s.sessions.AdvanceSessionLockVersion(ctx, session.WorkspaceID, session.ID, claimedVersion)
+		}
+		// Prefer typed TurnFailure when available.
+		if tf, ok := AsTurnFailure(err); ok {
+			return ApplySessionTurnResult{
+				SessionID: session.ID, TurnID: turnID, GenerationID: generationID,
+				TraceID: strings.TrimSpace(request.TraceID),
+			}, tf
+		}
+		return ApplySessionTurnResult{
+			SessionID: session.ID, TurnID: turnID, GenerationID: generationID,
+			TraceID: strings.TrimSpace(request.TraceID),
+		}, err
 	}
 
-	// Bind workflow to session after first success.
+	// Short success unit: bind first workflow (if needed) + succeeded turn, then
+	// advance lock version. Draft already committed by ApplyTurn via CAS; a later
+	// failure here surfaces as DRAFT_PERSIST without claiming a false history.
 	if session.WorkflowID == nil || *session.WorkflowID == "" {
 		if _, setErr := s.sessions.SetSessionWorkflow(ctx, session.WorkspaceID, session.ID, result.Workflow.CapabilityID); setErr != nil {
-			return ApplySessionTurnResult{}, fmt.Errorf("bind workflow to session: %w", setErr)
+			return ApplySessionTurnResult{}, NewTurnFailure(CodeDraftPersistFailed, setErr)
 		}
 	}
 
@@ -420,7 +474,11 @@ func (s *SessionService) ApplySessionTurn(ctx context.Context, request ApplySess
 		CreatedAt:        now,
 	}
 	if _, createErr := s.sessions.CreateTurn(ctx, turn); createErr != nil {
-		return ApplySessionTurnResult{}, fmt.Errorf("persist generate turn: %w", createErr)
+		return ApplySessionTurnResult{}, NewTurnFailure(CodeDraftPersistFailed, createErr)
+	}
+	if _, advErr := s.sessions.AdvanceSessionLockVersion(ctx, session.WorkspaceID, session.ID, claimedVersion); advErr != nil {
+		// Turn is durable; version advance failure is non-fatal for read recovery via GET.
+		_ = advErr
 	}
 
 	selected := selectedToolIDsFromGraph(result.Graph)
@@ -495,16 +553,35 @@ func (s *SessionService) GetSession(ctx context.Context, workspaceID, sessionID 
 	return detail, nil
 }
 
+// CloseSessionRequest closes an OPEN generate session.
+type CloseSessionRequest struct {
+	WorkspaceID                string
+	SessionID                  string
+	ExpectedSessionLockVersion *int64
+}
+
 // CloseSession marks session CLOSED; further turns return ErrSessionClosed.
+// Acquires the same session advisory lock so close vs in-flight turn returns busy.
 func (s *SessionService) CloseSession(ctx context.Context, workspaceID, sessionID string) (GenerateSession, error) {
+	return s.CloseSessionWith(ctx, CloseSessionRequest{WorkspaceID: workspaceID, SessionID: sessionID})
+}
+
+// CloseSessionWith supports optional expectedSessionLockVersion (ZKL-56).
+func (s *SessionService) CloseSessionWith(ctx context.Context, request CloseSessionRequest) (GenerateSession, error) {
 	if s == nil {
 		return GenerateSession{}, errors.New("session service is nil")
 	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	sessionID = strings.TrimSpace(sessionID)
+	workspaceID := strings.TrimSpace(request.WorkspaceID)
+	sessionID := strings.TrimSpace(request.SessionID)
 	if !validUUID(workspaceID) || !validUUID(sessionID) {
 		return GenerateSession{}, ErrInvalid
 	}
+	lock, err := s.locker.TryLock(ctx, workspaceID, sessionID)
+	if err != nil {
+		return GenerateSession{}, err
+	}
+	defer func() { _ = lock.Unlock(context.WithoutCancel(ctx)) }()
+
 	session, err := s.sessions.GetSession(ctx, workspaceID, sessionID)
 	if err != nil {
 		return GenerateSession{}, err
@@ -512,7 +589,33 @@ func (s *SessionService) CloseSession(ctx context.Context, workspaceID, sessionI
 	if session.Status == SessionStatusClosed {
 		return session, nil
 	}
+	if request.ExpectedSessionLockVersion != nil &&
+		session.LockVersion != *request.ExpectedSessionLockVersion {
+		return GenerateSession{}, ErrSessionVersionConflict
+	}
 	return s.sessions.CloseSession(ctx, workspaceID, sessionID, s.now())
+}
+
+// stableFailedTurnCode maps a generate failure to a durable turn error_code.
+func stableFailedTurnCode(err error) string {
+	if tf, ok := AsTurnFailure(err); ok && tf != nil {
+		return tf.Code
+	}
+	switch {
+	case errors.Is(err, ErrOutputInvalid):
+		return CodeOutputInvalid
+	case errors.Is(err, ErrModelTimeout):
+		return CodeModelTimeout
+	case errors.Is(err, ErrModelUnavailable):
+		return CodeModelUnavailable
+	case errors.Is(err, ErrDraftConflict):
+		return CodeDraftConflict
+	case errors.Is(err, ErrDraftPersistFailed):
+		return CodeDraftPersistFailed
+	default:
+		// Keep historical generic code for unclassified failures (GET → UNKNOWN).
+		return CodeHistoricalFailed
+	}
 }
 
 func historyForModel(turns []GenerateTurn) []TurnHistoryItem {

@@ -745,12 +745,17 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if err != nil {
 		return nil, err
 	}
+	sessionLocker, err := smartdag.NewSQLSessionLocker(db)
+	if err != nil {
+		return nil, err
+	}
 	generateSessionService, err := smartdag.NewSessionService(smartdag.SessionServiceDeps{
 		Sessions: generateSessionStore,
 		Turns:    turnService,
 		Gate:     agentModelGate,
 		Prompts:  smartdag.NewMemorySystemPromptStore(),
 		Drafts:   workflowRepository,
+		Locker:   sessionLocker,
 		NextID:   smartdag.UUIDv7Generator,
 	})
 	if err != nil {

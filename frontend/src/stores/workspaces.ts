@@ -10,7 +10,17 @@ import type {
   WorkspaceRole,
 } from "../types/domain";
 
-export type WorkspaceAction = "VIEW" | "EDIT" | "MANAGE" | "DELETE";
+/** Mirrors backend/internal/authz/workspace_policy.go Action set. */
+export type WorkspaceAction = "VIEW" | "EDIT" | "TEST" | "PUBLISH" | "EXECUTE" | "MANAGE" | "DELETE";
+
+/** Role → allowed actions, identical to backend workspaceRoleActions. */
+export const WORKSPACE_ROLE_ACTIONS: Record<WorkspaceRole, readonly WorkspaceAction[]> = {
+  OWNER: ["VIEW", "EDIT", "TEST", "PUBLISH", "EXECUTE", "MANAGE", "DELETE"],
+  ADMIN: ["VIEW", "EDIT", "TEST", "PUBLISH", "EXECUTE", "MANAGE"],
+  EDITOR: ["VIEW", "EDIT", "TEST", "PUBLISH", "EXECUTE"],
+  OPERATOR: ["VIEW", "TEST", "EXECUTE"],
+  VIEWER: ["VIEW"],
+};
 
 const ACTIVE_WORKSPACE_STORAGE_KEY = "actweave:active-workspace-id";
 
@@ -33,10 +43,14 @@ interface WorkspaceDTO {
   lockVersion: number;
 }
 
+/** Members load state per workspace — mutations fail closed while LOADING/ERROR. */
+export type MembersLoadStatus = "IDLE" | "LOADING" | "LOADED" | "ERROR";
+
 interface WorkspaceState {
   items: Workspace[];
   pageItems: Workspace[];
   membersByWorkspace: Record<string, WorkspaceMember[]>;
+  membersLoadStatusByWorkspace: Record<string, MembersLoadStatus>;
   pagination: ListPagination;
   listQuery: Required<Pick<WorkspaceListQuery, "query" | "page" | "pageSize">> &
     Pick<WorkspaceListQuery, "status" | "mode" | "sortBy" | "sortOrder">;
@@ -52,6 +66,7 @@ export const useWorkspaceStore = defineStore("workspaces", {
     items: [],
     pageItems: [],
     membersByWorkspace: {},
+    membersLoadStatusByWorkspace: {},
     pagination: { page: 1, pageSize: DEFAULT_PAGE_SIZE, total: 0, pageSizeOptions: [...PAGE_SIZE_OPTIONS] },
     listQuery: { query: "", page: 1, pageSize: DEFAULT_PAGE_SIZE, sortBy: undefined, sortOrder: undefined },
     activeWorkspaceId: readActiveWorkspaceID(),
@@ -177,10 +192,17 @@ export const useWorkspaceStore = defineStore("workspaces", {
       }
     },
     async loadMembers(workspaceId: string, includeDisabled = false) {
+      this.membersLoadStatusByWorkspace[workspaceId] = "LOADING";
       const suffix = includeDisabled ? "?includeDisabled=true" : "";
-      const response = await apiClient.get<{ items: WorkspaceMember[] }>(`/workspaces/${workspaceId}/members${suffix}`);
-      this.membersByWorkspace[workspaceId] = response.data.items;
-      return response.data.items;
+      try {
+        const response = await apiClient.get<{ items: WorkspaceMember[] }>(`/workspaces/${workspaceId}/members${suffix}`);
+        this.membersByWorkspace[workspaceId] = response.data.items;
+        this.membersLoadStatusByWorkspace[workspaceId] = "LOADED";
+        return response.data.items;
+      } catch (error) {
+        this.membersLoadStatusByWorkspace[workspaceId] = "ERROR";
+        throw error;
+      }
     },
     async searchMemberCandidates(workspaceId: string, query = "", limit = 20) {
       const params = new URLSearchParams({ query: query.trim(), limit: String(limit) });
@@ -217,18 +239,38 @@ export const useWorkspaceStore = defineStore("workspaces", {
       );
     },
     roleFor(workspaceId: string, userId: string): WorkspaceRole | "" {
-      const workspace = this.items.find((item) => item.id === workspaceId);
+      const workspace =
+        this.items.find((item) => item.id === workspaceId) ||
+        this.pageItems.find((item) => item.id === workspaceId);
       if (workspace?.ownerUserId === userId) {
         return "OWNER";
       }
       return this.membersByWorkspace[workspaceId]?.find((member) => member.userId === userId && !member.disabledAt)?.role || "";
     },
+    /**
+     * Authorization helper aligned with backend CanWorkspace.
+     * - VIEW: allowed when role known (owner or loaded member).
+     * - Mutations: fail closed when members are LOADING/ERROR and user is not owner.
+     * - Unknown role/action → false.
+     */
     can(workspaceId: string, userId: string, action: WorkspaceAction) {
       const role = this.roleFor(workspaceId, userId);
-      if (action === "VIEW") return Boolean(role);
-      if (action === "EDIT") return role === "OWNER" || role === "ADMIN" || role === "EDITOR";
-      if (action === "MANAGE") return role === "OWNER" || role === "ADMIN";
-      return role === "OWNER";
+      if (!role) {
+        // Fail closed for mutations; VIEW still false without known membership.
+        return false;
+      }
+      if (action !== "VIEW") {
+        const membersStatus = this.membersLoadStatusByWorkspace[workspaceId] || "IDLE";
+        // Owner is known from workspace DTO without members list.
+        if (role !== "OWNER" && (membersStatus === "LOADING" || membersStatus === "ERROR" || membersStatus === "IDLE")) {
+          // If members are already present in cache (e.g. hydrated), treat as LOADED.
+          if (!this.membersByWorkspace[workspaceId]?.length) {
+            return false;
+          }
+        }
+      }
+      const allowed = WORKSPACE_ROLE_ACTIONS[role];
+      return Boolean(allowed?.includes(action));
     },
     selectWorkspace(workspaceId: string) {
       if (workspaceId && this.items.length && !this.items.some((workspace) => workspace.id === workspaceId)) {

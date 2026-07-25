@@ -21,6 +21,8 @@ import WorkflowTrialRunDialog from "../components/workflow/WorkflowTrialRunDialo
 import WorkspaceContextState from "../components/WorkspaceContextState.vue";
 import { createWorkflowHistoryState, cloneWorkflowGraph, pushWorkflowHistoryState, sameWorkflowGraph, type WorkflowHistoryState } from "../components/workflow/workflow-history";
 import { autoLayoutWorkflowGraph, layoutWorkflowGraphIfNeeded } from "../components/workflow/workflow-layout";
+import { toAPIError } from "../services/api";
+import { useAuthStore } from "../stores/auth";
 import { useIntegrationStore } from "../stores/integration";
 import { useWorkflowStore, WorkflowDraftConflictError } from "../stores/workflow";
 import { useWorkspaceStore } from "../stores/workspaces";
@@ -86,6 +88,7 @@ type WorkflowEditorReadinessStep = {
 const workflowStore = useWorkflowStore();
 const integration = useIntegrationStore();
 const workspaces = useWorkspaceStore();
+const auth = useAuthStore();
 const router = useRouter();
 const hasWorkspaceContext = computed(() => Boolean(workspaces.activeWorkspaceId || workspaces.items[0]?.id));
 let editorDraftLoadRequestId = 0;
@@ -115,6 +118,7 @@ const contextMenu = ref<WorkflowContextMenuState>();
 const editorGraph = ref<WorkflowGraphDraft>(createDefaultWorkflowGraphDraft());
 const editorHistory = ref<WorkflowHistoryState>(createWorkflowHistoryState());
 const editorDraftLoadState = ref<EditorDraftLoadState>("idle");
+const editorDraftLoadError = ref("");
 const trialRunVisible = ref(false);
 const trialRunTargetWorkflowId = ref("");
 const trialRunTargetWorkflowName = ref("");
@@ -390,9 +394,11 @@ async function ensureWorkspacesLoaded() {
 async function loadEditorDraft(workflowId: string): Promise<EditorDraftLoadStatus> {
   const requestId = ++editorDraftLoadRequestId;
   editorDraftLoadState.value = "loading";
+  editorDraftLoadError.value = "";
 
   try {
     const { draft, latestCompilation } = await workflowStore.loadWorkflowDraft(workflowId);
+    // requestToken + workflowId fence: stale completions must not commit UI.
     if (requestId !== editorDraftLoadRequestId || editorDraftTargetWorkflowId !== workflowId) {
       return "stale" as const;
     }
@@ -400,22 +406,25 @@ async function loadEditorDraft(workflowId: string): Promise<EditorDraftLoadStatu
     workflowStore.activeDraft = draft;
     workflowStore.activeCompilation = latestCompilation;
     // Unstack overlapping/zero-position graphs when opening the editor (HITL chains etc.).
+    // Graph must come from the server Draft only — never synthesize a default empty graph here.
     editorGraph.value = layoutWorkflowGraphIfNeeded(cloneGraph(draft.graph));
     resetEditorHistory();
     syncSelection();
     editorDraftLoadState.value = "loaded";
+    editorDraftLoadError.value = "";
     return "loaded" as const;
   } catch (error) {
     if (requestId !== editorDraftLoadRequestId || editorDraftTargetWorkflowId !== workflowId) {
       return "stale" as const;
     }
 
-    workflowStore.activeDraft = undefined;
-    workflowStore.activeCompilation = undefined;
-    editorGraph.value = createDefaultWorkflowGraphDraft();
-    resetEditorHistory();
-    syncSelection();
+    // Failure retains prior legitimate state / detail context. Do not write a default empty graph
+    // and do not clear selected workflow (ZKL-56 UX-01).
     editorDraftLoadState.value = "failed";
+    const apiError = toAPIError(error);
+    const requestIdHint = apiError.requestId ? `（请求 ${apiError.requestId}）` : "";
+    const detail = apiError.message?.trim() && apiError.message !== "草稿加载失败" ? `：${apiError.message}` : "";
+    editorDraftLoadError.value = `草稿加载失败${detail}，请重试。${requestIdHint}`;
     return "failed" as const;
   }
 }
@@ -830,12 +839,16 @@ function closeWorkflowMetadata() {
 
 async function openWorkflowEditor(workflow = selectedWorkflow.value) {
   if (!workflow) return;
+  // Permission gate: no EDIT → no editor entry (backend still enforces 403).
+  const userId = auth.user?.id || "";
+  if (userId && !workspaces.can(workflow.workspaceId, userId, "EDIT")) {
+    workflowActionNote.value = "当前角色无权编辑流程图。";
+    return;
+  }
   captureWorkflowFocus();
-  // Close detail modal first so it cannot sit under the editor at the same z-index
-  // and block interaction after a render error or partial open.
-  workflowDetailVisible.value = false;
   selectWorkflow(workflow);
-  workflowEditorVisible.value = false;
+  // Keep detail visible until Draft+Readiness succeed (ZKL-56 atomic handoff).
+  // Do not open editor or clear detail on partial failure.
   workflowToolCatalog.value = [];
   workflowToolCatalogWorkspaceId.value = "";
   workflowToolCatalogError.value = "";
@@ -843,13 +856,19 @@ async function openWorkflowEditor(workflow = selectedWorkflow.value) {
   const status = await loadEditorDraft(workflow.id);
   if (status !== "loaded") {
     if (status === "failed") {
-      workflowActionNote.value = `${workflow.name} 草稿加载失败，请稍后重试。`;
+      workflowActionNote.value =
+        editorDraftLoadError.value || `${workflow.name} 草稿加载失败，请稍后重试。`;
+      // Ensure detail stays open for recovery / retry.
+      workflowDetailVisible.value = true;
     }
-    editorDraftTargetWorkflowId = "";
+    // stale: another open superseded this request — leave UI alone.
     return;
   }
   workflowActionNote.value = "";
+  // Success: mount editor first, then close detail on next DOM flush.
   workflowEditorVisible.value = true;
+  await nextTick();
+  workflowDetailVisible.value = false;
   void nextTick(() => workflowEditorShellRef.value?.focus());
 }
 
@@ -2035,7 +2054,16 @@ function actionErrorMessage(error: unknown, fallback: string) {
           <button class="ghost-button" type="button" :disabled="!selectedWorkflow" @click="selectedWorkflow && openTrialRunDialog(selectedWorkflow)">试运行</button>
           <button class="ghost-button" type="button" :disabled="!selectedWorkflow" @click="openEditWorkflow()">编辑信息</button>
           <button class="ghost-button" type="button" :disabled="!selectedWorkflow || !selectedWorkflowCanPublish" @click="publishWorkflow()">发布</button>
-          <button class="primary-button" type="button" :disabled="!selectedWorkflow" @click="openWorkflowEditor()">编辑流程图</button>
+          <button
+            v-if="selectedWorkflow && workspaces.can(selectedWorkflow.workspaceId, auth.user?.id || '', 'EDIT')"
+            class="primary-button"
+            type="button"
+            :disabled="!selectedWorkflow || editorDraftLoadState === 'loading'"
+            :aria-busy="editorDraftLoadState === 'loading' ? 'true' : undefined"
+            @click="openWorkflowEditor()"
+          >
+            编辑流程图
+          </button>
         </div>
         </section>
       </div>

@@ -35,25 +35,73 @@ export function getToolTestStatus(tool: Tool): GovernanceStatusMeta {
   if (hasPassingToolTest(tool)) {
     return { label: "测试通过", tone: "success", description: "最近一次测试通过" };
   }
+  // Prefer additive latestTest; null/missing → 历史测试未知 (not “通过”).
+  if (tool.latestTest) {
+    if (tool.latestTest.status === "FAILED") {
+      return {
+        label: "测试失败",
+        tone: "danger",
+        description: tool.latestTest.errorCode
+          ? `最近一次测试失败（${tool.latestTest.errorCode}）`
+          : "最近一次测试失败，需要修复后重试",
+      };
+    }
+  }
+  if (!tool.lastTestResult && !tool.latestTest) {
+    return { label: "历史测试未知", tone: "neutral", description: "暂无测试记录，不得从已发布状态推断通过" };
+  }
   if (!tool.lastTestResult) {
-    return { label: "未测试", tone: "neutral", description: "暂无测试记录" };
+    return { label: "历史测试未知", tone: "neutral", description: "暂无测试记录" };
   }
   return { label: "测试失败", tone: "danger", description: "最近一次测试失败，需要修复后重试" };
 }
 
 export function hasPassingToolTest(tool: Tool): boolean {
+  // ZKL-56: never infer success from Published lifecycle alone.
+  if (tool.latestTest) {
+    return tool.latestTest.status === "SUCCEEDED" || tool.latestTest.status === "Tested";
+  }
   if (tool.lastTestResult) return tool.lastTestResult.status === "Tested";
-  return tool.status === "Tested" || tool.status === "Published";
+  return false;
 }
 
 const CONNECTION_DANGER_STATUSES = new Set(["Needs attention", "UNVERIFIED", "ERROR", "DISABLED"]);
 
-export function getToolRunStatus(tool: Tool, connection?: ServiceConnection): GovernanceStatusMeta {
+/**
+ * Catalog-aware availability (ZKL-56 §4.6.2).
+ * Only LOADED + entity absent → MISSING; LOADING/ERROR must not show MISSING.
+ */
+export type CatalogAvailabilityInput = {
+  catalogStatus?: "IDLE" | "LOADING" | "LOADED" | "ERROR";
+  connection?: ServiceConnection;
+};
+
+export function getToolRunStatus(
+  tool: Tool,
+  connectionOrOptions?: ServiceConnection | CatalogAvailabilityInput,
+): GovernanceStatusMeta {
+  const options: CatalogAvailabilityInput =
+    connectionOrOptions && "catalogStatus" in (connectionOrOptions as object)
+      ? (connectionOrOptions as CatalogAvailabilityInput)
+      : { connection: connectionOrOptions as ServiceConnection | undefined };
+  const connection = options.connection;
+  const catalogStatus = options.catalogStatus;
+
   if (tool.status === "Disabled") {
     return { label: "已停用", tone: "neutral", description: "Tool 已停用，运行状态不再更新" };
   }
+  if (catalogStatus === "IDLE" || catalogStatus === "LOADING") {
+    return { label: "连接加载中", tone: "info", description: "正在加载服务连接目录" };
+  }
+  if (catalogStatus === "ERROR") {
+    return { label: "连接状态未知", tone: "warning", description: "服务连接目录加载失败，请重试" };
+  }
   if (!connection) {
+    // Only true missing after LOADED (or when catalog status unknown and caller passed no connection).
     return { label: "连接缺失", tone: "danger", description: "找不到绑定的服务连接" };
+  }
+  if ((connection as ServiceConnection & { migrationState?: string }).migrationState === "MIGRATION_REQUIRED") {
+    return { label: "连接待迁移", tone: "warning", description: "服务连接需要迁移后才能调用" };
   }
   if (CONNECTION_DANGER_STATUSES.has(connection.status)) {
     const reason = connectionStatusReason(connection.status);
@@ -65,6 +113,9 @@ export function getToolRunStatus(tool: Tool, connection?: ServiceConnection): Go
   }
   if (connection.status === "Expiring soon") {
     return { label: "凭证将过期", tone: "warning", description: "服务连接凭证即将过期" };
+  }
+  if (connection.status === "Available" || connection.status === "VERIFIED") {
+    return { label: "当前可调用", tone: "success", description: "服务连接可用" };
   }
   return { label: "暂无观测", tone: "neutral", description: "后端尚未提供运行健康、调用量和失败率" };
 }

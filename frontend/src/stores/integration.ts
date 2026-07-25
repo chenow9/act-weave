@@ -31,6 +31,15 @@ import { getToolRunStatus } from "../utils/tool-governance";
 import { getToolTypeLabel } from "../utils/tool-presentation";
 import { useWorkspaceStore } from "./workspaces";
 
+/** Catalog load status for workspace-scoped Connection lookups (ZKL-56). */
+export type CatalogLoadStatus = "IDLE" | "LOADING" | "LOADED" | "ERROR";
+
+export interface CatalogLoadState {
+  status: CatalogLoadStatus;
+  errorCode?: string;
+  requestId?: string;
+}
+
 function createSchemaNodeId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -288,6 +297,11 @@ interface IntegrationState {
   serviceConnectionCatalog: ServiceConnection[];
   serviceConnectionRegistryTotal: number;
   toolConnectionsByWorkspace: Record<string, ServiceConnection[]>;
+  /**
+   * ZKL-56: workspace-scoped catalog load state for Tool Connection availability.
+   * Availability must not treat IDLE/LOADING/ERROR as MISSING.
+   */
+  toolConnectionCatalogStateByWorkspace: Record<string, CatalogLoadState>;
   tools: Tool[];
   toolPageItems: Tool[];
   toolPagination: ListPagination;
@@ -317,6 +331,7 @@ export const useIntegrationStore = defineStore("integration", {
     serviceConnectionCatalog: [],
     serviceConnectionRegistryTotal: 0,
     toolConnectionsByWorkspace: {},
+    toolConnectionCatalogStateByWorkspace: {},
     tools: [],
     toolPageItems: [],
     toolPagination: { page: 1, pageSize: DEFAULT_PAGE_SIZE, total: 0, pageSizeOptions: [...PAGE_SIZE_OPTIONS] },
@@ -746,39 +761,65 @@ export const useIntegrationStore = defineStore("integration", {
       return this.toolConnectionsByWorkspace;
     },
     async loadToolWorkspaceContext(workspaceID: string, providerIDs: string[] = [], force = false) {
-      if (!force && Object.prototype.hasOwnProperty.call(this.toolConnectionsByWorkspace, workspaceID)) {
+      const priorState = this.toolConnectionCatalogStateByWorkspace[workspaceID];
+      if (!force && priorState?.status === "LOADED" && Object.prototype.hasOwnProperty.call(this.toolConnectionsByWorkspace, workspaceID)) {
         return this.toolConnectionsByWorkspace[workspaceID];
       }
-
-      const providerResponse = await apiClient.get<{ items: CapabilityProvider[] }>(`/workspaces/${workspaceID}/providers`);
-      const providers = providerResponse.data.items.map(normalizeProvider);
-      const requestedProviderIDs = new Set(providerIDs);
-      const targetProviders = requestedProviderIDs.size
-        ? providers.filter((provider) => requestedProviderIDs.has(provider.id))
-        : providers;
-      const connectionResponses = await Promise.all(
-        targetProviders.map(async (provider) => {
-          const response = await apiClient.get<{ items: ConnectionDTO[] }>(
-            `/workspaces/${workspaceID}/providers/${provider.id}/connections`,
-          );
-          return response.data.items.map((connection) => connectionFromDTO(connection, provider, workspaceID));
-        }),
-      );
-      const connections = connectionResponses.flat();
-      this.toolConnectionsByWorkspace = {
-        ...this.toolConnectionsByWorkspace,
-        [workspaceID]: connections,
+      // Force reload may retain prior entities for stable render, but status is LOADING
+      // so availability does not treat mid-flight as MISSING (ZKL-56).
+      this.toolConnectionCatalogStateByWorkspace = {
+        ...this.toolConnectionCatalogStateByWorkspace,
+        [workspaceID]: { status: "LOADING" },
       };
-      if (workspaceID === this.workspaceID()) {
-        this.providers = providers;
-        this.serviceConnectionCatalog = connections;
-        this.serviceConnectionRegistryTotal = connections.length;
+
+      try {
+        const providerResponse = await apiClient.get<{ items: CapabilityProvider[] }>(`/workspaces/${workspaceID}/providers`);
+        const providers = providerResponse.data.items.map(normalizeProvider);
+        const requestedProviderIDs = new Set(providerIDs);
+        const targetProviders = requestedProviderIDs.size
+          ? providers.filter((provider) => requestedProviderIDs.has(provider.id))
+          : providers;
+        const connectionResponses = await Promise.all(
+          targetProviders.map(async (provider) => {
+            const response = await apiClient.get<{ items: ConnectionDTO[] }>(
+              `/workspaces/${workspaceID}/providers/${provider.id}/connections`,
+            );
+            return response.data.items.map((connection) => connectionFromDTO(connection, provider, workspaceID));
+          }),
+        );
+        const connections = connectionResponses.flat();
+        this.toolConnectionsByWorkspace = {
+          ...this.toolConnectionsByWorkspace,
+          [workspaceID]: connections,
+        };
+        this.toolConnectionCatalogStateByWorkspace = {
+          ...this.toolConnectionCatalogStateByWorkspace,
+          [workspaceID]: { status: "LOADED" },
+        };
+        if (workspaceID === this.workspaceID()) {
+          this.providers = providers;
+          this.serviceConnectionCatalog = connections;
+          this.serviceConnectionRegistryTotal = connections.length;
+        }
+        return connections;
+      } catch (error) {
+        this.toolConnectionCatalogStateByWorkspace = {
+          ...this.toolConnectionCatalogStateByWorkspace,
+          [workspaceID]: { status: "ERROR", errorCode: "CATALOG_LOAD_FAILED" },
+        };
+        throw error;
       }
-      return connections;
+    },
+    catalogStatusForWorkspace(workspaceID: string): CatalogLoadStatus {
+      return this.toolConnectionCatalogStateByWorkspace[workspaceID]?.status || "IDLE";
     },
     connectionForTool(tool: Tool) {
+      // Strict workspace key — never fall back to active workspace / global catalog.
       const scopedConnections = this.toolConnectionsByWorkspace[tool.workspaceId];
-      return (scopedConnections || this.serviceConnectionCatalog).find((connection) => connection.id === tool.connectionId);
+      if (!scopedConnections) {
+        return undefined;
+      }
+      return scopedConnections.find((connection) => connection.id === tool.connectionId);
     },
     async createOpenAPIImport(request: OpenAPIImportRequest) {
       const response = await apiClient.post<{ import: OpenAPIImportDTO; duplicateOfId?: string }>(

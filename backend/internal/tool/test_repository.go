@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/lib/pq"
 )
 
 var (
@@ -92,6 +94,118 @@ func (repository *Repository) RecordTest(ctx context.Context, input RecordTestIn
 
 // LatestSuccessfulTest only returns a passing latest attempt for the current
 // version checksum. A later failure or Draft edit invalidates older success.
+// BatchLatestTestSummaries returns the latest test summary for each tool's
+// relevant version in one workspace-scoped query (no N+1).
+//
+// Version selection (ZKL-56):
+//   - Published Tool (active_release_id set): release source TOOL_VERSION
+//   - Unpublished: current latest tool_versions.version_no
+//
+// Missing TestRecord → key absent / nil value (caller must not invent PASS).
+func (repository *Repository) BatchLatestTestSummaries(
+	ctx context.Context,
+	workspaceID string,
+	capabilityIDs []string,
+) (map[string]*LatestTestSummary, error) {
+	out := make(map[string]*LatestTestSummary, len(capabilityIDs))
+	if repository == nil || repository.db == nil {
+		return out, errors.New("tool repository is not configured")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	if !validUUID(workspaceID) {
+		return out, ErrInvalid
+	}
+	ids := make([]string, 0, len(capabilityIDs))
+	seen := make(map[string]struct{}, len(capabilityIDs))
+	for _, id := range capabilityIDs {
+		id = strings.TrimSpace(id)
+		if !validUUID(id) {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	// One query: resolve relevant version per capability, then latest test row.
+	rows, err := repository.db.QueryContext(ctx, `
+		WITH relevant AS (
+			SELECT c.id AS capability_id,
+				COALESCE(
+					(
+						SELECT r.source_id
+						FROM capability_releases r
+						WHERE r.workspace_id=c.workspace_id
+						  AND r.id=c.active_release_id
+						  AND r.source_type='TOOL_VERSION'
+					),
+					(
+						SELECT v.id
+						FROM tool_versions v
+						WHERE v.workspace_id=c.workspace_id AND v.capability_id=c.id
+						ORDER BY v.version_no DESC, v.id DESC
+						LIMIT 1
+					)
+				) AS tool_version_id
+			FROM capabilities c
+			WHERE c.workspace_id=$1 AND c.id=ANY($2) AND c.deleted_at IS NULL
+		),
+		latest AS (
+			SELECT DISTINCT ON (tt.tool_version_id)
+				tt.tool_version_id, tt.status, tt.tested_at, tt.tested_by, tt.error_code
+			FROM tool_tests tt
+			WHERE tt.workspace_id=$1
+			  AND tt.tool_version_id IN (SELECT tool_version_id FROM relevant WHERE tool_version_id IS NOT NULL)
+			ORDER BY tt.tool_version_id, tt.tested_at DESC, tt.id DESC
+		)
+		SELECT r.capability_id, l.status, l.tested_at, l.tested_by, l.error_code
+		FROM relevant r
+		LEFT JOIN latest l ON l.tool_version_id=r.tool_version_id
+	`, workspaceID, pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("batch latest tool tests: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var capabilityID string
+		var status, testedBy sql.NullString
+		var testedAt sql.NullTime
+		var errorCode sql.NullString
+		if err := rows.Scan(&capabilityID, &status, &testedAt, &testedBy, &errorCode); err != nil {
+			return nil, fmt.Errorf("scan latest tool test: %w", err)
+		}
+		if !status.Valid || !testedAt.Valid {
+			// No test row for this capability's version.
+			out[capabilityID] = nil
+			continue
+		}
+		summary := &LatestTestSummary{
+			Status:   status.String,
+			TestedAt: testedAt.Time.UTC(),
+			TestedBy: testedBy.String,
+		}
+		if errorCode.Valid && strings.TrimSpace(errorCode.String) != "" {
+			code := strings.TrimSpace(errorCode.String)
+			summary.ErrorCode = &code
+		}
+		out[capabilityID] = summary
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Ensure every requested id is present (nil if missing tool or no test).
+	for _, id := range ids {
+		if _, ok := out[id]; !ok {
+			out[id] = nil
+		}
+	}
+	return out, nil
+}
+
 func (repository *Repository) LatestSuccessfulTest(ctx context.Context, workspaceID, versionID string) (TestRecord, error) {
 	if !validUUID(workspaceID) || !validUUID(versionID) {
 		return TestRecord{}, ErrInvalid

@@ -523,6 +523,13 @@ export interface Tool {
   errorMappings: ToolErrorMapping[];
   runtimePolicy: ToolRuntimePolicy;
   lastTestResult?: ToolTestResult;
+  /** Additive ZKL-56 historical test summary from list/detail API (null = unknown). */
+  latestTest?: {
+    status: string;
+    testedAt: string;
+    testedBy: string;
+    errorCode?: string;
+  } | null;
   createdBy: string;
   updatedBy: string;
   createdAt?: string;

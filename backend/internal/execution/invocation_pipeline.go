@@ -498,6 +498,19 @@ func normalizeContextError(err error) error {
 	}
 }
 
+// MatchToolInputSchema validates tool arguments against a release input schema
+// using the same OpenAPI rules as InvocationPipeline. Empty or invalid schema
+// JSON fails closed (returns false).
+func MatchToolInputSchema(ctx context.Context, schemaJSON, valueJSON json.RawMessage) bool {
+	return validateInvocationSchema(ctx, schemaJSON, valueJSON, false)
+}
+
+// ProjectToolInputOntoSchema applies the same additionalProperties=false
+// projection used by InvocationPipeline before schema validation.
+func ProjectToolInputOntoSchema(schemaJSON, inputJSON json.RawMessage) (json.RawMessage, bool) {
+	return projectInputOntoSchema(schemaJSON, inputJSON)
+}
+
 func validateInvocationSchema(ctx context.Context, schemaJSON, valueJSON json.RawMessage, response bool) bool {
 	var schema openapi3.Schema
 	if json.Unmarshal(schemaJSON, &schema) != nil || schema.Validate(ctx) != nil {

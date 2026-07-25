@@ -54,6 +54,10 @@ func (f *fakeGenerateSessions) CloseSession(ctx context.Context, workspaceID, se
 	return smartdag.GenerateSession{}, errors.New("not implemented")
 }
 
+func (f *fakeGenerateSessions) CloseSessionWith(ctx context.Context, req smartdag.CloseSessionRequest) (smartdag.GenerateSession, error) {
+	return f.CloseSession(ctx, req.WorkspaceID, req.SessionID)
+}
+
 type allowAllAuthorizer struct{}
 
 func (allowAllAuthorizer) AuthorizeWorkspace(context.Context, string, string, authz.Action) (authz.WorkspaceContext, error) {

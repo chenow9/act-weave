@@ -18,6 +18,11 @@ import (
 // M10-T6 crash recovery can re-enter RecordApprovedInteraction safely.
 var approvedResumeEventNamespace = uuid.MustParse("b45f49b3-85fd-50b7-9d80-45c01d7d1a18")
 
+// terminalRunEventNamespace seeds deterministic run.completed / run.failed
+// event IDs keyed by (runId, eventType) so re-entry treats conflict as done
+// (ZKL-56 UX-03 / checklist #2). Does not collide with resumed namespace.
+var terminalRunEventNamespace = uuid.MustParse("c56a50c4-96e0-61c8-ae91-56d12e8e2b29")
+
 // NativeProtocolRecorder is the production Runtime adapter for the AAP Event
 // Kernel. It consumes persisted domain facts and delegates public mapping to
 // the native protocol mappers/projectors; it never creates a legacy RunEvent.
@@ -134,7 +139,15 @@ func (recorder *NativeProtocolRecorder) recordTerminal(ctx context.Context, reco
 	if record.Kind == ProtocolRecordRunFailed {
 		eventType = protocolevent.EventRunFailed
 	}
-	return recorder.appendRunSnapshot(ctx, record.Run, eventType, record.OccurredAt, "")
+	// Deterministic terminal event ID: (runId, eventType). Re-entry / crash
+	// recovery that races a prior successful append treats conflict as done.
+	eventID := uuid.NewSHA1(
+		terminalRunEventNamespace,
+		[]byte(strings.TrimSpace(record.Run.ID)+"\x00"+eventType),
+	).String()
+	return recorder.appendRunSnapshotWithID(
+		ctx, record.Run, eventType, record.OccurredAt, "", eventID,
+	)
 }
 
 func (recorder *NativeProtocolRecorder) recordToolCompleted(ctx context.Context, record ProtocolRecord) error {
@@ -359,10 +372,15 @@ func (recorder *NativeProtocolRecorder) appendRunSnapshotWithID(
 		return err
 	})
 	// Idempotent recovery: a concurrent recovery may have inserted the same
-	// deterministic run.resumed id first — treat conflict as already recovered.
-	if err != nil && eventType == protocolevent.EventRunResumed &&
-		errors.Is(err, protocolevent.ErrEventConflict) {
-		return nil
+	// deterministic run.resumed / run.completed / run.failed id first —
+	// treat conflict as already recovered (do not create a second terminal).
+	if err != nil && errors.Is(err, protocolevent.ErrEventConflict) {
+		switch eventType {
+		case protocolevent.EventRunResumed,
+			protocolevent.EventRunCompleted,
+			protocolevent.EventRunFailed:
+			return nil
+		}
 	}
 	return err
 }

@@ -514,14 +514,9 @@ func (b *Bridge) buildPipelineTools(
 		if err != nil {
 			return nil, fmt.Errorf("translate tool %q: %w", cap.CallableName, err)
 		}
-		resolved, err := b.toolInvoker.ResolveInvocation(ctx, execution.ResolveRequest{
-			WorkspaceID: job.WorkspaceID, CapabilityID: cap.CapabilityID,
-			ReleaseID: cap.ReleaseID, BindingConnectionID: cap.ConnectionID,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("resolve capability %q: %w", cap.CallableName, err)
-		}
-		needsConfirm := resolved.RequiresConfirmation || cap.RequiresConfirmation
+		// ZKL-56 UX-02: do NOT ResolveInvocation at build time. Pure-text runs
+		// must not fail because an unrelated bound Tool has a bad Connection.
+		// Resolution happens on first actual PipelineTool call (lazy).
 		// Capture for closure.
 		pk := pendingKey
 		// SERVICE_PRINCIPAL (AAP) requires PrincipalSnapshot on InvokeRequest;
@@ -531,7 +526,10 @@ func (b *Bridge) buildPipelineTools(
 		pt, err := einoruntime.NewPipelineTool(einoruntime.PipelineToolConfig{
 			Info:                 info,
 			Pipeline:             b.toolInvoker,
-			RequiresConfirmation: needsConfirm,
+			Resolver:             b.toolInvoker,
+			// Capability-snapshot flag only; OR with resolved.RequiresConfirmation
+			// inside InvokableRun after the single lazy resolve.
+			RequiresConfirmation: cap.RequiresConfirmation,
 			WorkspaceID:          job.WorkspaceID,
 			CapabilityID:         cap.CapabilityID,
 			ReleaseID:            cap.ReleaseID,
@@ -544,7 +542,6 @@ func (b *Bridge) buildPipelineTools(
 			AuthorizationSnapshot: json.RawMessage(
 				`{"source":"chatruntimebridge","parent":"agent_run"}`,
 			),
-			Resolved: resolved,
 			OnConfirmInterrupt: func(_ context.Context, pending einoruntime.PendingConfirmInterrupt) {
 				b.recordPending(pk, pending)
 			},
@@ -704,6 +701,11 @@ func (b *Bridge) failRun(ctx context.Context, job agentrun.Job, run execution.Ag
 	// Never rely on a cancelled drive context for durable status transitions.
 	ctx = context.WithoutCancel(ctx)
 	errorCode := executionErrorCode(cause)
+
+	var failedMessage *chat.Message
+	var finished execution.AgentRun
+	persisted := false
+
 	if b.results != nil {
 		// Refresh lock; prefer the same RecordAssistantResult path as legacy so the
 		// session unlocks and the user sees a failed assistant message.
@@ -714,25 +716,61 @@ func (b *Bridge) failRun(ctx context.Context, job agentrun.Job, run execution.Ag
 			assistantID, idErr := newRuntimeID()
 			if idErr == nil {
 				assistantContent := "抱歉，当前无法完成回复：" + userSafeBridgeError(cause)
-				if _, recordErr := b.results.RecordAssistantResult(ctx, chat.RecordAssistantResultInput{
+				if result, recordErr := b.results.RecordAssistantResult(ctx, chat.RecordAssistantResultInput{
 					AssistantMessageID: assistantID, WorkspaceID: job.WorkspaceID,
 					SessionID: job.SessionID, UserMessageID: job.UserMessageID, RunID: job.RunID,
 					Content: assistantContent, ExpectedRunStatus: "RUNNING", ExpectedRunLock: run.LockVersion,
 					RunStatus: "FAILED", RunOutputSummary: json.RawMessage(`{"source":"chatruntimebridge","failed":true}`),
 					RunErrorCode: errorCode,
 				}); recordErr == nil {
-					return cause
+					// ZKL-56 UX-03: persistence order is fixed —
+					// FAILED Run + failed assistant message (committed) →
+					// reload finished Run → append existing run.failed protocol.
+					// Protocol failure must NOT roll back the committed FAILED Run.
+					msg := result.Message
+					failedMessage = &msg
+					persisted = true
+					if reloaded, reloadErr := b.runs.GetAgentRun(ctx, job.WorkspaceID, job.RunID); reloadErr == nil {
+						finished = reloaded
+					} else {
+						// Commit already happened; use best-effort run view for protocol.
+						finished = run
+						finished.Status = "FAILED"
+						finished.ErrorCode = errorCode
+					}
 				}
 			}
 		}
 	}
 	// Fallback: direct status CAS when assistant recording is unavailable.
-	if b.steps != nil {
-		_, _ = b.steps.TransitionAgentRun(ctx, job.WorkspaceID, job.RunID, execution.RunTransition{
+	if !persisted && b.steps != nil && run.Status == "RUNNING" {
+		if updated, transErr := b.steps.TransitionAgentRun(ctx, job.WorkspaceID, job.RunID, execution.RunTransition{
 			ExpectedStatus: "RUNNING", NewStatus: "FAILED",
 			ErrorCode:     errorCode,
 			OutputSummary: json.RawMessage(`{"source":"chatruntimebridge","failed":true}`),
-		})
+		}); transErr == nil {
+			finished = updated
+			persisted = true
+		}
+	}
+
+	// Project run.failed only when we have the required terminal message identity
+	// (NativeProtocolRecorder.recordTerminal requires Message + ActorID).
+	if persisted && failedMessage != nil && strings.TrimSpace(finished.ID) != "" {
+		if projErr := b.recordProtocol(ctx, chatruntime.ProtocolRecord{
+			Kind: chatruntime.ProtocolRecordRunFailed, Job: job, Run: finished,
+			Message: failedMessage, ActorID: firstNonEmpty(job.ActorID, finished.TriggeredByID),
+			OccurredAt: b.now().UTC(),
+		}); projErr != nil {
+			b.logger.Error("run.failed protocol projection failed after durable FAILED commit",
+				"event", "chatruntimebridge.run_failed.protocol_projection_failed",
+				"workspace_id", job.WorkspaceID,
+				"run_id", job.RunID,
+				"error_code", errorCode,
+				"error", projErr.Error(),
+			)
+			// Do not return projErr: durable FAILED + message are the recovery SoT via GET.
+		}
 	}
 	return cause
 }

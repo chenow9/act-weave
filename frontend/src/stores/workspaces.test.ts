@@ -145,6 +145,11 @@ describe("v1 workspace and member store", () => {
     expect(store.can("workspace-1", "user-owner", "DELETE")).toBe(true);
     expect(store.can("workspace-1", "user-editor", "EDIT")).toBe(true);
     expect(store.can("workspace-1", "user-editor", "MANAGE")).toBe(false);
+    // Full matrix (backend workspace_policy.go)
+    expect(store.can("workspace-1", "user-editor", "TEST")).toBe(true);
+    expect(store.can("workspace-1", "user-editor", "PUBLISH")).toBe(true);
+    expect(store.can("workspace-1", "user-editor", "EXECUTE")).toBe(true);
+    expect(store.can("workspace-1", "user-owner", "EXECUTE")).toBe(true);
 
     await store.addMember("workspace-1", "user-viewer", "VIEWER");
     expect(apiClient.post).toHaveBeenCalledWith("/workspaces/workspace-1/members", {
@@ -156,6 +161,42 @@ describe("v1 workspace and member store", () => {
     await store.removeMember("workspace-1", "user-viewer");
     expect(apiClient.delete).toHaveBeenCalledWith("/workspaces/workspace-1/members/user-viewer");
     expect(store.membersByWorkspace["workspace-1"].some((value) => value.userId === "user-viewer")).toBe(false);
+  });
+
+  it("applies the full backend role×action matrix and fails closed while members load", async () => {
+    const store = useWorkspaceStore();
+    store.items = [workspaceValue({ ownerUserId: "user-owner" })];
+    store.membersByWorkspace["workspace-1"] = [
+      member("user-admin", "ADMIN"),
+      member("user-editor", "EDITOR"),
+      member("user-operator", "OPERATOR"),
+      member("user-viewer", "VIEWER"),
+    ];
+    store.membersLoadStatusByWorkspace["workspace-1"] = "LOADED";
+
+    const cases: Array<{ user: string; action: import("./workspaces").WorkspaceAction; want: boolean }> = [
+      { user: "user-owner", action: "DELETE", want: true },
+      { user: "user-admin", action: "MANAGE", want: true },
+      { user: "user-admin", action: "DELETE", want: false },
+      { user: "user-editor", action: "PUBLISH", want: true },
+      { user: "user-editor", action: "MANAGE", want: false },
+      { user: "user-operator", action: "TEST", want: true },
+      { user: "user-operator", action: "EDIT", want: false },
+      { user: "user-viewer", action: "VIEW", want: true },
+      { user: "user-viewer", action: "EXECUTE", want: false },
+      { user: "user-unknown", action: "VIEW", want: false },
+    ];
+    for (const tc of cases) {
+      expect(store.can("workspace-1", tc.user, tc.action), `${tc.user}/${tc.action}`).toBe(tc.want);
+    }
+
+    // Fail closed for non-owner mutations while members are loading and empty.
+    store.membersByWorkspace["workspace-2"] = [];
+    store.membersLoadStatusByWorkspace["workspace-2"] = "LOADING";
+    store.items.push(workspaceValue({ id: "workspace-2", ownerUserId: "user-owner" }));
+    expect(store.can("workspace-2", "user-someone", "EDIT")).toBe(false);
+    // Owner still known from DTO.
+    expect(store.can("workspace-2", "user-owner", "EDIT")).toBe(true);
   });
 
   it("searches the Workspace-scoped active user directory for member candidates", async () => {
