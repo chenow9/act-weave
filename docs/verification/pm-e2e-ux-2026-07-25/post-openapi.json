@@ -1,0 +1,124 @@
+{
+  "workflowName": "PM E2E 最小编排 1784989338754",
+  "steps": [
+    {
+      "name": "登录",
+      "status": "PASS",
+      "elapsedMs": 610,
+      "detail": ""
+    },
+    {
+      "name": "Agent-Prompt Revision",
+      "status": "FAIL",
+      "elapsedMs": 2487,
+      "detail": "locator.click: Error: strict mode violation: getByRole('button', { name: '查看 费用助手 Prompt Revision' }) resolved to 2 elements:\n    1) <tr tabindex=\"0\" role=\"button\" data-v-046d4556=\"\" aria-selected=\"true\" class=\"is-selected is-selection-neutral is-selectable\">…</tr> aka getByRole('button', { name: '费用助手 协助员工查询报销、提交费用申请、查看部门预算，并帮助主管处理待审批报销。用中文简洁回答，必要时调用业务工具获取实时数据。 e2e-expense-' })\n    2) <button type=\"button\" data-v-1744e6f1=\"\" title=\"查看 Prompt Revision\" class=\"prompt-preview-trigger\" aria-label=\"查看 费用助手 Prompt Revision\">…</button> aka getByRole('button', { name: '查看 费用助手 Prompt Revision', exact: true })\n\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: '查看 费用助手 Prompt Revision' })\u001b[22m\n\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:61:71\n    at async step (/Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:28:20)\n    at async file:///Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:57:1",
+      "url": "http://127.0.0.1:5174/agents"
+    },
+    {
+      "name": "Agent-Capability Binding",
+      "status": "PASS",
+      "elapsedMs": 269,
+      "detail": "CAPABILITY BINDING\nAGENT: 019f9549-66fe-7186-b1b4-e6a358d99683\n\nTool 与 Workflow 是 Workspace 级 Capability；此处只管理 Agent 的 follow/pin、Connection 选择和启用状态。\n\nTOOL\n列出待我审批的报销单（主管）\n列出待我审批的报销单（主管）\n已绑定\n版本策略\nPINNED · 固定 Active Release\nPinned Release ID\nConnection ID（可选）\n启用该 Binding\n解绑\n更新 Binding\nTOOL\n列出我的报销单\n列出我的报销单\n已绑定\n版本策略\nPINNED · 固定 Active Release\nPinned Release ID\nConnection ID（可选）\n启用该 Binding\n解绑\n更新 Binding\nTOOL\n创建报销单（草稿或直接提交）\n创建报销单（草稿或直接提交）\n已绑定\n版本策略\nPINNED · 固定 Active Release\nPinned Release ID\nConnection ID（可选）\n启用该 Binding\n解绑\n更新 Binding\nTOOL\n审批通过或驳回\n审批通过或驳回\n已绑定\n版本策略\nPINNED · 固定 Active Release\nPinned Release ID\nConnection ID（可选）\n启用该 Binding\n解绑\n更新 Binding\nTOOL\n提交草稿报销单进入审批\n提交草稿报销单进入审批\n未绑定\n版本策略\nFOLLOW_ACTIVE · 跟随当前发布版\nResolved Release\nConnection ID（可选）\n启用该 Binding\n绑定 Capability\nTOOL\n查询报销单详情\n查询报销单详情\n未绑定\n版本策略\nFOLLOW_ACTIVE · 跟随当前发布版\nResolved Release\nConnection ID（可选）\n启用该 Binding\n绑定 Capability\nTOOL\n查询本部门预算摘要\n查询本部门预算摘要\n已绑定\n版本策略\nPINNED · 固定 Active Release\nPinned Release ID\nConnection ID（可选）\n启用该 Binding\n解绑\n更新 Binding\nTOOL\n获取当前登录业务用户\n获取当前登录业务用户\n已绑定\n版本策略\nPINNED · 固定 Active Release\nPinned Release ID\nConnection ID（可选）\n启用该 Binding\n解绑\n更新 Binding\n关闭"
+    },
+    {
+      "name": "Agent-编辑与取消",
+      "status": "PASS",
+      "elapsedMs": 571,
+      "detail": "编辑表单打开并在无改动状态返回。"
+    },
+    {
+      "name": "Workflow-创建真实 Draft",
+      "status": "PASS",
+      "elapsedMs": 3518,
+      "detail": "PM E2E 最小编排 1784989338754"
+    },
+    {
+      "name": "Workflow-画布节点与自动布局",
+      "status": "FAIL",
+      "elapsedMs": 12005,
+      "detail": "locator.click: Timeout 12000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.workflow-management-list tbody tr').filter({ hasText: 'PM E2E 最小编排 1784989338754' }).getByRole('button', { name: '编辑流程图' })\u001b[22m\n\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:105:52\n    at step (/Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:28:26)\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:103:7",
+      "url": "http://127.0.0.1:5174/workflow"
+    },
+    {
+      "name": "Workflow-真实编译失败路径",
+      "status": "FAIL",
+      "elapsedMs": 12012,
+      "detail": "locator.click: Timeout 12000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-action=\"validate-editor-workflow\"]')\u001b[22m\n\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:118:66\n    at step (/Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:28:26)\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:117:7",
+      "url": "http://127.0.0.1:5174/workflow"
+    },
+    {
+      "name": "Workflow-试运行与发布门禁",
+      "status": "FAIL",
+      "elapsedMs": 12005,
+      "detail": "locator.isDisabled: Timeout 12000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-action=\"open-trial-run-dialog\"]')\u001b[22m\n\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:128:32\n    at step (/Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:28:26)\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:124:7",
+      "url": "http://127.0.0.1:5174/workflow"
+    },
+    {
+      "name": "Smart-DAG真实生成",
+      "status": "FAIL",
+      "elapsedMs": 12023,
+      "detail": "locator.click: Timeout 12000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.fluid-trigger')\u001b[22m\n\u001b[2m    - locator resolved to <button type=\"button\" class=\"fluid-trigger\" aria-expanded=\"false\">…</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div data-v-594a545a=\"\" class=\"modal-card-head\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div data-v-594a545a=\"\" class=\"modal-card-head\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    22 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <div data-v-594a545a=\"\" class=\"modal-card-head\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\n    at nav (/Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:37:40)\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:138:9\n    at step (/Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:28:26)\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:137:7",
+      "url": "http://127.0.0.1:5174/workflow"
+    },
+    {
+      "name": "运行调试台-真实发送",
+      "status": "FAIL",
+      "elapsedMs": 12009,
+      "detail": "locator.click: Timeout 12000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.fluid-trigger')\u001b[22m\n\u001b[2m    - locator resolved to <button type=\"button\" class=\"fluid-trigger\" aria-expanded=\"false\">…</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div data-v-594a545a=\"\" class=\"modal-card-head\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div data-v-594a545a=\"\" class=\"modal-card-head\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    22 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <div data-v-594a545a=\"\" class=\"modal-card-head\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\n    at nav (/Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:37:40)\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:154:9\n    at step (/Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:28:26)\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:153:7",
+      "url": "http://127.0.0.1:5174/workflow"
+    },
+    {
+      "name": "Agent Access-Client与接入配置",
+      "status": "FAIL",
+      "elapsedMs": 12014,
+      "detail": "locator.click: Timeout 12000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.fluid-trigger')\u001b[22m\n\u001b[2m    - locator resolved to <button type=\"button\" class=\"fluid-trigger\" aria-expanded=\"false\">…</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div data-v-594a545a=\"\" class=\"modal-card-head\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div data-v-594a545a=\"\" class=\"modal-card-head\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    22 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <div data-v-594a545a=\"\" class=\"modal-card-head\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\n    at nav (/Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:37:40)\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:168:9\n    at step (/Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:28:26)\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:167:7",
+      "url": "http://127.0.0.1:5174/workflow"
+    },
+    {
+      "name": "模型API-真实连接测试",
+      "status": "FAIL",
+      "elapsedMs": 12008,
+      "detail": "locator.click: Timeout 12000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.fluid-trigger')\u001b[22m\n\u001b[2m    - locator resolved to <button type=\"button\" class=\"fluid-trigger\" aria-expanded=\"false\">…</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div data-v-594a545a=\"\" class=\"modal-card-head\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div data-v-594a545a=\"\" class=\"modal-card-head\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    22 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <div data-v-594a545a=\"\" class=\"modal-card-head\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\n    at nav (/Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:37:40)\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:179:9\n    at step (/Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:28:26)\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:178:7",
+      "url": "http://127.0.0.1:5174/workflow"
+    },
+    {
+      "name": "用户与权限-搜索及详情",
+      "status": "FAIL",
+      "elapsedMs": 12007,
+      "detail": "locator.click: Timeout 12000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.fluid-trigger')\u001b[22m\n\u001b[2m    - locator resolved to <button type=\"button\" class=\"fluid-trigger\" aria-expanded=\"false\">…</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div data-v-594a545a=\"\" class=\"modal-card-head\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div data-v-594a545a=\"\" class=\"modal-card-head\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    23 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <div data-v-594a545a=\"\" class=\"modal-card-head\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\n    at nav (/Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:37:40)\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:188:9\n    at step (/Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:28:26)\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:187:7",
+      "url": "http://127.0.0.1:5174/workflow"
+    },
+    {
+      "name": "审计日志-刷新及详情",
+      "status": "FAIL",
+      "elapsedMs": 12011,
+      "detail": "locator.click: Timeout 12000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.fluid-trigger')\u001b[22m\n\u001b[2m    - locator resolved to <button type=\"button\" class=\"fluid-trigger\" aria-expanded=\"false\">…</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div data-v-594a545a=\"\" class=\"modal-card-head\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div data-v-594a545a=\"\" class=\"modal-card-head\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    23 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <div data-v-594a545a=\"\" class=\"modal-card-head\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\n    at nav (/Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:37:40)\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:198:9\n    at step (/Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:28:26)\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:197:7",
+      "url": "http://127.0.0.1:5174/workflow"
+    },
+    {
+      "name": "登出",
+      "status": "FAIL",
+      "elapsedMs": 12008,
+      "detail": "locator.click: Timeout 12000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: '打开用户菜单' })\u001b[22m\n\u001b[2m    - locator resolved to <button type=\"button\" aria-label=\"打开用户菜单\" aria-expanded=\"false\" class=\"user-avatar avatar\">AA</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div data-v-594a545a=\"\" class=\"modal-backdrop\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div data-v-594a545a=\"\" class=\"modal-backdrop\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    22 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <div data-v-594a545a=\"\" class=\"modal-backdrop\">…</div> from <main class=\"main-shell\">…</main> subtree intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:208:54\n    at step (/Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:28:26)\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-post-openapi.mjs:207:7",
+      "url": "http://127.0.0.1:5174/workflow"
+    }
+  ],
+  "responses": [
+    {
+      "status": 401,
+      "method": "POST",
+      "url": "http://127.0.0.1:5174/api/v1/auth/refresh"
+    }
+  ],
+  "consoleErrors": [
+    {
+      "url": "http://127.0.0.1:5174/login",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    }
+  ],
+  "summary": {
+    "pass": 4,
+    "fail": 11,
+    "total": 15
+  }
+}

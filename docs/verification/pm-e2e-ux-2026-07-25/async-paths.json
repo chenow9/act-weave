@@ -1,0 +1,68 @@
+{
+  "steps": [
+    {
+      "name": "登录",
+      "status": "PASS",
+      "elapsedMs": 546,
+      "detail": ""
+    },
+    {
+      "name": "OpenAPI-真实导入表单",
+      "status": "PASS",
+      "elapsedMs": 1845,
+      "detail": "导入 OpenAPI\n\n确认当前业务空间并选择 Provider、服务连接，解析接口清单\n\n当前业务空间\ne2e-expense-pt · E2E费用报销透传全链路\n在页面顶部切换\n导入方式\n 本地文件\n Provider 在线文档\n选择 PROVIDER *\nMock Corp Expense\n选择服务连接\nexpense-pt-local\nOPENAPI 文件 *\n选择文件\n请选择 JSON 或 YAML 文件\n最大 4 MB\n导入后生成 Tool 草稿\n取消\n开始导入"
+    },
+    {
+      "name": "Agent-Prompt Revision详情",
+      "status": "PASS",
+      "elapsedMs": 2612,
+      "detail": "PROMPT REVISION AUDIT\nAGENT: 019f9549-66fe-7186-b1b4-e6a358d99683\n019f9549-66fe-718a-a3c5-50a5a7be6de9\n\nAgent Read DTO 只返回当前 Revision ID，不返回 Prompt 明文。增强输入与输出由后端 StoredObject 永久保留。\n\nLOCK VERSION: 1\n关闭窗口"
+    },
+    {
+      "name": "Smart DAG-等待真实生成终态",
+      "status": "PASS",
+      "elapsedMs": 78229,
+      "detail": "ACTWEAVE 织行\n智能编排\n构建 · AI\n常用\nAgent 管理\n构建\n工具管理\n构建\n编排\n构建\n运行调试台\n运行\n全部模块\n空间\n空间总览\n业务空间\n构建\nAgent 管理\n工具管理\n编排\n智能编排\nAI\n接入\n服务 Provider\n服务连接\nOpenAPI 导入\n模型 API 配置\nAgent Access\n运行\n运行调试台\n治理\n全链路审计日志\n用户与权限\n当前空间：E2E费用报销透传全链路\nE2E费用报销透传全链路\nAA\n智能生成失败，未创建本地替代草稿。（请求 ID：019f99af-8ebe-7c4c-b3a5-2d2cd429bcc8）\n当前蓝图\n未命名智能草稿\nE2E费用报销透传全链路 · AI 0%\nAI 草稿\n收起\n保存画布\n格式化画布\n发布上线\n打开蓝图\n新建草稿\n拖动画布 · 滚轮缩放\nSTART\n定义业务目标\n等待智能生成正式入口\nEND\n等待生成结果\n生成成功后替换为正式 v1 画布\n100%\nAI COPILOT\n多轮智能生成\n\n选择 Workspace 与 Agent 后，用自然语言多轮修订流程；每轮成功后画布按最新 Draft 刷新。\n\n生成满意 ≠ Agent 已可用：须完成编译、试运行、发布，并绑定到 Agent 后，Console 对话台才能调用本 Workflow。\n\n当前草稿\n未命名智能草稿\n只保存 Workflow Draft，不自动发布；正式 binding 仅在 publish 之后（默认绑回生成会话 Agent）。会话 OPEN\n业务空间\n请选择业务空间\nE2E费用报销透传全链路\n复杂售后闭环-1784814984\n复杂售后闭环-1784814876\n复杂售后闭环-1784814812\n复杂售后闭环-1784814695\n复杂售后闭环-1784814674\n复杂售后闭环-1784814642\n复杂售后闭环-1784814602\n复杂售后闭环-1784814460\n复杂售后闭环-1784814427\n复杂售后闭环-1784814345\n复杂售后闭环-1784814332\n复杂售后闭环-1784814288\n复杂售后闭环-1784814262\n复杂售后闭环-1784814225\n复杂售后闭环-1784814182\n闭环验收-r3-Tool图\n闭环验收-售后-E2E\n闭环验收-售后-E2E\n浏览器 QA 临时测试空间（已编辑）2026-07-16\nNeiops\nSmoke Access Workspace\nSmoke Access Workspace\nCompose E2E\n生成 AGENT\n请选择 Agent\n费用助手\n本轮自然语言意图\n26 字\n清空输入\n打开蓝图\n 开始多轮生成\n属性面板\n定义业务目标\n节点名称\n说明备注\n输入端口 SCHEMA (JSON)\n{\"type\":\"object\",\"properties\":{}}\n编译状态\n1 条提示\n尚未生成正式草稿\n输入业务目标后，系统会持久化 workflow.graph.v1，而不是创建本地假成功状态。\n保存 Workflow Draft"
+    },
+    {
+      "name": "运行调试台-等待真实运行终态",
+      "status": "FAIL",
+      "elapsedMs": 151787,
+      "detail": "page.waitForFunction: Timeout 150000ms exceeded.\n    at /Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-async-paths.mjs:99:14\n    at async step (/Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-async-paths.mjs:26:20)\n    at async file:///Users/chen/Documents/act-weave/frontend/e2e/pm-e2e-ux-async-paths.mjs:94:1",
+      "url": "http://127.0.0.1:5174/chat"
+    },
+    {
+      "name": "登出",
+      "status": "PASS",
+      "elapsedMs": 196,
+      "detail": "http://127.0.0.1:5174/login"
+    }
+  ],
+  "responses": [
+    {
+      "status": 401,
+      "method": "POST",
+      "url": "http://127.0.0.1:5174/api/v1/auth/refresh"
+    },
+    {
+      "status": 500,
+      "method": "POST",
+      "url": "http://127.0.0.1:5174/api/v1/workspaces/019f9547-83ae-7196-ac36-9d7ded7fea29/workflow-generate-sessions/019f99af-8ea9-72af-baad-335fb4318982/turns"
+    }
+  ],
+  "consoleErrors": [
+    {
+      "url": "http://127.0.0.1:5174/login",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "url": "http://127.0.0.1:5174/smart-dag",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    }
+  ],
+  "summary": {
+    "pass": 5,
+    "fail": 1,
+    "total": 6
+  }
+}
