@@ -27,7 +27,9 @@ import {
   getToolLifecycleStatus,
   getToolRunStatus,
   getToolTestStatus,
+  getToolUnifiedStatus,
   hasPassingToolTest,
+  toolHasConnectionAttention,
 } from "../utils/tool-governance";
 import { getToolProtocolLabel, getToolTypeLabel } from "../utils/tool-presentation";
 import { useWorkspaceStore } from "../stores/workspaces";
@@ -37,7 +39,8 @@ import { buildHTTPActionConfig, HTTP_ACTION_SCHEMA_VERSION } from "../utils/tool
 type ToolStatus = Tool["status"];
 type ToolEditorMode = "create" | "edit";
 type ContractEditorTab = "Path" | "Query" | "Header" | "Body" | "Response" | "Errors";
-type ToolStatusFilter = "all" | Tool["status"];
+/** Includes store-side attention filter for connection-health issues. */
+type ToolStatusFilter = "all" | NonNullable<ToolListQuery["status"]>;
 type ToolTypeFilter = "all" | NonNullable<ToolListQuery["type"]>;
 type DetailTabId = "base" | "connection" | "request" | "response" | "runtime" | "test";
 type RiskActionType = "disable" | "enable" | "delete" | "";
@@ -143,6 +146,7 @@ const toolStatusOptions: Array<{ label: string; value: ToolStatus }> = [
 const toolStatusHelperText = "状态由测试、发布与停用动作驱动；修改运行配置后，系统会按后端规则自动回退。";
 const statusTabs: Array<{ label: string; value: ToolStatusFilter }> = [
   { label: "全部状态", value: "all" },
+  { label: "连接异常", value: "attention" },
   { label: "已发布", value: "Published" },
   { label: "已测试", value: "Tested" },
   { label: "待评审", value: "Review" },
@@ -158,36 +162,55 @@ const toolTypeTabs: Array<{ label: string; value: ToolTypeFilter }> = [
 const draftTool = ref<ToolDraft>(defaultToolDraft());
 
 const hasToolRecords = computed(() => integration.tools.length > 0);
+/** Tools whose bound connection is missing, unverified, failed, or expiring. */
+const connectionIssueTools = computed(() =>
+  integration.tools.filter((tool) => toolHasConnectionAttention(tool, connectionForTool(tool))),
+);
+const publishedWithConnectionIssueCount = computed(
+  () =>
+    connectionIssueTools.value.filter((tool) => tool.status === "Published").length,
+);
 const toolSummaryItems = computed<ManagementSummaryItem[]>(() => {
   const tools = integration.tools;
+  const publishedCount = tools.filter((tool) => tool.status === "Published").length;
+  const pendingPublishCount = tools.filter((tool) => tool.status === "Tested").length;
+  const connectionIssueCount = connectionIssueTools.value.length;
+  const publishedIssues = publishedWithConnectionIssueCount.value;
   return [
     { label: "工具总数", value: tools.length, icon: "fa-solid fa-screwdriver-wrench" },
     {
       label: "已发布",
-      value: tools.filter((tool) => tool.status === "Published").length,
+      value: publishedCount,
       icon: "fa-solid fa-circle-check",
+      note: publishedIssues > 0 ? `${publishedIssues} 连接异常` : undefined,
+      tone: publishedIssues > 0 ? "warning" : "default",
     },
     {
       label: "待发布",
-      value: tools.filter((tool) => tool.status === "Tested").length,
+      value: pendingPublishCount,
       icon: "fa-solid fa-vial",
       tone: "info",
     },
     {
+      // Same definition as the connection alert + table attention filter (not lifecycle Review/Disabled).
       label: "需处理",
-      value: tools.filter((tool) => tool.status === "Review" || tool.status === "Disabled").length,
+      value: connectionIssueCount,
       icon: "fa-solid fa-triangle-exclamation",
-      tone: "warning",
+      note: connectionIssueCount > 0 ? "连接异常" : undefined,
+      tone: connectionIssueCount > 0 ? "danger" : "warning",
     },
   ];
 });
 const hasWorkspaceContext = computed(() => Boolean(workspaces.activeWorkspaceId || workspaces.items[0]?.id));
-const connectionIssueTools = computed(() =>
-  integration.tools.filter((tool) => {
-    const status = runStatus(tool);
-    return status.tone === "danger" || status.tone === "warning";
-  }),
-);
+const connectionAlertMessage = computed(() => {
+  const total = connectionIssueTools.value.length;
+  if (!total) return "";
+  const publishedIssues = publishedWithConnectionIssueCount.value;
+  if (publishedIssues > 0) {
+    return `${total} 个 Tool 的服务连接需要处理（其中 ${publishedIssues} 个已发布，当前不可安全调用）。可筛选「连接异常」或前往服务连接页修复。`;
+  }
+  return `${total} 个 Tool 的服务连接需要处理，请先检查服务连接。`;
+});
 const workspaceOptions = computed(() =>
   workspaces.items.map((workspace) => ({
     label: `${workspace.name} (${workspace.displayName})`,
@@ -211,7 +234,7 @@ const toolColumns = computed<ManagementListColumn<Tool>[]>(() => [
   { key: "method", label: "Method", width: 70, hidable: true, align: "center", sortable: true, getValue: methodOf },
   { key: "path", label: "Path", width: 170, hidable: true, getValue: pathOf },
   { key: "connection", label: "Provider / 服务连接", width: 140, hidable: true, getValue: toolProviderConnectionLabel },
-  { key: "status", label: "状态", width: 90, hidable: true, align: "center", sortable: true, sortKey: "status", getValue: (tool) => toolUnifiedStatus(tool).label },
+  { key: "status", label: "状态", width: 140, hidable: true, align: "center", sortable: true, sortKey: "status", getValue: (tool) => toolUnifiedStatus(tool).label },
   { key: "version", label: "版本", width: 80, hidable: true, getValue: toolVersionLabel },
   { key: "updatedAt", label: "更新时间", width: 125, hidable: true, sortable: true, sortKey: "updatedAt", getValue: formatToolTableUpdatedAt },
   { key: "actions", label: "操作", width: 68, align: "right", headerAlign: "center" },
@@ -490,35 +513,11 @@ function governanceToneClass(tone: string) {
 }
 
 function toolUnifiedStatus(tool: Tool) {
-  const lifecycle = lifecycleStatus(tool);
-  const test = testStatus(tool);
-  const run = runStatus(tool);
-  const detailParts = [lifecycle.label, toolLastTestSummary(tool)];
+  return getToolUnifiedStatus(tool, connectionForTool(tool));
+}
 
-  if (run.tone === "danger" || run.tone === "warning") {
-    return {
-      label: run.label,
-      tone: run.tone,
-      description: run.description,
-      detail: detailParts.join(" · "),
-    };
-  }
-
-  if (test.tone === "danger") {
-    return {
-      label: test.label,
-      tone: test.tone,
-      description: test.description,
-      detail: lifecycle.label,
-    };
-  }
-
-  return {
-    label: lifecycle.label,
-    tone: lifecycle.tone,
-    description: lifecycle.description,
-    detail: tool.status === "Published" ? test.label : toolLastTestSummary(tool),
-  };
+function filterConnectionIssues() {
+  selectStatusFilter("attention");
 }
 
 function latestTool(tool: Tool) {
@@ -1308,8 +1307,11 @@ async function publishDraftTool() {
       </div>
       <div v-if="connectionIssueTools.length" class="tool-connection-alert" role="status">
         <i class="fa-solid fa-triangle-exclamation" />
-        <span>{{ connectionIssueTools.length }} 个 Tool 的服务连接需要处理，请先检查服务连接。</span>
-        <button type="button" @click="router.push('/connections')">检查连接</button>
+        <span>{{ connectionAlertMessage }}</span>
+        <div class="tool-connection-alert-actions">
+          <button type="button" class="tool-connection-alert-filter" @click="filterConnectionIssues">筛选连接异常</button>
+          <button type="button" @click="router.push('/connections')">检查连接</button>
+        </div>
       </div>
 
       <ManagementList
@@ -1367,7 +1369,13 @@ async function publishDraftTool() {
           </span>
         </template>
         <template #cell-status="{ row: tool }">
-          <span class="tool-status-pill aw-table-pill" :class="[statusClass(tool.status), governanceToneClass(toolUnifiedStatus(tool).tone)]" :title="toolUnifiedStatus(tool).description"><i />{{ toolUnifiedStatus(tool).label }}</span>
+          <span
+            class="tool-status-pill aw-table-pill"
+            :class="[statusClass(tool.status), governanceToneClass(toolUnifiedStatus(tool).tone)]"
+            :title="toolUnifiedStatus(tool).description"
+          >
+            <i />{{ toolUnifiedStatus(tool).label }}
+          </span>
         </template>
         <template #cell-version="{ row: tool }"><code class="tool-version-cell aw-table-mono">{{ toolVersionLabel(tool) }}</code></template>
         <template #cell-updatedAt="{ row: tool }"><span class="tool-updated-cell aw-table-meta">{{ formatToolTableUpdatedAt(tool) }}</span></template>
@@ -2176,6 +2184,20 @@ async function publishDraftTool() {
   color: #0f172a;
 }
 
+.tool-connection-alert-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.tool-connection-alert-filter {
+  border-color: rgba(190, 24, 93, 0.28) !important;
+  background: #fff !important;
+  color: #9f1239 !important;
+}
+
 .tool-connection-alert {
   display: flex;
   align-items: center;
@@ -2528,7 +2550,9 @@ async function publishDraftTool() {
 .tool-status-pill {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  max-width: 100%;
   padding: 4px 10px;
   border: 1px solid #e2e8f0;
   border-radius: 999px;
@@ -2536,8 +2560,9 @@ async function publishDraftTool() {
   color: #64748b;
   font-size: var(--aw-table-pill-size, 0.75rem);
   font-weight: var(--aw-table-pill-weight, 600);
-  line-height: 1;
-  white-space: nowrap;
+  line-height: 1.25;
+  text-align: center;
+  white-space: normal;
 }
 
 .tool-status-pill i {

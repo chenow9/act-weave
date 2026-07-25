@@ -115,9 +115,13 @@ describe("tools view", () => {
     expect(toolsView).toContain("getToolLifecycleStatus");
     expect(toolsView).toContain("getToolTestStatus");
     expect(toolsView).toContain("getToolRunStatus");
+    expect(toolsView).toContain("getToolUnifiedStatus");
+    expect(toolsView).toContain("toolHasConnectionAttention");
     expect(toolsView).toContain("toolUnifiedStatus");
     expect(toolsView).toContain("connectionIssueTools");
     expect(toolsView).toContain("tool-connection-alert");
+    expect(toolsView).toContain("filterConnectionIssues");
+    expect(toolsView).toContain("筛选连接异常");
     expect(toolsView).not.toContain("observabilityLabel");
     expect(toolsView).not.toContain("tool-observability-cell");
   });
@@ -125,11 +129,18 @@ describe("tools view", () => {
   it("keeps the status filter taxonomy in the table toolbar with prototype summary metrics", () => {
     expect(toolsView).toContain("需处理");
     expect(toolsView).toContain('label: "全部状态", value: "all"');
+    expect(toolsView).toContain('label: "连接异常", value: "attention"');
+    expect(toolsView).toContain("toolHasConnectionAttention");
+    expect(toolsView).toContain("publishedWithConnectionIssueCount");
     expect(toolsView).toContain('label: "全部类型", value: "all"');
     expect(toolsView).toContain('ariaLabel="工具类型筛选"');
     expect(toolsView).toContain("ManagementPageHeader");
     expect(toolsView).toContain("ManagementSummaryStrip");
     expect(toolsView).not.toContain("草稿 / 已停用");
+    // KPI 需处理 must count connection attention, not lifecycle Review/Disabled only.
+    expect(toolsView).not.toMatch(
+      /label:\s*"需处理"[\s\S]{0,200}tool\.status === "Review" \|\| tool\.status === "Disabled"/,
+    );
   });
 
   it("uses shared icon-and-label primary actions and keeps risky actions in a confirmed menu", () => {
