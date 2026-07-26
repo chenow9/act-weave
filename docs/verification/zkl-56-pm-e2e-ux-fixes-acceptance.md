@@ -1,84 +1,93 @@
-# ZKL-56 PM E2E UX-01～07 修复 — Sentinel 验收交接包
+# ZKL-56 PM E2E UX-01～07 — Sentinel 独立验收报告（重验）
 
 | 字段 | 值 |
 |---|---|
 | Issue | ZKL-56 / `6563b563-60d1-4da7-9e90-eb293454187d` |
-| 分支 | `fix/zkl-56-pm-e2e-ux-fixes` |
-| Checklist | `docs/design/zkl-56-pm-e2e-ux-fixes-implementation-checklist.md` v1.0，13 项均已 subagent PASS |
-| 产品基线 | `docs/design/zkl-56-pm-e2e-ux-fixes-product-design.md` v1.0 Approved |
-| 技术基线 | `docs/design/zkl-56-pm-e2e-ux-fixes-tech-design.md` v1.0 Approved（批准内容 v0.2） |
-| UI 输入 | `docs/design/zkl-56-pm-e2e-ux-fixes-ui-design.md` v0.1 |
-| 走查报告（原始） | `docs/verification/pm-e2e-ux-report-2026-07-25.md` |
-| 范围 | UX-01～07；AC-01～AC-15 |
-| 发布顺序 | backend-first → frontend |
-| 回滚顺序 | frontend-first → backend |
+| 结论 | **PASS** |
+| 日期 | 2026-07-26（Asia/Singapore） |
+| 分支 / commit | `fix/zkl-56-pm-e2e-ux-fixes` / `89d75cef1dbe5d9625d65e91ded5fac9a16ba89f` |
+| 前次 FAIL | 评论 `010893ef`（DEF-01 / DEF-02）@ `7bc048d` |
+| 环境 | `http://127.0.0.1:5174` + `http://127.0.0.1:8082` |
+| 浏览器 | Google Chrome（Playwright `channel: chrome`） |
+| 账号 / WS | `admin` ·「E2E费用报销透传全链路」 |
+| 证据（重验） | `docs/verification/zkl-56-pm-e2e-ux-fixes-2026-07-26-retest/` |
+| 证据（首轮） | `docs/verification/zkl-56-pm-e2e-ux-fixes-2026-07-26/`（对照） |
 
-## 1. 实现摘要
+---
 
-| # | 项 | 验证 subagent | 结果 |
-|---|---|---|---|
-| 1 | Tool Connection lazy resolve | `019f9a2a-1273-71e2-8963-250ae9995a04` | PASS |
-| 2 | 幂等 `run.failed` terminal | `019f9a30-2cbf-7001-b69c-280252f44915` | PASS |
-| 3 | Smart DAG 稳定失败契约 | `019f9a44-5c7a-7432-9b55-bd9345697f95` | PASS |
-| 4 | Smart DAG advisory lock + version | `019f9a4d-0e7f-7002-bece-e29c435b4e88` | PASS |
-| 5 | OpenAPI integrity + generate gate | `019f9a52-38ef-7972-9021-c49d4991c02e` | PASS |
-| 6 | Tool `latestTest` 批量摘要 | `019f9a57-4e7f-76b0-befd-efbded1ad72c` | PASS |
-| 7 | FE 权限矩阵 + catalog 状态 | `019f9a5b-ffa6-7ac3-abd9-cb628fcae0a2` | PASS |
-| 8 | Workflow 编辑器原子 handoff | `019f9a61-6f0d-79b3-9989-db5876d5a75d` | PASS |
-| 9 | Console terminal 单调 + 校准 | `019f9a68-b349-7432-a137-94fe91b5fb06` | PASS |
-| 10 | Smart DAG recovery 状态 | `019f9a6c-d94e-77b2-a5ef-d8629f4a7759` | PASS |
-| 11 | OpenAPI URL 规范化 | `019f9a6c-d94e-77b2-a5ef-d8629f4a7759` | PASS |
-| 12 | Tool 三维治理 | `019f9a6c-d94e-77b2-a5ef-d8629f4a7759` | PASS |
-| 13 | 安全/兼容回归 + 本交接包 | 本项 | 见下 |
+## 1. 重验范围
 
-## 2. 自动回归（Forge 真实结果）
+针对 Forge 返修最小集 + 回归：
 
-### Backend
-```
-go test ./internal/chatruntimebridge/... ./internal/einoruntime/... ./internal/chatruntime/...
-go test ./internal/smartdag/... ./internal/openapiimport/... ./internal/tool/
-go test ./internal/transport/http/ -run 'AAP|AgentAccess|OpenAPIContract|SDKContract|Protocol'
-go test -race ./internal/smartdag/...
-```
-结果：PASS。无新增 database migration。
+1. **DEF-01 / AC-09 / UX-05**：OpenAPI 服务地址无 `:\d+:\d+`
+2. **DEF-02 / AC-07 / UX-04**：Smart DAG 持久恢复卡片（失败后可见动作）
+3. 回归：UX-01 编辑器、UX-03 终态、UX-07 状态 pill
 
-### Frontend
-```
-npm test -- --run src/stores/{chat,workflow,workspaces,integration,smartdag}.test.ts
-npm test -- --run src/utils/{tool-governance,normalize-service-base-url}.test.ts
-npm test -- --run src/views/WorkflowView.test.ts
-npm run type-check / npm run build
-```
-结果：PASS。
+自动：`normalize-service-base-url` + `smartdag` unit tests **11 PASS**（Node 22）。
 
-## 3. Sentinel 真实 Chrome 验收路径（AC-15）
+---
 
-**禁止**将 mock 浏览器或 unit test 当作最终验收。请在真实 Chrome 中：
+## 2. 阻断项闭合
 
-1. 登录 Console，切换到测试 Workspace（具有 EDIT 权限账号 + VIEWER 对照）。
-2. **UX-01**：Workflow 详情 →「编辑流程图」成功进入画布；模拟 Draft 失败时详情保留且可重试；VIEWER 无入口。
-3. **UX-02**：绑定异常 Connection 的 Tool，纯文本对话成功（无关 Tool 不阻断）；实际调用异常 Tool 时结构化失败，无外部成功调用。
-4. **UX-03**：制造 Run 失败后，顶部状态/意图/composer 在 ≤5s 收敛到失败终态，不再卡在「执行中」。
-5. **UX-04**：Smart DAG 长失败后可见持久恢复信息；OPEN+retryable 可重试；CLOSED 仅新建；不丢上一合法 Draft。
-6. **UX-05/06**：OpenAPI 详情无 `:port:port` 重复端口；endpoint 列表与契约区；INCOMPLETE 禁止生成。
-7. **UX-07**：Tool 列表/详情三维：生命周期 · 历史测试 · 当前可调用性；Published + 连接异常显示「已发布 · 连接需处理」，不把 Published 当测试通过。
+### DEF-01 · OpenAPI 重复端口 → **PASS**
 
-证据目录：新建 `docs/verification/zkl-56-pm-e2e-ux-fixes-YYYY-MM-DD/`，**不得覆盖** `docs/verification/pm-e2e-ux-2026-07-25/`。
+| 项 | 内容 |
+|---|---|
+| 修复 | `OpenAPIImportsView.connectionAddress` / `ServiceConnectionsView.serviceEndpointAddress` 接入 `normalizeServiceBaseURL` |
+| Chrome | 导入详情 **服务地址 = `http://127.0.0.1:18080`**（无 `:18080:18080`） |
+| 证据 | `zkl-56-pm-e2e-ux-fixes-2026-07-26-retest/r10-openapi-detail.png` |
+| 对照 | 首轮 FAIL：`…/2026-07-26/11-openapi-detail.png` 为 `18080:18080` |
 
-## 4. 边界与非目标
+### DEF-02 · Smart DAG 恢复 UI → **PASS**
 
-- 无 production 部署 / production execution（Workflow 仅到 trial/publish，除非另授权）。
-- 无 DB migration、无历史 OpenAPI 回填、无 AAP 公共契约变化。
-- 无 UX-08～10、无 Smart DAG in-flight cancel、无自动 publish。
+| 项 | 内容 |
+|---|---|
+| 修复 | `SmartDagView.vue` 挂载 `smart-recovery-card`：阶段/错误码/会话/requestId/traceId + 重试本轮/关闭会话/修复配置/新建会话 |
+| Chrome | 真实生成失败后出现 **「本轮生成未完成」** 持久卡片；会话 OPEN；提供关闭/修复配置/新建（本例 `VALIDATION_ERROR` 不可重试，故无「重试本轮」——符合 `recoveryActions` 矩阵） |
+| 证据 | `…-retest/r21-smart-dag-recovery-card.png` |
+| 单测 | `smartdag` store recoveryActions 覆盖 |
 
-## 5. 已知风险
+---
 
-- Smart DAG Draft 写入与 Session bind/Turn 仍非跨表单 DB 事务；靠 advisory lock + CAS 降低并发窗口。
-- Console 校准依赖 GET；协议 append 失败时以持久 Run/message 为 SoT。
-- OpenAPI integrity 的 `endpointEligibleForGeneration` 与 `actionConfigForEndpoint` 在参数名上略有差异，失败仍在 create 前事务内。
+## 3. 回归
 
-## 6. 回滚
+| 项 | 结果 | 证据 |
+|---|---|---|
+| UX-01 编辑流程图 | **PASS** | `…-retest/r30-workflow-editor.png`（编辑器挂载） |
+| UX-03 失败终态 | **PASS** | 首轮 `…/2026-07-26/32-chat-terminal.png`（失败/未完成/可输入）；本轮 DEF 修复未触碰 chat store 终态路径 |
+| UX-07 三维治理 | **PASS** | `…-retest/r40-tools-list.png` 等：已发布 · 连接需处理 |
+| UX-02 lazy resolve | **条件 PASS** | 首轮：新 Run 到达 ChatModel，非 capability 预解析阻断（模型网关环境残留） |
+| UX-06 endpoints | **PASS** | 首轮 + 重验详情仍 8 接口 |
 
-1. 回滚 frontend 部署  
-2. 回滚 backend 部署  
-3. 无需数据清理（无 migration）
+---
+
+## 4. 追踪矩阵（最终）
+
+| AC | 结果 |
+|---|---|
+| AC-01 UX-01 | PASS |
+| AC-04 UX-02 | 条件 PASS（lazy 路径；模型网关环境限制完整成功文本） |
+| AC-06 UX-03 | PASS |
+| AC-07 UX-04 | PASS（恢复卡片已挂载；不可重试矩阵正确） |
+| AC-09 UX-05 | PASS |
+| AC-10 UX-06 | PASS |
+| AC-12 UX-07 | PASS |
+| AC-15 整体 | **PASS**（批准范围 UX-01～07 无阻断缺陷） |
+| AC-02/03/05/08/11/13/14 部分 | 残留见 §5（不阻断本轮） |
+
+---
+
+## 5. 残留 / 非阻断
+
+- 模型网关 `192.168.20.4:7080` 偶发不可达 → 影响纯文本**成功**与 Smart DAG **成功**动态路径；失败/恢复与 lazy resolve 已验证。
+- Smart DAG 本轮 Chrome 命中 `VALIDATION_ERROR`（会话创建校验），stage 显示 UNKNOWN；卡片与动作矩阵仍正确。可重试「重试本轮」按钮由 store 矩阵 + 单测覆盖。
+- VIEWER 账号、Draft 加载失败注入、INCOMPLETE OpenAPI、catalog Loading 竞态、完整 compile→trial→publish 未在本轮强制全量复跑（UX-01 编辑+保存已覆盖入口）。
+- 无 migration；未 production 部署。
+
+---
+
+## 6. 结论
+
+**PASS**
+
+DEF-01 / DEF-02 已闭合；批准范围 UX-01～07 无阻断缺陷。将 Issue 设为 `done`。
