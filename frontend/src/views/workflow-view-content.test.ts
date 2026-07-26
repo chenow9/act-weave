@@ -56,6 +56,16 @@ describe("workflow view static content", () => {
     expect(workflowView).not.toContain("workflowDrawerMode");
   });
 
+  it("keeps WorkflowRevisionPanel emit wiring for activate/rollback/compare/disable unchanged", () => {
+    expect(workflowView).toContain("<WorkflowRevisionPanel");
+    expect(workflowView).toContain('@activate="activateRevision"');
+    expect(workflowView).toContain('@rollback="rollbackRevision"');
+    expect(workflowView).toContain('@compare="compareRevision"');
+    expect(workflowView).toContain('@disable="disableWorkflowRuns"');
+    expect(workflowView).toContain(':busy-revision-id="pendingRevisionActionId"');
+    expect(workflowView).toContain(':disable-busy="pendingWorkflowDisable || pendingRevisionCompare"');
+  });
+
   it("keeps workflow dialogs in a modal transition and wires keyboard escape handling", () => {
     expect(workflowView).toContain('<Transition name="modal-fade">');
     expect(workflowView).toContain("@keydown.esc.stop.prevent=\"closeWorkflowDetail\"");

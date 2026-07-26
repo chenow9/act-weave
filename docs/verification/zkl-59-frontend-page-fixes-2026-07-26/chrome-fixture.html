@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>ZKL-59 FE fixture 1180/1440</title>
+  <style>
+    :root { --aw-border: #e2e8f0; --aw-border-soft: #f1f5f9; --aw-muted: #64748b; --aw-cyan: #0d9488; --aw-text: #0f172a; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; color: #0f172a; background: #f8fafc; min-width: 1180px; }
+    .page { min-height: 100vh; padding: 24px; }
+    .modal { width: min(718px, calc(100vw - 56px)); margin: 0 auto 24px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+    .modal.wide { width: min(920px, calc(100vw - 56px)); }
+    .head { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #e2e8f0; background: #fff; }
+    .body { overflow-y: auto; overflow-x: hidden; padding: 20px; max-height: 70vh; }
+    .workflow-revision-panel { display: grid; gap: 12px; min-width: 0; padding: 12px; border: 1px solid var(--aw-border); border-radius: 8px; }
+    .workflow-revision-head-title-row { display: flex; justify-content: space-between; gap: 12px; }
+    .workflow-revision-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; min-width: 0; }
+    .workflow-revision-meta-card { min-width: 0; padding: 8px 10px; background: #f8fafc; border: 1px solid var(--aw-border-soft); border-radius: 8px; }
+    .workflow-revision-meta-id { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, monospace; }
+    .workflow-revision-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 10px; background: #f8fafc; border: 1px solid var(--aw-border-soft); border-radius: 8px; }
+    .workflow-revision-actions { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+    .ghost-button { min-height: 28px; padding: 0 9px; border: 1px solid var(--aw-border); border-radius: 6px; background: #f8fafc; color: #475569; font-size: 11px; font-weight: 700; }
+    .chat-inline-action { min-width: 52px; min-height: 28px; padding: 0 10px; border: 1px solid var(--aw-border); border-radius: 6px; background: #f8fafc; color: #475569; font-size: 12px; font-weight: 700; }
+    .provider-identity-choice { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .provider-identity-card-body { position: relative; min-height: 92px; padding: 14px 72px 14px 13px; border: 1px solid #dbe3ef; border-radius: 10px; background: #f8fafc; }
+    .provider-identity-card-body.selected { border-color: #80cbbb; background: #effaf7; }
+    .badge { position: absolute; top: 10px; right: 10px; color: #0d9488; font-size: 12px; font-weight: 800; }
+    .menu { width: 208px; border: 1px solid #f3f4f6; border-radius: 12px; background: #fff; padding: 6px; }
+    .menu button { display: flex; width: 100%; min-height: 36px; align-items: center; gap: 10px; border: 0; background: transparent; text-align: left; }
+    .menu button.danger { color: #e11d48; }
+    .table-wrap { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 8px; }
+    table { min-width: 1100px; border-collapse: collapse; }
+    td, th { padding: 8px; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <div class="page" id="page">
+    <section class="modal" id="workflow-modal">
+      <div class="head"><strong>流程详情</strong></div>
+      <div class="body" id="workflow-body">
+        <div class="workflow-revision-panel">
+          <div class="workflow-revision-head-title-row">
+            <span>发布版本</span>
+            <button class="ghost-button" type="button">停用新执行</button>
+          </div>
+          <div class="workflow-revision-meta">
+            <div class="workflow-revision-meta-card">
+              <div>Active</div>
+              <strong class="workflow-revision-meta-id" title="a1b2c3d4-e5f6-7890-abcd-ef0123456789">a1b2c3d4…6789</strong>
+            </div>
+            <div class="workflow-revision-meta-card">
+              <div>Latest</div>
+              <strong class="workflow-revision-meta-id" title="9z8y7x6w-v1u0-tsrq-ponm-lkjihgfedcba">9z8y7x6w…dcba</strong>
+            </div>
+          </div>
+          <article class="workflow-revision-item">
+            <div style="min-width:0">
+              <strong class="workflow-revision-meta-id" title="hist0001-2345-6789-abcd-ef012345hist">hist0001…hist</strong>
+              <small>07/01 10:00 · abcdef012345</small>
+            </div>
+            <div class="workflow-revision-actions">
+              <button class="ghost-button" type="button">激活</button>
+              <button class="ghost-button" type="button">回滚</button>
+              <button class="ghost-button" type="button">对比</button>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="modal" id="chat-block">
+      <div class="head">
+        <strong>运行调试台</strong>
+        <button class="chat-inline-action" type="button" title="归档当前会话（消息会永久保留）">归档</button>
+      </div>
+      <div class="body">
+        <select style="min-height:32px;border:1px solid #e2e8f0;border-radius:6px;padding:6px 10px;">
+          <option>Connection A</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="modal" id="provider-block">
+      <div class="head"><strong>用户调用身份</strong></div>
+      <div class="body">
+        <div class="provider-identity-choice">
+          <div class="provider-identity-card-body selected"><span class="badge">✓ 已支持</span><strong>Broker / OBO</strong><div>平台按当前用户身份换取短期业务 Token</div></div>
+          <div class="provider-identity-card-body selected"><span class="badge">✓ 已支持</span><strong>本次请求透传</strong><div>调用方为本次请求提供 Token，平台只用于本次调用且不会保存</div></div>
+        </div>
+        <div class="menu" style="margin-top:12px">
+          <button type="button">编辑</button>
+          <button type="button">同步</button>
+          <button type="button">查看能力资产</button>
+          <button class="danger" type="button">删除</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="modal wide" id="openapi-modal">
+      <div class="head"><strong>导入详情</strong></div>
+      <div class="body" id="openapi-body">
+        <div title="very-long-openapi-filename-with-mixed-中英文-and-uuid-abc-def.json">very-long-openapi-filename-with-mixed-中英文-and-uuid-abc-def.json</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>字段</th><th>路径</th><th>类型</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td>id</td><td>/orders/{id}</td><td>string</td><td>long cell content that should scroll inside table only _______________________________</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

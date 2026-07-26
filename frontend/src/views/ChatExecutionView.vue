@@ -25,6 +25,7 @@ const selectedAgentId = ref("");
 const sessionKeyword = ref("");
 const sending = ref(false);
 const confirming = ref(false);
+const archivingSession = ref(false);
 const contextLoading = ref(false);
 const actionError = ref("");
 const activeSidePanel = ref<ChatSidePanel>();
@@ -364,7 +365,13 @@ async function cancelConfirmation() {
 
 async function archiveCurrentSession() {
   if (!chat.activeSession || chat.activeSession.status === "ARCHIVED") return;
-  await runChatAction(() => chat.archiveSession(), "归档会话失败，请稍后重试。");
+  if (archivingSession.value) return;
+  archivingSession.value = true;
+  try {
+    await runChatAction(() => chat.archiveSession(), "归档会话失败，请稍后重试。");
+  } finally {
+    archivingSession.value = false;
+  }
 }
 
 function renderMessageMarkdown(content: string) {
@@ -843,9 +850,11 @@ function sessionTime(updatedAt?: string) {
                   class="chat-inline-action"
                   type="button"
                   title="归档当前会话（消息会永久保留）"
+                  :disabled="archivingSession"
+                  :aria-busy="archivingSession ? 'true' : undefined"
                   @click="archiveCurrentSession"
                 >
-                  归档
+                  {{ archivingSession ? "归档中…" : "归档" }}
                 </button>
               </div>
               <p>
@@ -1738,8 +1747,50 @@ function sessionTime(updatedAt?: string) {
 
 .runtime-title-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+}
+
+/* FE-02: secondary non-destructive archive control (not danger). */
+.chat-inline-action {
+  min-width: 52px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border: 1px solid var(--aw-border);
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.16s ease, background-color 0.16s ease, border-color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+}
+
+.chat-inline-action:hover:not(:disabled) {
+  color: var(--aw-cyan);
+  background: #fff;
+  border-color: rgba(13, 148, 136, 0.35);
+}
+
+.chat-inline-action:focus-visible {
+  outline: 2px solid rgba(13, 148, 136, 0.55);
+  outline-offset: 2px;
+}
+
+.chat-inline-action:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.chat-inline-action:disabled,
+.chat-inline-action[aria-busy="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .runtime-title-row > b,
@@ -2921,7 +2972,38 @@ function sessionTime(updatedAt?: string) {
 }
 
 .debug-connection-picker select {
+  appearance: none;
+  -webkit-appearance: none;
   max-width: 320px;
-  padding: 6px 8px;
+  min-height: 32px;
+  padding: 6px 28px 6px 10px;
+  border: 1px solid var(--aw-border);
+  border-radius: 6px;
+  background-color: #fff;
+  background-image: linear-gradient(45deg, transparent 50%, #64748b 50%),
+    linear-gradient(135deg, #64748b 50%, transparent 50%);
+  background-position: calc(100% - 14px) calc(50% - 2px), calc(100% - 9px) calc(50% - 2px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+}
+
+.debug-connection-picker select:hover:not(:disabled) {
+  border-color: rgba(13, 148, 136, 0.35);
+}
+
+.debug-connection-picker select:focus-visible {
+  outline: 2px solid rgba(13, 148, 136, 0.55);
+  outline-offset: 2px;
+}
+
+.debug-connection-picker select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background-color: #f8fafc;
 }
 </style>

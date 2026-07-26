@@ -51,6 +51,10 @@ const importMode = ref<OpenAPIImportMode>("FILE");
 const selectedOpenAPIFile = ref<File | null>(null);
 const selectedOpenAPIFilePreview = ref(parseOpenAPIPreview(""));
 const selectedImportId = ref("");
+/** Detail shell local state (T2=A): open shell first, then load. */
+const detailLoading = ref(false);
+const detailError = ref("");
+let detailRequestSeq = 0;
 const actionNote = ref("");
 const importingOpenAPI = ref(false);
 const generatingDraftsByImportId = ref<Record<string, boolean>>({});
@@ -443,9 +447,38 @@ async function openImportDetail(record: OpenAPIImport, event?: Event) {
     rememberModalTrigger(event);
   }
   closeOpenAPIDropdowns();
-  const detailed = record.detail ? record : await integration.loadOpenAPIImportDetail(record);
-  selectedImportId.value = detailed.id;
+  // Open stable shell immediately (list row is enough for header identity).
+  selectedImportId.value = record.id;
+  detailError.value = "";
   void focusModalRoot(() => detailDialogRef.value);
+
+  if (record.detail) {
+    detailLoading.value = false;
+    return;
+  }
+  await fetchImportDetail(record);
+}
+
+async function fetchImportDetail(record: OpenAPIImport) {
+  const requestId = ++detailRequestSeq;
+  const targetId = record.id;
+  detailLoading.value = true;
+  detailError.value = "";
+  try {
+    await integration.loadOpenAPIImportDetail(record);
+    if (requestId !== detailRequestSeq || selectedImportId.value !== targetId) return;
+  } catch (error) {
+    if (requestId !== detailRequestSeq || selectedImportId.value !== targetId) return;
+    detailError.value = error instanceof Error ? error.message : String(error) || "加载导入详情失败，请重试。";
+  } finally {
+    if (requestId === detailRequestSeq) detailLoading.value = false;
+  }
+}
+
+async function retryImportDetail() {
+  const record = selectedImport.value;
+  if (!record) return;
+  await fetchImportDetail(record);
 }
 
 /** List-row menu order: detail → generate → delete (ZKL-33; re-applied after ZKL-31 merge conflict). */
@@ -497,7 +530,10 @@ function requestMobileImportRemoval(record: OpenAPIImport, event?: Event) {
 }
 
 function closeImportDetail() {
+  detailRequestSeq += 1;
   selectedImportId.value = "";
+  detailLoading.value = false;
+  detailError.value = "";
   void restoreModalFocus();
 }
 
@@ -999,7 +1035,7 @@ async function removeImport(record: OpenAPIImport) {
         @keydown.esc.stop.prevent="closeImportDetail"
         @keydown.tab="handleModalTab($event, detailDialogRef)"
       >
-        <header class="openapi-modal-head">
+        <header class="openapi-modal-head openapi-detail-modal-head">
           <div>
             <span><i class="fa-solid fa-file-code" /></span>
             <div>
@@ -1011,49 +1047,97 @@ async function removeImport(record: OpenAPIImport) {
             <i class="fa-solid fa-xmark" />
           </button>
         </header>
-        <div class="openapi-detail-modal-body">
-          <div class="openapi-detail-hero">
-            <i class="fa-solid fa-file-code" />
-            <div>
-              <strong>{{ selectedImport.fileName }}</strong>
-              <small>{{ selectedImport.source }} · {{ workspaceLabel(selectedImport.workspaceId) }} · {{ selectedImport.providerId || "Provider" }}</small>
+        <div class="openapi-detail-modal-body" data-testid="openapi-detail-body">
+          <div v-if="detailLoading" class="openapi-detail-state" data-testid="openapi-detail-loading" role="status" aria-live="polite">
+            <i class="fa-solid fa-spinner fa-spin" aria-hidden="true" />
+            <strong>正在加载导入详情…</strong>
+            <p>请稍候，不会触发 Tool 草稿生成。</p>
+          </div>
+          <div v-else-if="detailError" class="openapi-detail-state is-error" data-testid="openapi-detail-error" role="alert">
+            <i class="fa-solid fa-circle-exclamation" aria-hidden="true" />
+            <strong>导入详情加载失败</strong>
+            <p>{{ detailError }}</p>
+            <div class="openapi-detail-state-actions">
+              <button type="button" data-testid="openapi-detail-retry" @click="retryImportDetail">重试</button>
+              <button type="button" data-testid="openapi-detail-error-close" @click="closeImportDetail">关闭</button>
             </div>
-            <span class="openapi-status-pill" :class="statusClass(selectedImport.status)">
-              <span :class="statusDotClass(selectedImport.status)" />
-              {{ selectedImport.status }}
-            </span>
           </div>
-          <div class="openapi-detail-grid import-detail-grid">
-            <div class="config-summary-item"><i class="fa-solid fa-layer-group" /><span>归属空间</span><strong>{{ selectedWorkspace?.name || selectedImport.workspaceId }}</strong></div>
-            <div class="config-summary-item"><i class="fa-solid fa-cubes" /><span>来源 Provider</span><strong>{{ providerLabel(selectedImport.providerId) }}</strong></div>
-            <div class="config-summary-item"><i class="fa-solid fa-plug-circle-bolt" /><span>服务连接</span><strong>{{ selectedConnection?.name }}</strong></div>
-            <div class="config-summary-item"><i class="fa-solid fa-server" /><span>服务地址</span><strong>{{ connectionAddress(selectedConnection) }}</strong></div>
-            <div class="config-summary-item"><i class="fa-solid fa-list-check" /><span>接口数量</span><strong>{{ selectedImport.totalEndpoints }}</strong></div>
-            <div class="config-summary-item"><i class="fa-solid fa-wand-magic-sparkles" /><span>生成状态</span><strong>{{ selectedImport.readyEndpoints }} 个可生成</strong></div>
-          </div>
-          <ToolSchemaTreeView :nodes="selectedImportDetail?.requestTransport || []" title="请求参数" empty-text="当前导入记录未返回传输参数。" />
-          <ToolSchemaTreeView :nodes="selectedImportDetail?.requestBodyNodes || []" title="请求体 Body" empty-text="当前导入记录未返回请求体结构。" />
-          <ToolSchemaTreeView :nodes="selectedImportDetail?.responseNodes || []" title="响应结果" empty-text="当前导入记录未返回响应结构。" />
-          <div v-if="selectedImportDetail?.endpoints.length" class="tool-schema-endpoint-list">
-            <div class="editable-schema-head">
+          <template v-else>
+            <div class="openapi-detail-hero">
+              <i class="fa-solid fa-file-code" />
               <div>
-                <strong>接口明细</strong>
-                <span>按接口查看导入出的结构化契约。</span>
+                <strong :title="selectedImport.fileName">{{ selectedImport.fileName }}</strong>
+                <small
+                  :title="`${selectedImport.source} · ${workspaceLabel(selectedImport.workspaceId)} · ${selectedImport.providerId || 'Provider'}`"
+                >{{ selectedImport.source }} · {{ workspaceLabel(selectedImport.workspaceId) }} · {{ selectedImport.providerId || "Provider" }}</small>
+              </div>
+              <span class="openapi-status-pill" :class="statusClass(selectedImport.status)">
+                <span :class="statusDotClass(selectedImport.status)" />
+                {{ selectedImport.status }}
+              </span>
+            </div>
+            <div class="openapi-detail-grid import-detail-grid">
+              <div class="config-summary-item">
+                <i class="fa-solid fa-layer-group" />
+                <span>归属空间</span>
+                <strong :title="selectedWorkspace?.name || selectedImport.workspaceId">{{ selectedWorkspace?.name || selectedImport.workspaceId }}</strong>
+              </div>
+              <div class="config-summary-item">
+                <i class="fa-solid fa-cubes" />
+                <span>来源 Provider</span>
+                <strong :title="providerLabel(selectedImport.providerId)">{{ providerLabel(selectedImport.providerId) }}</strong>
+              </div>
+              <div class="config-summary-item">
+                <i class="fa-solid fa-plug-circle-bolt" />
+                <span>服务连接</span>
+                <strong :title="selectedConnection?.name || ''">{{ selectedConnection?.name }}</strong>
+              </div>
+              <div class="config-summary-item">
+                <i class="fa-solid fa-server" />
+                <span>服务地址</span>
+                <strong :title="connectionAddress(selectedConnection)">{{ connectionAddress(selectedConnection) }}</strong>
+              </div>
+              <div class="config-summary-item">
+                <i class="fa-solid fa-list-check" />
+                <span>接口数量</span>
+                <strong>{{ selectedImport.totalEndpoints }}</strong>
+              </div>
+              <div class="config-summary-item">
+                <i class="fa-solid fa-wand-magic-sparkles" />
+                <span>生成状态</span>
+                <strong>{{ selectedImport.readyEndpoints }} 个可生成</strong>
               </div>
             </div>
-            <div v-for="endpoint in selectedImportDetail.endpoints" :key="`${endpoint.method}-${endpoint.path}`" class="tool-schema-endpoint-card">
-              <div class="tool-schema-endpoint-head">
-                <strong>{{ endpoint.method }} {{ endpoint.path }}</strong>
-                <span>{{ endpoint.summary || endpoint.operationId || endpoint.status }}</span>
-              </div>
-              <ToolSchemaTreeView :nodes="endpoint.requestContract ? [endpoint.requestContract].flat() as ToolSchemaNode[] : []" title="请求体 Body" empty-text="无请求结构" />
-              <ToolSchemaTreeView :nodes="endpoint.responseContract ? [endpoint.responseContract].flat() as ToolSchemaNode[] : []" title="响应结果" empty-text="无响应结构" />
+            <div class="openapi-detail-schema-stack">
+              <ToolSchemaTreeView :nodes="selectedImportDetail?.requestTransport || []" title="请求参数" empty-text="当前导入记录未返回传输参数。" />
+              <ToolSchemaTreeView :nodes="selectedImportDetail?.requestBodyNodes || []" title="请求体 Body" empty-text="当前导入记录未返回请求体结构。" />
+              <ToolSchemaTreeView :nodes="selectedImportDetail?.responseNodes || []" title="响应结果" empty-text="当前导入记录未返回响应结构。" />
             </div>
-          </div>
+            <div v-if="selectedImportDetail?.endpoints.length" class="tool-schema-endpoint-list">
+              <div class="editable-schema-head">
+                <div>
+                  <strong>接口明细</strong>
+                  <span>按接口查看导入出的结构化契约。</span>
+                </div>
+              </div>
+              <div v-for="endpoint in selectedImportDetail.endpoints" :key="`${endpoint.method}-${endpoint.path}`" class="tool-schema-endpoint-card">
+                <div class="tool-schema-endpoint-head">
+                  <strong :title="`${endpoint.method} ${endpoint.path}`">{{ endpoint.method }} {{ endpoint.path }}</strong>
+                  <span>{{ endpoint.summary || endpoint.operationId || endpoint.status }}</span>
+                </div>
+                <ToolSchemaTreeView :nodes="endpoint.requestContract ? [endpoint.requestContract].flat() as ToolSchemaNode[] : []" title="请求体 Body" empty-text="无请求结构" />
+                <ToolSchemaTreeView :nodes="endpoint.responseContract ? [endpoint.responseContract].flat() as ToolSchemaNode[] : []" title="响应结果" empty-text="无响应结构" />
+              </div>
+            </div>
+          </template>
         </div>
         <div class="drawer-footer-actions openapi-detail-actions">
           <button type="button" @click="closeImportDetail">关闭</button>
-          <button type="button" :disabled="Boolean(generatingDraftsByImportId[selectedImport.id])" @click="generateDrafts(selectedImport)">
+          <button
+            type="button"
+            :disabled="detailLoading || Boolean(detailError) || Boolean(generatingDraftsByImportId[selectedImport.id])"
+            @click="generateDrafts(selectedImport)"
+          >
             <i v-if="generatingDraftsByImportId[selectedImport.id]" class="fa-solid fa-spinner fa-spin" />
             {{ generatingDraftsByImportId[selectedImport.id] ? "生成中" : "生成 Tool 草稿" }}
           </button>
@@ -1568,6 +1652,40 @@ async function removeImport(record: OpenAPIImport) {
   padding: 20px;
 }
 
+/* FE-05: detail-only light header aligned with management modal-card-head. */
+.openapi-detail-modal-head {
+  background: #fff;
+  color: #0f172a;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 16px 20px 14px;
+}
+
+.openapi-detail-modal-head > div > span {
+  border-color: #dbeafe;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.openapi-detail-modal-head h3 {
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.openapi-detail-modal-head p {
+  color: #64748b;
+}
+
+.openapi-detail-modal-head > button {
+  background: #f8fafc;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+.openapi-detail-modal-head > button:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
 .openapi-modal-head > div {
   display: flex;
   align-items: center;
@@ -2028,7 +2146,7 @@ async function removeImport(record: OpenAPIImport) {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 20px;
+  margin: 0;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   background: #fff;
@@ -2036,8 +2154,72 @@ async function removeImport(record: OpenAPIImport) {
 }
 
 .openapi-detail-modal-body {
+  display: grid;
+  gap: 14px;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
+  padding: 20px;
+}
+
+.openapi-detail-schema-stack {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.openapi-detail-state {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  min-height: 160px;
+  padding: 20px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.openapi-detail-state.is-error {
+  border-color: rgba(220, 38, 38, 0.24);
+  background: #fff1f2;
+  color: #b91c1c;
+}
+
+.openapi-detail-state strong {
+  color: inherit;
+  font-size: 14px;
+}
+
+.openapi-detail-state p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.openapi-detail-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.openapi-detail-state-actions button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.openapi-detail-state-actions button:focus-visible {
+  outline: 2px solid rgba(13, 148, 136, 0.55);
+  outline-offset: 2px;
 }
 
 .openapi-detail-hero > i {
@@ -2083,14 +2265,24 @@ async function removeImport(record: OpenAPIImport) {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
-  margin: 0 20px 20px;
+  margin: 0;
+  min-width: 0;
 }
 
 .openapi-detail-grid .config-summary-item {
+  min-width: 0;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   background: #f8fafc;
   padding: 12px;
+}
+
+.openapi-detail-grid .config-summary-item strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .openapi-detail-actions {

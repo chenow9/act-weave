@@ -9949,7 +9949,8 @@ a[href]:focus-visible {
 .workflow-detail-modal-body,
 .workflow-metadata-body {
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 18px;
 }
 
@@ -10149,7 +10150,8 @@ a[href]:focus-visible {
 
 .workflow-revision-panel {
   display: grid;
-  gap: 10px;
+  gap: 12px;
+  min-width: 0;
   padding: 12px;
   background: #fff;
   border: 1px solid var(--aw-border);
@@ -10158,23 +10160,61 @@ a[href]:focus-visible {
 
 .workflow-revision-head {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
+  gap: 10px;
+  min-width: 0;
 }
 
-.workflow-revision-head span,
-.workflow-revision-head small {
+.workflow-revision-head-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.workflow-revision-head-title {
   color: var(--aw-muted);
   font-size: 11px;
   font-weight: 900;
 }
 
-.workflow-revision-head strong {
+.workflow-revision-disable-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.workflow-revision-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.workflow-revision-meta-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border: 1px solid var(--aw-border-soft);
+  border-radius: 8px;
+}
+
+.workflow-revision-meta-label {
+  color: var(--aw-muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.workflow-revision-meta-id {
   min-width: 0;
   overflow: hidden;
   color: #0f172a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -10182,13 +10222,18 @@ a[href]:focus-visible {
 .workflow-revision-list {
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
 .workflow-revision-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "info status"
+    "actions actions";
+  align-items: start;
   gap: 8px;
+  min-width: 0;
   padding: 10px;
   background: #f8fafc;
   border: 1px solid var(--aw-border-soft);
@@ -10200,8 +10245,15 @@ a[href]:focus-visible {
   border-color: rgba(13, 148, 136, 0.24);
 }
 
-.workflow-revision-item strong,
-.workflow-revision-item small {
+.workflow-revision-info {
+  grid-area: info;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.workflow-revision-id,
+.workflow-revision-meta-line {
   display: block;
   min-width: 0;
   overflow: hidden;
@@ -10209,35 +10261,69 @@ a[href]:focus-visible {
   white-space: nowrap;
 }
 
-.workflow-revision-item strong {
+.workflow-revision-id {
   color: #0f172a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
+  font-weight: 700;
 }
 
-.workflow-revision-item small {
-  margin-top: 3px;
+.workflow-revision-meta-line {
   color: var(--aw-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
 }
 
+.workflow-revision-status {
+  grid-area: status;
+  flex-shrink: 0;
+  justify-self: end;
+  align-self: start;
+}
+
 .workflow-revision-actions {
+  grid-area: actions;
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
+  min-width: 0;
 }
 
 .workflow-revision-actions .ghost-button {
+  min-width: 48px;
   min-height: 28px;
   padding: 0 9px;
   font-size: 11px;
 }
 
+.workflow-revision-empty,
 .workflow-revision-panel > p {
   margin: 0;
+  min-width: 0;
   color: var(--aw-muted);
   font-size: 12px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 640px) {
+  .workflow-revision-item {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "info status actions";
+    align-items: center;
+  }
+
+  .workflow-revision-actions {
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 520px) {
+  .workflow-revision-meta {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .workflow-step-list,

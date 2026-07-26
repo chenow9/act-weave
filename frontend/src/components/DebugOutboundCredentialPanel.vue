@@ -126,8 +126,14 @@ defineExpose({ clearSecrets, clearAttachment, attachmentId });
         过期时间（本地）
         <input v-model="expiresAtLocal" type="datetime-local" :disabled="busy || !!attachmentId" />
       </label>
-      <button type="button" class="debug-outbound-attach" :disabled="busy || !!attachmentId" @click="onAttach">
-        {{ attachmentId ? "已绑定" : "绑定出站凭据" }}
+      <button
+        type="button"
+        class="debug-outbound-attach"
+        :disabled="busy || !!attachmentId"
+        :aria-busy="busy ? 'true' : undefined"
+        @click="onAttach"
+      >
+        {{ attachmentId ? "已绑定" : busy ? "绑定中…" : "绑定出站凭据" }}
       </button>
       <button
         v-if="attachmentId"
@@ -155,11 +161,11 @@ defineExpose({ clearSecrets, clearAttachment, attachmentId });
 
 <style scoped>
 .debug-outbound-panel {
-  border: 1px solid var(--el-border-color, #dcdfe6);
+  border: 1px solid var(--aw-border, #e2e8f0);
   border-radius: 8px;
   padding: 12px;
   margin: 8px 0;
-  background: var(--el-fill-color-blank, #fff);
+  background: #fff;
 }
 .debug-outbound-header {
   display: flex;
@@ -169,7 +175,7 @@ defineExpose({ clearSecrets, clearAttachment, attachmentId });
 }
 .debug-outbound-hint {
   font-size: 12px;
-  color: var(--el-text-color-secondary, #909399);
+  color: #64748b;
 }
 .debug-outbound-fields {
   display: flex;
@@ -182,28 +188,84 @@ defineExpose({ clearSecrets, clearAttachment, attachmentId });
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
+  font-weight: 600;
+  color: #475569;
 }
 .debug-outbound-fields input[type="password"],
 .debug-outbound-fields input[type="datetime-local"] {
   min-width: 200px;
-  padding: 6px 8px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--aw-border, #e2e8f0);
+  border-radius: 6px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 500;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease, opacity 0.16s ease;
+}
+.debug-outbound-fields input[type="password"]:hover:not(:disabled),
+.debug-outbound-fields input[type="datetime-local"]:hover:not(:disabled) {
+  border-color: rgba(13, 148, 136, 0.35);
+}
+.debug-outbound-fields input[type="password"]:focus-visible,
+.debug-outbound-fields input[type="datetime-local"]:focus-visible {
+  outline: 2px solid rgba(13, 148, 136, 0.55);
+  outline-offset: 2px;
+}
+.debug-outbound-fields input[type="password"]:disabled,
+.debug-outbound-fields input[type="datetime-local"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: #f8fafc;
 }
 .debug-outbound-attach,
 .debug-outbound-clear {
-  padding: 6px 12px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid var(--aw-border, #e2e8f0);
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
   cursor: pointer;
+  transition: color 0.16s ease, background-color 0.16s ease, border-color 0.16s ease, transform 0.16s ease, opacity 0.16s ease;
+}
+.debug-outbound-attach:hover:not(:disabled),
+.debug-outbound-clear:hover:not(:disabled) {
+  color: var(--aw-cyan, #0d9488);
+  background: #fff;
+  border-color: rgba(13, 148, 136, 0.35);
+}
+.debug-outbound-attach:focus-visible,
+.debug-outbound-clear:focus-visible {
+  outline: 2px solid rgba(13, 148, 136, 0.55);
+  outline-offset: 2px;
+}
+.debug-outbound-attach:active:not(:disabled),
+.debug-outbound-clear:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.debug-outbound-attach:disabled,
+.debug-outbound-clear:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .debug-outbound-ok {
   margin: 8px 0 0;
   font-size: 12px;
-  color: var(--el-color-success, #67c23a);
+  color: #047857;
 }
 .debug-outbound-error {
   margin: 8px 0 0;
   font-size: 12px;
-  color: var(--el-color-danger, #f56c6c);
+  color: #b91c1c;
 }
 .broker-only {
-  background: var(--el-fill-color-light, #f5f7fa);
+  background: #f8fafc;
 }
 </style>

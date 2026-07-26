@@ -188,6 +188,20 @@ describe("chat execution view content", () => {
     expect(chatExecutionView).not.toContain("confirmationText");
   });
 
+  it("defines secondary archive control styles and local archivingSession busy guard", () => {
+    expect(chatExecutionView).toContain("archivingSession");
+    expect(chatExecutionView).toContain('class="chat-inline-action"');
+    expect(chatExecutionView).toContain(':disabled="archivingSession"');
+    expect(chatExecutionView).toContain(':aria-busy="archivingSession ? \'true\' : undefined"');
+    expect(chatExecutionView).toContain(".chat-inline-action");
+    expect(chatExecutionView).toContain(".chat-inline-action:focus-visible");
+    expect(chatExecutionView).toContain(".chat-inline-action:disabled");
+    expect(chatExecutionView).not.toMatch(/chat-inline-action[\s\S]{0,200}danger/);
+    expect(chatExecutionView).toContain(".debug-connection-picker select");
+    expect(chatExecutionView).toContain("appearance: none");
+    expect(chatExecutionView).toContain(".debug-connection-picker select:focus-visible");
+  });
+
   it("keeps focus, responsive, and touch target rules for audited controls", () => {
     const scopedStyle = chatExecutionView.match(/<style scoped>[\s\S]*<\/style>/)?.[0] || "";
 

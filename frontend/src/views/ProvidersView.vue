@@ -21,6 +21,7 @@ import {
   noAuthenticationContract,
   providerAuthContract,
 } from "../utils/provider-auth";
+import { buildOutboundIdentityContract } from "./provider-outbound-identity";
 
 type ProviderStatusFilter = "ALL" | "ACTIVE" | "ERROR" | "DISABLED";
 type AuthEditorMode = "" | "NONE" | "OAUTH2_CLIENT";
@@ -126,6 +127,9 @@ const providerNameInput = ref<HTMLInputElement | null>(null);
 const editorPanel = ref<HTMLElement | null>(null);
 const saving = ref(false);
 const formError = ref("");
+/** Block-level zero-mode error for outbound identity (AC-09). */
+const identityModeError = ref("");
+const identityModeGroupRef = ref<HTMLElement | null>(null);
 
 const pendingDeleteProvider = ref<CapabilityProvider | null>(null);
 const deleteConfirmText = ref("");
@@ -356,11 +360,13 @@ function providerMenuActions(provider: CapabilityProvider): ManagementRowAction[
     {
       key: "assets",
       label: `查看 ${provider.name} 的能力资产`,
+      shortLabel: "查看能力资产",
       icon: "fa-solid fa-cubes",
     },
     {
       key: "delete",
       label: `删除 ${provider.name}`,
+      shortLabel: "删除",
       icon: "fa-solid fa-trash-can",
       tone: "danger",
     },
@@ -449,6 +455,7 @@ async function materializeAsset(provider: CapabilityProvider, asset: ProviderAss
 }
 
 function openCreateEditor() {
+  identityModeError.value = "";
   editorMode.value = "create";
   editingProvider.value = null;
   providerDraft.value = emptyProviderDraft();
@@ -462,6 +469,7 @@ function openEditEditor(provider: CapabilityProvider) {
   editingProvider.value = provider;
   providerDraft.value = draftFromProvider(provider);
   formError.value = "";
+  identityModeError.value = "";
   editorVisible.value = true;
   focusProviderName();
 }
@@ -475,6 +483,7 @@ function dismissEditor() {
   editorVisible.value = false;
   editingProvider.value = null;
   formError.value = "";
+  identityModeError.value = "";
 }
 
 function focusProviderName() {
@@ -523,10 +532,21 @@ async function saveProvider() {
   const validationError = validateProviderDraft(providerDraft.value);
   if (validationError) {
     formError.value = validationError;
+    if (!providerDraft.value.supportBrokerObo && !providerDraft.value.supportRequestPassthrough) {
+      identityModeError.value = "至少选择一种";
+      await nextTick();
+      const focusTarget =
+        identityModeGroupRef.value?.querySelector<HTMLInputElement>('input[type="checkbox"]') ||
+        identityModeGroupRef.value;
+      focusTarget?.focus?.();
+    } else {
+      identityModeError.value = "";
+    }
     return;
   }
   saving.value = true;
   formError.value = "";
+  identityModeError.value = "";
   try {
     const provider = providerFromDraft(providerDraft.value, editingProvider.value);
     const saved = editorMode.value === "edit"
@@ -538,6 +558,12 @@ async function saveProvider() {
     formError.value = errorMessage(error, "保存 Provider 失败，请检查端点和认证契约。");
   } finally {
     saving.value = false;
+  }
+}
+
+function clearIdentityModeErrorIfResolved() {
+  if (providerDraft.value.supportBrokerObo || providerDraft.value.supportRequestPassthrough) {
+    identityModeError.value = "";
   }
 }
 
@@ -798,53 +824,6 @@ function providerFromDraft(draft: ProviderFormDraft, existing: CapabilityProvide
   };
 }
 
-function buildOutboundIdentityContract(draft: ProviderFormDraft): Record<string, unknown> {
-  const supportedModes: string[] = [];
-  if (draft.supportBrokerObo) supportedModes.push("BROKER_OBO");
-  if (draft.supportRequestPassthrough) supportedModes.push("REQUEST_PASSTHROUGH");
-  if (!supportedModes.length) {
-    // Fail closed to dual-mode: at least one mode required by backend.
-    supportedModes.push("REQUEST_PASSTHROUGH");
-  }
-  const injection = {
-    headerName: (draft.businessInjectionHeader || "Authorization").trim() || "Authorization",
-    prefix: (draft.businessInjectionPrefix || "Bearer").trim() || "Bearer",
-  };
-  const identity: Record<string, unknown> = {
-    schemaVersion: "outbound-identity.v1",
-    supportedModes,
-    supportedSubjectTypes: ["USER"],
-  };
-  if (supportedModes.includes("BROKER_OBO")) {
-    identity.brokerObo = {
-      tokenEndpoint: draft.brokerTokenEndpoint.trim(),
-      audience: draft.brokerAudience.trim(),
-      grantType: "urn:ietf:params:oauth:grant-type:token-exchange",
-      subjectTokenType: "urn:ietf:params:oauth:token-type:jwt",
-      requestedTokenType: "urn:ietf:params:oauth:token-type:access_token",
-      machineAuthMethod: "private_key_jwt",
-      allowedScopes: draft.brokerAllowedScopes
-        .split(/[\s,]+/)
-        .map((s) => s.trim())
-        .filter(Boolean),
-      response: {
-        accessTokenPath: "access_token",
-        tokenTypePath: "token_type",
-        expiresInPath: "expires_in",
-        expectedTokenType: "Bearer",
-      },
-      businessInjection: injection,
-    };
-  }
-  if (supportedModes.includes("REQUEST_PASSTHROUGH")) {
-    identity.requestPassthrough = {
-      credentialTypes: ["ACCESS_TOKEN"],
-      businessInjection: injection,
-    };
-  }
-  return identity;
-}
-
 function buildAuthenticationContract(draft: ProviderFormDraft): ProviderAuthContract {
   if (draft.authMode === "NONE") {
     const contract = noAuthenticationContract();
@@ -929,7 +908,7 @@ function validateProviderDraft(draft: ProviderFormDraft) {
     return `私网运行地址 ${privateAddress} 需要显式加入允许的私网 CIDR（可使用 ${singleHostCIDR}）。`;
   }
   if (!draft.supportBrokerObo && !draft.supportRequestPassthrough) {
-    return "请至少选择一种出站身份模式：Broker / OBO 或 本次请求透传。";
+    return "至少选择一种";
   }
   if (!validHeaderName(draft.businessInjectionHeader || "Authorization")) {
     return "业务 Token 注入 Header 名称无效。";
@@ -1258,19 +1237,86 @@ function errorMessage(error: unknown, fallback: string) {
               </div>
             </section>
 
-            <section class="provider-form-section authentication" data-testid="provider-outbound-identity">
-              <div class="provider-section-heading"><span>3</span><div><h3>用户态出站鉴权契约</h3><p>声明本 Provider 支持的出站身份模式；Connection 只能在 supportedModes 中固定选择一种。不提供共享账号 / NONE / SYSTEM。</p></div></div>
-              <p v-if="providerDraft.legacyAuthentication" class="provider-migration-note"><i class="fa-solid fa-triangle-exclamation" />检测到旧版 service-auth 契约。保存时将硬切为 <code>outbound-identity.v1</code>；请勾选至少一种模式并补全字段。</p>
-              <div class="provider-auth-choice" role="group" aria-label="支持的出站模式">
-                <label :class="{ selected: providerDraft.supportBrokerObo }">
-                  <input v-model="providerDraft.supportBrokerObo" data-testid="provider-mode-broker" type="checkbox" />
-                  <span><i class="fa-solid fa-key" /><strong>Broker / OBO</strong><small>机器信任换当前用户短期业务 Token</small></span>
+            <section
+              class="provider-form-section authentication provider-identity-section"
+              data-testid="provider-outbound-identity"
+              :class="{ 'has-identity-error': Boolean(identityModeError) }"
+              :aria-invalid="identityModeError ? 'true' : undefined"
+            >
+              <div class="provider-section-heading">
+                <span>3</span>
+                <div>
+                  <h3>用户调用身份</h3>
+                  <p>
+                    选择这个 Provider 支持的身份方式（可多选）。创建 Connection 时，必须从已支持的方式中选择且只能选择一种；不支持共享账号或免鉴权。
+                  </p>
+                </div>
+              </div>
+              <p v-if="providerDraft.legacyAuthentication" class="provider-migration-note">
+                <i class="fa-solid fa-triangle-exclamation" />
+                检测到旧版 service-auth 契约。保存时将硬切为 <code>outbound-identity.v1</code>；请勾选至少一种模式并补全字段。
+              </p>
+              <p
+                v-if="identityModeError"
+                class="provider-identity-error"
+                data-testid="provider-identity-mode-error"
+                role="alert"
+              >
+                {{ identityModeError }}
+              </p>
+              <div
+                ref="identityModeGroupRef"
+                class="provider-auth-choice provider-identity-choice"
+                role="group"
+                aria-label="支持的身份方式（可多选）"
+                :aria-describedby="identityModeError ? 'provider-identity-mode-error-text' : undefined"
+              >
+                <label
+                  class="provider-identity-card"
+                  :class="{ selected: providerDraft.supportBrokerObo }"
+                >
+                  <input
+                    v-model="providerDraft.supportBrokerObo"
+                    data-testid="provider-mode-broker"
+                    type="checkbox"
+                    :disabled="saving"
+                    @change="clearIdentityModeErrorIfResolved"
+                  />
+                  <span class="provider-identity-card-body">
+                    <b v-if="providerDraft.supportBrokerObo" class="provider-identity-badge" aria-hidden="true">
+                      <i class="fa-solid fa-check" />已支持
+                    </b>
+                    <i class="fa-solid fa-key provider-identity-icon" aria-hidden="true" />
+                    <strong>Broker / OBO</strong>
+                    <small>平台按当前用户身份换取短期业务 Token</small>
+                  </span>
                 </label>
-                <label :class="{ selected: providerDraft.supportRequestPassthrough }">
-                  <input v-model="providerDraft.supportRequestPassthrough" data-testid="provider-mode-passthrough" type="checkbox" />
-                  <span><i class="fa-solid fa-right-left" /><strong>本次请求透传</strong><small>调用方每次附带 Token；不持久化</small></span>
+                <label
+                  class="provider-identity-card"
+                  :class="{ selected: providerDraft.supportRequestPassthrough }"
+                >
+                  <input
+                    v-model="providerDraft.supportRequestPassthrough"
+                    data-testid="provider-mode-passthrough"
+                    type="checkbox"
+                    :disabled="saving"
+                    @change="clearIdentityModeErrorIfResolved"
+                  />
+                  <span class="provider-identity-card-body">
+                    <b v-if="providerDraft.supportRequestPassthrough" class="provider-identity-badge" aria-hidden="true">
+                      <i class="fa-solid fa-check" />已支持
+                    </b>
+                    <i class="fa-solid fa-right-left provider-identity-icon" aria-hidden="true" />
+                    <strong>本次请求透传</strong>
+                    <small>调用方为本次请求提供 Token，平台只用于本次调用且不会保存</small>
+                  </span>
                 </label>
               </div>
+              <p
+                v-if="identityModeError"
+                id="provider-identity-mode-error-text"
+                class="sr-only"
+              >{{ identityModeError }}</p>
               <div class="provider-form-grid two">
                 <label><span>业务 Token 注入 Header <b>*</b></span><input v-model="providerDraft.businessInjectionHeader" data-testid="provider-injection-header" class="mono" placeholder="Authorization" /></label>
                 <label><span>前缀</span><input v-model="providerDraft.businessInjectionPrefix" data-testid="provider-injection-prefix" class="mono" placeholder="Bearer" /></label>
@@ -1281,11 +1327,21 @@ function errorMessage(error: unknown, fallback: string) {
                   <label><span>Audience <b>*</b></span><input v-model="providerDraft.brokerAudience" data-testid="provider-broker-audience" class="mono" placeholder="api://resource" /></label>
                 </div>
                 <label><span>Allowed Scopes</span><input v-model="providerDraft.brokerAllowedScopes" data-testid="provider-broker-scopes" class="mono" placeholder="orders.read inventory.read" /><small>空格或逗号分隔；Connection 选择的 scope 必须在此 allowlist 内。</small></label>
-                <p class="provider-field-help">机器认证固定 <code>private_key_jwt</code>；Subject 类型首期仅 USER。</p>
+                <p class="provider-field-help">平台使用 private_key_jwt 向 Broker 证明自身身份；当前仅支持用户主体（USER）。</p>
               </div>
               <p v-if="providerDraft.supportRequestPassthrough" class="provider-field-help" data-testid="provider-passthrough-summary">
-                透传：credentialTypes=ACCESS_TOKEN；不保存用户业务 Token；每次请求由调用方提供 expiresAt。
+                仅接收 Access Token。调用方每次提供 Token 及有效期；平台不写入会话、历史或本地存储。
               </p>
+              <details class="provider-identity-tech" data-testid="provider-identity-tech-details">
+                <summary>查看技术约束</summary>
+                <ul>
+                  <li>契约：<code>outbound-identity.v1</code>；模式仅 <code>BROKER_OBO</code> / <code>REQUEST_PASSTHROUGH</code>。</li>
+                  <li>主体类型：仅 <code>USER</code>。</li>
+                  <li>Broker 机器认证：<code>private_key_jwt</code>。</li>
+                  <li>透传凭据类型：<code>ACCESS_TOKEN</code>；调用方提供 <code>expiresAt</code>。</li>
+                  <li>用户业务 Token 不进入 Provider / Connection 配置、日志、本地存储、会话历史或 Revision。</li>
+                </ul>
+              </details>
             </section>
           </div>
           <footer><button class="ghost-button" type="button" :disabled="saving" @click="closeEditor">取消</button><button data-testid="provider-save" class="primary-button" type="submit" :disabled="saving"><i :class="saving ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-floppy-disk'" />{{ saving ? "保存中" : "保存 Provider" }}</button></footer>
@@ -1428,9 +1484,158 @@ function errorMessage(error: unknown, fallback: string) {
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important; }
 .provider-form-error { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 11px 13px; border: 1px solid #fecdd3; border-radius: 9px; background: #fff1f2; color: #b91c1c; font-size: 12px; line-height: 1.55; }
 .provider-migration-note { display: flex; gap: 8px; margin: 0; padding: 10px 12px; border: 1px solid #fde68a; border-radius: 8px; background: #fffbeb; color: #92400e; font-size: 11px; line-height: 1.55; }
-.provider-auth-choice { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.provider-auth-choice,
+.provider-identity-choice {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.provider-identity-card {
+  position: relative;
+  display: block;
+  cursor: pointer;
+}
+/* Visually hidden but focusable native checkbox — never pointer-events:none. */
+.provider-identity-card > input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.provider-identity-card-body {
+  position: relative;
+  min-height: 92px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-areas:
+    "icon title"
+    "icon desc";
+  column-gap: 10px;
+  row-gap: 3px;
+  align-content: center;
+  padding: 14px 72px 14px 13px;
+  border: 1px solid #dbe3ef;
+  border-radius: 10px;
+  background: #f8fafc;
+  transition: border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
+}
+.provider-identity-icon {
+  grid-area: icon;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: #fff;
+  color: #64748b;
+  align-self: start;
+}
+.provider-identity-card-body > strong {
+  grid-area: title;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 800;
+}
+.provider-identity-card-body > small {
+  grid-area: desc;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+.provider-identity-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(13, 148, 136, 0.12);
+  color: #0d9488;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+.provider-identity-badge i {
+  font-size: 10px;
+}
+.provider-identity-card:hover .provider-identity-card-body {
+  border-color: #b6c3d6;
+}
+.provider-identity-card.selected .provider-identity-card-body {
+  border-color: #80cbbb;
+  background: #effaf7;
+  box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.08);
+}
+.provider-identity-card.selected .provider-identity-icon {
+  color: #0d9488;
+}
+.provider-identity-card > input[type="checkbox"]:focus-visible + .provider-identity-card-body {
+  outline: 2px solid rgba(13, 148, 136, 0.55);
+  outline-offset: 2px;
+}
+.provider-identity-error {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(220, 38, 38, 0.24);
+  border-radius: 8px;
+  background: #fff1f2;
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 700;
+}
+.provider-identity-section.has-identity-error .provider-identity-card-body {
+  border-color: rgba(220, 38, 38, 0.28);
+}
+.provider-identity-tech {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+}
+.provider-identity-tech summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: #0f172a;
+}
+.provider-identity-tech summary:focus-visible {
+  outline: 2px solid rgba(13, 148, 136, 0.55);
+  outline-offset: 2px;
+}
+.provider-identity-tech ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  line-height: 1.5;
+}
+.provider-identity-tech code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* Legacy selector kept for any residual markup. */
 .provider-auth-choice > label { position: relative; cursor: pointer; }
-.provider-auth-choice input { position: absolute; opacity: 0; pointer-events: none; }
 .provider-auth-choice label > span { min-height: 76px; display: flex; align-items: center; gap: 10px; padding: 13px; border: 1px solid #dbe3ef; border-radius: 10px; background: #f8fafc; }
 .provider-auth-choice label > span > i { width: 34px; height: 34px; display: grid; flex: 0 0 34px; place-items: center; border-radius: 9px; background: #fff; color: #64748b; }
 .provider-auth-choice label > span > strong, .provider-auth-choice label > span > small { display: block; }

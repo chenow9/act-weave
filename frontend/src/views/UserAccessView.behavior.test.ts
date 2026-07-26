@@ -161,8 +161,13 @@ function mountView() {
 
 async function selectSecurityAction(wrapper: VueWrapper, label: string) {
   await wrapper.get('button[aria-label="用户安全操作"]').trigger("click");
-  const item = [...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
-    .find((candidate) => candidate.textContent?.includes(label));
+  // Prefer aria-label (full action name); visible menu text may be shortLabel after FE-03.
+  const item = [...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (candidate) =>
+      candidate.getAttribute("aria-label")?.includes(label) ||
+      candidate.getAttribute("title")?.includes(label) ||
+      candidate.textContent?.includes(label),
+  );
   if (!item) throw new Error(`security action ${label} not found`);
   item.click();
   await flushPromises();

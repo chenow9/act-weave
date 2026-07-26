@@ -374,4 +374,59 @@ describe("ManagementRowActions", () => {
     expect(removeDocumentListener).toHaveBeenCalledWith("scroll", expect.any(Function), true);
     expect(removeWindowListener).toHaveBeenCalledWith("resize", expect.any(Function));
   });
+
+  it("shows full shortLabel in the menu without 4-grapheme truncation while aria/title keep full label", async () => {
+    const longName = "超长中文服务提供者名称加EnglishSuffix-ABCDEFGHIJKLMNOP";
+    const providerMenu: ManagementRowAction[] = [
+      { key: "edit", label: `编辑 ${longName}`, shortLabel: "编辑", icon: "fa-solid fa-pen-to-square" },
+      { key: "sync", label: `同步 ${longName}`, shortLabel: "同步", icon: "fa-solid fa-rotate", tone: "primary" },
+      { key: "assets", label: `查看 ${longName} 的能力资产`, shortLabel: "查看能力资产", icon: "fa-solid fa-cubes" },
+      { key: "delete", label: `删除 ${longName}`, shortLabel: "删除", icon: "fa-solid fa-trash-can", tone: "danger" },
+    ];
+    const { wrapper } = mountAttached(providerMenu);
+    await wrapper.get('button[aria-label="更多操作"]').trigger("click");
+    await nextTick();
+
+    const items = Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
+    expect(items.map((item) => item.querySelector("span")?.textContent)).toEqual([
+      "编辑",
+      "同步",
+      "查看能力资产",
+      "删除",
+    ]);
+    expect(items[2].getAttribute("aria-label")).toBe(`查看 ${longName} 的能力资产`);
+    expect(items[2].getAttribute("title")).toBe(`查看 ${longName} 的能力资产`);
+    expect(items[3].className).toContain("tone-danger");
+  });
+
+  it("falls back to full label in the menu when shortLabel is omitted", async () => {
+    const { wrapper } = mountAttached([
+      { key: "publish", label: "发布工具到生产环境目录", icon: "fa-solid fa-paper-plane", tone: "primary" },
+    ]);
+    await wrapper.get('button[aria-label="更多操作"]').trigger("click");
+    await nextTick();
+    const item = document.body.querySelector<HTMLButtonElement>('button[data-action-key="publish"]');
+    expect(item?.querySelector("span")?.textContent).toBe("发布工具到生产环境目录");
+    expect(item?.getAttribute("aria-label")).toBe("发布工具到生产环境目录");
+  });
+
+  it("keeps primary button compact 4-grapheme shortLabel truncation", () => {
+    const wrapper = trackWrapper(
+      mount(ManagementRowActions, {
+        props: {
+          primaryActions: [
+            {
+              key: "assets",
+              label: "查看超长对象名称的能力资产",
+              shortLabel: "查看能力资产",
+              icon: "fa-solid fa-cubes",
+            },
+          ],
+        },
+      }),
+    );
+    const button = actionButton(wrapper, "assets");
+    expect(button.get("span").text()).toBe("查看能力");
+    expect(button.attributes("aria-label")).toBe("查看超长对象名称的能力资产");
+  });
 });
