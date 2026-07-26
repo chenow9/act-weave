@@ -502,6 +502,18 @@ describe("OpenAPIImportsView management list behavior", () => {
     }
   });
 
+  it("renders detail shell title text under compound light-head classes", async () => {
+    wrapper = await mountView();
+    await wrapper.get("tbody tr").trigger("keydown", { key: "Enter" });
+    await flushPromises();
+
+    const head = wrapper.get(".openapi-modal-head.openapi-detail-modal-head");
+    expect(head.find("h3").text()).toBe("导入详情");
+    expect(head.find("p").text()).toContain("查看导入归属");
+    // Dark-only heads (import/delete) must not receive the compound light modifier.
+    expect(wrapper.findAll(".openapi-modal-head.openapi-detail-modal-head")).toHaveLength(1);
+  });
+
   it("restores focus to a DataTable row after keyboard opening and closing import details", async () => {
     wrapper = await mountView();
     const firstRow = wrapper.get("tbody tr");

@@ -1641,40 +1641,6 @@ async function removeImport(record: OpenAPIImport) {
   padding: 20px;
 }
 
-/* FE-05: detail-only light header aligned with management modal-card-head. */
-.openapi-detail-modal-head {
-  background: #fff;
-  color: #0f172a;
-  border-bottom: 1px solid #e2e8f0;
-  padding: 16px 20px 14px;
-}
-
-.openapi-detail-modal-head > div > span {
-  border-color: #dbeafe;
-  background: #eff6ff;
-  color: #2563eb;
-}
-
-.openapi-detail-modal-head h3 {
-  color: #0f172a;
-  font-size: 16px;
-}
-
-.openapi-detail-modal-head p {
-  color: #64748b;
-}
-
-.openapi-detail-modal-head > button {
-  background: #f8fafc;
-  color: #64748b;
-  border: 1px solid #e2e8f0;
-}
-
-.openapi-detail-modal-head > button:hover {
-  background: #f1f5f9;
-  color: #0f172a;
-}
-
 .openapi-modal-head > div {
   display: flex;
   align-items: center;
@@ -1726,6 +1692,52 @@ async function removeImport(record: OpenAPIImport) {
 .openapi-modal-head > button:hover {
   background: #1e293b;
   color: #fff;
+}
+
+/*
+ * FE-05 detail-only light header (must come AFTER dark .openapi-modal-head * rules).
+ * Use compound selectors so dark-head h3/p/button color cannot win by source order.
+ * Align tokens with management .modal-card-head: slate title on white, muted subtitle.
+ */
+.openapi-modal-head.openapi-detail-modal-head {
+  background: #fff;
+  color: #0f172a;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 16px 18px 14px;
+}
+
+.openapi-modal-head.openapi-detail-modal-head > div > span {
+  border: 1px solid #dbeafe;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.openapi-modal-head.openapi-detail-modal-head h3 {
+  margin: 3px 0 0;
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.openapi-modal-head.openapi-detail-modal-head p {
+  margin: 2px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.openapi-modal-head.openapi-detail-modal-head > button {
+  background: #f8fafc;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+.openapi-modal-head.openapi-detail-modal-head > button:hover {
+  background: #f1f5f9;
+  color: #0f172a;
 }
 
 .openapi-modal-body {

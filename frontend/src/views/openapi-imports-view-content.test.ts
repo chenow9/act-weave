@@ -201,4 +201,31 @@ describe("openapi imports view", () => {
     expect(scopedStyle).not.toMatch(/\.openapi-action-column(?=[\s.:>#,\[{])/);
     expect(scopedStyle).not.toMatch(/\.openapi-pagination(?=[\s.:>#,\[{])/);
   });
+
+  it("keeps OpenAPI detail light head title/subtitle readable against dark-head base rules", () => {
+    const scopedStyle = openAPIImportsView.match(/<style scoped>[\s\S]*<\/style>/)?.[0] || "";
+    const darkH3 = scopedStyle.indexOf(".openapi-modal-head h3");
+    const lightH3 = scopedStyle.indexOf(".openapi-modal-head.openapi-detail-modal-head h3");
+    const darkButtonHover = scopedStyle.indexOf(".openapi-modal-head > button:hover");
+    const lightButtonHover = scopedStyle.indexOf(".openapi-modal-head.openapi-detail-modal-head > button:hover");
+
+    expect(openAPIImportsView).toContain('class="openapi-modal-head openapi-detail-modal-head"');
+    // Import + delete modals keep dark head alone (two plain heads; detail uses compound class).
+    expect(openAPIImportsView.match(/class="openapi-modal-head"/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(openAPIImportsView.match(/class="openapi-modal-head openapi-detail-modal-head"/g)?.length).toBe(1);
+    expect(lightH3).toBeGreaterThan(darkH3);
+    expect(lightButtonHover).toBeGreaterThan(darkButtonHover);
+
+    const lightHeadBlock = scopedStyle.slice(lightH3);
+    expect(lightHeadBlock).toMatch(/color:\s*#0f172a/);
+    expect(lightHeadBlock).toMatch(/font-size:\s*18px/);
+    expect(lightHeadBlock).toMatch(/font-weight:\s*900/);
+
+    const lightP = scopedStyle.match(
+      /\.openapi-modal-head\.openapi-detail-modal-head p\s*\{[\s\S]*?\}/,
+    )?.[0];
+    expect(lightP).toBeDefined();
+    expect(lightP).toMatch(/color:\s*#64748b/);
+    expect(lightP).not.toMatch(/color:\s*#fff/);
+  });
 });
