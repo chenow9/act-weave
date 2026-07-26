@@ -84,9 +84,15 @@ function actionTone(action: ManagementRowAction) {
   return `tone-${action.tone || "default"}`;
 }
 
+/** Primary icon-button caption: keep compact 4-grapheme truncation. */
 function actionShortLabel(action: ManagementRowAction) {
   const label = action.shortLabel?.trim() || action.label.trim();
   return Array.from(label).slice(0, 4).join("");
+}
+
+/** Menu visible text: full shortLabel or full label — never 4-grapheme truncate. */
+function menuVisibleLabel(action: ManagementRowAction) {
+  return action.shortLabel?.trim() || action.label.trim();
 }
 
 function clamp(value: number, minimum: number, maximum: number) {
@@ -319,7 +325,7 @@ onBeforeUnmount(() => {
           @focus="activateMenuIndex(actionItem, index)"
         >
           <i :class="actionItem.loading ? 'fa-solid fa-spinner fa-spin' : actionItem.icon" aria-hidden="true" />
-          <span>{{ actionItem.label }}</span>
+          <span>{{ menuVisibleLabel(actionItem) }}</span>
         </button>
       </div>
     </Teleport>

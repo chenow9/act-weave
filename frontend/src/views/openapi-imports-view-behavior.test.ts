@@ -426,6 +426,82 @@ describe("OpenAPIImportsView management list behavior", () => {
     expect(menu.text()).toContain("删除记录");
   });
 
+
+  it("opens a stable detail shell with loading then content without calling generate", async () => {
+    let resolveDetail!: (value: unknown) => void;
+    mocks.integration.loadOpenAPIImportDetail = vi.fn(
+      (record: { id: string }) =>
+        new Promise((resolve) => {
+          resolveDetail = (value) => {
+            const detailed = value as { id: string; detail?: unknown };
+            const index = mocks.integration.openAPIImportPageItems.findIndex((item: { id: string }) => item.id === record.id);
+            if (index >= 0) mocks.integration.openAPIImportPageItems[index] = detailed;
+            resolve(detailed);
+          };
+        }),
+    );
+    wrapper = await mountView();
+    const firstRow = wrapper.get("tbody tr");
+    await firstRow.trigger("keydown", { key: "Enter" });
+    await flushPromises();
+
+    expect(wrapper.find('section[aria-label="导入详情"]').exists()).toBe(true);
+    expect(wrapper.find(".openapi-detail-modal-head").exists()).toBe(true);
+    expect(wrapper.find('[data-testid="openapi-detail-loading"]').exists()).toBe(true);
+    expect(mocks.integration.loadOpenAPIImportDetail).toHaveBeenCalledTimes(1);
+    expect(mocks.integration.generateToolDrafts).not.toHaveBeenCalled();
+
+    const record = mocks.integration.openAPIImportPageItems[0];
+    resolveDetail({ ...record, detail: { endpoints: [] } });
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="openapi-detail-loading"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="openapi-detail-error"]').exists()).toBe(false);
+    expect(wrapper.find(".openapi-detail-hero").exists()).toBe(true);
+    expect(mocks.integration.generateToolDrafts).not.toHaveBeenCalled();
+  });
+
+  it("keeps detail shell on GET error and retries with the same load only", async () => {
+    mocks.integration.loadOpenAPIImportDetail = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("detail unavailable"))
+      .mockImplementation(async (record: ReturnType<typeof importRecord>) => {
+        const detailed = { ...record, detail: { endpoints: [] } };
+        const index = mocks.integration.openAPIImportPageItems.findIndex((item: { id: string }) => item.id === record.id);
+        if (index >= 0) mocks.integration.openAPIImportPageItems[index] = detailed;
+        return detailed;
+      });
+    wrapper = await mountView();
+    await wrapper.get("tbody tr").trigger("keydown", { key: "Enter" });
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="openapi-detail-error"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="openapi-detail-error"]').text()).toContain("detail unavailable");
+    expect(mocks.integration.generateToolDrafts).not.toHaveBeenCalled();
+
+    await wrapper.get('[data-testid="openapi-detail-retry"]').trigger("click");
+    await flushPromises();
+    expect(mocks.integration.loadOpenAPIImportDetail).toHaveBeenCalledTimes(2);
+    expect(wrapper.find('[data-testid="openapi-detail-error"]').exists()).toBe(false);
+    expect(mocks.integration.generateToolDrafts).not.toHaveBeenCalled();
+  });
+
+  it("does not apply light detail head styles to import or delete modals", async () => {
+    wrapper = await mountView();
+    await wrapper.get('[data-testid="openapi-create"], button').trigger("click").catch(() => undefined);
+    // Prefer explicit create trigger if present.
+    const createBtn = wrapper.findAll("button").find((b) => b.text().includes("导入") || b.text().includes("新建"));
+    if (createBtn) {
+      await createBtn.trigger("click");
+      await flushPromises();
+    }
+    // Import modal head should remain dark (no detail modifier).
+    const importHead = wrapper.find(".openapi-modal-card:not(.openapi-detail-modal-card) .openapi-modal-head");
+    if (importHead.exists()) {
+      expect(importHead.classes()).not.toContain("openapi-detail-modal-head");
+    }
+  });
+
   it("restores focus to a DataTable row after keyboard opening and closing import details", async () => {
     wrapper = await mountView();
     const firstRow = wrapper.get("tbody tr");

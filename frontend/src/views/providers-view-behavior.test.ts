@@ -314,6 +314,104 @@ describe("providers management view", () => {
     expect(fixture.integration.deleteProvider).toHaveBeenCalledWith("provider-1");
     expect(wrapper.find('[data-testid="provider-delete-confirm-input"]').exists()).toBe(false);
   });
+
+  it("shows fixed short menu labels for long Provider names while aria keeps full names and row identity", async () => {
+    const longName = "超长中文服务提供者名称加EnglishSuffix-ABCDEFGHIJKLMNOP";
+    fixture.integration.providers = [
+      { ...providerFixture(), id: "provider-long-a", name: longName },
+      { ...providerFixture(), id: "provider-long-b", name: longName },
+    ];
+    const wrapper = mountView();
+    await flushPromises();
+
+    const triggers = wrapper.findAll(`[aria-label="${longName} 更多操作"]`);
+    expect(triggers).toHaveLength(2);
+
+    await triggers[0].trigger("click");
+    await flushPromises();
+    let menu = document.body.querySelector<HTMLElement>(`[role="menu"][aria-label="${longName} 更多操作"]`);
+    expect(menu).not.toBeNull();
+    const visible = Array.from(menu!.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).map(
+      (item) => item.querySelector("span")?.textContent,
+    );
+    expect(visible).toEqual(["编辑", "同步", "查看能力资产", "删除"]);
+    const assets = menu!.querySelector<HTMLButtonElement>('button[data-action-key="assets"]');
+    expect(assets?.getAttribute("aria-label")).toBe(`查看 ${longName} 的能力资产`);
+    expect(assets?.getAttribute("title")).toBe(`查看 ${longName} 的能力资产`);
+    const deleteItem = menu!.querySelector<HTMLButtonElement>('button[data-action-key="delete"]');
+    expect(deleteItem?.className).toContain("tone-danger");
+
+    // Close first menu, open second duplicate-name row and ensure edit binds second id.
+    document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    await flushPromises();
+    await triggers[1].trigger("click");
+    await flushPromises();
+    menu = document.body.querySelector<HTMLElement>(`[role="menu"][aria-label="${longName} 更多操作"]`);
+    menu!.querySelector<HTMLButtonElement>('button[data-action-key="edit"]')!.click();
+    await flushPromises();
+    expect((wrapper.get('[data-testid="provider-name"]').element as HTMLInputElement).value).toBe(longName);
+    // Saving should call update with the second provider id.
+    await wrapper.get('[data-testid="provider-save"]').trigger("submit");
+    await flushPromises();
+    expect(fixture.integration.updateProvider).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "provider-long-b", name: longName }),
+    );
+  });
+
+
+  it("shows dual-support badges and layered identity copy without Connection multi-strategy wording", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('[data-testid="provider-create"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="provider-outbound-identity"]').text()).toContain("用户调用身份");
+    expect(wrapper.get('[data-testid="provider-outbound-identity"]').text()).toContain("可多选");
+    expect(wrapper.get('[data-testid="provider-outbound-identity"]').text()).toContain("只能选择一种");
+    expect(wrapper.text()).toContain("平台按当前用户身份换取短期业务 Token");
+    expect(wrapper.text()).toContain("调用方为本次请求提供 Token");
+
+    // Default create enables passthrough; enable broker too → both 已支持.
+    await wrapper.get('[data-testid="provider-mode-broker"]').setValue(true);
+    await flushPromises();
+    const badges = wrapper.findAll(".provider-identity-badge").map((node) => node.text());
+    expect(badges).toEqual(["已支持", "已支持"]);
+    expect(wrapper.find('[data-testid="provider-broker-fields"]').exists()).toBe(true);
+
+    await wrapper.get('[data-testid="provider-mode-broker"]').setValue(false);
+    await flushPromises();
+    expect(wrapper.find('[data-testid="provider-broker-fields"]').exists()).toBe(false);
+    // Unchecking broker must not clear passthrough.
+    expect((wrapper.get('[data-testid="provider-mode-passthrough"]').element as HTMLInputElement).checked).toBe(true);
+
+    const tech = wrapper.get('[data-testid="provider-identity-tech-details"]');
+    expect(tech.text()).toContain("查看技术约束");
+    expect(tech.text()).toContain("USER");
+    expect(tech.text()).toContain("private_key_jwt");
+    expect(tech.text()).toContain("ACCESS_TOKEN");
+    expect(tech.text()).toContain("expiresAt");
+  });
+
+  it("blocks zero identity modes with block alert and never calls store/API or silent passthrough", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('[data-testid="provider-create"]').trigger("click");
+    await flushPromises();
+
+    await wrapper.get('[data-testid="provider-name"]').setValue("No Mode Provider");
+    await wrapper.get('[data-testid="provider-service-base-url"]').setValue("https://api.example.com/v1");
+    await wrapper.get('[data-testid="provider-mode-passthrough"]').setValue(false);
+    await wrapper.get('[data-testid="provider-mode-broker"]').setValue(false);
+    await wrapper.get('[data-testid="provider-save"]').trigger("submit");
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="provider-identity-mode-error"]').text()).toBe("至少选择一种");
+    expect(wrapper.get('[data-testid="provider-identity-mode-error"]').attributes("role")).toBe("alert");
+    expect(fixture.integration.createProvider).not.toHaveBeenCalled();
+    expect(fixture.integration.updateProvider).not.toHaveBeenCalled();
+  });
+
+
 });
 
 function outboundIdentityFixture(): Record<string, unknown> {
