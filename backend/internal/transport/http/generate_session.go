@@ -394,7 +394,7 @@ type smartDagTurnErrorContext struct {
 func RespondSmartDagTurnError(c *gin.Context, err error, ctx smartDagTurnErrorContext) {
 	mapped := mapError(err)
 	_, file, line, _ := runtime.Caller(1)
-	c.Set(requestFailureKey, requestFailure{err: err, mapped: mapped, file: file, line: line})
+	c.Set(requestFailureKey, newRequestFailure(err, mapped, file, line))
 	request, _ := RequestContextFrom(c.Request.Context())
 	retryable := mappedRetryable(mapped)
 	stage := string(smartdag.FailureStageUnknown)
@@ -470,7 +470,7 @@ func RespondSmartDagTurnError(c *gin.Context, err error, ctx smartDagTurnErrorCo
 func RespondErrorWithDetails(c *gin.Context, err error, details gin.H) {
 	mapped := mapError(err)
 	_, file, line, _ := runtime.Caller(1)
-	c.Set(requestFailureKey, requestFailure{err: err, mapped: mapped, file: file, line: line})
+	c.Set(requestFailureKey, newRequestFailure(err, mapped, file, line))
 	request, _ := RequestContextFrom(c.Request.Context())
 	body := gin.H{
 		"error": ErrorDTO{

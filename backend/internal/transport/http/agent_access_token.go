@@ -388,9 +388,8 @@ func respondOAuthTokenError(
 		c.Header("WWW-Authenticate", `Basic realm="ActWeave Agent Access Token Endpoint"`)
 	}
 	_, file, line, _ := runtime.Caller(1)
-	c.Set(requestFailureKey, requestFailure{
-		err: err, mapped: mappedError{status: status, code: code, message: description},
-		file: file, line: line,
-	})
+	c.Set(requestFailureKey, newRequestFailure(err, mappedError{
+		status: status, code: code, message: description,
+	}, file, line))
 	c.AbortWithStatusJSON(status, oauthTokenFailure{Error: code, ErrorDescription: description})
 }

@@ -141,3 +141,19 @@ type LoginIdentity struct {
 	User       User
 	Credential PasswordCredential
 }
+
+// AccessSessionState is a narrow, read-only security projection used by Console
+// Access Token revalidation (ZKL-63 HIGH-01). It intentionally excludes password
+// hashes, refresh-token hashes, cookies, JWT material, and other secrets.
+// Repository methods only load facts; authn owns process-clock policy checks.
+type AccessSessionState struct {
+	SessionID          string
+	UserID             string
+	SessionExpiresAt   time.Time
+	SessionRevokedAt   *time.Time
+	Username           string
+	UserStatus         Status
+	PlatformRole       PlatformRole
+	LockedUntil        *time.Time
+	MustChangePassword bool
+}

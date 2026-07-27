@@ -2,6 +2,7 @@ package httptransport
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"net/http"
@@ -36,11 +37,9 @@ func TestAAPAuthenticationMiddlewareUsesIndependentPrincipalContextAndJWTProfile
 	if err != nil {
 		t.Fatal(err)
 	}
-	userAuthenticator, err := NewAccessTokenAuthenticator(userTokens)
-	if err != nil {
-		t.Fatal(err)
-	}
-	userAuthenticator.now = func() time.Time { return now }
+	// Isolation probe only needs a Console TokenAuthenticator that accepts the
+	// generated user JWT; full HIGH-01 revalidation is covered by access auth tests.
+	userAuthenticator := consoleJWTProbeAuthenticator{manager: userTokens, now: now}
 	userToken, err := userTokens.Generate(identity.User{
 		ID: "f58f1f2e-7b5a-7c3d-8e9f-123456789001", Username: "aap-isolation-user",
 		PlatformRole: identity.PlatformRoleUser,
@@ -128,6 +127,31 @@ func TestAAPAuthenticationMiddlewareReturnsStableExpiredTokenError(t *testing.T)
 	}
 	response := authenticatedProbeRequest(router, "/api/agent-access/v1/auth-probe", value)
 	assertErrorResponse(t, response, http.StatusUnauthorized, "TOKEN_EXPIRED")
+}
+
+// consoleJWTProbeAuthenticator is a test-only Console authenticator that trusts
+// JWT crypto only. Production uses AccessTokenAuthenticator + authn.Service.
+type consoleJWTProbeAuthenticator struct {
+	manager *authn.AccessTokenManager
+	now     time.Time
+}
+
+func (a consoleJWTProbeAuthenticator) AuthenticateAccessToken(
+	_ context.Context,
+	value string,
+) (Principal, error) {
+	claims, err := a.manager.Parse(value, a.now)
+	if err != nil {
+		return Principal{}, err
+	}
+	if claims.ExpiresAt == nil {
+		return Principal{}, ErrUnauthenticated
+	}
+	return Principal{
+		UserID: claims.Subject, SessionID: claims.SessionID,
+		Username: claims.Username, PlatformRole: claims.PlatformRole,
+		TokenExpiresAt: claims.ExpiresAt.Time.UTC(),
+	}, nil
 }
 
 type aapPrincipalProbeRoutes struct{}

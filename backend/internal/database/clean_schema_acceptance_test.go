@@ -84,10 +84,41 @@ func TestCleanSchemaAcceptance(t *testing.T) {
 		t.Fatalf("unexpected bootstrap login response: %+v", loginBody)
 	}
 
+	// ZKL-63 HIGH-03: bootstrap admins start with mustChangePassword=true and are
+	// restricted to the recovery allowlist until they change password.
+	const changedBootstrapPassword = "clean-schema-admin-password-2"
+	change := cleanSchemaRequest(t, second.Handler(), http.MethodPost, "/api/v1/users/me:change-password", map[string]any{
+		"currentPassword": cleanSchemaAdminPassword,
+		"newPassword":     changedBootstrapPassword,
+	}, loginBody.AccessToken)
+	if change.Code != http.StatusNoContent {
+		t.Fatalf("bootstrap must-change password status=%d body=%s", change.Code, change.Body.String())
+	}
+	relogin := cleanSchemaRequest(t, second.Handler(), http.MethodPost, "/api/v1/auth/login", map[string]any{
+		"username": cleanSchemaAdminUsername,
+		"password": changedBootstrapPassword,
+	}, "")
+	if relogin.Code != http.StatusOK {
+		t.Fatalf("bootstrap re-login after password change status=%d body=%s", relogin.Code, relogin.Body.String())
+	}
+	var unlockedLogin struct {
+		AccessToken        string `json:"accessToken"`
+		MustChangePassword bool   `json:"mustChangePassword"`
+		User               struct {
+			ID string `json:"id"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal(relogin.Body.Bytes(), &unlockedLogin); err != nil {
+		t.Fatalf("decode bootstrap re-login: %v", err)
+	}
+	if unlockedLogin.AccessToken == "" || unlockedLogin.MustChangePassword || unlockedLogin.User.ID != loginBody.User.ID {
+		t.Fatalf("unexpected bootstrap re-login response: %+v", unlockedLogin)
+	}
+
 	created := cleanSchemaRequest(t, second.Handler(), http.MethodPost, "/api/v1/workspaces", map[string]any{
 		"slug": "clean-schema-workspace", "displayName": "Clean Schema Workspace",
 		"mode": "SANDBOX", "settings": map[string]any{},
-	}, loginBody.AccessToken)
+	}, unlockedLogin.AccessToken)
 	if created.Code != http.StatusCreated {
 		t.Fatalf("create workspace after clean bootstrap status=%d body=%s", created.Code, created.Body.String())
 	}

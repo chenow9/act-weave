@@ -94,7 +94,7 @@ func TestV1MemberRBACPathOwnershipAndCrossWorkspaceNotVisible(t *testing.T) {
 	if err := json.Unmarshal(userResponse.Body.Bytes(), &memberUser); err != nil {
 		t.Fatal(err)
 	}
-	memberLogin := fixture.login(t, "v1.member", "Member-password-1")
+	memberLogin := fixture.loginAndClearMustChange(t, "v1.member", "Member-password-1", "Member-password-1x")
 	candidates := fixture.request(t, http.MethodGet,
 		"/api/v1/workspaces/"+value.ID+"/member-candidates?query=v1.member",
 		nil, admin.AccessToken, nil)

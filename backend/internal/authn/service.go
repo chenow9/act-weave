@@ -113,6 +113,10 @@ type serviceRepository interface {
 	UpdateStatusAndRevokeSessions(context.Context, string, identity.Status, int64, time.Time) (identity.User, int64, error)
 	UpdatePlatformRoleAndRevokeSessions(context.Context, string, identity.PlatformRole, int64, time.Time) (identity.User, int64, error)
 	UnlockUser(context.Context, string, int64, time.Time) (identity.User, identity.PasswordCredential, error)
+	// ResolveAccessSessionState is the authoritative Console Access Token
+	// revalidation read (ZKL-63 HIGH-01). Missing state is ErrNotFound;
+	// infrastructure failures must remain distinguishable.
+	ResolveAccessSessionState(context.Context, string, string) (identity.AccessSessionState, error)
 }
 
 type CreateUserRequest struct {

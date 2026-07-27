@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from "vue-router";
 import AppShell from "../components/AppShell.vue";
 import { useAuthStore } from "../stores/auth";
 import LoginView from "../views/LoginView.vue";
+import ChangePasswordView from "../views/ChangePasswordView.vue";
 import AgentsView from "../views/AgentsView.vue";
 import AgentAccessView from "../views/AgentAccessView.vue";
 import ModelAPIConfigsView from "../views/ModelAPIConfigsView.vue";
@@ -18,6 +19,8 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: "/login", name: "login", component: LoginView },
+    // Outside AppShell: forced password change recovery (ZKL-63 HIGH-03 / D6=A).
+    { path: "/change-password", name: "change-password", component: ChangePasswordView },
     {
       path: "/",
       component: AppShell,
@@ -59,6 +62,23 @@ router.beforeEach(async (to) => {
   if (!auth.initialized) {
     await auth.restoreSession();
   }
+
+  // Forced password change takes priority over normal app navigation.
+  if (auth.token && auth.mustChangePassword) {
+    if (to.name !== "change-password") {
+      return { name: "change-password" };
+    }
+    return true;
+  }
+
+  if (to.name === "change-password") {
+    if (!auth.token) {
+      return { name: "login" };
+    }
+    // Authenticated users who do not need a password change stay in the app.
+    return { name: "overview" };
+  }
+
   if (to.meta.requiresAuth && !auth.token) {
     return { name: "login" };
   }

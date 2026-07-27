@@ -2,6 +2,7 @@ package httptransport
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"runtime"
 	"strings"
@@ -37,6 +38,7 @@ import (
 
 var (
 	ErrUnauthenticated                  = errors.New("request is not authenticated")
+	ErrPasswordChangeRequired           = errors.New("password change is required before continuing")
 	ErrAAPFeatureDisabled               = errors.New("AAP public surface is disabled")
 	ErrAAPFeatureNotEnabledForWorkspace = errors.New("AAP is not enabled for this workspace")
 	ErrAAPFeatureNotEnabledForClient    = errors.New("AAP is not enabled for this client")
@@ -63,11 +65,22 @@ type mappedError struct {
 
 const requestFailureKey = "actweave.request_failure"
 
+// requestFailure holds only stable, low-sensitivity diagnostics for completion
+// logs. It must never retain the raw error value or any err.Error() text.
 type requestFailure struct {
-	err    error
-	mapped mappedError
-	file   string
-	line   int
+	mapped    mappedError
+	errorType string
+	file      string
+	line      int
+}
+
+func newRequestFailure(err error, mapped mappedError, file string, line int) requestFailure {
+	return requestFailure{
+		mapped:    mapped,
+		errorType: fmt.Sprintf("%T", err),
+		file:      file,
+		line:      line,
+	}
 }
 
 func RespondError(c *gin.Context, err error) {
@@ -76,7 +89,7 @@ func RespondError(c *gin.Context, err error) {
 		mapped = mapAAPError(err)
 	}
 	_, file, line, _ := runtime.Caller(1)
-	c.Set(requestFailureKey, requestFailure{err: err, mapped: mapped, file: file, line: line})
+	c.Set(requestFailureKey, newRequestFailure(err, mapped, file, line))
 	request, _ := RequestContextFrom(c.Request.Context())
 	retryable := mappedRetryable(mapped)
 	details := []map[string]any{}
@@ -340,9 +353,16 @@ func mapError(err error) mappedError {
 	case errors.Is(err, capability.ErrUnavailable):
 		// P3.3: bind unpublished WORKFLOW (no active release) → 4xx, not 500.
 		return mappedError{http.StatusConflict, "CAPABILITY_UNAVAILABLE", "The capability is not available for this operation (e.g. unpublished workflow has no active release)."}
-	case errors.Is(err, ErrUnauthenticated), errors.Is(err, authn.ErrInvalidCredentials),
+	case errors.Is(err, authn.ErrAuthenticationUnavailable):
+		// ZKL-63 HIGH-01 D2=A: fail closed on identity store / infrastructure errors.
+		return mappedError{http.StatusServiceUnavailable, "AUTHENTICATION_UNAVAILABLE", "Authentication is temporarily unavailable."}
+	case errors.Is(err, ErrUnauthenticated), errors.Is(err, authn.ErrAccessUnauthenticated),
+		errors.Is(err, authn.ErrInvalidCredentials),
 		errors.Is(err, authn.ErrRefreshRejected):
 		return mappedError{http.StatusUnauthorized, "UNAUTHENTICATED", "Authentication is required."}
+	case errors.Is(err, ErrPasswordChangeRequired):
+		// ZKL-63 HIGH-03 D5=A: authenticated but restricted until password change.
+		return mappedError{http.StatusForbidden, "PASSWORD_CHANGE_REQUIRED", "Password change is required before continuing."}
 	case errors.Is(err, authz.ErrNotVisible):
 		return mappedError{http.StatusNotFound, "NOT_FOUND", "The requested resource was not found."}
 	case errors.Is(err, agentaccessauth.ErrAAPAuthorizationNotVisible):

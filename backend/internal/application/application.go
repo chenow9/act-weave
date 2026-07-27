@@ -285,7 +285,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 			return nil, fmt.Errorf("bootstrap platform administrator: %w", err)
 		}
 	}
-	authenticator, err := httptransport.NewAccessTokenAuthenticator(accessTokens)
+	authenticator, err := httptransport.NewAccessTokenAuthenticator(authService)
 	if err != nil {
 		return nil, err
 	}

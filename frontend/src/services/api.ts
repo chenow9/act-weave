@@ -237,7 +237,14 @@ async function refreshAccessToken() {
 }
 
 function isAuthLifecycleRequest(url?: string) {
-  return Boolean(url && ["/auth/login", "/auth/refresh", "/auth/logout"].some((path) => url.endsWith(path)));
+  // change-password is non-idempotent: a 401 (wrong current password) must not
+  // trigger automatic refresh/retry (ZKL-63 HIGH-03).
+  return Boolean(
+    url &&
+      ["/auth/login", "/auth/refresh", "/auth/logout", "/users/me:change-password", "/users/me/__command/change-password"].some(
+        (path) => url.endsWith(path) || url.includes(path),
+      ),
+  );
 }
 
 function sharedGetKey(url: string, config?: Parameters<typeof rawAPIGet>[1]) {

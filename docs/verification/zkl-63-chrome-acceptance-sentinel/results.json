@@ -1,0 +1,119 @@
+{
+  "issue": "ZKL-63",
+  "base": "http://127.0.0.1:5174",
+  "targetUsername": "zkl63.b.ms2skl8u",
+  "results": [
+    {
+      "name": "1_normal_login_smoke",
+      "status": "PASS",
+      "detail": "url=/overview",
+      "at": "2026-07-27T05:34:02.729Z"
+    },
+    {
+      "name": "2_high02_client_safe_error",
+      "status": "PASS",
+      "detail": "status=401 code=UNAUTHENTICATED",
+      "at": "2026-07-27T05:34:02.739Z"
+    },
+    {
+      "name": "setup_create_target_user",
+      "status": "PASS",
+      "detail": "username=zkl63.b.ms2skl8u",
+      "at": "2026-07-27T05:34:03.016Z"
+    },
+    {
+      "name": "4_temp_login_forced_change_password",
+      "status": "PASS",
+      "detail": "/change-password",
+      "at": "2026-07-27T05:34:04.352Z"
+    },
+    {
+      "name": "4b_overview_redirect_to_change_password",
+      "status": "PASS",
+      "detail": "/change-password",
+      "at": "2026-07-27T05:34:05.153Z"
+    },
+    {
+      "name": "5_server_must_change_flag",
+      "status": "PASS",
+      "detail": "mustChangePassword=true",
+      "at": "2026-07-27T05:34:05.305Z"
+    },
+    {
+      "name": "5_server_gate_business_403",
+      "status": "PASS",
+      "detail": "status=403 code=PASSWORD_CHANGE_REQUIRED",
+      "at": "2026-07-27T05:34:05.310Z"
+    },
+    {
+      "name": "5_server_gate_me_allowed",
+      "status": "PASS",
+      "detail": "status=200",
+      "at": "2026-07-27T05:34:05.317Z"
+    },
+    {
+      "name": "6_complete_change_password",
+      "status": "PASS",
+      "detail": "url=/login?passwordChanged=1 changePosts=1",
+      "at": "2026-07-27T05:34:06.484Z"
+    },
+    {
+      "name": "6_old_token_401",
+      "status": "PASS",
+      "detail": "status=401",
+      "at": "2026-07-27T05:34:06.492Z"
+    },
+    {
+      "name": "6_new_password_login",
+      "status": "PASS",
+      "detail": "/overview",
+      "at": "2026-07-27T05:34:07.526Z"
+    },
+    {
+      "name": "3_reset_invalidates_access_token",
+      "status": "PASS",
+      "detail": "reset=204 me=401",
+      "at": "2026-07-27T05:34:08.028Z"
+    },
+    {
+      "name": "setup_rechange_after_reset",
+      "status": "PASS",
+      "detail": "status=204",
+      "at": "2026-07-27T05:34:08.352Z"
+    },
+    {
+      "name": "7_demote_invalidates_access_token",
+      "status": "PASS",
+      "detail": "demote=200 adminList=401",
+      "at": "2026-07-27T05:34:08.518Z"
+    },
+    {
+      "name": "7_relogin_user_admin_forbidden",
+      "status": "PASS",
+      "detail": "role=USER status=403 code=FORBIDDEN",
+      "at": "2026-07-27T05:34:08.650Z"
+    },
+    {
+      "name": "8_lock_invalidates_access_token",
+      "status": "PASS",
+      "detail": "lock=200 me=401",
+      "at": "2026-07-27T05:34:08.915Z"
+    },
+    {
+      "name": "8_disable_invalidates_access_token",
+      "status": "PASS",
+      "detail": "disable=200 me=401",
+      "at": "2026-07-27T05:34:09.086Z"
+    },
+    {
+      "name": "9_main_path_admin",
+      "status": "PASS",
+      "detail": "users=true workspaces=true",
+      "at": "2026-07-27T05:34:12.048Z"
+    }
+  ],
+  "pass": 18,
+  "fail": 0,
+  "skip": 0,
+  "note": "Passwords, tokens, cookies redacted. Dual Playwright contexts used as isolated profiles A/B."
+}

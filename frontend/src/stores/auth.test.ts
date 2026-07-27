@@ -93,14 +93,57 @@ describe("v1 auth store", () => {
     expect(auth.error).toContain("request-login-failed");
     expect(auth.isAuthenticated).toBe(false);
   });
+
+  it("changePassword posts to colon command path and clears session on 204", async () => {
+    vi.mocked(apiClient.post).mockResolvedValueOnce({ data: authSession("before.change") });
+    const auth = useAuthStore();
+    await auth.login("chen.ops", "actweave-demo");
+    expect(auth.mustChangePassword).toBe(false);
+
+    vi.mocked(apiClient.post).mockResolvedValueOnce({ status: 204, data: undefined });
+    await auth.changePassword("current-password-1", "new-password-12");
+
+    expect(apiClient.post).toHaveBeenLastCalledWith("/users/me:change-password", {
+      currentPassword: "current-password-1",
+      newPassword: "new-password-12",
+    });
+    expect(auth.token).toBe("");
+    expect(auth.user).toBeNull();
+    expect(auth.mustChangePassword).toBe(false);
+    expect(setAuthToken).toHaveBeenLastCalledWith("");
+    // Passwords must not be retained on the store.
+    expect(JSON.stringify(auth.$state)).not.toContain("current-password-1");
+    expect(JSON.stringify(auth.$state)).not.toContain("new-password-12");
+  });
+
+  it("changePassword keeps session on failure and surfaces an error", async () => {
+    const session = authSession("still.valid", true);
+    vi.mocked(apiClient.post).mockResolvedValueOnce({ data: session });
+    const auth = useAuthStore();
+    await auth.login("temp.user", "temporary-password");
+    expect(auth.mustChangePassword).toBe(true);
+
+    vi.mocked(apiClient.post).mockRejectedValueOnce(
+      new APIError({
+        status: 401,
+        code: "UNAUTHENTICATED",
+        message: "Authentication is required.",
+        requestId: "request-bad-current",
+      }),
+    );
+    await expect(auth.changePassword("wrong-current", "new-password-12")).rejects.toBeInstanceOf(APIError);
+    expect(auth.token).toBe("still.valid");
+    expect(auth.mustChangePassword).toBe(true);
+    expect(auth.error).toContain("request-bad-current");
+  });
 });
 
-function authSession(accessToken: string): AuthTokenResponse {
+function authSession(accessToken: string, mustChangePassword = false): AuthTokenResponse {
   return {
     accessToken,
     accessTokenExpires: "2026-07-15T04:15:00Z",
     sessionId: "session-auth-test",
-    mustChangePassword: false,
+    mustChangePassword,
     user: {
       id: "user-chen-ops",
       username: "chen.ops",

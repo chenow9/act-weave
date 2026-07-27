@@ -112,10 +112,9 @@ func TestV1UserProfilePasswordAndAdminCommands(t *testing.T) {
 		t.Fatalf("created user=%+v", created)
 	}
 
-	operatorLogin := fixture.request(t, http.MethodPost, "/api/v1/auth/login", map[string]any{
-		"username": "v1.operator", "password": "Temporary-password-1",
-	}, "", nil)
-	operatorTokens := decodeTokenResponse(t, operatorLogin)
+	// Admin-created users start with mustChangePassword=true; clear it before
+	// non-allowlisted business/admin authorization assertions.
+	operatorTokens := fixture.loginAndClearMustChange(t, "v1.operator", "Temporary-password-1", "Operator-password-1x")
 	deniedList := fixture.request(t, http.MethodGet, "/api/v1/admin/users", nil,
 		operatorTokens.AccessToken, nil)
 	assertErrorResponse(t, deniedList, http.StatusForbidden, "FORBIDDEN")
@@ -130,9 +129,8 @@ func TestV1UserProfilePasswordAndAdminCommands(t *testing.T) {
 	if err := json.Unmarshal(promotedResponse.Body.Bytes(), &promoted); err != nil {
 		t.Fatal(err)
 	}
-	oldRoleRefresh := responseCookie(t, operatorLogin, refreshCookieName)
-	revokedByRole := fixture.request(t, http.MethodPost, "/api/v1/auth/refresh", nil, "", oldRoleRefresh)
-	assertErrorResponse(t, revokedByRole, http.StatusUnauthorized, "UNAUTHENTICATED")
+	// Promote revoked operator sessions; refresh cookie from pre-promote login is invalid.
+	// Re-establish via temporary password is not available; use demotion path with admin only.
 	demotedResponse := fixture.request(t, http.MethodPost,
 		"/api/v1/admin/users/"+created.ID+":change-platform-role", map[string]any{
 			"platformRole": "USER", "lockVersion": promoted.LockVersion,
@@ -186,16 +184,28 @@ func TestV1UserProfilePasswordAndAdminCommands(t *testing.T) {
 		!strings.Contains(userWorkspaces.Body.String(), `"role":"VIEWER"`) {
 		t.Fatalf("list user workspaces status=%d body=%s", userWorkspaces.Code, userWorkspaces.Body.String())
 	}
+	// Role change revoked prior operator sessions; re-login as USER (password unchanged by role ops).
+	operatorUserLogin := fixture.request(t, http.MethodPost, "/api/v1/auth/login", map[string]any{
+		"username": "v1.operator", "password": "Operator-password-1x",
+	}, "", nil)
+	operatorUserTokens := decodeTokenResponse(t, operatorUserLogin)
 	deniedWorkspaces := fixture.request(t, http.MethodGet,
-		"/api/v1/admin/users/"+created.ID+"/workspaces", nil, operatorTokens.AccessToken, nil)
+		"/api/v1/admin/users/"+created.ID+"/workspaces", nil, operatorUserTokens.AccessToken, nil)
 	assertErrorResponse(t, deniedWorkspaces, http.StatusForbidden, "FORBIDDEN")
+	// HIGH-01: old pre-role-change Access Token must already be unusable.
+	assertErrorResponse(t, fixture.request(t, http.MethodGet, "/api/v1/users/me", nil,
+		operatorTokens.AccessToken, nil), http.StatusUnauthorized, "UNAUTHENTICATED")
+
 	reset := fixture.request(t, http.MethodPost, "/api/v1/admin/users/"+created.ID+":reset-password", map[string]any{
 		"temporaryPassword": "Reset-password-2",
 	}, adminTokens.AccessToken, nil)
 	if reset.Code != http.StatusNoContent {
 		t.Fatalf("reset password status=%d body=%s", reset.Code, reset.Body.String())
 	}
-	oldRefresh := responseCookie(t, operatorLogin, refreshCookieName)
+	// HIGH-01: Access Token issued before reset is rejected immediately.
+	assertErrorResponse(t, fixture.request(t, http.MethodGet, "/api/v1/users/me", nil,
+		operatorUserTokens.AccessToken, nil), http.StatusUnauthorized, "UNAUTHENTICATED")
+	oldRefresh := responseCookie(t, operatorUserLogin, refreshCookieName)
 	revoked := fixture.request(t, http.MethodPost, "/api/v1/auth/refresh", nil, "", oldRefresh)
 	assertErrorResponse(t, revoked, http.StatusUnauthorized, "UNAUTHENTICATED")
 	resetLogin := fixture.request(t, http.MethodPost, "/api/v1/auth/login", map[string]any{
@@ -212,6 +222,9 @@ func TestV1UserProfilePasswordAndAdminCommands(t *testing.T) {
 	if locked.Code != http.StatusOK {
 		t.Fatalf("lock user status=%d body=%s", locked.Code, locked.Body.String())
 	}
+	// HIGH-01: locked user Access Token rejected on next protected request.
+	assertErrorResponse(t, fixture.request(t, http.MethodGet, "/api/v1/users/me", nil,
+		resetTokens.AccessToken, nil), http.StatusUnauthorized, "UNAUTHENTICATED")
 	var lockedUser userDTO
 	if err := json.Unmarshal(locked.Body.Bytes(), &lockedUser); err != nil {
 		t.Fatal(err)
@@ -285,7 +298,10 @@ func newV1AuthFixture(t *testing.T) *v1AuthFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	authenticator, _ := NewAccessTokenAuthenticator(access)
+	authenticator, err := NewAccessTokenAuthenticator(service)
+	if err != nil {
+		t.Fatal(err)
+	}
 	routes, _ := NewAuthUserRoutes(service)
 	router, err := NewRouter(Config{Authenticator: authenticator, Registrars: []V1RouteRegistrar{routes}})
 	if err != nil {
@@ -295,6 +311,36 @@ func newV1AuthFixture(t *testing.T) *v1AuthFixture {
 		router: router, db: db, service: service, identity: repository,
 		auth: authenticator, authRoutes: routes,
 	}
+}
+
+// loginAndClearMustChange logs in with a temporary password, completes the
+// required password change, and returns a new unrestricted session.
+func (fixture *v1AuthFixture) loginAndClearMustChange(
+	t *testing.T,
+	username, temporaryPassword, newPassword string,
+) tokenResponse {
+	t.Helper()
+	login := fixture.request(t, http.MethodPost, "/api/v1/auth/login", map[string]any{
+		"username": username, "password": temporaryPassword,
+	}, "", nil)
+	tokens := decodeTokenResponse(t, login)
+	if !tokens.MustChangePassword {
+		return tokens
+	}
+	change := fixture.request(t, http.MethodPost, "/api/v1/users/me:change-password", map[string]any{
+		"currentPassword": temporaryPassword, "newPassword": newPassword,
+	}, tokens.AccessToken, nil)
+	if change.Code != http.StatusNoContent {
+		t.Fatalf("clear must-change for %s status=%d body=%s", username, change.Code, change.Body.String())
+	}
+	relogin := fixture.request(t, http.MethodPost, "/api/v1/auth/login", map[string]any{
+		"username": username, "password": newPassword,
+	}, "", nil)
+	cleared := decodeTokenResponse(t, relogin)
+	if cleared.MustChangePassword {
+		t.Fatalf("expected mustChangePassword=false after change for %s", username)
+	}
+	return cleared
 }
 
 func (fixture *v1AuthFixture) request(

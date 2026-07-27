@@ -115,6 +115,29 @@ export const useAuthStore = defineStore("auth", {
         // and the server request is best effort when connectivity is unavailable.
       }
     },
+    /**
+     * Change the current user's password. On 204 the server has already revoked
+     * all sessions; the client must clear local auth and re-login. Passwords are
+     * never stored in Pinia state or browser storage.
+     */
+    async changePassword(currentPassword: string, newPassword: string) {
+      this.bindAPIClient();
+      this.loading = true;
+      this.error = "";
+      try {
+        await apiClient.post("/users/me:change-password", {
+          currentPassword,
+          newPassword,
+        });
+        this.clearSession();
+        this.initialized = true;
+      } catch (error) {
+        this.error = apiErrorMessage(error, "修改密码失败，请检查当前密码后重试。");
+        throw error;
+      } finally {
+        this.loading = false;
+      }
+    },
   },
 });
 

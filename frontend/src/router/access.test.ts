@@ -36,6 +36,46 @@ describe("platform administrator route and navigation", () => {
     await router.push("/users");
     expect(router.currentRoute.value.name).toBe("overview");
   });
+
+  it("forces mustChangePassword users onto /change-password from business routes and login", async () => {
+    const auth = useAuthStore();
+    auth.initialized = true;
+    auth.token = "temp-token";
+    auth.user = userFixture("USER");
+    auth.mustChangePassword = true;
+
+    // Navigate via a different path so the guard always runs (not a same-route no-op).
+    await router.push("/workspaces");
+    expect(router.currentRoute.value.name).toBe("change-password");
+
+    await router.push("/login");
+    expect(router.currentRoute.value.name).toBe("change-password");
+
+    await router.push("/users");
+    expect(router.currentRoute.value.name).toBe("change-password");
+  });
+
+  it("sends authenticated users without must-change away from /change-password", async () => {
+    const auth = useAuthStore();
+    auth.initialized = true;
+    auth.token = "ok-token";
+    auth.user = userFixture("USER");
+    auth.mustChangePassword = false;
+
+    await router.push("/change-password");
+    expect(router.currentRoute.value.name).toBe("overview");
+  });
+
+  it("sends unauthenticated visitors from /change-password to login", async () => {
+    const auth = useAuthStore();
+    auth.initialized = true;
+    auth.token = "";
+    auth.user = null;
+    auth.mustChangePassword = false;
+
+    await router.push("/change-password");
+    expect(router.currentRoute.value.name).toBe("login");
+  });
 });
 
 function userFixture(platformRole: User["platformRole"]): User {

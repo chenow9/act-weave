@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import { useAuthStore } from "../stores/auth";
 
 const auth = useAuthStore();
 const router = useRouter();
+const route = useRoute();
 const showPassword = ref(false);
 const loginSuccess = ref(false);
 const loginErrorMessage = computed(() => auth.error);
+const passwordChangedNotice = computed(() => route.query.passwordChanged === "1");
 const form = reactive({
   username: "",
   password: "",
@@ -18,6 +20,10 @@ async function submit() {
   loginSuccess.value = false;
   await auth.login(form.username, form.password);
   loginSuccess.value = true;
+  if (auth.mustChangePassword) {
+    await router.push({ name: "change-password" });
+    return;
+  }
   await router.push({ name: "overview" });
 }
 </script>
@@ -52,6 +58,14 @@ async function submit() {
         <div v-if="loginErrorMessage" class="login-feedback-panel error" role="alert">
           <i class="fa-solid fa-triangle-exclamation" aria-hidden="true" />
           <span>{{ loginErrorMessage }}</span>
+        </div>
+
+        <div v-if="passwordChangedNotice && !loginErrorMessage && !loginSuccess" class="login-feedback-panel success" role="status">
+          <i class="fa-solid fa-circle-check" aria-hidden="true" />
+          <span>
+            <strong>密码已更新</strong>
+            <small>请使用新密码重新登录控制台。</small>
+          </span>
         </div>
 
         <div v-if="loginSuccess" class="login-feedback-panel success" role="status">

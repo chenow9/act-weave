@@ -145,6 +145,31 @@ describe("v1 API client", () => {
     expect(parsed.details).toEqual([{ field: "name", reason: "required" }]);
     expect(apiErrorMessage(parsed, "保存失败。")).toBe("保存失败。（请求 ID：request-api-test）");
   });
+
+  it("does not refresh or retry change-password on 401", async () => {
+    let refreshCalls = 0;
+    let changeCalls = 0;
+    setAuthToken("access-token");
+    authRefreshClient.defaults.adapter = async (config) => {
+      refreshCalls += 1;
+      return axiosResponse(config, 200, authSession("should-not-issue"));
+    };
+    apiClient.defaults.adapter = async (config) => {
+      changeCalls += 1;
+      throw unauthorized(config);
+    };
+
+    await expect(
+      apiClient.post("/users/me:change-password", {
+        currentPassword: "wrong-current",
+        newPassword: "new-password-12",
+      }),
+    ).rejects.toBeInstanceOf(APIError);
+
+    expect(refreshCalls).toBe(0);
+    expect(changeCalls).toBe(1);
+    expect(getAuthToken()).toBe("access-token");
+  });
 });
 
 function unauthorized(config: InternalAxiosRequestConfig) {

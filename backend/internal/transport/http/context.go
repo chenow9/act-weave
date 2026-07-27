@@ -28,11 +28,12 @@ type RequestContext struct {
 }
 
 type Principal struct {
-	UserID         string
-	SessionID      string
-	Username       string
-	PlatformRole   string
-	TokenExpiresAt time.Time
+	UserID             string
+	SessionID          string
+	Username           string
+	PlatformRole       string
+	MustChangePassword bool
+	TokenExpiresAt     time.Time
 }
 
 type requestContextKey struct{}

@@ -45,35 +45,38 @@ func decodeJSON(c *gin.Context, target any) error {
 	return nil
 }
 
+// AccessTokenAuthenticator adapts authn.Service into the Console HTTP
+// TokenAuthenticator. Every protected request revalidates session/user/credential
+// state through the service; JWT claim username/role are never used for authorization.
 type AccessTokenAuthenticator struct {
-	manager *authn.AccessTokenManager
-	now     func() time.Time
+	service *authn.Service
 }
 
-func NewAccessTokenAuthenticator(manager *authn.AccessTokenManager) (*AccessTokenAuthenticator, error) {
-	if manager == nil {
-		return nil, errors.New("access token manager is required")
+func NewAccessTokenAuthenticator(service *authn.Service) (*AccessTokenAuthenticator, error) {
+	if service == nil {
+		return nil, errors.New("authentication service is required")
 	}
-	return &AccessTokenAuthenticator{
-		manager: manager, now: func() time.Time { return time.Now().UTC() },
-	}, nil
+	return &AccessTokenAuthenticator{service: service}, nil
 }
 
 func (authenticator *AccessTokenAuthenticator) AuthenticateAccessToken(
-	_ context.Context,
+	ctx context.Context,
 	value string,
 ) (Principal, error) {
-	claims, err := authenticator.manager.Parse(value, authenticator.now())
+	identity, err := authenticator.service.AuthenticateAccessToken(ctx, value)
 	if err != nil {
 		return Principal{}, err
 	}
-	if claims.ExpiresAt == nil {
+	if identity.UserID == "" || identity.SessionID == "" {
 		return Principal{}, ErrUnauthenticated
 	}
 	return Principal{
-		UserID: claims.Subject, SessionID: claims.SessionID,
-		Username: claims.Username, PlatformRole: claims.PlatformRole,
-		TokenExpiresAt: claims.ExpiresAt.Time.UTC(),
+		UserID:             identity.UserID,
+		SessionID:          identity.SessionID,
+		Username:           identity.Username,
+		PlatformRole:       string(identity.PlatformRole),
+		MustChangePassword: identity.MustChangePassword,
+		TokenExpiresAt:     identity.TokenExpiresAt.UTC(),
 	}, nil
 }
 
@@ -147,7 +150,10 @@ func NewRouter(config Config) (http.Handler, error) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 	protected := v1.Group("")
-	protected.Use(authenticationMiddleware(config.Authenticator))
+	protected.Use(
+		authenticationMiddleware(config.Authenticator),
+		mustChangePasswordMiddleware(),
+	)
 	routes := V1Routes{Public: v1, Protected: protected}
 	for _, registrar := range config.Registrars {
 		registrar.RegisterV1(routes)
@@ -266,10 +272,10 @@ func requestLoggingMiddleware(logger *slog.Logger) gin.HandlerFunc {
 		}
 		if value, exists := c.Get(requestFailureKey); exists {
 			if failure, ok := value.(requestFailure); ok {
+				// HIGH-02 (ZKL-63): never log raw err.Error(); only stable fields.
 				attrs = append(attrs,
 					"error_code", failure.mapped.code,
-					"error", failure.err.Error(),
-					"error_type", fmt.Sprintf("%T", failure.err),
+					"error_type", failure.errorType,
 					"error_source", fmt.Sprintf("%s:%d", failure.file, failure.line),
 				)
 			}
@@ -323,13 +329,54 @@ func authenticationMiddleware(authenticator TokenAuthenticator) gin.HandlerFunc 
 			return
 		}
 		principal, err := authenticator.AuthenticateAccessToken(c.Request.Context(), parts[1])
-		if err != nil || principal.UserID == "" || principal.SessionID == "" {
+		if err != nil {
+			// D2=A: infrastructure failures are 503; all other auth failures stay 401
+			// without exposing revoke/disable/lock/missing distinctions.
+			if errors.Is(err, authn.ErrAuthenticationUnavailable) {
+				RespondError(c, err)
+				return
+			}
+			RespondError(c, ErrUnauthenticated)
+			return
+		}
+		if principal.UserID == "" || principal.SessionID == "" {
 			RespondError(c, ErrUnauthenticated)
 			return
 		}
 		ctx := context.WithValue(c.Request.Context(), principalContextKey{}, principal)
 		c.Request = c.Request.WithContext(ctx)
 		c.Next()
+	}
+}
+
+// mustChangePasswordMiddleware enforces HIGH-03: when MustChangePassword is true,
+// only an exact method+registered-template allowlist may proceed. Matching uses
+// Gin FullPath() (registered template), never path prefixes or substrings.
+func mustChangePasswordMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		principal, ok := PrincipalFrom(c.Request.Context())
+		if !ok || !principal.MustChangePassword {
+			c.Next()
+			return
+		}
+		if mustChangePasswordAllowed(c.Request.Method, c.FullPath()) {
+			c.Next()
+			return
+		}
+		RespondError(c, ErrPasswordChangeRequired)
+	}
+}
+
+func mustChangePasswordAllowed(method, fullPath string) bool {
+	switch {
+	case method == http.MethodPost && fullPath == "/api/v1/users/me/__command/change-password":
+		return true
+	case method == http.MethodPost && fullPath == "/api/v1/auth/logout":
+		return true
+	case method == http.MethodGet && fullPath == "/api/v1/users/me":
+		return true
+	default:
+		return false
 	}
 }
 

@@ -33,4 +33,11 @@ describe("login view content", () => {
     expect(loginView).not.toContain("演示凭证");
     expect(loginView).not.toContain("actweave-demo");
   });
+
+  it("routes temporary-password logins to change-password and shows post-change notice", () => {
+    expect(loginView).toContain('name: "change-password"');
+    expect(loginView).toContain("mustChangePassword");
+    expect(loginView).toContain("passwordChanged");
+    expect(loginView).toContain("密码已更新");
+  });
 });
