@@ -33,6 +33,9 @@ type Config struct {
 	// AgentAudit controls the platform-admin agent full-trace debug audit surface.
 	// Loaded once at process start; changing it requires a restart.
 	AgentAudit AgentAuditConfig `yaml:"agentAudit"`
+	// AgentPrompt holds create-preview retention/purge worker knobs (ZKL-69).
+	// Business TTL (30 days) and purge SLA (24 hours) are not configurable.
+	AgentPrompt AgentPromptConfig `yaml:"agentPrompt"`
 	// Runtime gates agent/workflow execution engines (legacy vs eino).
 	// After Load (PR15): agent defaults to enabled+allowAll (eino staged open);
 	// workflow engine defaults to wrapper. Explicit agent enabled=false rolls back.
@@ -41,6 +44,18 @@ type Config struct {
 	Encryption     EncryptionConfig     `yaml:"encryption"`
 	Storage        StorageConfig        `yaml:"storage"`
 	BootstrapAdmin BootstrapAdminConfig `yaml:"bootstrapAdmin"`
+}
+
+// AgentPromptConfig configures create-preview purge worker pacing only.
+type AgentPromptConfig struct {
+	PreviewPurge PreviewPurgeConfig `yaml:"previewPurge"`
+}
+
+// PreviewPurgeConfig is multi-replica-safe worker pacing (not business TTL).
+type PreviewPurgeConfig struct {
+	IntervalSeconds   int `yaml:"intervalSeconds"`
+	BatchLimit        int `yaml:"batchLimit"`
+	ClaimLeaseSeconds int `yaml:"claimLeaseSeconds"`
 }
 
 // OutboundIdentityConfig holds the independent outbound assertion signing domain.
@@ -316,6 +331,27 @@ func (config *Config) applyEnvironment(lookup LookupEnv) error {
 			return errors.New("ACTWEAVE_MINIO_USE_SSL must be a boolean")
 		}
 		config.Storage.MinIO.UseSSL = value
+	}
+	if raw, ok := lookup("ACTWEAVE_PROMPT_PREVIEW_PURGE_INTERVAL_SECONDS"); ok {
+		value, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err != nil || value < 10 || value > 3600 {
+			return errors.New("ACTWEAVE_PROMPT_PREVIEW_PURGE_INTERVAL_SECONDS must be 10..3600")
+		}
+		config.AgentPrompt.PreviewPurge.IntervalSeconds = value
+	}
+	if raw, ok := lookup("ACTWEAVE_PROMPT_PREVIEW_PURGE_BATCH_LIMIT"); ok {
+		value, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err != nil || value < 1 || value > 1000 {
+			return errors.New("ACTWEAVE_PROMPT_PREVIEW_PURGE_BATCH_LIMIT must be 1..1000")
+		}
+		config.AgentPrompt.PreviewPurge.BatchLimit = value
+	}
+	if raw, ok := lookup("ACTWEAVE_PROMPT_PREVIEW_PURGE_CLAIM_LEASE_SECONDS"); ok {
+		value, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err != nil || value < 10 {
+			return errors.New("ACTWEAVE_PROMPT_PREVIEW_PURGE_CLAIM_LEASE_SECONDS must be >= 10")
+		}
+		config.AgentPrompt.PreviewPurge.ClaimLeaseSeconds = value
 	}
 	if raw, ok := lookup("ACTWEAVE_AAP_SIGNING_GENERATE_IF_MISSING"); ok {
 		value, err := strconv.ParseBool(strings.TrimSpace(raw))

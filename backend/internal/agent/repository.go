@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -256,6 +257,26 @@ func (r *Repository) UpdatePrompt(
 	return value, revision, nil
 }
 
+// GetCurrentPromptRevision loads the Agent's current revision by joining
+// agents.current_prompt_revision_id within the Workspace. Callers must not
+// accept a client-supplied revision ID.
+func (r *Repository) GetCurrentPromptRevision(ctx context.Context, workspaceID, agentID string) (PromptRevision, error) {
+	if !validUUID(workspaceID) || !validUUID(agentID) {
+		return PromptRevision{}, ErrInvalid
+	}
+	value, err := scanPromptRevision(r.db.QueryRowContext(ctx, `
+		SELECT r.id,r.workspace_id,r.agent_id,r.revision_no,r.system_prompt,r.source,
+			r.content_sha256,r.created_by,r.created_at
+		FROM agents a
+		JOIN agent_prompt_revisions r
+		  ON r.workspace_id=a.workspace_id
+		 AND r.agent_id=a.id
+		 AND r.id=a.current_prompt_revision_id
+		WHERE a.workspace_id=$1 AND a.id=$2 AND a.deleted_at IS NULL
+	`, workspaceID, agentID))
+	return value, mapRead("get current prompt revision", err)
+}
+
 func (r *Repository) ListPromptRevisions(ctx context.Context, workspaceID, agentID string) ([]PromptRevision, error) {
 	if !validUUID(workspaceID) || !validUUID(agentID) {
 		return nil, ErrInvalid
@@ -375,20 +396,60 @@ func (r *Repository) IsModelConfigInUse(ctx context.Context, tx *sql.Tx, workspa
 	return inUse, err
 }
 
+// NextPreviewTimestamps returns a single database clock sample used for both
+// CREATE_PREVIEW Run created_at and StoredObject retention_until (= +30 days).
+func (r *Repository) NextPreviewTimestamps(ctx context.Context) (createdAt, expiresAt time.Time, err error) {
+	err = r.db.QueryRowContext(ctx, `
+		SELECT clock_timestamp(), clock_timestamp() + INTERVAL '30 days'
+	`).Scan(&createdAt, &expiresAt)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("preview retention timestamps: %w", err)
+	}
+	return createdAt.UTC(), expiresAt.UTC(), nil
+}
+
 func (r *Repository) StartPromptRun(ctx context.Context, input NewPromptRun) (PromptRun, error) {
 	input = normalizePromptRun(input)
 	if !validPromptRun(input) {
 		return PromptRun{}, ErrInvalid
 	}
+	if input.OperationType == PromptOperationCreatePreview && input.FixedCreatedAt != nil {
+		createdAt := input.FixedCreatedAt.UTC()
+		value, err := scanPromptRun(r.db.QueryRowContext(ctx, `
+			INSERT INTO prompt_runs(
+				id,workspace_id,agent_id,operation_type,model_config_id,model_snapshot,
+				input_object_id,input_sha256,input_length,status,trace_id,created_by,
+				created_at,expires_at
+			) VALUES(
+				$1,$2,$3,$4,$5,$6,$7,$8,$9,'PENDING',$10,$11,$12::timestamptz,
+				$12::timestamptz + INTERVAL '30 days'
+			)
+			RETURNING id,workspace_id,agent_id,operation_type,model_config_id,model_snapshot,
+				input_object_id,input_sha256,input_length,output_object_id,output_sha256,output_length,
+				status,accepted_revision_id,trace_id,created_by,
+				created_at,finished_at,error_code,expires_at,promoted_at,content_purged_at
+		`, input.ID, input.WorkspaceID, input.AgentID, input.OperationType, input.ModelConfigID,
+			[]byte(input.ModelSnapshot), input.InputObjectID, input.InputSHA256, input.InputLength,
+			input.TraceID, input.CreatedBy, createdAt))
+		if err != nil {
+			return PromptRun{}, mapWrite("start prompt run", err)
+		}
+		return value, nil
+	}
 	value, err := scanPromptRun(r.db.QueryRowContext(ctx, `
+		WITH stamp AS (SELECT clock_timestamp() AS ts)
 		INSERT INTO prompt_runs(
 			id,workspace_id,agent_id,operation_type,model_config_id,model_snapshot,
-			input_object_id,input_sha256,input_length,status,trace_id,created_by
-		) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'PENDING',$10,$11)
+			input_object_id,input_sha256,input_length,status,trace_id,created_by,
+			created_at,expires_at
+		)
+		SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,'PENDING',$10,$11,stamp.ts,
+			CASE WHEN $4 = 'CREATE_PREVIEW' THEN stamp.ts + INTERVAL '30 days' ELSE NULL END
+		FROM stamp
 		RETURNING id,workspace_id,agent_id,operation_type,model_config_id,model_snapshot,
 			input_object_id,input_sha256,input_length,output_object_id,output_sha256,output_length,
 			status,accepted_revision_id,trace_id,created_by,
-			created_at,finished_at,error_code
+			created_at,finished_at,error_code,expires_at,promoted_at,content_purged_at
 	`, input.ID, input.WorkspaceID, input.AgentID, input.OperationType, input.ModelConfigID,
 		[]byte(input.ModelSnapshot), input.InputObjectID, input.InputSHA256, input.InputLength,
 		input.TraceID, input.CreatedBy))
@@ -424,7 +485,7 @@ func (r *Repository) CompletePromptRun(ctx context.Context, workspaceID, runID s
 		RETURNING id,workspace_id,agent_id,operation_type,model_config_id,model_snapshot,
 			input_object_id,input_sha256,input_length,output_object_id,output_sha256,output_length,
 			status,accepted_revision_id,trace_id,created_by,
-			created_at,finished_at,error_code
+			created_at,finished_at,error_code,expires_at,promoted_at,content_purged_at
 	`, workspaceID, runID, status, outputObjectID, outputSHA256, outputLength, errorCode))
 	if errors.Is(err, sql.ErrNoRows) {
 		return PromptRun{}, ErrConflict
@@ -443,7 +504,7 @@ func (r *Repository) GetPromptRun(ctx context.Context, workspaceID, runID string
 		SELECT id,workspace_id,agent_id,operation_type,model_config_id,model_snapshot,
 			input_object_id,input_sha256,input_length,output_object_id,output_sha256,output_length,
 			status,accepted_revision_id,trace_id,created_by,
-			created_at,finished_at,error_code
+			created_at,finished_at,error_code,expires_at,promoted_at,content_purged_at
 		FROM prompt_runs WHERE workspace_id=$1 AND id=$2
 	`, workspaceID, runID))
 	return value, mapRead("get prompt run", err)
@@ -514,7 +575,7 @@ func (r *Repository) AcceptPromptRun(
 		RETURNING id,workspace_id,agent_id,operation_type,model_config_id,model_snapshot,
 			input_object_id,input_sha256,input_length,output_object_id,output_sha256,output_length,
 			status,accepted_revision_id,trace_id,created_by,
-			created_at,finished_at,error_code
+			created_at,finished_at,error_code,expires_at,promoted_at,content_purged_at
 	`, workspaceID, runID, revisionID))
 	if err != nil {
 		return PromptRun{}, PromptRevision{}, mapWrite("record accepted prompt revision", err)
@@ -563,8 +624,28 @@ func scanPromptRun(row rowScanner) (PromptRun, error) {
 		&value.ModelConfigID, &snapshot, &value.InputObjectID, &value.InputSHA256,
 		&value.InputLength, &value.OutputObjectID, &value.OutputSHA256, &value.OutputLength,
 		&value.Status, &value.AcceptedRevisionID, &value.TraceID, &value.CreatedBy,
-		&value.CreatedAt, &value.FinishedAt, &value.ErrorCode)
+		&value.CreatedAt, &value.FinishedAt, &value.ErrorCode,
+		&value.ExpiresAt, &value.PromotedAt, &value.ContentPurgedAt)
 	value.ModelSnapshot = append(json.RawMessage(nil), snapshot...)
+	if value.CreatedAt.Location() != time.UTC {
+		value.CreatedAt = value.CreatedAt.UTC()
+	}
+	if value.FinishedAt != nil {
+		finished := value.FinishedAt.UTC()
+		value.FinishedAt = &finished
+	}
+	if value.ExpiresAt != nil {
+		expires := value.ExpiresAt.UTC()
+		value.ExpiresAt = &expires
+	}
+	if value.PromotedAt != nil {
+		promoted := value.PromotedAt.UTC()
+		value.PromotedAt = &promoted
+	}
+	if value.ContentPurgedAt != nil {
+		purged := value.ContentPurgedAt.UTC()
+		value.ContentPurgedAt = &purged
+	}
 	return value, err
 }
 
@@ -650,10 +731,21 @@ func normalizePromptRun(input NewPromptRun) NewPromptRun {
 }
 
 func validPromptRun(input NewPromptRun) bool {
-	return validUUID(input.ID) && validUUID(input.WorkspaceID) && validOptionalID(input.AgentID) &&
-		(input.OperationType == "ENHANCE" || input.OperationType == "GENERATE" || input.OperationType == "PREVIEW") &&
-		validUUID(input.ModelConfigID) && validJSONObject(input.ModelSnapshot) && validUUID(input.InputObjectID) &&
-		validSHA256(input.InputSHA256) && input.InputLength > 0 && input.TraceID != "" && validUUID(input.CreatedBy)
+	if !validUUID(input.ID) || !validUUID(input.WorkspaceID) || !validOptionalID(input.AgentID) ||
+		!validUUID(input.ModelConfigID) || !validJSONObject(input.ModelSnapshot) ||
+		!validUUID(input.InputObjectID) || !validSHA256(input.InputSHA256) ||
+		input.InputLength <= 0 || input.TraceID == "" || !validUUID(input.CreatedBy) {
+		return false
+	}
+	switch input.OperationType {
+	case PromptOperationEnhance, PromptOperationGenerate, PromptOperationPreview:
+		return true
+	case PromptOperationCreatePreview:
+		// Create-preview runs are workspace-scoped drafts without an Agent binding.
+		return input.AgentID == nil
+	default:
+		return false
+	}
 }
 
 func validSHA256(value string) bool {
@@ -665,7 +757,13 @@ func validSHA256(value string) bool {
 }
 
 func validPromptSource(value string) bool {
-	return value == "MANUAL" || value == "ENHANCED" || value == "GENERATED" || value == "IMPORTED"
+	switch value {
+	case PromptSourceManual, PromptSourceEnhanced, PromptSourceGenerated,
+		PromptSourceImported, PromptSourceAIAssisted:
+		return true
+	default:
+		return false
+	}
 }
 
 func validJSONObject(value json.RawMessage) bool {

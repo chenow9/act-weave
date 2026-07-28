@@ -169,8 +169,8 @@ export function createToolsPageModel() {
   ];
   const toolTypeTabs: Array<{ label: string; value: ToolTypeFilter }> = [
     { label: "全部类型", value: "all" },
-    { label: "HTTP Tool", value: "HTTP Tool" },
-    { label: "Workflow Tool", value: "Workflow Tool" },
+    { label: "HTTP", value: "HTTP Tool" },
+    { label: "Workflow", value: "Workflow Tool" },
   ];
 
   const draftTool = ref<ToolDraft>(defaultToolDraft());
@@ -544,11 +544,11 @@ export function createToolsPageModel() {
   }
 
   function methodOf(tool: Tool) {
-    return String(tool.actionConfig.method || "GET");
+    return String(tool.actionConfig?.method || "GET");
   }
 
   function pathOf(tool: Tool) {
-    return String(tool.actionConfig.path || "/");
+    return String(tool.actionConfig?.path || "/");
   }
 
   function methodClass(tool: Tool) {
@@ -556,7 +556,9 @@ export function createToolsPageModel() {
   }
 
   function statusClass(status: string) {
-    return status.toLowerCase().replace(/\s+/g, "-");
+    return String(status || "draft")
+      .toLowerCase()
+      .replace(/\s+/g, "-");
   }
 
   function toolStatusLabel(status: ToolStatus) {
@@ -974,48 +976,67 @@ export function createToolsPageModel() {
   }
 
   function buildDraftFromTool(tool: Tool): ToolDraft {
+    const actionConfig = tool.actionConfig || {};
+    const runtimePolicy = tool.runtimePolicy || {
+      timeoutMs: 8000,
+      retryCount: 0,
+      backoffPolicy: "exponential",
+      idempotencyPolicy: "header: Idempotency-Key",
+      rateLimitPolicy: "60 rpm",
+    };
+    const requestParams = Array.isArray(tool.requestParams) ? tool.requestParams : [];
+    const responseFields = Array.isArray(tool.responseFields) ? tool.responseFields : [];
+    const errorMappings = Array.isArray(tool.errorMappings) ? tool.errorMappings : [];
     return {
       id: tool.id,
-      name: tool.name,
-      workspaceId: tool.workspaceId,
-      connectionId: tool.connectionId,
-      method: String(tool.actionConfig.method || "GET"),
-      path: String(tool.actionConfig.path || "/"),
-      contentType: String(tool.actionConfig.contentType || "application/json"),
-      description: tool.description,
-      status: tool.status,
-      requestContract: tool.requestParams.length
-        ? tool.requestParams.map((param) => requestParamToSchemaNode(param))
+      name: tool.name || "",
+      workspaceId: tool.workspaceId || workspaces.activeWorkspaceId || workspaces.items[0]?.id || "",
+      connectionId: tool.connectionId || "",
+      method: String(actionConfig.method || "GET"),
+      path: String(actionConfig.path || "/"),
+      contentType: String(actionConfig.contentType || "application/json"),
+      description: tool.description || "",
+      status: tool.status || "Draft",
+      requestContract: requestParams.length
+        ? requestParams.map((param) => requestParamToSchemaNode(param))
         : [normalizeSchemaNode({ location: "Body", name: "", type: "string", required: true, description: "" })],
-      responseContract: tool.responseFields.length
-        ? tool.responseFields.map((field) => responseFieldToSchemaNode(field))
+      responseContract: responseFields.length
+        ? responseFields.map((field) => responseFieldToSchemaNode(field))
         : [normalizeSchemaNode({ name: "", type: "string", required: true, description: "" })],
-      errorMappings: tool.errorMappings.map((mapping) => ({ ...mapping })),
-      timeoutSeconds: Math.max(1, Math.round(tool.runtimePolicy.timeoutMs / 1000)),
-      retryCount: tool.runtimePolicy.retryCount,
-      backoffPolicy: tool.runtimePolicy.backoffPolicy,
-      idempotencyPolicy: tool.runtimePolicy.idempotencyPolicy,
-      rateLimitPolicy: tool.runtimePolicy.rateLimitPolicy,
+      errorMappings: errorMappings.map((mapping) => ({ ...mapping })),
+      timeoutSeconds: Math.max(1, Math.round(Number(runtimePolicy.timeoutMs) / 1000) || 8),
+      retryCount: Number(runtimePolicy.retryCount) || 0,
+      backoffPolicy: String(runtimePolicy.backoffPolicy || "exponential"),
+      idempotencyPolicy: String(runtimePolicy.idempotencyPolicy || "header: Idempotency-Key"),
+      rateLimitPolicy: String(runtimePolicy.rateLimitPolicy || "60 rpm"),
     };
   }
 
   function openEditTool(tool: Tool) {
-    if (tool.status === "Published") {
-      setActionFeedback("已发布 Tool 的编辑会从该版本创建新的 Draft Version，原 Release 保持不变。", "success");
+    try {
+      if (tool.status === "Published") {
+        setActionFeedback("已发布 Tool 的编辑会从该版本创建新的 Draft Version，原 Release 保持不变。", "success");
+      }
+      toolEditorMode.value = "edit";
+      editingToolId.value = tool.id;
+      draftStep.value = 1;
+      actionNote.value = tool.status === "Published" ? actionNote.value : "";
+      draftError.value = "";
+      contractEditorTab.value = "Body";
+      runtimeAdvancedOpen.value = false;
+      toolDetailVisible.value = false;
+      testDialogVisible.value = false;
+      draftTool.value = buildDraftFromTool(tool);
+      draftSnapshot.value = JSON.stringify(draftTool.value);
+      saveState.value = "idle";
+      publishImpactConfirmed.value = false;
+      toolEditorVisible.value = true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "未知错误";
+      setActionFeedback(`无法打开编辑：${message}`, "error");
+      draftError.value = `无法打开编辑：${message}`;
+      toolEditorVisible.value = false;
     }
-    toolEditorMode.value = "edit";
-    editingToolId.value = tool.id;
-    draftStep.value = 1;
-    actionNote.value = "";
-    draftError.value = "";
-    contractEditorTab.value = "Body";
-    runtimeAdvancedOpen.value = false;
-    toolDetailVisible.value = false;
-    draftTool.value = buildDraftFromTool(tool);
-    draftSnapshot.value = JSON.stringify(draftTool.value);
-    saveState.value = "idle";
-    publishImpactConfirmed.value = false;
-    toolEditorVisible.value = true;
   }
 
   function closeToolEditor() {

@@ -193,13 +193,13 @@ function scrollToActiveChunk() {
 </script>
 
 <template>
-  <section class="agent-prompt-diff-viewer" aria-label="System Prompt 专业差异对比">
+  <section class="agent-prompt-diff-viewer" aria-label="系统提示词变更对比">
     <div class="agent-prompt-diff-toolbar">
       <div>
-        <strong>{{ title || "System Prompt Diff Viewer" }}</strong>
-        <small>{{ activeChangeLabel }} · Collapse unchanged · Side-by-side</small>
+        <strong>{{ title || "变更对比" }}</strong>
+        <small>{{ activeChangeLabel }} · 折叠未变更 · 左右对照</small>
       </div>
-      <div class="agent-prompt-diff-nav" aria-label="Prompt 变更导航">
+      <div class="agent-prompt-diff-nav" aria-label="提示词变更导航">
         <button
           class="agent-prompt-diff-nav-button"
           type="button"
@@ -228,9 +228,9 @@ function scrollToActiveChunk() {
     <div class="agent-prompt-diff-editor-shell">
       <div class="agent-prompt-diff-pane-head">
         <span>{{ beforeLabel }}</span>
-        <b>read-only</b>
+        <b>只读</b>
         <span>{{ afterLabel }}</span>
-        <b>read-only</b>
+        <b>只读</b>
       </div>
       <div class="agent-prompt-diff-editor-row">
         <div ref="mergeHost" class="agent-prompt-diff-merge-host" />

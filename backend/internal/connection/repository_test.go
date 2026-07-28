@@ -39,7 +39,7 @@ func TestConnectionMigrationRepositoryAndVerification(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	// Repository requires 000060 outbound identity columns.
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 60 || version.Dirty {
+	if !version.Applied || version.Number != 61 || version.Dirty {
 		t.Fatalf("unexpected migration: %+v", version)
 	}
 	db := testDatabase.Open(t)

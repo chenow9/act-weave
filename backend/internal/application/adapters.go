@@ -1052,6 +1052,27 @@ func (source *modelSnapshotSource) Snapshot(
 	if err != nil {
 		return nil, err
 	}
+	return marshalModelSnapshot(config)
+}
+
+// AvailableSnapshot is the create-preview model gate: same Workspace, not
+// deleted, VERIFIED, and credential configured.
+func (source *modelSnapshotSource) AvailableSnapshot(
+	ctx context.Context,
+	workspaceID, modelConfigID string,
+) (json.RawMessage, error) {
+	config, err := source.models.Get(ctx, workspaceID, modelConfigID)
+	if err != nil {
+		return nil, err
+	}
+	if config.DeletedAt != nil || config.Status != modelconfig.StatusVerified ||
+		!config.CredentialConfigured {
+		return nil, agent.ErrPromptModelUnavailable
+	}
+	return marshalModelSnapshot(config)
+}
+
+func marshalModelSnapshot(config modelconfig.Config) (json.RawMessage, error) {
 	return json.Marshal(map[string]any{
 		"id": config.ID, "provider": config.Provider, "apiBase": config.APIBase,
 		"modelName": config.ModelName, "options": json.RawMessage(config.Options),
@@ -1080,7 +1101,18 @@ func (generator *promptGenerator) Generate(
 	if generator == nil || generator.models == nil || generator.secrets == nil {
 		return "", agent.ErrPromptGeneration
 	}
-	cfg, err := generator.models.Get(ctx, request.Agent.WorkspaceID, request.Agent.ModelConfigID)
+	workspaceID := strings.TrimSpace(request.WorkspaceID)
+	modelConfigID := strings.TrimSpace(request.ModelConfigID)
+	if workspaceID == "" {
+		workspaceID = strings.TrimSpace(request.Agent.WorkspaceID)
+	}
+	if modelConfigID == "" {
+		modelConfigID = strings.TrimSpace(request.Agent.ModelConfigID)
+	}
+	if workspaceID == "" || modelConfigID == "" {
+		return "", agent.ErrInvalid
+	}
+	cfg, err := generator.models.Get(ctx, workspaceID, modelConfigID)
 	if err != nil {
 		return "", err
 	}

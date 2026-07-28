@@ -306,6 +306,8 @@ func v1ContractRoutes() []v1ContractRoute {
 		{http.MethodPatch, root + "/workspaces/:wid/agents/:id", false},
 		{http.MethodDelete, root + "/workspaces/:wid/agents/:id", false},
 		{http.MethodPost, root + "/workspaces/:wid/agents/:id:enhance-prompt", false},
+		{http.MethodPost, root + "/workspaces/:wid/agents:preview-prompt-enhancement", false},
+		{http.MethodGet, root + "/workspaces/:wid/agents/:id/prompt-revisions/current", false},
 		{http.MethodGet, root + "/workspaces/:wid/agents/:id/capabilities", false},
 		{http.MethodPut, root + "/workspaces/:wid/agents/:id/capabilities/:capabilityId", false},
 		{http.MethodDelete, root + "/workspaces/:wid/agents/:id/capabilities/:capabilityId", false},

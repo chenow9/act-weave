@@ -55,6 +55,7 @@ const {
   pathOf,
   methodClass,
   statusClass,
+  lifecycleStatus,
   governanceToneClass,
   toolUnifiedStatus,
   toolProtocolLabel,
@@ -195,13 +196,25 @@ void getToolTypeLabel;
             </span>
           </template>
           <template #cell-status="{ row: tool }">
-            <span
-              class="tool-status-pill aw-table-pill"
-              :class="[statusClass(tool.status), governanceToneClass(toolUnifiedStatus(tool).tone)]"
+            <div
+              class="tool-unified-status-cell"
               :title="toolUnifiedStatus(tool).description"
+              :aria-label="toolUnifiedStatus(tool).description"
             >
-              <i />{{ toolUnifiedStatus(tool).label }}
-            </span>
+              <span
+                class="tool-status-pill aw-table-pill"
+                :class="[statusClass(tool.status), governanceToneClass(lifecycleStatus(tool).tone)]"
+              >
+                <i aria-hidden="true" />{{ toolUnifiedStatus(tool).lifecycleLabel }}
+              </span>
+              <small
+                v-if="toolUnifiedStatus(tool).runLabel"
+                class="tool-status-attention"
+                :class="governanceToneClass(toolUnifiedStatus(tool).tone)"
+              >
+                {{ toolUnifiedStatus(tool).runLabel }}
+              </small>
+            </div>
           </template>
           <template #cell-version="{ row: tool }"
             ><code class="tool-version-cell aw-table-mono">{{ toolVersionLabel(tool) }}</code></template

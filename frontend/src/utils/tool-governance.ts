@@ -35,7 +35,7 @@ export function getToolTestStatus(tool: Tool): GovernanceStatusMeta {
   if (hasPassingToolTest(tool)) {
     return { label: "测试通过", tone: "success", description: "最近一次测试通过" };
   }
-  // Prefer additive latestTest; null/missing → 历史测试未知 (not “通过”).
+  // Prefer additive latestTest; null/missing → never infer pass from lifecycle.
   if (tool.latestTest) {
     if (tool.latestTest.status === "FAILED") {
       return {
@@ -48,9 +48,17 @@ export function getToolTestStatus(tool: Tool): GovernanceStatusMeta {
     }
   }
   if (!tool.lastTestResult && !tool.latestTest) {
+    // Draft / Review: still waiting for first test. Published / Tested / Disabled
+    // without retained history: historical result is unknown (do not treat as pass).
+    if (tool.status === "Draft" || tool.status === "Review") {
+      return { label: "等待测试", tone: "warning", description: "尚未执行测试，发布前需通过测试" };
+    }
     return { label: "历史测试未知", tone: "neutral", description: "暂无测试记录，不得从已发布状态推断通过" };
   }
   if (!tool.lastTestResult) {
+    if (tool.status === "Draft" || tool.status === "Review") {
+      return { label: "等待测试", tone: "warning", description: "尚未执行测试，发布前需通过测试" };
+    }
     return { label: "历史测试未知", tone: "neutral", description: "暂无测试记录" };
   }
   return { label: "测试失败", tone: "danger", description: "最近一次测试失败，需要修复后重试" };
@@ -137,8 +145,10 @@ export interface ToolUnifiedStatusMeta extends GovernanceStatusMeta {
 }
 
 /**
- * Single table-status pill: keep lifecycle visible, but surface connection
- * problems without dropping the published/draft signal.
+ * Table status model (scheme A):
+ * - lifecycleLabel → primary pill (lifecycle tone)
+ * - runLabel → secondary attention line when connection/test needs attention
+ * - label remains a composite string for search/sort/getValue/title fallbacks
  */
 export function getToolUnifiedStatus(tool: Tool, connection?: ServiceConnection): ToolUnifiedStatusMeta {
   const lifecycle = getToolLifecycleStatus(tool);

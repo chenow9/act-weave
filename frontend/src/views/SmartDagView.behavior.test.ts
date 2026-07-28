@@ -289,10 +289,17 @@ function mountSmartDagView() {
 
 async function generateFormalDraft(mounted: VueWrapper) {
   await flushPromises();
-  const agentSelect = mounted.findAll(".smart-copilot-panel select")[1];
-  if (agentSelect) {
-    await agentSelect.setValue("agent-1");
+  // AppSelect is used for workspace + agent; pick agent (2nd) when present.
+  const appSelects = mounted.findAllComponents({ name: "AppSelect" });
+  if (appSelects.length >= 2) {
+    await appSelects[1].vm.$emit("update:modelValue", "agent-1");
+  } else {
+    const agentSelect = mounted.findAll(".smart-copilot-panel select")[1];
+    if (agentSelect) {
+      await agentSelect.setValue("agent-1");
+    }
   }
+  await flushPromises();
   await mounted.get(".smart-copilot-panel textarea").setValue("生成测试流程");
   await mounted.get(".smart-copilot-actions .primary").trigger("click");
   await flushPromises();

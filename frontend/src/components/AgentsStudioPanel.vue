@@ -36,12 +36,12 @@ void AgentPromptDiffViewer;
           <div class="agent-studio-title">
             <button class="agent-back-button" type="button" @click="requestCloseStudio('back')">
               <i class="fa-solid fa-chevron-left" aria-hidden="true" />
-              <span>返回注册中心</span>
+              <span>返回列表</span>
             </button>
             <span class="agent-studio-divider" aria-hidden="true" />
             <div>
-              <span>{{ draftAgent.id || "AUTO_ID" }}</span>
-              <h3>{{ studioMode === "create" ? "新建 Agent" : "Agent 属性微调空间" }}</h3>
+              <span>{{ draftAgent.id || "创建后自动生成 ID" }}</span>
+              <h3>{{ studioMode === "create" ? "新建 Agent" : "编辑 Agent" }}</h3>
             </div>
           </div>
           <div class="agent-studio-actions">
@@ -62,8 +62,7 @@ void AgentPromptDiffViewer;
           <section class="agent-studio-section agent-parameters-panel">
             <header>
               <span
-                ><i class="fa-solid fa-sliders" aria-hidden="true" /> AGENT PARAMETERS ORCHESTRATION /
-                属性参数配置</span
+                ><i class="fa-solid fa-sliders" aria-hidden="true" /> Agent 参数</span
               >
             </header>
             <div class="agent-studio-fields">
@@ -149,27 +148,30 @@ void AgentPromptDiffViewer;
             <header>
               <span
                 ><i class="fa-solid fa-code" aria-hidden="true" />
-                {{ studioMode === "create" ? "SYSTEM PROMPT / 初始提示词" : "PROMPT ENHANCEMENT INPUT / 增强指令" }}
+                {{ studioMode === "create" ? "初始系统提示词" : "AI 整理要求" }}
                 <b v-if="studioMode === 'create'" class="required-mark" aria-hidden="true">*</b></span
               >
               <button
                 class="agent-weave-button"
                 type="button"
                 :disabled="!canEnhanceDraftPrompt"
-                :title="draftAgent.id ? 'AI 智能整理 System Prompt' : '保存 Agent 后可使用 AI 智能整理'"
+                :title="canEnhanceDraftPrompt ? 'AI 智能整理系统提示词' : '请先完善业务空间、模型和系统提示词'"
                 aria-describedby="agent-weave-helper"
                 @click="enhancePrompt"
               >
                 <i
-                  :class="['fa-solid', isEnhancing(draftAgent.id) ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles']"
+                  :class="[
+                    'fa-solid',
+                    isEnhancing(draftAgent.id || 'create-draft') ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles',
+                  ]"
                   aria-hidden="true"
                 />
-                <span>AI 智能整理 (Weaving)</span>
+                <span>AI 智能整理</span>
               </button>
             </header>
             <div
               class="agent-prompt-overview"
-              :aria-label="studioMode === 'create' ? 'System Prompt 首段预览' : 'Prompt 增强输入首段预览'"
+              :aria-label="studioMode === 'create' ? '系统提示词首段预览' : 'AI 整理要求首段预览'"
             >
               <div>
                 <strong>首段预览</strong>
@@ -186,19 +188,22 @@ void AgentPromptDiffViewer;
                 </div>
               </dl>
             </div>
-            <div class="agent-prompt-editor-box" :class="{ 'is-weaving': isEnhancing(draftAgent.id) }">
+            <div
+              class="agent-prompt-editor-box"
+              :class="{ 'is-weaving': isEnhancing(draftAgent.id || 'create-draft') }"
+            >
               <textarea
                 v-model="draftAgent.systemPrompt"
                 rows="8"
                 :required="studioMode === 'create'"
                 :aria-required="studioMode === 'create'"
-                :aria-label="studioMode === 'create' ? 'System Prompt' : 'Prompt 增强输入'"
+                :aria-label="studioMode === 'create' ? '系统提示词' : 'AI 整理要求'"
                 :aria-invalid="Boolean(agentPromptError)"
                 :aria-describedby="agentPromptError ? 'agent-prompt-error agent-weave-helper' : 'agent-weave-helper'"
                 :placeholder="
                   studioMode === 'create'
                     ? '作为智能决策主控：负责解析当前业务输入...'
-                    : '描述希望模型如何增强当前 Prompt；服务端不会回传现有 Prompt 原文。'
+                    : '描述希望模型如何整理当前系统提示词；服务端不会回传现有提示词原文。'
                 "
               />
             </div>
@@ -208,9 +213,9 @@ void AgentPromptDiffViewer;
                 <strong>{{ draftAgent.systemPrompt?.length || 0 }}</strong></span
               >
               <span id="agent-weave-helper">{{
-                draftAgent.id
-                  ? "输入增强要求后先预览，再显式采纳为不可变 Prompt Revision。"
-                  : "初始 Prompt 仅在创建请求中提交。"
+                studioMode === "create" || !draftAgent.id
+                  ? "创建前可直接整理系统提示词；应用到草稿后需再点「创建 Agent」才会保存。"
+                  : "整理预览后可采纳为新版本；不会回填当前生效提示词。"
               }}</span>
             </div>
             <small v-if="agentPromptError" id="agent-prompt-error" class="field-error agent-prompt-error">{{
@@ -235,13 +240,13 @@ void AgentPromptDiffViewer;
         class="modal-card agent-prompt-save-review-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="生产 Agent Prompt 变更审查"
+        aria-label="生产 Agent 提示词变更审查"
       >
         <header class="agent-prompt-detail-head">
           <div>
             <i class="fa-solid fa-shield-halved" aria-hidden="true" />
             <span>
-              <strong>生产 Agent Prompt 变更审查</strong>
+              <strong>生产 Agent 提示词变更审查</strong>
               <small>AGENT: {{ pendingPromptSaveReview.id }}</small>
             </span>
           </div>
@@ -249,7 +254,7 @@ void AgentPromptDiffViewer;
             class="icon-action-button"
             type="button"
             title="关闭"
-            aria-label="关闭 Prompt 变更审查"
+            aria-label="关闭提示词变更审查"
             @click="cancelPromptSaveReview"
           >
             <i class="fa-solid fa-xmark" aria-hidden="true" />
@@ -258,7 +263,7 @@ void AgentPromptDiffViewer;
         <div class="agent-risk-review-body">
           <p class="agent-risk-alert">
             <i class="fa-solid fa-triangle-exclamation" aria-hidden="true" />
-            当前 Agent 处于 Active，保存后会影响生产流量中的 System Prompt。请确认差异后再生效。
+            当前 Agent 处于运行中，保存后会影响生产流量中的系统提示词。请确认差异后再生效。
           </p>
           <div class="agent-prompt-diff-summary">
             <span
@@ -279,7 +284,7 @@ void AgentPromptDiffViewer;
             :after="pendingPromptText"
             before-label="历史版本"
             after-label="当前草稿"
-            title="System Prompt Diff Viewer"
+            title="变更对比"
           />
         </div>
         <footer class="agent-prompt-detail-footer">
@@ -314,7 +319,7 @@ void AgentPromptDiffViewer;
           <div>
             <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true" />
             <span>
-              <strong>AI 智能整理预览</strong>
+              <strong>AI 整理预览</strong>
               <small>AGENT: {{ draftAgent.id }}</small>
             </span>
           </div>
@@ -331,7 +336,7 @@ void AgentPromptDiffViewer;
         <div class="agent-risk-review-body">
           <p class="agent-risk-alert neutral">
             <i class="fa-solid fa-circle-info" aria-hidden="true" />
-            预览不会修改 Agent；采纳会再次执行后端增强命令并创建不可变 Prompt Revision，原始输入与输出永久留存。
+            预览不会修改 Agent；采纳会再次执行后端增强命令并创建不可变提示词版本，原始输入与输出永久留存。
           </p>
           <div class="agent-prompt-diff-summary">
             <span
@@ -350,9 +355,9 @@ void AgentPromptDiffViewer;
           <AgentPromptDiffViewer
             :before="draftAgent.systemPrompt || ''"
             :after="weavePreviewAgent.output || ''"
-            before-label="增强输入"
-            after-label="AI 预览"
-            title="AI Prompt Preview Diff Viewer"
+            before-label="当前要求"
+            after-label="AI 建议"
+            title="变更对比"
           />
         </div>
         <footer class="agent-prompt-detail-footer">
@@ -362,7 +367,15 @@ void AgentPromptDiffViewer;
               :class="acceptingPromptRevision ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-check'"
               aria-hidden="true"
             />
-            <span>{{ acceptingPromptRevision ? "采纳中..." : "采纳为新 Revision" }}</span>
+            <span>{{
+              acceptingPromptRevision
+                ? studioMode === "create"
+                  ? "应用中..."
+                  : "采纳中..."
+                : studioMode === "create"
+                  ? "应用到草稿"
+                  : "采纳为新版本"
+            }}</span>
           </button>
         </footer>
       </section>

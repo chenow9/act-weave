@@ -2,14 +2,42 @@
 // @ts-nocheck — inject surface under page split (ZKL-64 item 16)
 /** Agents dialogs (ZKL-64 item 16). */
 
+import { ref, watch } from "vue";
 import { useAgentsPageContext } from "../composables/useAgentsPageContext";
 
 const scp = useAgentsPageContext();
 /* prettier-ignore */
 const {
   agentActionNote, agentActionTone, promptDetailAgent, agentDeleting, agentDeleteTarget, agentDeleteConfirmName, promptDetailDialogRef, agentDeleteDialogRef, agentDeleteInputRef, capabilityAgent, capabilityLoading, capabilitySavingId, capabilityDrafts, promptDetailVisible, capabilityCatalog, canConfirmAgentDelete,
-  agentDeleteNameError, closePromptDetail, trapAgentModalFocus, clearAgentToast, closeAgentDeleteConfirm, requestCloseAgentDeleteConfirm, confirmDeleteAgent, closeCapabilityBindings, currentCapabilityBinding, setCapabilityVersionPolicy, capabilityVersionPolicyOptions, saveCapabilityBinding, removeCapabilityBinding
+  agentDeleteNameError, closePromptDetail, trapAgentModalFocus, clearAgentToast, closeAgentDeleteConfirm, requestCloseAgentDeleteConfirm, confirmDeleteAgent, closeCapabilityBindings, currentCapabilityBinding, setCapabilityVersionPolicy, capabilityVersionPolicyOptions, saveCapabilityBinding, removeCapabilityBinding,
+  currentPromptBody, currentPromptMeta, currentPromptLoading, currentPromptError, promptDetailHTML
 } = scp;
+
+const promptTab = ref<"render" | "raw">("render");
+const copyFeedback = ref("");
+
+// Always open on rendered preview; clear copy feedback when dialog closes.
+watch(promptDetailVisible, (visible) => {
+  if (visible) {
+    promptTab.value = "render";
+  }
+  copyFeedback.value = "";
+});
+
+async function copyPromptRaw() {
+  const text = currentPromptBody.value || "";
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    copyFeedback.value = "已复制原文";
+  } catch {
+    promptTab.value = "raw";
+    copyFeedback.value = "请手动复制原文";
+  }
+  window.setTimeout(() => {
+    copyFeedback.value = "";
+  }, 2500);
+}
 </script>
 
 <template>
@@ -26,33 +54,71 @@ const {
         class="modal-card agent-prompt-detail-dialog"
         role="dialog"
         aria-modal="true"
-        :aria-label="promptDetailAgent ? `${promptDetailAgent.name} · Prompt Revision` : 'Prompt Revision 详情'"
+        :aria-label="promptDetailAgent ? `${promptDetailAgent.name} · 系统提示词` : '系统提示词'"
       >
         <header class="agent-prompt-detail-head">
           <div>
             <i class="fa-solid fa-rectangle-list" aria-hidden="true" />
             <span>
-              <strong>Prompt Revision Audit</strong>
-              <small>AGENT: {{ promptDetailAgent?.id }}</small>
+              <strong>系统提示词</strong>
+              <small>{{ promptDetailAgent?.name }} · {{ promptDetailAgent?.id }}</small>
             </span>
           </div>
           <button
             class="icon-action-button"
             type="button"
             title="关闭"
-            aria-label="关闭 Prompt Revision 详情"
+            aria-label="关闭系统提示词"
             @click="closePromptDetail"
           >
             <i class="fa-solid fa-xmark" aria-hidden="true" />
           </button>
         </header>
         <div class="agent-prompt-revision-readonly">
-          <strong>{{ promptDetailAgent?.currentPromptRevisionId || "尚未创建 Prompt Revision" }}</strong>
-          <p>Agent Read DTO 只返回当前 Revision ID，不返回 Prompt 明文。增强输入与输出由后端 StoredObject 永久保留。</p>
+          <div v-if="currentPromptLoading" class="agent-prompt-state" aria-live="polite">正在加载系统提示词…</div>
+          <div v-else-if="currentPromptError" class="agent-prompt-state agent-prompt-state-error" aria-live="polite">
+            {{ currentPromptError }}
+          </div>
+          <template v-else-if="currentPromptBody">
+            <div class="agent-prompt-meta">
+              <span>版本 #{{ currentPromptMeta?.revisionNo || "—" }}</span>
+              <span>来源：{{ currentPromptMeta?.source || "—" }}</span>
+              <span>更新时间：{{ currentPromptMeta?.createdAt || "—" }}</span>
+            </div>
+            <div class="agent-prompt-tabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                :aria-selected="promptTab === 'render'"
+                :class="{ active: promptTab === 'render' }"
+                @click="promptTab = 'render'"
+              >
+                渲染预览
+              </button>
+              <button
+                type="button"
+                role="tab"
+                :aria-selected="promptTab === 'raw'"
+                :class="{ active: promptTab === 'raw' }"
+                @click="promptTab = 'raw'"
+              >
+                查看原文
+              </button>
+              <button type="button" class="text-button" @click="copyPromptRaw">复制原文</button>
+              <span v-if="copyFeedback" class="agent-prompt-copy-feedback" aria-live="polite">{{ copyFeedback }}</span>
+            </div>
+            <div
+              v-if="promptTab === 'render'"
+              class="agent-prompt-markdown"
+              v-html="promptDetailHTML"
+            />
+            <pre v-else class="agent-prompt-raw"><code>{{ currentPromptBody }}</code></pre>
+          </template>
+          <div v-else class="agent-prompt-state">当前没有可显示的系统提示词。</div>
         </div>
         <footer class="agent-prompt-detail-footer">
-          <span>LOCK VERSION: {{ promptDetailAgent?.lockVersion || 0 }}</span>
-          <button class="primary-button" type="button" @click="closePromptDetail">关闭窗口</button>
+          <span>锁版本：{{ promptDetailAgent?.lockVersion || 0 }}</span>
+          <button class="primary-button" type="button" @click="closePromptDetail">关闭</button>
         </footer>
       </section>
     </div>
@@ -70,19 +136,19 @@ const {
         class="modal-card agent-capability-dialog"
         role="dialog"
         aria-modal="true"
-        :aria-label="`${capabilityAgent.name} Capability Binding`"
+        :aria-label="`${capabilityAgent.name} 能力绑定`"
       >
         <header class="agent-prompt-detail-head">
           <div>
             <i class="fa-solid fa-link" aria-hidden="true" />
             <span
-              ><strong>Capability Binding</strong><small>AGENT: {{ capabilityAgent.id }}</small></span
+              ><strong>能力绑定</strong><small>AGENT: {{ capabilityAgent.id }}</small></span
             >
           </div>
           <button
             class="icon-action-button"
             type="button"
-            aria-label="关闭 Capability Binding"
+            aria-label="关闭能力绑定"
             :disabled="Boolean(capabilitySavingId)"
             @click="closeCapabilityBindings"
           >
@@ -91,11 +157,11 @@ const {
         </header>
         <div class="agent-capability-body">
           <p>
-            Tool 与 Workflow 是 Workspace 级 Capability；此处只管理 Agent 的 follow/pin、Connection 选择和启用状态。
+            Tool 与 Workflow 是 Workspace 级能力；此处只管理 Agent 的跟随/固定版本、连接选择和启用状态。
           </p>
-          <div v-if="capabilityLoading" class="agent-capability-empty">正在加载统一 Capability Catalog...</div>
+          <div v-if="capabilityLoading" class="agent-capability-empty">正在加载能力目录…</div>
           <div v-else-if="!capabilityCatalog.length" class="agent-capability-empty">
-            当前 Workspace 尚无已发布 Capability。
+            当前 Workspace 尚无已发布能力。
           </div>
           <article v-for="capability in capabilityCatalog" v-else :key="capability.id" class="agent-capability-item">
             <header>
@@ -118,7 +184,7 @@ const {
               </label>
               <label class="modal-field">
                 <span>{{
-                  capabilityDrafts[capability.id].versionPolicy === "PINNED" ? "Pinned Release ID" : "Resolved Release"
+                  capabilityDrafts[capability.id].versionPolicy === "PINNED" ? "固定版本 ID" : "当前生效版本"
                 }}</span>
                 <input
                   :value="
@@ -132,16 +198,16 @@ const {
                 />
               </label>
               <label class="modal-field">
-                <span>Connection ID（可选）</span>
+                <span>连接 ID（可选）</span>
                 <input
                   v-model.trim="capabilityDrafts[capability.id].connectionId"
                   class="mono"
-                  placeholder="同 Workspace 且与 Capability Provider 兼容"
+                  placeholder="同 Workspace 且与能力提供方兼容"
                 />
               </label>
               <label class="agent-capability-enabled"
                 ><input v-model="capabilityDrafts[capability.id].enabled" type="checkbox" /><span
-                  >启用该 Binding</span
+                  >启用该绑定</span
                 ></label
               >
             </div>
@@ -162,7 +228,7 @@ const {
                 @click="saveCapabilityBinding(capability)"
               >
                 <i v-if="capabilitySavingId === capability.id" class="fa-solid fa-spinner fa-spin" />{{
-                  currentCapabilityBinding(capability.id) ? "更新 Binding" : "绑定 Capability"
+                  currentCapabilityBinding(capability.id) ? "更新绑定" : "绑定能力"
                 }}
               </button>
             </footer>
@@ -200,7 +266,7 @@ const {
           <div>
             <i class="fa-solid fa-triangle-exclamation" aria-hidden="true" />
             <span>
-              <strong>Delete Agent</strong>
+              <strong>删除 Agent</strong>
               <small>AGENT: {{ agentDeleteTarget.id }}</small>
             </span>
           </div>

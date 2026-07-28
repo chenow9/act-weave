@@ -77,7 +77,8 @@ func TestMinIOStoreStreamsVerifiesAuthorizesAndSigns(t *testing.T) {
 func TestMinIOStoreControlledBucketMapping(t *testing.T) {
 	tests := map[string]string{
 		KindOpenAPISource: BucketExecutions, KindPromptRunInput: BucketExecutions,
-		KindPromptRunOutput: BucketExecutions, KindModelTurn: BucketExecutions,
+		KindPromptRunOutput: BucketExecutions, KindPromptPreviewInput: BucketExecutions,
+		KindPromptPreviewOutput: BucketExecutions, KindModelTurn: BucketExecutions,
 		KindChatMessage: BucketExecutions, KindToolInvocationPayload: BucketExecutions,
 		KindExecutionCheckpoint: BucketExecutions, KindToolTestPayload: BucketToolTests,
 		KindAuditEventPayload: BucketAuditPackages, KindAuditExport: BucketAuditPackages,

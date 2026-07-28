@@ -155,6 +155,103 @@ func TestPromptPreviewRecordsRunAndAcceptsOutputAsNewRevision(t *testing.T) {
 	}
 }
 
+func TestRunCreatePreviewWithoutAgentID(t *testing.T) {
+	repository, db := newAgentServiceTest(t)
+	objects := newMemoryPromptObjects(db)
+	var heldTx bool
+	service, err := NewPromptService(repository, objects,
+		staticModelSnapshot{value: json.RawMessage(`{"model":"preview-model","status":"VERIFIED"}`)},
+		PromptGeneratorFunc(func(ctx context.Context, request PromptGenerationRequest) (string, error) {
+			if request.AgentID != nil || request.WorkspaceID != serviceWorkspaceID ||
+				request.ModelConfigID != serviceModelID || request.OperationType != PromptOperationCreatePreview {
+				return "", fmt.Errorf("unexpected generation target: %+v", request)
+			}
+			// Prove model call is outside a DB transaction: a nested query must work.
+			var one int
+			if err := db.QueryRowContext(ctx, `SELECT 1`).Scan(&one); err != nil {
+				return "", err
+			}
+			// Concurrent write should not block on a held service transaction.
+			probe, err := db.BeginTx(ctx, nil)
+			if err != nil {
+				return "", err
+			}
+			if _, err := probe.ExecContext(ctx, `SELECT 1`); err != nil {
+				_ = probe.Rollback()
+				return "", err
+			}
+			_ = probe.Commit()
+			heldTx = false
+			return "  Refined create-preview prompt  ", nil
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeAgents, err := countRows(db, `SELECT count(*) FROM agents WHERE workspace_id=$1`, serviceWorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, output, err := service.RunCreatePreview(context.Background(), serviceWorkspaceID, serviceModelID,
+		"Draft system prompt", "trace-create-preview-1", serviceOwnerID)
+	if err != nil {
+		t.Fatalf("RunCreatePreview: %v", err)
+	}
+	if heldTx {
+		t.Fatal("model call appeared to hold a transaction")
+	}
+	if run.Status != "SUCCEEDED" || run.OperationType != PromptOperationCreatePreview ||
+		run.AgentID != nil || run.ExpiresAt == nil || output != "Refined create-preview prompt" {
+		t.Fatalf("unexpected create preview: run=%+v output=%q", run, output)
+	}
+	wantExpires := run.CreatedAt.Add(30 * 24 * time.Hour)
+	if !run.ExpiresAt.Equal(wantExpires) && !run.ExpiresAt.Truncate(time.Microsecond).Equal(wantExpires.Truncate(time.Microsecond)) {
+		t.Fatalf("expires_at=%v want created+30d=%v", run.ExpiresAt, wantExpires)
+	}
+	afterAgents, err := countRows(db, `SELECT count(*) FROM agents WHERE workspace_id=$1`, serviceWorkspaceID)
+	if err != nil || afterAgents != beforeAgents {
+		t.Fatalf("create preview mutated agents: before=%d after=%d err=%v", beforeAgents, afterAgents, err)
+	}
+	var objectKind string
+	var retention string
+	if err := db.QueryRow(`
+		SELECT kind, retention_mode FROM stored_objects WHERE id=$1
+	`, run.InputObjectID).Scan(&objectKind, &retention); err != nil {
+		t.Fatal(err)
+	}
+	if objectKind != "PROMPT_PREVIEW_INPUT" || retention != "EXPIRING" {
+		t.Fatalf("input object kind/retention=%s/%s", objectKind, retention)
+	}
+
+	// Empty output fails with stable code and no apply-able success.
+	emptyService, err := NewPromptService(repository, objects,
+		staticModelSnapshot{value: json.RawMessage(`{"model":"preview-model"}`)},
+		PromptGeneratorFunc(func(context.Context, PromptGenerationRequest) (string, error) {
+			return "   ", nil
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed, _, err := emptyService.RunCreatePreview(context.Background(), serviceWorkspaceID, serviceModelID,
+		"Another draft", "trace-create-preview-empty", serviceOwnerID)
+	if !errors.Is(err, ErrPromptOutputInvalid) || failed.Status != "FAILED" ||
+		failed.ErrorCode == nil || *failed.ErrorCode != ErrorCodePromptOutputInvalid {
+		t.Fatalf("empty output run=%+v err=%v", failed, err)
+	}
+
+	// Each retry creates an independent Run (no reuse).
+	run2, _, err := service.RunCreatePreview(context.Background(), serviceWorkspaceID, serviceModelID,
+		"Draft system prompt", "trace-create-preview-2", serviceOwnerID)
+	if err != nil || run2.ID == run.ID {
+		t.Fatalf("second preview must be independent: run2=%+v err=%v first=%s", run2, err, run.ID)
+	}
+}
+
+func countRows(db *sql.DB, query string, args ...any) (int, error) {
+	var count int
+	err := db.QueryRow(query, args...).Scan(&count)
+	return count, err
+}
+
 func TestPromptGenerationFailureRecordsStableRedactedRun(t *testing.T) {
 	repository, db := newAgentServiceTest(t)
 	created, _, err := repository.Create(context.Background(), NewAgent{
@@ -190,8 +287,9 @@ func TestPromptGenerationFailureRecordsStableRedactedRun(t *testing.T) {
 func newAgentServiceTest(t *testing.T) (*Repository, *sql.DB) {
 	t.Helper()
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 29)
-	if !version.Applied || version.Number != 29 || version.Dirty {
+	// PromptRun scan includes create-preview retention columns from migration 61.
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number < 61 || version.Dirty {
 		t.Fatalf("unexpected migration: %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -261,6 +359,35 @@ func (s *memoryPromptObjects) PutPermanent(_ context.Context, workspaceID, kind 
 	return id.String(), nil
 }
 
+func (s *memoryPromptObjects) PutPreview(
+	_ context.Context, workspaceID, kind string, content []byte, createdBy string, retentionUntil time.Time,
+) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id, err := uuid.NewV7()
+	if err != nil {
+		return "", err
+	}
+	objectKind := "PROMPT_PREVIEW_INPUT"
+	if kind == "PROMPT_OUTPUT" {
+		objectKind = "PROMPT_PREVIEW_OUTPUT"
+	}
+	digest := sha256.Sum256(content)
+	if _, err := s.db.Exec(`
+		INSERT INTO stored_objects(
+		 id,workspace_id,bucket,object_key,kind,content_type,size_bytes,sha256,
+		 encryption_key_id,classification,retention_mode,retention_until,
+		 created_by_type,created_by_id
+		) VALUES($1,$2,'actweave-executions',$3,$4,'text/plain',$5,$6,
+		 'agent-test-key-v1','SENSITIVE','EXPIRING',$7,'USER',$8)
+	`, id.String(), workspaceID, workspaceID+"/prompt-preview/"+id.String(), objectKind,
+		len(content), hex.EncodeToString(digest[:]), retentionUntil.UTC(), createdBy); err != nil {
+		return "", err
+	}
+	s.objects[id.String()] = append([]byte(nil), content...)
+	return id.String(), nil
+}
+
 func (s *memoryPromptObjects) GetPermanent(_ context.Context, _ string, id string, _ string) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -269,4 +396,8 @@ func (s *memoryPromptObjects) GetPermanent(_ context.Context, _ string, id strin
 		return nil, fmt.Errorf("object %s not found", id)
 	}
 	return append([]byte(nil), content...), nil
+}
+
+func (s staticModelSnapshot) AvailableSnapshot(ctx context.Context, workspaceID, modelConfigID string) (json.RawMessage, error) {
+	return s.Snapshot(ctx, workspaceID, modelConfigID)
 }

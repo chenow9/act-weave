@@ -10,7 +10,7 @@ import (
 func TestWorkflowTrialExecutionSourceMigrationReplays(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 60 || version.Dirty {
+	if !version.Applied || version.Number != 61 || version.Dirty {
 		t.Fatalf("unexpected latest migration: %+v", version)
 	}
 	db := testDatabase.Open(t)

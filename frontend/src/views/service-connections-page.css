@@ -19,7 +19,10 @@
   animation: connectionFadeUp 0.2s ease-out both;
 }
 
-.connection-page-header,
+.connection-page-header {
+  min-width: 0;
+}
+
 .connection-detail-topbar,
 .connection-form-topbar {
   display: flex;
@@ -28,24 +31,7 @@
   gap: 16px;
 }
 
-.connection-page-header h1 {
-  margin: 2px 0 0;
-  color: #0f172a;
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 32px;
-  letter-spacing: 0;
-}
-
-.connection-page-header p {
-  max-width: 576px;
-  margin: 6px 0 0;
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 20px;
-}
-
+/* Shared eyebrow used by detail/form/modals (list page header uses ManagementPageHeader). */
 .connection-eyebrow {
   color: #059669;
   font-size: 10px;

@@ -33,12 +33,12 @@ void WorkspaceContextState;
   <div
     class="page-grid agent-grid management-page-grid"
     v-loading="pageInitialLoading"
-    element-loading-text="正在加载 Agent Registry..."
+    element-loading-text="正在加载 Agent 列表…"
   >
     <ManagementPageHeader
       class="span-12"
       title="Agent 管理"
-      description="维护职责、绑定空间、模型配置与 Prompt Revision。"
+      description="维护职责、绑定空间、模型配置与系统提示词。"
       icon="fa-solid fa-user-gear"
     >
       <template #actions>
@@ -128,12 +128,18 @@ void WorkspaceContextState;
             <button
               type="button"
               class="prompt-preview-trigger"
-              title="查看 Prompt Revision"
-              :aria-label="`查看 ${agent.name} Prompt Revision`"
-              @click.stop="openPromptDetail(agent)"
+              :title="agent.currentPromptRevisionId ? '查看系统提示词' : '该 Agent 尚无系统提示词'"
+              :aria-label="
+                agent.currentPromptRevisionId
+                  ? `查看 ${agent.name} 系统提示词`
+                  : `${agent.name} 暂无系统提示词`
+              "
+              :disabled="!agent.currentPromptRevisionId"
+              :aria-disabled="!agent.currentPromptRevisionId"
+              @click.stop="agent.currentPromptRevisionId && openPromptDetail(agent)"
             >
               <i class="fa-solid fa-file-lines" aria-hidden="true" /><span>{{
-                agent.currentPromptRevisionId ? "查看 Revision" : "暂无 Revision"
+                agent.currentPromptRevisionId ? "查看" : "暂无提示词"
               }}</span>
             </button>
           </span>
@@ -153,7 +159,7 @@ void WorkspaceContextState;
           <div v-if="!hasAgentRecords" class="empty-state registry-empty-state management-registry-empty-state">
             <div class="management-empty-state-icon"><i class="fa-solid fa-robot" aria-hidden="true" /></div>
             <h2>暂无 Agent</h2>
-            <p>创建 Agent 后再绑定业务空间、模型配置和 System Prompt。</p>
+            <p>创建 Agent 后再绑定业务空间、模型配置和系统提示词。</p>
             <button class="primary-button" type="button" @click="enterCreateMode">创建 Agent</button>
           </div>
           <div v-else class="empty-state registry-empty-state management-registry-empty-state">

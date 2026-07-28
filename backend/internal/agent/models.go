@@ -48,6 +48,19 @@ type PromptRevision struct {
 	CreatedAt     time.Time
 }
 
+const (
+	PromptSourceManual     = "MANUAL"
+	PromptSourceEnhanced   = "ENHANCED"
+	PromptSourceGenerated  = "GENERATED"
+	PromptSourceImported   = "IMPORTED"
+	PromptSourceAIAssisted = "AI_ASSISTED"
+
+	PromptOperationEnhance       = "ENHANCE"
+	PromptOperationGenerate      = "GENERATE"
+	PromptOperationPreview       = "PREVIEW"
+	PromptOperationCreatePreview = "CREATE_PREVIEW"
+)
+
 type PromptRun struct {
 	ID                 string
 	WorkspaceID        string
@@ -68,6 +81,9 @@ type PromptRun struct {
 	CreatedAt          time.Time
 	FinishedAt         *time.Time
 	ErrorCode          *string
+	ExpiresAt          *time.Time
+	PromotedAt         *time.Time
+	ContentPurgedAt    *time.Time
 }
 
 type NewAgent struct {
@@ -104,4 +120,8 @@ type NewPromptRun struct {
 	InputLength   int64
 	TraceID       string
 	CreatedBy     string
+	// FixedCreatedAt is optional and only for CREATE_PREVIEW. When set, the Run
+	// uses this timestamp as created_at and expires_at = created_at + 30 days so
+	// input/output StoredObject retention_until can share the same clock source.
+	FixedCreatedAt *time.Time
 }

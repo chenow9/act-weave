@@ -5,6 +5,7 @@ import AppSelect from "./AppSelect.vue";
 import ConnectionDetailPanel from "./ConnectionDetailPanel.vue";
 import ConnectionFormPanel from "./ConnectionFormPanel.vue";
 import ManagementList from "./ManagementList.vue";
+import ManagementPageHeader from "./ManagementPageHeader.vue";
 import ManagementRowActions from "./ManagementRowActions.vue";
 import ManagementSegmentedFilter from "./ManagementSegmentedFilter.vue";
 import WorkspaceContextState from "./WorkspaceContextState.vue";
@@ -86,6 +87,7 @@ void AppSelect;
 void ConnectionDetailPanel;
 void ConnectionFormPanel;
 void ManagementList;
+void ManagementPageHeader;
 void ManagementRowActions;
 void ManagementSegmentedFilter;
 void WorkspaceContextState;
@@ -98,41 +100,44 @@ void WorkspaceContextState;
     @click="closeConnectionFloatingMenus"
   >
     <template v-if="connectionCurrentView === 'list'">
-      <header class="connection-page-header">
-        <div>
-          <span class="connection-eyebrow">Integration Access</span>
-          <h1>服务连接</h1>
-          <p>Provider 管理协议与端点，Connection 只管理账号身份、授权范围与 Secret 引用；凭据明文不进入页面状态。</p>
-        </div>
-        <div class="connection-header-actions">
-          <button
-            class="ghost-button"
-            type="button"
-            :disabled="!hasWorkspaceContext"
-            :title="hasWorkspaceContext ? '注册 Provider' : '请先创建或加入业务空间'"
-            @click.stop="router.push('/providers')"
-          >
-            <i class="fa-solid fa-server" />
-            管理 Provider
-          </button>
-          <button
-            class="primary-button"
-            type="button"
-            :disabled="!hasWorkspaceContext || !readyProviderCount"
-            :title="
-              !hasWorkspaceContext
-                ? '请先创建或加入业务空间'
-                : readyProviderCount
-                  ? '新建服务连接'
-                  : '请先完成 Provider 的端点与认证契约配置'
-            "
-            @click.stop="openCreateConnection"
-          >
-            <i class="fa-solid fa-circle-plus" />
-            新建服务连接
-          </button>
-        </div>
-      </header>
+      <ManagementPageHeader
+        class="connection-page-header"
+        title="服务连接"
+        description="Provider 管理协议与端点，Connection 只管理账号身份、授权范围与 Secret 引用；凭据明文不进入页面状态。"
+        icon="fa-solid fa-plug-circle-bolt"
+        eyebrow="Integration Access"
+      >
+        <template #actions>
+          <div class="connection-header-actions">
+            <button
+              class="ghost-button"
+              type="button"
+              :disabled="!hasWorkspaceContext"
+              :title="hasWorkspaceContext ? '注册 Provider' : '请先创建或加入业务空间'"
+              @click.stop="router.push('/providers')"
+            >
+              <i class="fa-solid fa-server" />
+              管理 Provider
+            </button>
+            <button
+              class="primary-button"
+              type="button"
+              :disabled="!hasWorkspaceContext || !readyProviderCount"
+              :title="
+                !hasWorkspaceContext
+                  ? '请先创建或加入业务空间'
+                  : readyProviderCount
+                    ? '新建服务连接'
+                    : '请先完成 Provider 的端点与认证契约配置'
+              "
+              @click.stop="openCreateConnection"
+            >
+              <i class="fa-solid fa-circle-plus" />
+              新建服务连接
+            </button>
+          </div>
+        </template>
+      </ManagementPageHeader>
 
       <section class="connection-reference-table-card management-list-card">
         <WorkspaceContextState

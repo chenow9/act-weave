@@ -977,8 +977,25 @@
   cursor: not-allowed;
 }
 
-.smart-copilot-panel select {
+.smart-copilot-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.smart-copilot-field > span {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.smart-copilot-panel select,
+.smart-copilot-select {
   width: 100%;
+}
+
+.smart-copilot-panel select {
   min-height: 44px;
   margin-top: 8px;
   padding: 0 12px;
@@ -987,6 +1004,53 @@
   background: #fff;
   color: #0f172a;
   font-size: 12px;
+}
+
+.smart-copilot-select.app-select,
+.smart-copilot-select .app-select,
+.smart-copilot-field .app-select-accessibility-shell {
+  width: 100%;
+}
+
+.smart-copilot-field :deep(.app-select) {
+  width: 100%;
+}
+
+.smart-copilot-field :deep(.app-select .el-select__wrapper) {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: none;
+}
+
+.smart-copilot-field :deep(.app-select .el-select__wrapper:hover) {
+  border-color: rgba(79, 70, 229, 0.35);
+}
+
+.smart-copilot-field :deep(.app-select.is-focused .el-select__wrapper),
+.smart-copilot-field :deep(.app-select .el-select__wrapper.is-focused) {
+  border-color: rgba(79, 70, 229, 0.45);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+.smart-copilot-field :deep(.app-select .el-select__placeholder),
+.smart-copilot-field :deep(.app-select .el-select__selected-item) {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.smart-copilot-field :deep(.app-select .el-select__placeholder) {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.smart-copilot-field :deep(.app-select.is-disabled .el-select__wrapper) {
+  background: #f8fafc;
+  color: #94a3b8;
+  cursor: not-allowed;
 }
 
 .smart-copilot-actions {

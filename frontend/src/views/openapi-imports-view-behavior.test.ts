@@ -553,35 +553,25 @@ describe("OpenAPIImportsView management list behavior", () => {
     expect(mocks.openapi.generateToolDrafts).not.toHaveBeenCalled();
   });
 
-  it("does not apply light detail head styles to import or delete modals", async () => {
+  it("uses shared light modal head chrome on import and detail shells", async () => {
     wrapper = await mountView();
-    await wrapper
-      .get('[data-testid="openapi-create"], button')
-      .trigger("click")
-      .catch(() => undefined);
-    // Prefer explicit create trigger if present.
     const createBtn = wrapper.findAll("button").find((b) => b.text().includes("导入") || b.text().includes("新建"));
     if (createBtn) {
       await createBtn.trigger("click");
       await flushPromises();
     }
-    // Import modal head should remain dark (no detail modifier).
     const importHead = wrapper.find(".openapi-modal-card:not(.openapi-detail-modal-card) .openapi-modal-head");
     if (importHead.exists()) {
-      expect(importHead.classes()).not.toContain("openapi-detail-modal-head");
+      // Import uses base light head (no dark gradient); detail modifier is optional.
+      expect(importHead.classes()).not.toContain("is-dark");
+      expect(importHead.find("h3").text()).toContain("导入");
     }
-  });
 
-  it("renders detail shell title text under compound light-head classes", async () => {
-    wrapper = await mountView();
     await wrapper.get("tbody tr").trigger("keydown", { key: "Enter" });
     await flushPromises();
-
-    const head = wrapper.get(".openapi-modal-head.openapi-detail-modal-head");
-    expect(head.find("h3").text()).toBe("导入详情");
-    expect(head.find("p").text()).toContain("查看导入归属");
-    // Dark-only heads (import/delete) must not receive the compound light modifier.
-    expect(wrapper.findAll(".openapi-modal-head.openapi-detail-modal-head")).toHaveLength(1);
+    const detailHead = wrapper.get(".openapi-modal-head.openapi-detail-modal-head");
+    expect(detailHead.find("h3").text()).toBe("导入详情");
+    expect(detailHead.find("p").text()).toContain("查看导入归属");
   });
 
   it("restores focus to a DataTable row after keyboard opening and closing import details", async () => {

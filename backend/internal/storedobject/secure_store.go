@@ -131,6 +131,16 @@ func validateRetentionPolicy(input PutInput) error {
 			return ErrInvalid
 		}
 	}
+	if IsPromptPreview(input.Kind) {
+		// Create-preview bodies start EXPIRING, sensitive/restricted, and encrypted.
+		// Promotion to PERMANENT is a repository one-shot update, not a Put path.
+		if input.RetentionMode != RetentionExpiring || input.RetentionUntil == nil ||
+			input.RetentionUntil.IsZero() ||
+			(input.Classification != ClassificationSensitive &&
+				input.Classification != ClassificationRestricted) {
+			return ErrInvalid
+		}
+	}
 	if input.Kind == KindOpenAPISource &&
 		(input.RetentionMode != RetentionPermanent || input.RetentionUntil != nil ||
 			input.Classification == ClassificationPublic) {

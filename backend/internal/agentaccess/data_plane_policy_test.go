@@ -18,7 +18,7 @@ func TestAAPIdempotencyAndQuota(t *testing.T) {
 	t.Run("durable command receipt retains hash and result for at least 24 hours", func(t *testing.T) {
 		testDatabase := dbtest.New(t)
 		version := testDatabase.MigrateToLatest(t)
-		if !version.Applied || version.Number != 60 || version.Dirty {
+		if !version.Applied || version.Number != 61 || version.Dirty {
 			t.Fatalf("latest migration=%+v", version)
 		}
 		db := testDatabase.Open(t)

@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 
 import AppSelect from "../components/AppSelect.vue";
 import ManagementList, { type ManagementListColumn } from "../components/ManagementList.vue";
+import ManagementPageHeader from "../components/ManagementPageHeader.vue";
 import ManagementRowActions, { type ManagementRowAction } from "../components/ManagementRowActions.vue";
 import ManagementSegmentedFilter from "../components/ManagementSegmentedFilter.vue";
 import WorkspaceContextState from "../components/WorkspaceContextState.vue";
@@ -1194,28 +1195,31 @@ function errorMessage(error: unknown, fallback: string) {
 
 <template>
   <div class="providers-page management-page-grid management-page-grid--two-rows">
-    <header class="providers-page-header">
-      <div>
-        <span class="providers-eyebrow">Integration Registry</span>
-        <h1>服务 Provider</h1>
-        <p>统一维护服务运行端点、OpenAPI 发现来源、验证策略与版本化认证契约，再由 Connection 绑定具体环境和凭据。</p>
-      </div>
-      <div class="providers-header-actions">
-        <RouterLink class="ghost-button" to="/connections">
-          <i class="fa-solid fa-plug-circle-bolt" aria-hidden="true" />服务连接
-        </RouterLink>
-        <button
-          v-if="canEditWorkspace"
-          data-testid="provider-create"
-          class="primary-button"
-          type="button"
-          :disabled="!hasWorkspaceContext"
-          @click="openCreateEditor"
-        >
-          <i class="fa-solid fa-circle-plus" aria-hidden="true" />新建 Provider
-        </button>
-      </div>
-    </header>
+    <ManagementPageHeader
+      class="providers-page-header"
+      title="服务 Provider"
+      description="统一维护服务运行端点、OpenAPI 发现来源、验证策略与版本化认证契约，再由 Connection 绑定具体环境和凭据。"
+      icon="fa-solid fa-cloud-arrow-down"
+      eyebrow="Integration Registry"
+    >
+      <template #actions>
+        <div class="providers-header-actions">
+          <RouterLink class="ghost-button" to="/connections">
+            <i class="fa-solid fa-plug-circle-bolt" aria-hidden="true" />服务连接
+          </RouterLink>
+          <button
+            v-if="canEditWorkspace"
+            data-testid="provider-create"
+            class="primary-button"
+            type="button"
+            :disabled="!hasWorkspaceContext"
+            @click="openCreateEditor"
+          >
+            <i class="fa-solid fa-circle-plus" aria-hidden="true" />新建 Provider
+          </button>
+        </div>
+      </template>
+    </ManagementPageHeader>
 
     <section class="providers-list-card management-list-card">
       <WorkspaceContextState
@@ -1666,8 +1670,10 @@ function errorMessage(error: unknown, fallback: string) {
                       <i class="fa-solid fa-check" />已支持
                     </b>
                     <i class="fa-solid fa-key provider-identity-icon" aria-hidden="true" />
-                    <strong>Broker / OBO</strong>
-                    <small>平台按当前用户身份换取短期业务 Token</small>
+                    <span class="provider-identity-copy">
+                      <strong>Broker / OBO</strong>
+                      <small>平台按当前用户身份换取短期业务 Token</small>
+                    </span>
                   </span>
                 </label>
                 <label class="provider-identity-card" :class="{ selected: providerDraft.supportRequestPassthrough }">
@@ -1687,8 +1693,10 @@ function errorMessage(error: unknown, fallback: string) {
                       <i class="fa-solid fa-check" />已支持
                     </b>
                     <i class="fa-solid fa-right-left provider-identity-icon" aria-hidden="true" />
-                    <strong>本次请求透传</strong>
-                    <small>调用方为本次请求提供 Token，平台只用于本次调用且不会保存</small>
+                    <span class="provider-identity-copy">
+                      <strong>本次请求透传</strong>
+                      <small>调用方为本次请求提供 Token，平台只用于本次调用且不会保存</small>
+                    </span>
                   </span>
                 </label>
               </div>
@@ -1832,32 +1840,6 @@ function errorMessage(error: unknown, fallback: string) {
 }
 .providers-page-header {
   min-width: 0;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-}
-.providers-page-header h1 {
-  margin: 4px 0 0;
-  color: #0f172a;
-  font-size: 23px;
-  line-height: 1.18;
-  font-weight: 760;
-  letter-spacing: -0.028em;
-}
-.providers-page-header p {
-  max-width: 760px;
-  margin: 10px 0 0;
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.55;
-}
-.providers-eyebrow {
-  color: var(--aw-subtle, #96a19d);
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
 }
 .providers-header-actions,
 .provider-actions {
@@ -2506,15 +2488,10 @@ function errorMessage(error: unknown, fallback: string) {
 .provider-identity-card-body {
   position: relative;
   min-height: 92px;
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  grid-template-areas:
-    "icon title"
-    "icon desc";
-  column-gap: 10px;
-  row-gap: 3px;
-  align-content: center;
-  padding: 14px 72px 14px 13px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 13px;
   border: 1px solid #dbe3ef;
   border-radius: 10px;
   background: #f8fafc;
@@ -2524,7 +2501,7 @@ function errorMessage(error: unknown, fallback: string) {
     box-shadow 0.16s ease;
 }
 .provider-identity-icon {
-  grid-area: icon;
+  flex: 0 0 34px;
   width: 34px;
   height: 34px;
   display: grid;
@@ -2532,16 +2509,25 @@ function errorMessage(error: unknown, fallback: string) {
   border-radius: 9px;
   background: #fff;
   color: #64748b;
-  align-self: start;
 }
-.provider-identity-card-body > strong {
-  grid-area: title;
+/* Title + description stack; keep clear of the absolute badge. */
+.provider-identity-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 68px;
+}
+.provider-identity-copy > strong {
+  display: block;
   color: #0f172a;
   font-size: 13px;
   font-weight: 800;
+  line-height: 1.35;
 }
-.provider-identity-card-body > small {
-  grid-area: desc;
+.provider-identity-copy > small {
+  display: block;
   color: #64748b;
   font-size: 12px;
   font-weight: 500;
@@ -2551,6 +2537,7 @@ function errorMessage(error: unknown, fallback: string) {
   position: absolute;
   top: 10px;
   right: 10px;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -2558,9 +2545,11 @@ function errorMessage(error: unknown, fallback: string) {
   border-radius: 999px;
   background: rgba(13, 148, 136, 0.12);
   color: #0d9488;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
   line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
 }
 .provider-identity-badge i {
   font-size: 10px;

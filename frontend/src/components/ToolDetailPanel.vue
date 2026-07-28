@@ -92,16 +92,26 @@ void buildToolPublishChecklist;
             <strong>{{ detailTool.name }}</strong>
             <small class="mono">{{ pathOf(detailTool) }}</small>
           </div>
-          <div class="tool-detail-status-stack">
+          <div class="tool-detail-status-stack" aria-label="工具状态层级">
             <span
               class="tool-status-pill"
+              data-status-layer="lifecycle"
+              :title="lifecycleStatus(detailTool).description"
               :class="[statusClass(detailTool.status), governanceToneClass(lifecycleStatus(detailTool).tone)]"
               ><i />{{ lifecycleStatus(detailTool).label }}</span
             >
-            <span class="tool-status-pill" :class="governanceToneClass(testStatus(detailTool).tone)"
+            <span
+              class="tool-status-pill"
+              data-status-layer="test"
+              :title="testStatus(detailTool).description"
+              :class="governanceToneClass(testStatus(detailTool).tone)"
               ><i />{{ testStatus(detailTool).label }}</span
             >
-            <span class="tool-status-pill" :class="governanceToneClass(runStatus(detailTool).tone)"
+            <span
+              class="tool-status-pill"
+              data-status-layer="run"
+              :title="runStatus(detailTool).description"
+              :class="governanceToneClass(runStatus(detailTool).tone)"
               ><i />{{ runStatus(detailTool).label }}</span
             >
           </div>

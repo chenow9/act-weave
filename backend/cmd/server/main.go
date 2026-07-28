@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"actweave/backend/internal/agent"
 	"actweave/backend/internal/agentaccessauth"
 	"actweave/backend/internal/application"
 	backendconfig "actweave/backend/internal/config"
@@ -80,6 +81,11 @@ func main() {
 					SecretKey: config.Storage.MinIO.SecretKey,
 					UseSSL:    config.Storage.MinIO.UseSSL,
 					Region:    config.Storage.MinIO.Region,
+				},
+				PreviewPurge: agent.PreviewPurgeConfig{
+					Interval:   time.Duration(config.AgentPrompt.PreviewPurge.IntervalSeconds) * time.Second,
+					BatchLimit: config.AgentPrompt.PreviewPurge.BatchLimit,
+					ClaimLease: time.Duration(config.AgentPrompt.PreviewPurge.ClaimLeaseSeconds) * time.Second,
 				},
 				BootstrapAdmin:              bootstrapAdminFromConfig(config.BootstrapAdmin),
 				OutboundIdentitySigningKeys: outboundSigningKeys,

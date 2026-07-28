@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CapabilityProvider, Tool } from "../types/domain";
-import { getToolProtocolLabel, getToolTypeLabel } from "./tool-presentation";
+import { getToolProtocolLabel, getToolTypeKey, getToolTypeLabel } from "./tool-presentation";
 
 function tool(overrides: Partial<Tool> = {}): Tool {
   return {
@@ -38,9 +38,11 @@ function tool(overrides: Partial<Tool> = {}): Tool {
 const openAPIProvider = { kind: "HTTP_OPENAPI" } as CapabilityProvider;
 
 describe("tool presentation", () => {
-  it("maps HTTP and Workflow executors to the prototype Tool types", () => {
-    expect(getToolTypeLabel(tool())).toBe("HTTP Tool");
-    expect(getToolTypeLabel(tool({ protocol: "WORKFLOW" }))).toBe("Workflow Tool");
+  it("maps HTTP and Workflow executors to short UI labels and stable filter keys", () => {
+    expect(getToolTypeLabel(tool())).toBe("HTTP");
+    expect(getToolTypeLabel(tool({ protocol: "WORKFLOW" }))).toBe("Workflow");
+    expect(getToolTypeKey(tool())).toBe("HTTP Tool");
+    expect(getToolTypeKey(tool({ protocol: "WORKFLOW" }))).toBe("Workflow Tool");
   });
 
   it("uses explicit protocol versions before the OpenAPI provider fallback", () => {

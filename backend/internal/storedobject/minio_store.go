@@ -335,6 +335,11 @@ func (store *ObjectStore) authorizedMetadata(
 	if err != nil {
 		return StoredObject{}, err
 	}
+	// Preview bodies are never a general download surface (product read is the
+	// create-preview POST response or the current-revision SQL API after promote).
+	if IsPromptPreview(metadata.Kind) || metadata.BodyUnavailable(time.Now().UTC()) {
+		return StoredObject{}, ErrNotFound
+	}
 	if err := store.authorizer.AuthorizeStoredObjectRead(ctx, ReadAuthorization{
 		WorkspaceID: request.WorkspaceID, ObjectID: request.ObjectID,
 		ActorType: request.ActorType, ActorID: request.ActorID,
@@ -343,6 +348,60 @@ func (store *ObjectStore) authorizedMetadata(
 		return StoredObject{}, err
 	}
 	return metadata, nil
+}
+
+// PurgeBody is the internal, idempotent body-delete primitive for expired
+// prompt-preview objects. It never decrypts, never presigns, and treats a
+// missing blob as success. Metadata remains as a tombstone with body_purged_at.
+func (store *ObjectStore) PurgeBody(ctx context.Context, workspaceID, objectID string) error {
+	workspaceID = strings.TrimSpace(workspaceID)
+	objectID = strings.TrimSpace(objectID)
+	if !validUUID(workspaceID) || !validUUID(objectID) {
+		return ErrInvalid
+	}
+	metadata, err := store.repository.Get(ctx, workspaceID, objectID)
+	if err != nil {
+		return err
+	}
+	if !IsPromptPreview(metadata.Kind) {
+		return ErrInvalid
+	}
+	if metadata.BodyPurgedAt != nil {
+		return nil
+	}
+	if metadata.RetentionMode != RetentionExpiring || metadata.RetentionUntil == nil ||
+		metadata.RetentionUntil.After(time.Now().UTC()) {
+		return ErrConflict
+	}
+	if err := store.backend.Delete(ctx, metadata.Bucket, metadata.ObjectKey); err != nil {
+		// Absent object is success; other failures surface as storage errors.
+		if !errors.Is(err, ErrNotFound) && !isBlobAbsent(err) {
+			return fmt.Errorf("purge preview body: %w: %v", ErrObjectStorage, err)
+		}
+	}
+	tx, err := store.repository.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin preview body purge: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := store.repository.MarkBodyPurgedInTx(ctx, tx, workspaceID, objectID, nil); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit preview body purge: %w", err)
+	}
+	return nil
+}
+
+func isBlobAbsent(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "not found") ||
+		strings.Contains(message, "nosuchkey") ||
+		strings.Contains(message, "no such key") ||
+		strings.Contains(message, "404")
 }
 
 func (store *ObjectStore) cleanupFailure(
@@ -391,7 +450,8 @@ func bucketForKind(kind string) (string, error) {
 		return BucketToolTests, nil
 	case KindAuditEventPayload, KindAuditExport:
 		return BucketAuditPackages, nil
-	case KindOpenAPISource, KindPromptRunInput, KindPromptRunOutput, KindModelTurn,
+	case KindOpenAPISource, KindPromptRunInput, KindPromptRunOutput,
+		KindPromptPreviewInput, KindPromptPreviewOutput, KindModelTurn,
 		KindChatMessage, KindToolInvocationPayload, KindExecutionCheckpoint:
 		return BucketExecutions, nil
 	default:

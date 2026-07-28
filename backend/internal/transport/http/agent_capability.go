@@ -27,6 +27,16 @@ type AgentStore interface {
 type AgentPromptService interface {
 	Run(context.Context, string, string, string, string, string, string) (agent.PromptRun, string, error)
 	Accept(context.Context, string, string, string, int64) (agent.PromptRun, agent.PromptRevision, error)
+	RunCreatePreview(context.Context, string, string, string, string, string) (agent.PromptRun, string, error)
+}
+
+type AgentCurrentPromptReader interface {
+	// GetCurrent(workspaceID, agentID, actorID, actorDisplay)
+	GetCurrent(context.Context, string, string, string, string) (agent.CurrentPrompt, error)
+}
+
+type AgentCreationService interface {
+	Create(context.Context, agent.NewAgent, string) (agent.CreateAgentResult, error)
 }
 
 type CapabilityStore interface {
@@ -44,12 +54,14 @@ type BindingWriter interface {
 }
 
 type AgentCapabilityRoutes struct {
-	authorizer   WorkspaceAuthorizer
-	agents       AgentStore
-	prompts      AgentPromptService
-	capabilities CapabilityStore
-	catalog      AgentCapabilityCatalog
-	bindings     BindingWriter
+	authorizer     WorkspaceAuthorizer
+	agents         AgentStore
+	prompts        AgentPromptService
+	currentPrompts AgentCurrentPromptReader
+	creation       AgentCreationService
+	capabilities   CapabilityStore
+	catalog        AgentCapabilityCatalog
+	bindings       BindingWriter
 }
 
 func NewAgentCapabilityRoutes(authorizer WorkspaceAuthorizer, agents AgentStore, prompts AgentPromptService,
@@ -62,6 +74,22 @@ func NewAgentCapabilityRoutes(authorizer WorkspaceAuthorizer, agents AgentStore,
 		capabilities: capabilities, catalog: catalog, bindings: bindings}, nil
 }
 
+// WithCurrentPromptReader installs the on-demand current prompt query (ZKL-69).
+func (r *AgentCapabilityRoutes) WithCurrentPromptReader(reader AgentCurrentPromptReader) *AgentCapabilityRoutes {
+	if r != nil {
+		r.currentPrompts = reader
+	}
+	return r
+}
+
+// WithCreationService installs optional create-preview source linking (ZKL-69).
+func (r *AgentCapabilityRoutes) WithCreationService(creation AgentCreationService) *AgentCapabilityRoutes {
+	if r != nil {
+		r.creation = creation
+	}
+	return r
+}
+
 func (r *AgentCapabilityRoutes) RegisterV1(v1 V1Routes) {
 	g := v1.Protected
 	g.GET("/workspaces/:wid/agents", r.listAgents)
@@ -70,6 +98,8 @@ func (r *AgentCapabilityRoutes) RegisterV1(v1 V1Routes) {
 	g.PATCH("/workspaces/:wid/agents/:id", r.updateAgent)
 	g.DELETE("/workspaces/:wid/agents/:id", r.deleteAgent)
 	g.POST("/workspaces/:wid/agents/:id/__command/enhance-prompt", r.enhancePrompt)
+	g.POST("/workspaces/:wid/agents/__command/preview-prompt-enhancement", r.previewCreatePromptEnhancement)
+	g.GET("/workspaces/:wid/agents/:id/prompt-revisions/current", r.getCurrentPrompt)
 	g.GET("/workspaces/:wid/agents/:id/capabilities", r.listAgentCapabilities)
 	g.PUT("/workspaces/:wid/agents/:id/capabilities/:capabilityId", r.bindCapability)
 	g.DELETE("/workspaces/:wid/agents/:id/capabilities/:capabilityId", r.unbindCapability)
@@ -111,11 +141,30 @@ func agentSummaryDTO(v agent.Summary) agentDTO {
 func agentValueDTO(v agent.Agent) agentDTO { return agentSummaryDTO(agent.Summary{Agent: v}) }
 
 type createAgentRequest struct {
-	Name            string `json:"name"`
-	RoleDescription string `json:"roleDescription"`
-	ModelConfigID   string `json:"modelConfigId"`
-	IsDefault       bool   `json:"isDefault"`
-	SystemPrompt    string `json:"systemPrompt"`
+	Name                     string `json:"name"`
+	RoleDescription          string `json:"roleDescription"`
+	ModelConfigID            string `json:"modelConfigId"`
+	IsDefault                bool   `json:"isDefault"`
+	SystemPrompt             string `json:"systemPrompt"`
+	SourcePromptPreviewRunID string `json:"sourcePromptPreviewRunId,omitempty"`
+}
+
+type createAgentResponse struct {
+	agentDTO
+	InitialPromptRevision *initialPromptRevisionDTO `json:"initialPromptRevision,omitempty"`
+	SourcePromptPreview   *sourcePromptPreviewDTO   `json:"sourcePromptPreview,omitempty"`
+}
+
+type initialPromptRevisionDTO struct {
+	ID         string `json:"id"`
+	RevisionNo int    `json:"revisionNo"`
+	Source     string `json:"source"`
+}
+
+type sourcePromptPreviewDTO struct {
+	RunID  string `json:"runId"`
+	Linked bool   `json:"linked"`
+	Reason string `json:"reason,omitempty"`
 }
 
 func (r *AgentCapabilityRoutes) listAgents(c *gin.Context) {
@@ -153,16 +202,101 @@ func (r *AgentCapabilityRoutes) createAgent(c *gin.Context) {
 		RespondError(c, err)
 		return
 	}
-	value, _, err := r.agents.Create(c.Request.Context(), agent.NewAgent{ID: agentID,
+	input := agent.NewAgent{ID: agentID,
 		WorkspaceID: c.Param("wid"), Name: request.Name, RoleDescription: request.RoleDescription,
 		ModelConfigID: request.ModelConfigID, IsDefault: request.IsDefault,
 		InitialRevisionID: revisionID, InitialPrompt: request.SystemPrompt,
-		PromptSource: "MANUAL", CreatedBy: actor(c)})
+		PromptSource: "MANUAL", CreatedBy: actor(c)}
+	sourceRunID := strings.TrimSpace(request.SourcePromptPreviewRunID)
+	if r.creation != nil && sourceRunID != "" {
+		result, createErr := r.creation.Create(c.Request.Context(), input, sourceRunID)
+		if createErr != nil {
+			RespondError(c, createErr)
+			return
+		}
+		response := createAgentResponse{agentDTO: agentValueDTO(result.Agent)}
+		response.InitialPromptRevision = &initialPromptRevisionDTO{
+			ID: result.Revision.ID, RevisionNo: result.Revision.RevisionNo, Source: result.Revision.Source,
+		}
+		response.SourcePromptPreview = &sourcePromptPreviewDTO{
+			RunID: sourceRunID, Linked: result.SourceLinked, Reason: result.SourceReason,
+		}
+		c.JSON(http.StatusCreated, response)
+		return
+	}
+	value, _, err := r.agents.Create(c.Request.Context(), input)
 	if err != nil {
 		RespondError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, agentValueDTO(value))
+}
+
+func (r *AgentCapabilityRoutes) getCurrentPrompt(c *gin.Context) {
+	if !r.authorize(c, authz.ActionView) {
+		return
+	}
+	if r.currentPrompts == nil {
+		RespondError(c, errors.New("current prompt reader is not configured"))
+		return
+	}
+	current, err := r.currentPrompts.GetCurrent(
+		c.Request.Context(), c.Param("wid"), c.Param("id"), actor(c), actorDisplayName(c),
+	)
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+	setNoStoreHeaders(c)
+	c.JSON(http.StatusOK, gin.H{
+		"agentId":      current.AgentID,
+		"revisionId":   current.RevisionID,
+		"revisionNo":   current.RevisionNo,
+		"systemPrompt": current.SystemPrompt,
+		"source":       current.Source,
+		"createdBy":    current.CreatedBy,
+		"createdAt":    current.CreatedAt,
+	})
+}
+
+type previewCreatePromptRequest struct {
+	ModelConfigID string `json:"modelConfigId"`
+	Input         string `json:"input"`
+}
+
+func (r *AgentCapabilityRoutes) previewCreatePromptEnhancement(c *gin.Context) {
+	if !r.authorize(c, authz.ActionEdit) {
+		return
+	}
+	var request previewCreatePromptRequest
+	if decodeJSON(c, &request) != nil || strings.TrimSpace(request.ModelConfigID) == "" ||
+		strings.TrimSpace(request.Input) == "" {
+		RespondError(c, agent.ErrInvalid)
+		return
+	}
+	requestContext, _ := RequestContextFrom(c.Request.Context())
+	run, output, err := r.prompts.RunCreatePreview(c.Request.Context(), c.Param("wid"),
+		request.ModelConfigID, request.Input, requestContext.TraceID, actor(c))
+	request.Input = ""
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+	setNoStoreHeaders(c)
+	response := gin.H{
+		"runId": run.ID, "status": run.Status, "preview": true, "output": output,
+		"createdAt": run.CreatedAt,
+	}
+	if run.ExpiresAt != nil {
+		response["expiresAt"] = *run.ExpiresAt
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+func setNoStoreHeaders(c *gin.Context) {
+	c.Header("Cache-Control", "private, no-store")
+	c.Header("Pragma", "no-cache")
+	c.Header("Vary", "Authorization")
 }
 
 func (r *AgentCapabilityRoutes) getAgent(c *gin.Context) {

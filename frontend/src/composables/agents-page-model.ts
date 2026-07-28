@@ -57,13 +57,32 @@ export function createAgentsPageModel() {
   const agentStudioInlineWarning = ref("");
   const pendingPromptSaveReview = ref<Agent | null>(null);
   const weavePreviewAgent = ref<PromptEnhancement | null>(null);
+  /** Create-mode only: run id applied to the draft for optional source linking. */
+  const sourcePromptPreviewRunId = ref("");
+  const createPreviewRequestSeq = ref(0);
+  const createPreviewSnapshot = ref<{
+    requestSeq: number;
+    workspaceId: string;
+    modelConfigId: string;
+    input: string;
+  } | null>(null);
+  const currentPromptBody = ref("");
+  const currentPromptMeta = ref<{
+    revisionId: string;
+    revisionNo: number;
+    source: string;
+    createdAt: string;
+  } | null>(null);
+  const currentPromptLoading = ref(false);
+  const currentPromptError = ref("");
+  const currentPromptAbort = ref<AbortController | null>(null);
   const acceptingPromptRevision = ref(false);
   const capabilityAgent = ref<Agent | null>(null);
   const capabilityLoading = ref(false);
   const capabilitySavingId = ref("");
   const capabilityDrafts = ref<Record<string, AgentCapabilityBinding>>({});
 
-  const statusSourceText = "状态由 Agent 配置维护；Tool/Workflow 数量从当前启用的 Capability Binding 只读派生。";
+  const statusSourceText = "状态由 Agent 配置维护；Tool/Workflow 数量从当前启用的能力绑定只读派生。";
 
   const selectedAgent = computed(() => agents.selectedAgent || agents.items[0] || null);
   const hasAgentRecords = computed(() => agents.items.length > 0);
@@ -105,7 +124,7 @@ export function createAgentsPageModel() {
     },
   });
   const studioTitle = computed(() => (studioMode.value === "create" ? "创建 Agent" : "编辑 Agent"));
-  const promptDetailHTML = computed(() => renderPromptMarkdown(promptDetailAgent.value?.systemPrompt || ""));
+  const promptDetailHTML = computed(() => renderPromptMarkdown(currentPromptBody.value || ""));
   const agentManagementFilterOptions = computed<Array<{ label: string; value: AgentStatusFilter }>>(() => [
     { label: "全部", value: "ALL" },
     { label: "运行中", value: "ACTIVE" },
@@ -140,7 +159,7 @@ export function createAgentsPageModel() {
     },
     {
       key: "prompt",
-      label: "Prompt Revision",
+      label: "系统提示词",
       width: 150,
       hidable: true,
       getValue: (agent) => agent.currentPromptRevisionId || "-",
@@ -174,7 +193,7 @@ export function createAgentsPageModel() {
   const agentModelError = computed(() => (draftAgent.value.modelConfigId ? "" : "请选择决策大模型。"));
   const agentRoleError = computed(() => (draftAgent.value.roleDescription.trim() ? "" : "请输入场景决策职责。"));
   const agentPromptError = computed(() =>
-    studioMode.value === "create" && !draftAgent.value.systemPrompt.trim() ? "请输入 System Prompt。" : "",
+    studioMode.value === "create" && !draftAgent.value.systemPrompt.trim() ? "请输入系统提示词。" : "",
   );
   const promptLineCount = computed(() => {
     const value = draftAgent.value.systemPrompt.trim();
@@ -217,9 +236,19 @@ export function createAgentsPageModel() {
     if (savingAgent.value) return studioMode.value === "create" ? "创建中..." : "保存中...";
     return studioMode.value === "create" ? "创建 Agent" : "保存 Agent";
   });
-  const canEnhanceDraftPrompt = computed(() =>
-    Boolean(draftAgent.value.id && draftAgent.value.systemPrompt.trim() && !isEnhancing(draftAgent.value.id)),
-  );
+  const canEnhanceDraftPrompt = computed(() => {
+    if (!canEditWorkspace.value) return false;
+    const prompt = draftAgent.value.systemPrompt.trim();
+    const busy = isEnhancing(draftAgent.value.id || "create-draft");
+    if (!prompt || busy) return false;
+    // Edit mode still requires Agent ID; create mode only needs workspace + model + non-empty prompt.
+    if (studioMode.value === "edit") return Boolean(draftAgent.value.id);
+    return Boolean(
+      draftAgent.value.workspaceId &&
+        draftAgent.value.modelConfigId &&
+        modelConfigs.items.some((item) => item.id === draftAgent.value.modelConfigId),
+    );
+  });
   const canConfirmAgentDelete = computed(() => {
     const agent = agentDeleteTarget.value;
     return Boolean(agent && agentDeleteConfirmName.value.trim() === agent.name);
@@ -325,7 +354,7 @@ export function createAgentsPageModel() {
   }
 
   function renderPromptMarkdown(source: string) {
-    return renderMarkdown(source, "暂无 System Prompt 内容。");
+    return renderMarkdown(source, "暂无系统提示词内容。");
   }
 
   function buildPromptDiffSummary(before: string, after: string) {
@@ -405,6 +434,7 @@ export function createAgentsPageModel() {
     agentStudioInlineWarning.value = "";
     pendingPromptSaveReview.value = null;
     weavePreviewAgent.value = null;
+    sourcePromptPreviewRunId.value = "";
     studioMode.value = "create";
     clearAgentToast();
     void focusAgentStudio();
@@ -419,6 +449,7 @@ export function createAgentsPageModel() {
     agentStudioInlineWarning.value = "";
     pendingPromptSaveReview.value = null;
     weavePreviewAgent.value = null;
+    sourcePromptPreviewRunId.value = "";
     studioMode.value = "edit";
     clearAgentToast();
     void focusAgentStudio();
@@ -446,17 +477,6 @@ export function createAgentsPageModel() {
       return;
     }
     closeStudio();
-  }
-
-  function openPromptDetail(agent: Agent) {
-    lastFocusBeforeModal.value = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    promptDetailAgent.value = agent;
-    void nextTick(() => focusDialog(promptDetailDialogRef.value));
-  }
-
-  function closePromptDetail() {
-    promptDetailAgent.value = null;
-    restoreLastFocus();
   }
 
   async function focusAgentStudio() {
@@ -534,22 +554,61 @@ export function createAgentsPageModel() {
   }
 
   async function enhancePrompt() {
-    if (!draftAgent.value.id) {
-      showAgentToast("请先创建 Agent，再使用模型整理补充 System Prompt。", "error");
+    if (!canEnhanceDraftPrompt.value) {
+      showAgentToast("请完善业务空间、模型和系统提示词后再整理。", "error");
       return;
     }
-    enhancingAgentId.value = draftAgent.value.id;
+    const isCreate = studioMode.value === "create" || !draftAgent.value.id;
+    enhancingAgentId.value = draftAgent.value.id || "create-draft";
     showAgentToast(
-      `${draftAgent.value.name} 正在生成 System Prompt 整理预览，通常需要 1 到 2 分钟。`,
+      isCreate
+        ? "正在生成系统提示词整理预览，通常需要 1 到 2 分钟。"
+        : `${draftAgent.value.name} 正在生成系统提示词整理预览，通常需要 1 到 2 分钟。`,
       "success",
       false,
     );
     try {
-      const preview = await agents.enhanceAgentPrompt(draftAgent.value, draftAgent.value.systemPrompt, {
-        preview: true,
-      });
-      weavePreviewAgent.value = preview;
-      showAgentToast(`${draftAgent.value.name} 的 System Prompt 整理预览已生成，请审查后再采纳。`);
+      if (isCreate) {
+        const requestSeq = ++createPreviewRequestSeq.value;
+        const snapshot = {
+          requestSeq,
+          workspaceId: draftAgent.value.workspaceId,
+          modelConfigId: draftAgent.value.modelConfigId,
+          input: draftAgent.value.systemPrompt,
+        };
+        createPreviewSnapshot.value = snapshot;
+        const preview = await agents.previewCreatePromptEnhancement(
+          snapshot.workspaceId,
+          snapshot.modelConfigId,
+          snapshot.input,
+        );
+        const latest = createPreviewSnapshot.value;
+        if (
+          !latest ||
+          latest.requestSeq !== requestSeq ||
+          latest.workspaceId !== draftAgent.value.workspaceId ||
+          latest.modelConfigId !== draftAgent.value.modelConfigId ||
+          latest.input !== draftAgent.value.systemPrompt
+        ) {
+          showAgentToast("草稿已变化，已丢弃过期的整理结果，请重新整理。", "error");
+          return;
+        }
+        weavePreviewAgent.value = {
+          runId: preview.runId,
+          status: preview.status,
+          preview: true,
+          output: preview.output,
+          createdAt: preview.createdAt,
+          expiresAt: preview.expiresAt,
+        };
+        showAgentToast("系统提示词整理预览已生成，可应用到草稿后创建 Agent。");
+      } else {
+        const preview = await agents.enhanceAgentPrompt(draftAgent.value, draftAgent.value.systemPrompt, {
+          preview: true,
+        });
+        weavePreviewAgent.value = preview;
+        showAgentToast(`${draftAgent.value.name} 的系统提示词整理预览已生成，请审查后再采纳为新版本。`);
+      }
       void nextTick(() => focusDialog(promptDetailDialogRef.value));
     } catch (error) {
       showAgentToast(agentActionErrorMessage(error), "error");
@@ -567,6 +626,19 @@ export function createAgentsPageModel() {
 
   async function applyWeavePreview() {
     if (!weavePreviewAgent.value || acceptingPromptRevision.value) return;
+    const isCreate = studioMode.value === "create" || !draftAgent.value.id;
+    if (isCreate) {
+      // Apply to draft only — do not persist Agent/Revision.
+      draftAgent.value = {
+        ...draftAgent.value,
+        systemPrompt: weavePreviewAgent.value.output,
+      };
+      sourcePromptPreviewRunId.value = weavePreviewAgent.value.runId;
+      weavePreviewAgent.value = null;
+      showAgentToast("已应用到草稿。请检查后点击「创建 Agent」保存。");
+      void focusAgentStudio();
+      return;
+    }
     acceptingPromptRevision.value = true;
     try {
       const accepted = await agents.enhanceAgentPrompt(draftAgent.value, draftAgent.value.systemPrompt, {
@@ -581,7 +653,7 @@ export function createAgentsPageModel() {
         agentStudioInitialSnapshot.value = serializeAgentDraft(draftAgent.value);
       }
       weavePreviewAgent.value = null;
-      showAgentToast(`已采纳 Prompt Revision ${accepted.revisionNo || ""}，原始输入和输出按后端保留策略永久存档。`);
+      showAgentToast(`已采纳为新版本（版本 ${accepted.revisionNo || ""}）。`);
       void focusAgentStudio();
     } catch (error) {
       showAgentToast(agentActionErrorMessage(error), "error");
@@ -607,13 +679,73 @@ export function createAgentsPageModel() {
       return;
     }
 
-    const created = await agents.createAgent(agent);
+    const result = await agents.createAgent(agent, {
+      sourcePromptPreviewRunId: sourcePromptPreviewRunId.value || undefined,
+    });
+    sourcePromptPreviewRunId.value = "";
     await loadAgentRegistry({ page: 1 });
-    agents.selectedAgentId = created.id;
-    showAgentToast(`${created.name} 已创建。`);
-    agentStudioInitialSnapshot.value = serializeAgentDraft(created);
+    agents.selectedAgentId = result.agent.id;
+    showAgentToast(`${result.agent.name} 已创建。`);
+    agentStudioInitialSnapshot.value = serializeAgentDraft(result.agent);
     closeStudio();
   }
+
+  async function openPromptDetail(agent: Agent) {
+    lastFocusBeforeModal.value = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    clearCurrentPromptState();
+    promptDetailAgent.value = agent;
+    currentPromptLoading.value = true;
+    currentPromptError.value = "";
+    const controller = new AbortController();
+    currentPromptAbort.value = controller;
+    void nextTick(() => focusDialog(promptDetailDialogRef.value));
+    try {
+      const current = await agents.fetchCurrentPrompt(agent, controller.signal);
+      if (promptDetailAgent.value?.id !== agent.id) return;
+      currentPromptBody.value = current.systemPrompt;
+      currentPromptMeta.value = {
+        revisionId: current.revisionId,
+        revisionNo: current.revisionNo,
+        source: current.source,
+        createdAt: current.createdAt,
+      };
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      currentPromptError.value = agentActionErrorMessage(error);
+      currentPromptBody.value = "";
+      currentPromptMeta.value = null;
+    } finally {
+      if (currentPromptAbort.value === controller) {
+        currentPromptLoading.value = false;
+        currentPromptAbort.value = null;
+      }
+    }
+  }
+
+  function clearCurrentPromptState() {
+    currentPromptAbort.value?.abort();
+    currentPromptAbort.value = null;
+    currentPromptBody.value = "";
+    currentPromptMeta.value = null;
+    currentPromptLoading.value = false;
+    currentPromptError.value = "";
+  }
+
+  function closePromptDetail() {
+    promptDetailAgent.value = null;
+    clearCurrentPromptState();
+    restoreLastFocus();
+  }
+
+  // Clear create-preview source when Prompt or Workspace changes; model-only change keeps source.
+  watch(
+    () => [draftAgent.value.systemPrompt, draftAgent.value.workspaceId] as const,
+    () => {
+      if (sourcePromptPreviewRunId.value) {
+        sourcePromptPreviewRunId.value = "";
+      }
+    },
+  );
 
   async function confirmPromptSaveReview() {
     const agent = pendingPromptSaveReview.value;
@@ -660,11 +792,11 @@ export function createAgentsPageModel() {
   function agentMenuActions(agent: Agent): ManagementRowAction[] {
     const deletable = canDeleteAgent(agent);
     return [
-      { key: "debug", label: `调试`, icon: "fa-solid fa-sliders", tone: "primary" },
-      { key: "capabilities", label: "管理 Capability Binding", icon: "fa-solid fa-link" },
+      { key: "debug", label: "编辑", icon: "fa-solid fa-pen", tone: "primary" },
+      { key: "capabilities", label: "管理能力绑定", icon: "fa-solid fa-link" },
       {
         key: "delete",
-        label: "删除 Agent",
+        label: "删除",
         icon: "fa-solid fa-trash",
         tone: "danger",
         disabled: !deletable,
@@ -691,7 +823,7 @@ export function createAgentsPageModel() {
 
   function deleteAgent(agent: Agent) {
     if (!canDeleteAgent(agent)) {
-      showAgentToast("默认 Agent 不能删除，可在编辑中调整职责和 Prompt。", "error");
+      showAgentToast("默认 Agent 不能删除，可在编辑中调整职责和系统提示词。", "error");
       return;
     }
     lastFocusBeforeModal.value = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -741,10 +873,10 @@ export function createAgentsPageModel() {
           ? agents.pagination.page - 1
           : agents.pagination.page;
       await loadAgentRegistry({ page });
-      showAgentToast(`${agent.name} 已从 Agent Registry 移除。`);
+      showAgentToast(`${agent.name} 已从 Agent 列表移除。`);
       closeAgentDeleteConfirm();
     } catch {
-      showAgentToast("默认 Agent 不能删除，可在编辑中调整职责和 Prompt。", "error");
+      showAgentToast("默认 Agent 不能删除，可在编辑中调整职责和系统提示词。", "error");
     } finally {
       agentDeleting.value = false;
     }
@@ -781,7 +913,7 @@ export function createAgentsPageModel() {
         }),
       );
     } catch {
-      showAgentToast("Capability Catalog 或 Binding 加载失败，请稍后重试。", "error");
+      showAgentToast("能力目录或绑定加载失败，请稍后重试。", "error");
       capabilityAgent.value = null;
     } finally {
       capabilityLoading.value = false;
@@ -810,8 +942,8 @@ export function createAgentsPageModel() {
 
   function capabilityVersionPolicyOptions(capability: CapabilityCatalogItem) {
     return [
-      { label: "FOLLOW_ACTIVE · 跟随当前发布版", value: "FOLLOW_ACTIVE" },
-      { label: "PINNED · 固定 Active Release", value: "PINNED", disabled: !capability.activeReleaseId },
+      { label: "跟随当前生效版本", value: "FOLLOW_ACTIVE" },
+      { label: "固定指定版本", value: "PINNED", disabled: !capability.activeReleaseId },
     ];
   }
 
@@ -820,12 +952,12 @@ export function createAgentsPageModel() {
     const draft = capabilityDrafts.value[capability.id];
     if (!agent || !draft || capabilitySavingId.value) return;
     if (draft.versionPolicy === "PINNED" && !capability.activeReleaseId) {
-      showAgentToast("该 Capability 没有可固定的 Active Release。", "error");
+      showAgentToast("该能力没有可固定的当前生效版本。", "error");
       return;
     }
     // P3.3 FE guard: unpublished WORKFLOW (no active release) cannot form a binding.
     if (capability.kind === "WORKFLOW" && !capability.activeReleaseId) {
-      showAgentToast("该 Workflow 尚未发布，无法绑定。请先完成 compile → trial → publish。", "error");
+      showAgentToast("该 Workflow 尚未发布，无法绑定。请先完成编译 → 试运行 → 发布。", "error");
       return;
     }
     capabilitySavingId.value = capability.id;
@@ -836,9 +968,9 @@ export function createAgentsPageModel() {
       });
       capabilityDrafts.value = { ...capabilityDrafts.value, [capability.id]: saved };
       await Promise.all([agents.loadCapabilities(agent.workspaceId), loadAgentRegistry()]);
-      showAgentToast(`${capability.name} Binding 已保存。`);
+      showAgentToast(`${capability.name} 绑定已保存。`);
     } catch {
-      showAgentToast(`${capability.name} Binding 保存失败，请检查 Release、Connection 和乐观锁。`, "error");
+      showAgentToast(`${capability.name} 绑定保存失败，请检查版本、连接和数据版本。`, "error");
     } finally {
       capabilitySavingId.value = "";
     }
@@ -930,6 +1062,11 @@ export function createAgentsPageModel() {
     agentStudioInlineWarning,
     pendingPromptSaveReview,
     weavePreviewAgent,
+    sourcePromptPreviewRunId,
+    currentPromptBody,
+    currentPromptMeta,
+    currentPromptLoading,
+    currentPromptError,
     acceptingPromptRevision,
     capabilityAgent,
     capabilityLoading,

@@ -93,6 +93,9 @@ type Config struct {
 	OutboundIdentitySigningKeys outboundidentity.SigningKeyProvider
 	// OutboundIdentityIssuer is the fixed iss for Subject Assertions.
 	OutboundIdentityIssuer string
+	// PreviewPurge paces the create-preview body cleanup worker (ZKL-69).
+	// Zero values use agent.DefaultPreviewPurgeConfig.
+	PreviewPurge agent.PreviewPurgeConfig
 }
 
 type Application struct {
@@ -105,6 +108,7 @@ type Application struct {
 	agentAccessAuthorizer      *agentaccessauth.AAPAuthorizationService
 	securityVersionCache       *agentaccessauth.SecurityVersionCache
 	recoveryWorker             *execution.RecoveryWorker
+	previewPurgeWorker         *agent.PreviewPurgeWorker
 	// outbound runtime lifecycle (optional; nil when affinity not configured)
 	outboundRuntime *outboundRuntimeLifecycle
 }
@@ -117,6 +121,9 @@ func (application *Application) Close() error {
 	}
 	if application.recoveryWorker != nil {
 		application.recoveryWorker.Stop()
+	}
+	if application.previewPurgeWorker != nil {
+		application.previewPurgeWorker.Stop()
 	}
 	if application.outboundRuntime != nil {
 		application.outboundRuntime.Stop()
@@ -493,6 +500,15 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if err != nil {
 		return nil, err
 	}
+	currentPromptQuery, err := agent.NewCurrentPromptQuery(agentRepository, auditRecorder)
+	if err != nil {
+		return nil, err
+	}
+	agentCreationService, err := agent.NewCreationService(agentRepository, objectRepository)
+	if err != nil {
+		return nil, err
+	}
+	agentCreationService = agentCreationService.WithAuditor(auditRecorder)
 	capabilityRepository, err := capability.NewRepository(db)
 	if err != nil {
 		return nil, err
@@ -511,6 +527,8 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if err != nil {
 		return nil, err
 	}
+	agentRoutes = agentRoutes.WithCurrentPromptReader(currentPromptQuery).
+		WithCreationService(agentCreationService)
 	aapAgentProfileRoutes, err := httptransport.NewAAPAgentProfileRoutes(
 		agentAccessAuthorizer, agentRepository, capabilityCatalog,
 	)
@@ -1268,8 +1286,18 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if err != nil {
 		return nil, err
 	}
+	purgeConfig := config.PreviewPurge
+	if purgeConfig.Interval <= 0 || purgeConfig.BatchLimit <= 0 || purgeConfig.ClaimLease <= 0 {
+		purgeConfig = agent.DefaultPreviewPurgeConfig()
+	}
+	previewPurgeWorker, err := agent.NewPreviewPurgeWorker(db, objectStore, purgeConfig, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	// Start after full wiring succeeds so partial Open failures do not leak loops.
 	recoveryWorker.Start(context.WithoutCancel(ctx))
+	previewPurgeWorker.Start(context.WithoutCancel(ctx))
 	return &Application{
 		db: db, handler: handler, eventNotifier: liveEvents,
 		securityChanges: securityChanges, clientSecretAuthenticator: clientSecretAuthenticator,
@@ -1277,6 +1305,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		agentAccessAuthorizer:      agentAccessAuthorizer,
 		securityVersionCache:       securityVersionCache,
 		recoveryWorker:             recoveryWorker,
+		previewPurgeWorker:         previewPurgeWorker,
 		outboundRuntime:            outboundRuntime,
 	}, nil
 }

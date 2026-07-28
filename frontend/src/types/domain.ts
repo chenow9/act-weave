@@ -178,10 +178,22 @@ export interface PromptEnhancement {
   status: string;
   preview: boolean;
   output: string;
-  inputObjectId: string;
+  inputObjectId?: string;
   outputObjectId?: string;
   acceptedRevisionId?: string;
   revisionNo?: number;
+  createdAt?: string;
+  expiresAt?: string;
+}
+
+export interface CurrentAgentPrompt {
+  agentId: string;
+  revisionId: string;
+  revisionNo: number;
+  systemPrompt: string;
+  source: string;
+  createdBy: string;
+  createdAt: string;
 }
 
 export interface CapabilityReleaseDescriptor {

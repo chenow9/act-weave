@@ -28,6 +28,30 @@ interface AgentDTO {
   lockVersion: number;
 }
 
+interface CurrentPromptDTO {
+  agentId: string;
+  revisionId: string;
+  revisionNo: number;
+  systemPrompt: string;
+  source: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+interface CreatePreviewEnhancementDTO {
+  runId: string;
+  status: string;
+  preview: boolean;
+  output: string;
+  createdAt: string;
+  expiresAt?: string;
+}
+
+interface CreateAgentResponseDTO extends AgentDTO {
+  initialPromptRevision?: { id: string; revisionNo: number; source: string };
+  sourcePromptPreview?: { runId: string; linked: boolean; reason?: string };
+}
+
 interface AgentState {
   items: Agent[];
   pageItems: Agent[];
@@ -120,18 +144,48 @@ export const useAgentStore = defineStore("agents", {
         this.pageLoading = false;
       }
     },
-    async createAgent(agent: Agent) {
-      const response = await apiClient.post<AgentDTO>(`/workspaces/${agent.workspaceId}/agents`, {
-        name: agent.name,
-        roleDescription: agent.roleDescription,
-        modelConfigId: agent.modelConfigId,
-        isDefault: agent.isDefault,
-        systemPrompt: agent.systemPrompt,
-      });
+    async createAgent(agent: Agent, options: { sourcePromptPreviewRunId?: string } = {}) {
+      const response = await apiClient.post<AgentDTO & CreateAgentResponseDTO>(
+        `/workspaces/${agent.workspaceId}/agents`,
+        {
+          name: agent.name,
+          roleDescription: agent.roleDescription,
+          modelConfigId: agent.modelConfigId,
+          isDefault: agent.isDefault,
+          systemPrompt: agent.systemPrompt,
+          ...(options.sourcePromptPreviewRunId
+            ? { sourcePromptPreviewRunId: options.sourcePromptPreviewRunId }
+            : {}),
+        },
+      );
       const created = agentFromDTO(response.data, agent.workspaceId);
       this.upsertAgent(created);
       this.selectedAgentId = created.id;
-      return created;
+      return {
+        agent: created,
+        sourcePromptPreview: response.data.sourcePromptPreview,
+        initialPromptRevision: response.data.initialPromptRevision,
+      };
+    },
+    async fetchCurrentPrompt(agent: Agent, signal?: AbortSignal) {
+      const response = await apiClient.get<CurrentPromptDTO>(
+        `/workspaces/${agent.workspaceId}/agents/${agent.id}/prompt-revisions/current`,
+        { signal, headers: { "Cache-Control": "no-store" } },
+      );
+      return response.data;
+    },
+    async previewCreatePromptEnhancement(
+      workspaceId: string,
+      modelConfigId: string,
+      input: string,
+      signal?: AbortSignal,
+    ) {
+      const response = await apiClient.post<CreatePreviewEnhancementDTO>(
+        `/workspaces/${workspaceId}/agents:preview-prompt-enhancement`,
+        { modelConfigId, input },
+        { timeout: 210_000, signal },
+      );
+      return response.data;
     },
     async updateAgent(agentId: string, agent: Agent) {
       const response = await apiClient.patch<AgentDTO>(`/workspaces/${agent.workspaceId}/agents/${agentId}`, {

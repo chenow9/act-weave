@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"actweave/backend/internal/storedobject"
 
@@ -21,7 +22,8 @@ type promptSecureStore interface {
 }
 
 // StoredPromptObjectStore adapts the encrypted object store to PromptService.
-// Prompt input and output are always sensitive, permanent objects.
+// Prompt input and output for saved Agents are sensitive permanent objects;
+// create-preview uses dedicated EXPIRING preview kinds.
 type StoredPromptObjectStore struct{ store promptSecureStore }
 
 func NewStoredPromptObjectStore(store promptSecureStore) (*StoredPromptObjectStore, error) {
@@ -59,6 +61,37 @@ func (store *StoredPromptObjectStore) PutPermanent(
 	return created.ID, nil
 }
 
+func (store *StoredPromptObjectStore) PutPreview(
+	ctx context.Context,
+	workspaceID, kind string,
+	content []byte,
+	createdBy string,
+	retentionUntil time.Time,
+) (string, error) {
+	objectKind, err := promptPreviewObjectKind(kind)
+	if err != nil || len(content) == 0 || retentionUntil.IsZero() {
+		return "", ErrInvalid
+	}
+	objectID, err := uuid.NewV7()
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(content)
+	until := retentionUntil.UTC()
+	created, err := store.store.Put(ctx, storedobject.PutInput{
+		ID: objectID.String(), WorkspaceID: strings.TrimSpace(workspaceID), Kind: objectKind,
+		ContentType: "text/plain; charset=utf-8", SizeBytes: int64(len(content)),
+		SHA256: hex.EncodeToString(digest[:]), Classification: storedobject.ClassificationSensitive,
+		RetentionMode: storedobject.RetentionExpiring, RetentionUntil: &until,
+		CreatedByType: storedobject.CreatorUser, CreatedByID: strings.TrimSpace(createdBy),
+		Reader: bytes.NewReader(content),
+	})
+	if err != nil {
+		return "", fmt.Errorf("put preview prompt object: %w", err)
+	}
+	return created.ID, nil
+}
+
 func (store *StoredPromptObjectStore) GetPermanent(
 	ctx context.Context,
 	workspaceID, objectID, actorID string,
@@ -87,6 +120,17 @@ func promptObjectKind(kind string) (string, error) {
 		return storedobject.KindPromptRunInput, nil
 	case "PROMPT_OUTPUT", storedobject.KindPromptRunOutput:
 		return storedobject.KindPromptRunOutput, nil
+	default:
+		return "", ErrInvalid
+	}
+}
+
+func promptPreviewObjectKind(kind string) (string, error) {
+	switch strings.ToUpper(strings.TrimSpace(kind)) {
+	case "PROMPT_INPUT", storedobject.KindPromptPreviewInput, storedobject.KindPromptRunInput:
+		return storedobject.KindPromptPreviewInput, nil
+	case "PROMPT_OUTPUT", storedobject.KindPromptPreviewOutput, storedobject.KindPromptRunOutput:
+		return storedobject.KindPromptPreviewOutput, nil
 	default:
 		return "", ErrInvalid
 	}

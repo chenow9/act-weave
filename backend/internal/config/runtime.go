@@ -298,6 +298,17 @@ func (config *Config) applyRuntimeDefaults() {
 	if !config.Runtime.Agent.allowAllWorkspacesPresent && len(config.Runtime.Agent.WorkspaceIDs) == 0 {
 		config.Runtime.Agent.AllowAllWorkspaces = true
 	}
+
+	// ZKL-69 create-preview purge pacing defaults (business TTL remains fixed).
+	if config.AgentPrompt.PreviewPurge.IntervalSeconds <= 0 {
+		config.AgentPrompt.PreviewPurge.IntervalSeconds = 300
+	}
+	if config.AgentPrompt.PreviewPurge.BatchLimit <= 0 {
+		config.AgentPrompt.PreviewPurge.BatchLimit = 100
+	}
+	if config.AgentPrompt.PreviewPurge.ClaimLeaseSeconds <= 0 {
+		config.AgentPrompt.PreviewPurge.ClaimLeaseSeconds = 120
+	}
 }
 
 // isComposeWorkflowEngine reports engines that use CoreGraphRunner (not PlanRunner).

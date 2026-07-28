@@ -700,23 +700,43 @@
   font-size: 10px;
 }
 
+/* Scheme A: lifecycle pill (primary) + optional attention line (secondary). */
 .tool-unified-status-cell {
   display: flex;
-  min-width: 128px;
+  min-width: 7.5rem;
+  max-width: 100%;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 5px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
 }
 
-.tool-unified-status-cell small {
-  max-width: 180px;
+.tool-status-attention {
+  max-width: 9rem;
   overflow: hidden;
   color: #94a3b8;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.25;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tool-status-attention.tone-danger {
+  color: #e11d48;
+}
+
+.tool-status-attention.tone-warning {
+  color: #ea580c;
+}
+
+.tool-status-attention.tone-info {
+  color: #4f46e5;
+}
+
+.tool-status-attention.tone-success {
+  color: #059669;
 }
 
 .tool-status-pill {
@@ -734,7 +754,7 @@
   font-weight: var(--aw-table-pill-weight, 600);
   line-height: 1.25;
   text-align: center;
-  white-space: normal;
+  white-space: nowrap;
 }
 
 .tool-status-pill i {
@@ -848,8 +868,23 @@
   box-shadow: 0 24px 60px rgb(15 23 42 / 0.18);
 }
 
+.tool-detail-modal-card {
+  width: min(920px, calc(100vw - 56px));
+  max-height: calc(100vh - 56px);
+}
+
+.tool-detail-modal-body {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: auto;
+  padding: 18px 20px 20px;
+}
+
 .tool-detail-modal-card .modal-card-head,
 .tool-editor-modal-card .modal-card-head {
+  flex: 0 0 auto;
   border-bottom-color: #f1f5f9;
   background: #fff;
 }
@@ -873,6 +908,63 @@
   line-height: 1.2;
 }
 
+/* Restored after ZKL-64 CSS split — detail tabs were unstyled native buttons. */
+.tool-detail-tabs {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+  margin: 14px 0;
+  padding: 4px;
+  background: #f1f5f9;
+  border: 1px solid var(--aw-border, #e2e8f0);
+  border-radius: 8px;
+}
+
+.tool-detail-tabs button {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #64748b;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    background-color 0.14s ease,
+    color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.tool-detail-tabs button i {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.tool-detail-tabs button:hover {
+  color: #0f172a;
+  background: rgb(255 255 255 / 0.72);
+}
+
+.tool-detail-tabs button.active {
+  color: #0f172a;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
+}
+
+.tool-detail-tabs button:focus-visible {
+  outline: 2px solid rgb(16 185 129 / 0.45);
+  outline-offset: 1px;
+}
+
+.tool-detail-panel {
+  min-height: 0;
+}
+
 .tool-detail-hero .method {
   display: inline-flex;
   min-width: 42px;
@@ -891,6 +983,250 @@
   justify-content: flex-end;
   gap: 6px;
   margin-left: auto;
+}
+
+/* Status hierarchy: lifecycle (primary) → test → run/connection. */
+.tool-detail-status-stack .tool-status-pill {
+  order: 0;
+}
+
+.tool-detail-status-stack .tool-status-pill:nth-child(1) {
+  font-weight: 700;
+}
+
+.tool-detail-status-stack .tool-status-pill:nth-child(2),
+.tool-detail-status-stack .tool-status-pill:nth-child(3) {
+  opacity: 0.96;
+}
+
+.tool-test-action-group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.tool-test-action-group button {
+  min-height: 44px;
+}
+
+.tool-detail-maintenance-action {
+  min-height: 44px;
+}
+
+/* Tool test dialog (lost in ZKL-64 page CSS split). */
+.tool-test-dialog-grid {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
+  gap: 16px;
+  overflow: auto;
+  padding: 18px;
+}
+
+.tool-test-modal-card {
+  width: min(960px, calc(100vw - 56px));
+  max-height: calc(100vh - 56px);
+}
+
+.tool-test-form-card,
+.tool-test-result-card {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid var(--aw-border-soft, #f1f5f9);
+  border-radius: 12px;
+}
+
+.tool-test-section-header,
+.tool-test-result-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tool-test-section-header span,
+.tool-test-result-summary span {
+  color: var(--aw-muted, #64748b);
+  font-size: 13px;
+}
+
+.tool-test-param-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tool-test-param-group h4,
+.tool-test-result-panels h4 {
+  margin: 0;
+  color: var(--aw-text, #0f172a);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.tool-test-param-row {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.tool-test-param-row label {
+  color: var(--aw-text, #0f172a);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.tool-test-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 10px;
+  color: #334155;
+  background: #f8fafc;
+  border: 1px solid var(--aw-border, #e2e8f0);
+  border-radius: 7px;
+  outline: 0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tool-test-input:focus {
+  background: #fff;
+  border-color: rgb(13 148 136 / 0.38);
+  box-shadow: 0 0 0 3px rgb(13 148 136 / 0.1);
+}
+
+.tool-test-textarea {
+  min-height: 92px;
+  padding: 10px;
+  resize: vertical;
+  line-height: 1.55;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 600;
+}
+
+.tool-test-checkbox {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  justify-self: start;
+  padding: 0 11px;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid var(--aw-border, #e2e8f0);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.tool-test-checkbox input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--aw-cyan, #0d9488);
+}
+
+.tool-test-checkbox span {
+  color: #475569;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.tool-test-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: auto;
+}
+
+.tool-test-dialog-actions .primary-button,
+.tool-test-dialog-actions .ghost-button {
+  min-height: 44px;
+}
+
+.tool-test-result-panels {
+  display: grid;
+  min-height: 0;
+  gap: 16px;
+  overflow: auto;
+}
+
+.tool-test-json-block {
+  max-height: 260px;
+  overflow: auto;
+  padding: 12px;
+  margin: 0;
+  color: #334155;
+  background: #f8fafc;
+  border: 1px solid var(--aw-border-soft, #f1f5f9);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-test-error {
+  margin: 0;
+  color: #dc2626;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.tool-test-outbound-envelope {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  background: #fff7ed;
+}
+
+.tool-test-outbound-envelope header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-test-outbound-envelope header strong {
+  color: #9a3412;
+  font-size: 13px;
+}
+
+.tool-test-outbound-envelope header span {
+  color: #c2410c;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.tool-test-outbound-envelope label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #9a3412;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tool-test-outbound-envelope input {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid #fdba74;
+  border-radius: 8px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 13px;
 }
 
 .tool-detail-governance-strip {
@@ -2533,4 +2869,218 @@
 .tool-connection-summary-action {
   min-height: 32px;
   margin-top: 2px;
+}
+
+/* ToolSchemaTreeView — scheme R (read-only contract table) */
+.tool-schema-view {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tool-schema-view-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.tool-schema-view-head-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tool-schema-view-head-main strong {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.tool-schema-view-head-main span {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.tool-schema-view-summary {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.tool-schema-tree {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.tool-schema-view .tool-schema-vxe-table {
+  --vxe-ui-font-color: #334155;
+  --vxe-ui-font-primary-color: #0f172a;
+  --vxe-ui-table-header-background-color: #f8fafc;
+  --vxe-ui-table-header-font-color: #64748b;
+  --vxe-ui-table-border-color: #f1f5f9;
+  --vxe-ui-table-row-hover-background-color: #f8fafc;
+}
+
+.tool-schema-view .tool-schema-vxe-table .vxe-header--column {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.tool-schema-view .tool-schema-vxe-table .vxe-body--column {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  vertical-align: middle;
+}
+
+.tool-schema-view-name-block {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 1px 0;
+}
+
+.tool-schema-view-keyline {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.tool-schema-view-name {
+  min-width: 0;
+  overflow: hidden;
+  color: #0f172a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-schema-view-name.is-root {
+  font-weight: 700;
+}
+
+.tool-schema-view-path {
+  overflow: hidden;
+  color: #94a3b8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-schema-view-type {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 2px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.tool-schema-view-type[data-type="string"] {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.tool-schema-view-type[data-type="number"],
+.tool-schema-view-type[data-type="integer"] {
+  border-color: #bae6fd;
+  background: #f0f9ff;
+  color: #0369a1;
+}
+
+.tool-schema-view-type[data-type="boolean"] {
+  border-color: #ddd6fe;
+  background: #f5f3ff;
+  color: #6d28d9;
+}
+
+.tool-schema-view-type[data-type="object"] {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.tool-schema-view-type[data-type="array"] {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #047857;
+}
+
+.tool-schema-view-required {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.tool-schema-view-required.required {
+  border: 1px solid #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.tool-schema-view-required.optional {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.tool-schema-view-description {
+  display: block;
+  min-width: 0;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.tool-schema-view-description.is-empty {
+  color: #cbd5e1;
+  font-weight: 500;
+}
+
+.tool-schema-empty {
+  padding: 28px 16px;
+  border: 1px dashed #e2e8f0;
+  border-radius: 12px;
+  background: #fafafa;
+  color: #94a3b8;
+  font-size: 12px;
+  text-align: center;
+}
+
+.tool-schema-cell-text {
+  color: #475569;
+  font-size: 12px;
 }

@@ -195,8 +195,8 @@ func TestPrincipalAwareConfirmationProjection(t *testing.T) {
 	)
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 60 || version.Dirty {
-		t.Fatalf("expected Interaction decision binding migration 59, got %+v", version)
+	if !version.Applied || version.Number != 61 || version.Dirty {
+		t.Fatalf("expected Interaction decision binding migration 61, got %+v", version)
 	}
 	db := testDatabase.Open(t)
 	insertChatConfirmationFixtures(t, db)

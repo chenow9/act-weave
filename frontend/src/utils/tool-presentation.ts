@@ -1,20 +1,29 @@
 import type { CapabilityProvider, Tool } from "../types/domain";
 
-export type ToolTypeLabel = "HTTP Tool" | "Workflow Tool";
+/** Filter / list-query value (API contract). */
+export type ToolTypeKey = "HTTP Tool" | "Workflow Tool";
 
-export function getToolTypeLabel(tool: Tool): ToolTypeLabel {
+/** Short UI label — no trailing "Tool". */
+export type ToolTypeLabel = "HTTP" | "Workflow";
+
+export function getToolTypeKey(tool: Tool): ToolTypeKey {
   const executor = `${tool.protocol} ${tool.draftVersion?.executorType || ""}`.toLocaleLowerCase();
   return executor.includes("workflow") ? "Workflow Tool" : "HTTP Tool";
 }
 
-export function getToolProtocolLabel(tool: Tool, provider?: CapabilityProvider) {
-  if (getToolTypeLabel(tool) === "Workflow Tool") return "Internal";
+export function getToolTypeLabel(tool: Tool): ToolTypeLabel {
+  return getToolTypeKey(tool) === "Workflow Tool" ? "Workflow" : "HTTP";
+}
 
+export function getToolProtocolLabel(tool: Tool, provider?: CapabilityProvider) {
+  if (getToolTypeKey(tool) === "Workflow Tool") return "Internal";
+
+  const actionConfig = tool.actionConfig || {};
   const configuredVersion = [
-    tool.actionConfig.openapiVersion,
-    tool.actionConfig.openAPIVersion,
-    tool.actionConfig.protocolVersion,
-    tool.actionConfig.specVersion,
+    actionConfig.openapiVersion,
+    actionConfig.openAPIVersion,
+    actionConfig.protocolVersion,
+    actionConfig.specVersion,
   ].find((value) => typeof value === "string" && value.trim());
   if (typeof configuredVersion === "string") {
     return configuredVersion.toLocaleLowerCase().startsWith("openapi")

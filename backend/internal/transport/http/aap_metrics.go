@@ -63,5 +63,5 @@ func isLoopbackRemoteAddr(remoteAddr string) bool {
 func aapMetricsHandler(c *gin.Context) {
 	c.Header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	c.Header("Cache-Control", "no-store")
-	c.String(http.StatusOK, metrics.Default().PrometheusText()+metrics.SmartDag().PrometheusText())
+	c.String(http.StatusOK, metrics.Default().PrometheusText()+metrics.SmartDag().PrometheusText()+metrics.DefaultPrompt().RenderPromptMetrics())
 }

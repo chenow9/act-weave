@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // @ts-nocheck — inject surface under page split (ZKL-64 item 14)
 /** Smart DAG page body (ZKL-64 item 14). */
+import AppSelect from "./AppSelect.vue";
 import SmartDagModals from "./SmartDagModals.vue";
 import { useSmartDagPageContext } from "../composables/useSmartDagPageContext";
 
@@ -25,6 +26,8 @@ const {
   canvasContainerRef,
   workspaces,
   workspaceAgents,
+  workspaceSelectOptions,
+  agentSelectOptions,
   agentHasUsableModel,
   canSendGenerateTurn,
   turnHistory,
@@ -65,6 +68,7 @@ const {
   zoomOut,
   resetCanvas,
 } = scp;
+void AppSelect;
 void SmartDagModals;
 </script>
 
@@ -346,27 +350,28 @@ void SmartDagModals;
             >
           </div>
 
-          <label>
+          <label class="smart-copilot-field">
             <span>业务空间</span>
-            <select v-model="activeWorkspaceId" :disabled="aiStatus.isGenerating || smart.generating">
-              <option value="" disabled>请选择业务空间</option>
-              <option v-for="workspace in workspaces" :key="workspace.id" :value="workspace.id">
-                {{ workspace.displayName || workspace.name }}
-              </option>
-            </select>
+            <AppSelect
+              class="smart-copilot-select"
+              v-model="activeWorkspaceId"
+              :options="workspaceSelectOptions"
+              placeholder="请选择业务空间"
+              aria-label="业务空间"
+              :disabled="aiStatus.isGenerating || smart.generating"
+            />
           </label>
 
-          <label>
+          <label class="smart-copilot-field">
             <span>生成 Agent</span>
-            <select
+            <AppSelect
+              class="smart-copilot-select"
               v-model="selectedAgentId"
+              :options="agentSelectOptions"
+              placeholder="请选择 Agent"
+              aria-label="生成 Agent"
               :disabled="aiStatus.isGenerating || smart.generating || !activeWorkspaceId"
-            >
-              <option value="" disabled>请选择 Agent</option>
-              <option v-for="agent in workspaceAgents" :key="agent.id" :value="agent.id">
-                {{ agent.name }}{{ agent.modelConfigId ? "" : "（未绑定模型）" }}
-              </option>
-            </select>
+            />
             <em v-if="selectedAgentId && !agentHasUsableModel" class="smart-agent-model-hint">
               当前 Agent 未配置可用模型，请先在 Agent 设置中绑定 Model Config。
             </em>

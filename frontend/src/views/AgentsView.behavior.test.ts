@@ -513,7 +513,7 @@ describe("agents view behavior", () => {
     await flushPromises();
 
     await selectAgentMenuAction(wrapper, "debug");
-    const input = wrapper.get("textarea[aria-label='Prompt 增强输入']");
+    const input = wrapper.get("textarea[aria-label='AI 整理要求']");
     await input.setValue("强化生产行为边界");
 
     expect(updateAgentMock).not.toHaveBeenCalled();
@@ -556,7 +556,7 @@ describe("agents view behavior", () => {
     await flushPromises();
 
     await selectAgentMenuAction(wrapper, "debug");
-    await wrapper.get("textarea[aria-label='Prompt 增强输入']").setValue("强化执行边界");
+    await wrapper.get("textarea[aria-label='AI 整理要求']").setValue("强化执行边界");
     await wrapper.get(".agent-weave-button").trigger("click");
     await flushPromises();
 
@@ -566,9 +566,9 @@ describe("agents view behavior", () => {
     expect(wrapper.find(".agent-weave-preview-dialog").exists()).toBe(true);
     expect(wrapper.find(".agent-weave-preview-dialog .agent-prompt-diff-viewer").exists()).toBe(true);
     expect(wrapper.find(".agent-weave-preview-dialog .agent-prompt-markdown").exists()).toBe(false);
-    expect(wrapper.find(".agent-weave-preview-dialog .agent-prompt-diff-viewer").text()).toContain("增强输入");
-    expect(wrapper.find(".agent-weave-preview-dialog .agent-prompt-diff-viewer").text()).toContain("AI 预览");
-    expect(wrapper.get("textarea[aria-label='Prompt 增强输入']").element.value).toBe("强化执行边界");
+    expect(wrapper.find(".agent-weave-preview-dialog .agent-prompt-diff-viewer").text()).toContain("当前要求");
+    expect(wrapper.find(".agent-weave-preview-dialog .agent-prompt-diff-viewer").text()).toContain("AI 建议");
+    expect(wrapper.get("textarea[aria-label='AI 整理要求']").element.value).toBe("强化执行边界");
 
     await wrapper.get(".agent-weave-preview-dialog .primary-button").trigger("click");
     await flushPromises();

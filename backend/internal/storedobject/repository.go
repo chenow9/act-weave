@@ -25,7 +25,8 @@ const storedObjectColumns = `
 	so.id,so.workspace_id,so.bucket,so.object_key,so.kind,so.content_type,
 	so.size_bytes,so.sha256,so.encryption_key_id,so.classification,
 	so.retention_mode,so.retention_until,so.created_by_type,so.created_by_id,
-	so.created_at
+	so.created_at,so.body_purged_at,so.purge_claim_token,so.purge_claim_expires_at,
+	so.purge_attempts,so.purge_next_attempt_at,so.purge_last_error_code
 `
 
 type Repository struct{ db *sql.DB }
@@ -35,6 +36,97 @@ func NewRepository(db *sql.DB) (*Repository, error) {
 		return nil, errors.New("stored object repository database is required")
 	}
 	return &Repository{db: db}, nil
+}
+
+// PromotePreviewInTx performs the one-shot EXPIRING -> PERMANENT retention
+// lift for an unpurged, unexpired prompt-preview object inside the caller's
+// transaction. All other metadata remains immutable.
+func (repository *Repository) PromotePreviewInTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	workspaceID, objectID string,
+) (StoredObject, error) {
+	if tx == nil {
+		return StoredObject{}, ErrInvalid
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	objectID = strings.TrimSpace(objectID)
+	if !validUUID(workspaceID) || !validUUID(objectID) {
+		return StoredObject{}, ErrInvalid
+	}
+	value, err := scanStoredObject(tx.QueryRowContext(ctx, `
+		UPDATE stored_objects AS so
+		SET retention_mode=$3, retention_until=NULL
+		WHERE so.workspace_id=$1 AND so.id=$2
+		  AND so.kind IN ('PROMPT_PREVIEW_INPUT','PROMPT_PREVIEW_OUTPUT')
+		  AND so.retention_mode='EXPIRING'
+		  AND so.retention_until IS NOT NULL
+		  AND so.retention_until > clock_timestamp()
+		  AND so.body_purged_at IS NULL
+		RETURNING `+storedObjectColumns,
+		workspaceID, objectID, RetentionPermanent,
+	))
+	if errors.Is(err, sql.ErrNoRows) {
+		return StoredObject{}, ErrConflict
+	}
+	if err != nil {
+		return StoredObject{}, mapWrite("promote preview stored object", err)
+	}
+	return value, nil
+}
+
+// MarkBodyPurgedInTx records a completed body purge for a preview object.
+// Callers must have already deleted (or confirmed absent) ciphertext and hold
+// any required claim lease outside this package's read paths.
+func (repository *Repository) MarkBodyPurgedInTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	workspaceID, objectID string,
+	claimToken *string,
+) (StoredObject, error) {
+	if tx == nil {
+		return StoredObject{}, ErrInvalid
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	objectID = strings.TrimSpace(objectID)
+	if !validUUID(workspaceID) || !validUUID(objectID) {
+		return StoredObject{}, ErrInvalid
+	}
+	query := `
+		UPDATE stored_objects AS so
+		SET body_purged_at=clock_timestamp(),
+			purge_claim_token=NULL,
+			purge_claim_expires_at=NULL,
+			purge_next_attempt_at=NULL,
+			purge_last_error_code=NULL
+		WHERE so.workspace_id=$1 AND so.id=$2
+		  AND so.kind IN ('PROMPT_PREVIEW_INPUT','PROMPT_PREVIEW_OUTPUT')
+		  AND so.retention_mode='EXPIRING'
+		  AND so.retention_until IS NOT NULL
+		  AND so.retention_until <= clock_timestamp()
+		  AND so.body_purged_at IS NULL`
+	args := []any{workspaceID, objectID}
+	if claimToken != nil {
+		token := strings.TrimSpace(*claimToken)
+		if !validUUID(token) {
+			return StoredObject{}, ErrInvalid
+		}
+		query += `
+		  AND so.purge_claim_token=$3
+		  AND so.purge_claim_expires_at IS NOT NULL
+		  AND so.purge_claim_expires_at > clock_timestamp()`
+		args = append(args, token)
+	}
+	query += `
+		RETURNING ` + storedObjectColumns
+	value, err := scanStoredObject(tx.QueryRowContext(ctx, query, args...))
+	if errors.Is(err, sql.ErrNoRows) {
+		return StoredObject{}, ErrConflict
+	}
+	if err != nil {
+		return StoredObject{}, mapWrite("mark preview body purged", err)
+	}
+	return value, nil
 }
 
 func (repository *Repository) Create(
@@ -143,11 +235,18 @@ func scanStoredObject(row scanner) (StoredObject, error) {
 	var value StoredObject
 	var encryptionKeyID sql.NullString
 	var retentionUntil sql.NullTime
+	var bodyPurgedAt sql.NullTime
+	var purgeClaimToken sql.NullString
+	var purgeClaimExpiresAt sql.NullTime
+	var purgeNextAttemptAt sql.NullTime
+	var purgeLastErrorCode sql.NullString
 	err := row.Scan(
 		&value.ID, &value.WorkspaceID, &value.Bucket, &value.ObjectKey,
 		&value.Kind, &value.ContentType, &value.SizeBytes, &value.SHA256,
 		&encryptionKeyID, &value.Classification, &value.RetentionMode,
 		&retentionUntil, &value.CreatedByType, &value.CreatedByID, &value.CreatedAt,
+		&bodyPurgedAt, &purgeClaimToken, &purgeClaimExpiresAt,
+		&value.PurgeAttempts, &purgeNextAttemptAt, &purgeLastErrorCode,
 	)
 	if err != nil {
 		return StoredObject{}, err
@@ -156,6 +255,26 @@ func scanStoredObject(row scanner) (StoredObject, error) {
 	if retentionUntil.Valid {
 		timestamp := retentionUntil.Time.UTC()
 		value.RetentionUntil = &timestamp
+	}
+	if bodyPurgedAt.Valid {
+		timestamp := bodyPurgedAt.Time.UTC()
+		value.BodyPurgedAt = &timestamp
+	}
+	if purgeClaimToken.Valid {
+		token := purgeClaimToken.String
+		value.PurgeClaimToken = &token
+	}
+	if purgeClaimExpiresAt.Valid {
+		timestamp := purgeClaimExpiresAt.Time.UTC()
+		value.PurgeClaimExpiresAt = &timestamp
+	}
+	if purgeNextAttemptAt.Valid {
+		timestamp := purgeNextAttemptAt.Time.UTC()
+		value.PurgeNextAttemptAt = &timestamp
+	}
+	if purgeLastErrorCode.Valid {
+		code := purgeLastErrorCode.String
+		value.PurgeLastErrorCode = &code
 	}
 	value.CreatedAt = value.CreatedAt.UTC()
 	return value, nil
@@ -216,7 +335,8 @@ func validObjectKey(value string) bool {
 
 func validKind(value string) bool {
 	switch value {
-	case KindOpenAPISource, KindPromptRunInput, KindPromptRunOutput, KindModelTurn,
+	case KindOpenAPISource, KindPromptRunInput, KindPromptRunOutput,
+		KindPromptPreviewInput, KindPromptPreviewOutput, KindModelTurn,
 		KindChatMessage, KindToolTestPayload, KindToolInvocationPayload,
 		KindExecutionCheckpoint, KindAuditEventPayload, KindAuditExport:
 		return true

@@ -6,15 +6,19 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"actweave/backend/internal/agent"
+	"actweave/backend/internal/audit"
 	"actweave/backend/internal/authz"
 	"actweave/backend/internal/capability"
 	"actweave/backend/internal/modelconfig"
+	"actweave/backend/internal/storedobject"
 	"actweave/backend/internal/workspace"
 
 	"github.com/google/uuid"
@@ -131,6 +135,29 @@ func (s *promptMemoryObjects) PutPermanent(ctx context.Context, workspaceID, kin
 	s.puts++
 	return id, nil
 }
+func (s *promptMemoryObjects) PutPreview(
+	ctx context.Context, workspaceID, kind string, content []byte, createdBy string, retentionUntil time.Time,
+) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := uuid.NewString()
+	objectKind := "PROMPT_PREVIEW_INPUT"
+	if kind == "PROMPT_OUTPUT" {
+		objectKind = "PROMPT_PREVIEW_OUTPUT"
+	}
+	digest := sha256.Sum256(content)
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO stored_objects(
+		id,workspace_id,bucket,object_key,kind,content_type,size_bytes,sha256,
+		encryption_key_id,classification,retention_mode,retention_until,created_by_type,created_by_id
+	)VALUES($1,$2,'prompt-test',$3,$4,'text/plain',$5,$6,'test-key','SENSITIVE','EXPIRING',$7,'USER',$8)`,
+		id, workspaceID, "prompt-previews/"+id, objectKind, len(content), hex.EncodeToString(digest[:]),
+		retentionUntil.UTC(), createdBy); err != nil {
+		return "", err
+	}
+	s.values[id] = append([]byte(nil), content...)
+	s.puts++
+	return id, nil
+}
 func (s *promptMemoryObjects) GetPermanent(_ context.Context, _, id, _ string) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -197,6 +224,19 @@ func newAgentCapabilityFixture(t *testing.T) *agentCapabilityFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	currentPrompt, err := agent.NewCurrentPromptQuery(agents, &fixturePromptAuditor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	objectRepo, err := storedobject.NewRepository(authFixture.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	creation, err := agent.NewCreationService(agents, objectRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes = routes.WithCurrentPromptReader(currentPrompt).WithCreationService(creation)
 	router, err := NewRouter(Config{Authenticator: authFixture.auth, Registrars: []V1RouteRegistrar{authFixture.authRoutes, routes}})
 	if err != nil {
 		t.Fatal(err)
@@ -210,6 +250,19 @@ type agentSnapshot struct{}
 
 func (agentSnapshot) Snapshot(context.Context, string, string) (json.RawMessage, error) {
 	return json.RawMessage(`{"provider":"test","model":"agent-model"}`), nil
+}
+
+func (agentSnapshot) AvailableSnapshot(ctx context.Context, workspaceID, modelConfigID string) (json.RawMessage, error) {
+	return agentSnapshot{}.Snapshot(ctx, workspaceID, modelConfigID)
+}
+
+type fixturePromptAuditor struct{}
+
+func (fixturePromptAuditor) Record(_ context.Context, input audit.ManagementEventInput) (audit.Event, error) {
+	if strings.TrimSpace(input.ActorDisplay) == "" {
+		return audit.Event{}, errors.New("actor display required")
+	}
+	return audit.Event{}, nil
 }
 
 func (f *agentCapabilityFixture) createAgent(t *testing.T, name string) agentDTO {

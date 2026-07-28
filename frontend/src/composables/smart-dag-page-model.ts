@@ -122,6 +122,18 @@ export function createSmartDagPageModel() {
       (agent) => !activeWorkspaceId.value || agent.workspaceId === activeWorkspaceId.value,
     ),
   );
+  const workspaceSelectOptions = computed(() =>
+    workspaces.value.map((workspace) => ({
+      label: workspace.displayName || workspace.name || workspace.id,
+      value: workspace.id,
+    })),
+  );
+  const agentSelectOptions = computed(() =>
+    workspaceAgents.value.map((agent) => ({
+      label: agent.modelConfigId ? agent.name : `${agent.name}（未绑定模型）`,
+      value: agent.id,
+    })),
+  );
   const selectedAgent = computed(() => workspaceAgents.value.find((agent) => agent.id === selectedAgentId.value));
   const selectedAgentModelConfig = computed(() => {
     const modelId = selectedAgent.value?.modelConfigId || "";
@@ -1295,6 +1307,8 @@ export function createSmartDagPageModel() {
     workspaces,
     activeWorkspace,
     workspaceAgents,
+    workspaceSelectOptions,
+    agentSelectOptions,
     selectedAgent,
     selectedAgentModelConfig,
     agentHasUsableModel,

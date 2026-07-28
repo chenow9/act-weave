@@ -288,7 +288,7 @@ describe("tools view detail behavior", () => {
     wrapper.unmount();
   });
 
-  it("aligns 需处理 KPI with connection attention and keeps composite status pills", async () => {
+  it("aligns 需处理 KPI with connection attention and uses scheme-A dual status cell", async () => {
     integrationState.tools = [
       { ...makeTool("tool-published-broken", "missing-connection", "已发布坏连接"), status: "Published" },
       { ...makeTool("tool-published-ok", "connection-1", "已发布好连接"), status: "Published" },
@@ -307,8 +307,14 @@ describe("tools view detail behavior", () => {
     expect(summary).toMatch(/需处理\s*1/);
     expect(wrapper.find(".tool-connection-alert").exists()).toBe(false);
 
-    const statusPills = wrapper.findAll('td[data-column-key="status"] .tool-status-pill').map((node) => node.text());
-    expect(statusPills.some((text) => text.includes("已发布") && text.includes("连接缺失"))).toBe(true);
+    // Scheme A: lifecycle pill stays short; connection problem is a secondary line.
+    const statusCells = wrapper.findAll('td[data-column-key="status"] .tool-unified-status-cell');
+    expect(statusCells.length).toBeGreaterThan(0);
+    const brokenCell = statusCells.find((cell) => cell.text().includes("连接缺失") || cell.text().includes("连接需处理"));
+    expect(brokenCell).toBeTruthy();
+    expect(brokenCell!.find(".tool-status-pill").text()).toContain("已发布");
+    expect(brokenCell!.find(".tool-status-attention").text()).toMatch(/连接/);
+    expect(brokenCell!.find(".tool-status-pill").text()).not.toContain("·");
 
     loadToolPageMock.mockClear();
     await wrapper.get('button[aria-label="工具状态筛选"]').trigger("click");
@@ -458,6 +464,60 @@ describe("tools view detail behavior", () => {
     await triggerToolMenuAction(wrapper, "detail", 1);
 
     expect(wrapper.find("#tool-detail-tab-test").attributes("aria-selected")).toBe("true");
+    wrapper.unmount();
+  });
+
+  it("opens the tool editor when 编辑工具 is chosen from the row menu", async () => {
+    const wrapper = mountToolsView();
+    await flushPromises();
+
+    await triggerToolMenuAction(wrapper, "edit", 1);
+
+    const editor = wrapper.find('.tool-editor-modal-card[role="dialog"]');
+    expect(editor.exists()).toBe(true);
+    expect(editor.attributes("aria-label") || editor.text()).toMatch(/编辑|有效连接 Tool/);
+    expect(wrapper.find(".tool-hybrid-topbar").exists()).toBe(true);
+    expect(wrapper.find(".tool-hybrid-step-panel").exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it("still opens the editor when the tool payload is incomplete", async () => {
+    integrationState.tools = [
+      {
+        ...makeTool("tool-partial", "connection-1", "残缺 Tool"),
+        actionConfig: undefined as unknown as Tool["actionConfig"],
+        runtimePolicy: undefined as unknown as Tool["runtimePolicy"],
+        requestParams: undefined as unknown as Tool["requestParams"],
+        responseFields: undefined as unknown as Tool["responseFields"],
+        errorMappings: undefined as unknown as Tool["errorMappings"],
+      },
+    ];
+    integrationState.toolPageItems = [...integrationState.tools];
+    integrationState.toolPagination = { page: 1, pageSize: 10, total: 1, pageSizeOptions: [10, 20, 50] };
+
+    const wrapper = mountToolsView();
+    await flushPromises();
+
+    await triggerToolMenuAction(wrapper, "edit", 0);
+
+    expect(wrapper.find('.tool-editor-modal-card[role="dialog"]').exists()).toBe(true);
+    expect(wrapper.text()).not.toContain("无法打开编辑");
+    wrapper.unmount();
+  });
+
+  it("styles detail tabs as an active segmented control, not bare native buttons", async () => {
+    const wrapper = mountToolsView();
+    await flushPromises();
+
+    await triggerToolMenuAction(wrapper, "detail", 0);
+    const tabs = wrapper.find(".tool-detail-tabs");
+    expect(tabs.exists()).toBe(true);
+    expect(tabs.findAll('[role="tab"]')).toHaveLength(6);
+    expect(wrapper.find("#tool-detail-tab-base").classes()).toContain("active");
+    expect(wrapper.find(".tool-detail-modal-body").exists()).toBe(true);
+    expect(wrapper.find('[data-status-layer="lifecycle"]').exists()).toBe(true);
+    expect(wrapper.find('[data-status-layer="test"]').exists()).toBe(true);
+    expect(wrapper.find('[data-status-layer="run"]').exists()).toBe(true);
     wrapper.unmount();
   });
 });

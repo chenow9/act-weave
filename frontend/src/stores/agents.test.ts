@@ -68,8 +68,8 @@ describe("v1 Agent, Capability, and Binding store", () => {
       systemPrompt: "Initial prompt",
     });
 
-    await store.updateAgent(created.id, {
-      ...created,
+    await store.updateAgent(created.agent.id, {
+      ...created.agent,
       name: "Updated",
       systemPrompt: "must-not-patch",
       toolsCount: 77,

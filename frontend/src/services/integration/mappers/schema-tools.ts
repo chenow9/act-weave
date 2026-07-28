@@ -11,7 +11,7 @@ import type {
   ToolVersion,
 } from "../../../types/domain";
 import { getToolRunStatus } from "../../../utils/tool-governance";
-import { getToolTypeLabel } from "../../../utils/tool-presentation";
+import { getToolTypeKey } from "../../../utils/tool-presentation";
 
 export function createSchemaNodeId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
@@ -417,7 +417,7 @@ export function filterTools(
       if (runStatus.tone !== "danger" && runStatus.tone !== "warning") return false;
     }
     if (status && status !== "attention" && tool.status !== status) return false;
-    if (type && getToolTypeLabel(tool) !== type) return false;
+    if (type && getToolTypeKey(tool) !== type) return false;
     if (!needle) return true;
     return [
       tool.name,

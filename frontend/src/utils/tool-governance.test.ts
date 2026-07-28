@@ -98,6 +98,8 @@ describe("tool governance helpers", () => {
   it("does not infer passing tests from Published lifecycle alone (ZKL-56)", () => {
     expect(getToolTestStatus(makeTool({ status: "Tested", lastTestResult: undefined })).label).toBe("历史测试未知");
     expect(getToolTestStatus(makeTool({ status: "Published", lastTestResult: undefined })).label).toBe("历史测试未知");
+    expect(getToolTestStatus(makeTool({ status: "Draft", lastTestResult: undefined })).label).toBe("等待测试");
+    expect(getToolTestStatus(makeTool({ status: "Review", lastTestResult: undefined })).label).toBe("等待测试");
     expect(
       getToolTestStatus(
         makeTool({
@@ -135,14 +137,18 @@ describe("tool governance helpers", () => {
 
     expect(toolHasConnectionAttention(published, broken)).toBe(true);
     expect(unified.connectionAttention).toBe(true);
+    // Composite label for search/sort; UI scheme A splits lifecycle + run lines.
     expect(unified.label).toBe("已发布 · 连接需处理");
     expect(unified.lifecycleLabel).toBe("已发布");
+    expect(unified.runLabel).toBe("连接需处理");
     expect(unified.tone).toBe("danger");
     expect(unified.description).toContain("已发布但当前不可安全调用");
 
     const healthy = getToolUnifiedStatus(published, makeConnection({ status: "VERIFIED" }));
     expect(toolHasConnectionAttention(published, makeConnection({ status: "VERIFIED" }))).toBe(false);
     expect(healthy.label).toBe("已发布");
+    expect(healthy.lifecycleLabel).toBe("已发布");
+    expect(healthy.runLabel).toBeUndefined();
     expect(healthy.connectionAttention).toBe(false);
   });
 

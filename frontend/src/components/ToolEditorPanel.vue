@@ -9,6 +9,7 @@ import { useToolsPageContext } from "../composables/useToolsPageContext";
 /* eslint-disable @typescript-eslint/no-unused-vars -- inject surface for template */
 const scp = useToolsPageContext();
 const {
+  router,
   toolEditorVisible,
   toolEditorModalRef,
   toolEditorTitle,
@@ -48,6 +49,8 @@ const {
   environmentLabel,
   backoffPolicyMeta,
   workspaceDisplayLabel,
+  statusClass,
+  toolStatusLabel,
   draftStepState,
   draftStepCanProceed,
   isDraftStepComplete,
@@ -392,7 +395,7 @@ void ToolFlatContractEditor;
             >
               <span
                 ><i class="fa-solid fa-sliders" /><strong>高级运行策略</strong
-                ><small>默认值适合大多数 HTTP Tool</small></span
+                ><small>默认值适合大多数 HTTP 工具</small></span
               >
               <i :class="runtimeAdvancedOpen ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'" />
             </button>

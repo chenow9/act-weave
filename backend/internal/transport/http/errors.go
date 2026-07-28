@@ -372,6 +372,29 @@ func mapError(err error) mappedError {
 		errors.Is(err, execution.ErrConfirmationRequesterMismatch),
 		errors.Is(err, authn.ErrAccountLocked), errors.Is(err, authn.ErrAccountDisabled):
 		return mappedError{http.StatusForbidden, "FORBIDDEN", "This action is not permitted."}
+	case errors.Is(err, agent.ErrPromptAuditUnavailable):
+		return mappedError{http.StatusServiceUnavailable, agent.ErrorCodePromptAuditUnavailable,
+			"Prompt read audit is temporarily unavailable."}
+	case errors.Is(err, agent.ErrPromptModelUnavailable):
+		return mappedError{http.StatusConflict, agent.ErrorCodePromptModelUnavailable,
+			"The selected model is not available for prompt enhancement."}
+	case errors.Is(err, agent.ErrPromptOutputInvalid):
+		return mappedError{http.StatusBadGateway, agent.ErrorCodePromptOutputInvalid,
+			"The model returned no usable prompt text."}
+	case errors.Is(err, agent.ErrPromptGeneration):
+		if strings.Contains(strings.ToLower(err.Error()), "timeout") ||
+			strings.Contains(strings.ToLower(err.Error()), "deadline") {
+			return mappedError{http.StatusGatewayTimeout, agent.ErrorCodePromptGenerationTimeout,
+				"Prompt generation timed out."}
+		}
+		return mappedError{http.StatusBadGateway, agent.ErrorCodePromptGenerationFailed,
+			"Prompt generation failed."}
+	case errors.Is(err, agent.ErrPromptOutputMismatch):
+		return mappedError{http.StatusConflict, "OUTPUT_MISMATCH",
+			"The system prompt does not match the create-preview output."}
+	case errors.Is(err, agent.ErrPromptPreviewIntegrity):
+		return mappedError{http.StatusInternalServerError, agent.ErrorCodePreviewIntegrity,
+			"The create-preview source could not be linked safely."}
 	case isNotFound(err):
 		return mappedError{http.StatusNotFound, "NOT_FOUND", "The requested resource was not found."}
 	case isConflict(err):

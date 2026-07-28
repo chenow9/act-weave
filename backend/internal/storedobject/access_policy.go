@@ -33,8 +33,13 @@ func (authorizer *WorkspaceReadAuthorizer) AuthorizeStoredObjectRead(
 	request.ActorType = strings.ToUpper(strings.TrimSpace(request.ActorType))
 	request.ActorID = strings.TrimSpace(request.ActorID)
 	request.WorkspaceID = strings.TrimSpace(request.WorkspaceID)
+	request.Kind = strings.ToUpper(strings.TrimSpace(request.Kind))
 	if request.ActorType != CreatorUser || !validUUID(request.ActorID) ||
 		!validUUID(request.WorkspaceID) || !validClassification(request.Classification) {
+		return authz.ErrDenied
+	}
+	// Preview kinds are never authorized through the general Workspace read path.
+	if IsPromptPreview(request.Kind) {
 		return authz.ErrDenied
 	}
 	action := authz.ActionView

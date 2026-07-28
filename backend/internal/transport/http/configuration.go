@@ -150,6 +150,19 @@ func (r *ConfigurationRoutes) authorize(c *gin.Context, action authz.Action) boo
 }
 func actor(c *gin.Context) string { p, _ := PrincipalFrom(c.Request.Context()); return p.UserID }
 
+// actorDisplayName prefers principal username for audit ActorDisplay (1–255 chars).
+func actorDisplayName(c *gin.Context) string {
+	if p, ok := PrincipalFrom(c.Request.Context()); ok {
+		if name := strings.TrimSpace(p.Username); name != "" {
+			if len(name) > 255 {
+				return name[:255]
+			}
+			return name
+		}
+	}
+	return "Workspace member"
+}
+
 type createSecretRequest struct {
 	Name      string `json:"name"`
 	Kind      string `json:"kind"`
