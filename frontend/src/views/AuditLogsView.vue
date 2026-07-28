@@ -2,11 +2,14 @@
 import "./audit-logs-page.css";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
-import AppSelect, { type AppSelectOption } from "../components/AppSelect.vue";
+import ManagementList, { type ManagementListColumn } from "../components/ManagementList.vue";
+import ManagementPageHeader from "../components/ManagementPageHeader.vue";
+import ManagementSummaryStrip from "../components/ManagementSummaryStrip.vue";
+import type { ManagementSummaryItem } from "../components/ManagementSummaryStrip.vue";
 import { useAgentAuditStore } from "../stores/agentAudit";
 import { useAuthStore } from "../stores/auth";
 import { useWorkspaceStore } from "../stores/workspaces";
-import type { AgentAuditStep } from "../types/domain";
+import type { AgentAuditStep, AgentAuditTraceListItem } from "../types/domain";
 
 const agentAudit = useAgentAuditStore();
 const auth = useAuthStore();
@@ -15,6 +18,7 @@ const pageRef = ref<HTMLElement | null>(null);
 const timelineSentinelRef = ref<HTMLElement | null>(null);
 const actionError = ref("");
 const searchInput = ref("");
+const listHasLoaded = ref(false);
 let timelineObserver: IntersectionObserver | null = null;
 
 const isPlatformAdmin = computed(() => auth.user?.platformRole === "PLATFORM_ADMIN");
@@ -38,18 +42,83 @@ const SENSITIVE_KEY_NEEDLES = [
   "to",
 ];
 
-const pageSizeSelectOptions: AppSelectOption[] = [
-  { label: "每页 10 条", value: 10 },
-  { label: "每页 20 条", value: 20 },
-  { label: "每页 50 条", value: 50 },
-];
-const pageCount = computed(() => agentAudit.pageCount);
-const visiblePageNumbers = computed(() => {
-  const count = pageCount.value;
-  if (count <= 5) return Array.from({ length: count }, (_, index) => index + 1);
-  const start = Math.min(Math.max(1, agentAudit.page - 2), count - 4);
-  return Array.from({ length: 5 }, (_, index) => start + index);
-});
+const auditSummaryItems = computed<ManagementSummaryItem[]>(() => [
+  {
+    label: "总调用次数",
+    value: agentAudit.stats.totalRuns.toLocaleString(),
+    icon: "fa-solid fa-layer-group",
+  },
+  {
+    label: "成功率",
+    value: `${agentAudit.stats.successRate.toFixed(1)}%`,
+    icon: "fa-solid fa-circle-check",
+    tone: "info",
+  },
+  {
+    label: "失败率",
+    value: `${agentAudit.stats.failureRate.toFixed(1)}%`,
+    icon: "fa-solid fa-circle-xmark",
+    tone: "warning",
+  },
+  {
+    label: "平均耗时",
+    value: formatLatency(agentAudit.stats.avgLatencyMs),
+    icon: "fa-solid fa-clock",
+  },
+]);
+
+const auditColumns = computed<ManagementListColumn<AgentAuditTraceListItem>[]>(() => [
+  {
+    key: "traceId",
+    label: "Trace ID",
+    width: 220,
+    getValue: (row) => row.traceId,
+  },
+  {
+    key: "startedAt",
+    label: "触发时间",
+    width: 160,
+    getValue: (row) => formatTime(row.startedAt),
+  },
+  {
+    key: "model",
+    label: "模型",
+    width: 140,
+    getValue: (row) => row.model || "—",
+  },
+  {
+    key: "userLabel",
+    label: "用户标识",
+    width: 160,
+    getValue: (row) => displayUserLabel(row.userLabel),
+  },
+  {
+    key: "status",
+    label: "状态",
+    width: 100,
+    getValue: (row) => statusLabel(row.status),
+  },
+  {
+    key: "latencyMs",
+    label: "耗时",
+    width: 100,
+    getValue: (row) => formatLatency(row.latencyMs),
+  },
+  {
+    key: "actions",
+    label: "操作",
+    width: 96,
+    align: "right",
+    headerAlign: "right",
+  },
+]);
+
+const auditPagination = computed(() => ({
+  page: agentAudit.page,
+  pageSize: agentAudit.pageSize,
+  total: agentAudit.total,
+  pageSizeOptions: [10, 20, 50],
+}));
 
 onMounted(async () => {
   await runAction(async () => {
@@ -60,6 +129,7 @@ onMounted(async () => {
     if (!workspaces.items.length) await workspaces.load();
     if (!workspaceId.value) return;
     await agentAudit.loadTraces(workspaceId.value, { q: searchInput.value, page: 1 });
+    listHasLoaded.value = true;
   }, "全链路审计初始化失败，请稍后重试。");
 });
 
@@ -77,6 +147,7 @@ async function refreshList(overrides: { page?: number; pageSize?: number } = {})
       page: overrides.page ?? agentAudit.page,
       pageSize: overrides.pageSize ?? agentAudit.pageSize,
     });
+    listHasLoaded.value = true;
   }, "加载调用记录失败。");
 }
 
@@ -84,16 +155,23 @@ async function searchList() {
   await refreshList({ page: 1 });
 }
 
-async function changePage(page: number) {
-  if (page < 1 || page > pageCount.value || page === agentAudit.page) return;
-  await refreshList({ page });
+async function onAuditSearchUpdate(value: string) {
+  searchInput.value = value;
+  await searchList();
+}
+
+async function onAuditReset() {
+  searchInput.value = "";
+  await searchList();
+}
+
+async function onAuditPageChange(pagination: { page: number; pageSize: number }) {
+  await refreshList({ page: pagination.page, pageSize: pagination.pageSize });
   await scrollAuditToTop();
 }
 
-async function changePageSize(value: string | number | boolean) {
-  const pageSize = Number(value);
-  if (!Number.isFinite(pageSize) || pageSize === agentAudit.pageSize) return;
-  await refreshList({ page: 1, pageSize });
+function onAuditSelectRow(row: AgentAuditTraceListItem) {
+  void openDetail(row.traceId);
 }
 
 async function openDetail(traceId: string) {
@@ -258,159 +336,93 @@ async function runAction(action: () => Promise<void>, fallback: string) {
 </script>
 
 <template>
-  <div ref="pageRef" class="agent-audit-page">
-    <header class="agent-audit-header">
-      <div class="agent-audit-brand">
-        <div class="agent-audit-brand-icon"><i class="fa-solid fa-shield"></i></div>
-        <div>
-          <h1>Agent 审计中心</h1>
-          <p class="muted">按 Trace ID 查看全链路运行时间轴（仅平台管理员）</p>
-        </div>
-      </div>
-      <div class="agent-audit-mask" :class="{ off: !agentAudit.isMasked }">
-        <i :class="agentAudit.isMasked ? 'fa-solid fa-shield' : 'fa-solid fa-shield-halved'"></i>
-        <span>数据脱敏</span>
-        <button
-          type="button"
-          class="toggle"
-          :class="{ on: agentAudit.isMasked }"
-          :disabled="!agentAudit.debugMode"
-          :title="agentAudit.debugMode ? '切换展示层脱敏' : 'debug 关闭时固定脱敏'"
-          @click="agentAudit.toggleMask()"
-        >
-          <span class="dot"></span>
-        </button>
-      </div>
-    </header>
-
-    <p v-if="actionError" class="agent-audit-error">{{ actionError }}</p>
-
-    <template v-if="isPlatformAdmin && agentAudit.view === 'list'">
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-label"><i class="fa-solid fa-layer-group"></i> 总调用次数</div>
-          <div class="stat-value">{{ agentAudit.stats.totalRuns.toLocaleString() }}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label"><i class="fa-solid fa-circle-check"></i> 成功率</div>
-          <div class="stat-value">{{ agentAudit.stats.successRate.toFixed(1) }}%</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label"><i class="fa-solid fa-circle-xmark"></i> 失败率</div>
-          <div class="stat-value">{{ agentAudit.stats.failureRate.toFixed(1) }}%</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label"><i class="fa-solid fa-clock"></i> 平均耗时</div>
-          <div class="stat-value">{{ formatLatency(agentAudit.stats.avgLatencyMs) }}</div>
-        </div>
-      </div>
-
-      <div class="list-toolbar">
-        <h2><i class="fa-solid fa-chart-bar"></i> 调用记录</h2>
-        <div class="list-tools">
-          <input
-            v-model="searchInput"
-            class="search-input"
-            type="search"
-            placeholder="搜索 Trace ID 或 User..."
-            @keydown.enter="searchList"
-          />
-          <button type="button" class="btn" :disabled="agentAudit.loading" @click="searchList">
-            {{ agentAudit.loading ? "加载中…" : "刷新" }}
+  <div ref="pageRef" class="page-grid management-page-grid agent-audit-page">
+    <ManagementPageHeader
+      class="span-12"
+      title="Agent 审计中心"
+      description="按 Trace ID 查看全链路运行时间轴（仅平台管理员）"
+      icon="fa-solid fa-shield"
+      eyebrow="ACTWEAVE CONTROL PLANE"
+    >
+      <template #actions>
+        <div class="agent-audit-mask" :class="{ off: !agentAudit.isMasked }">
+          <i :class="agentAudit.isMasked ? 'fa-solid fa-shield' : 'fa-solid fa-shield-halved'"></i>
+          <span>数据脱敏</span>
+          <button
+            type="button"
+            class="toggle"
+            :class="{ on: agentAudit.isMasked }"
+            :disabled="!agentAudit.debugMode"
+            :title="agentAudit.debugMode ? '切换展示层脱敏' : 'debug 关闭时固定脱敏'"
+            @click="agentAudit.toggleMask()"
+          >
+            <span class="dot"></span>
           </button>
         </div>
-      </div>
+      </template>
+    </ManagementPageHeader>
 
-      <div class="table-card">
-        <table class="trace-table">
-          <thead>
-            <tr>
-              <th>Trace ID</th>
-              <th>触发时间</th>
-              <th>模型</th>
-              <th>用户标识</th>
-              <th>状态</th>
-              <th>耗时</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="!agentAudit.items.length">
-              <td colspan="7" class="empty">暂无调用记录</td>
-            </tr>
-            <tr
-              v-for="item in agentAudit.items"
-              :key="item.traceId"
-              class="trace-row"
-              @click="openDetail(item.traceId)"
-            >
-              <td class="mono aw-table-mono">{{ item.traceId }}</td>
-              <td class="aw-table-meta">{{ formatTime(item.startedAt) }}</td>
-              <td>
-                <span class="pill aw-table-pill">{{ item.model || "—" }}</span>
-              </td>
-              <td class="aw-table-meta">{{ displayUserLabel(item.userLabel) }}</td>
-              <td>
-                <span class="status aw-table-pill" :class="item.status">{{ statusLabel(item.status) }}</span>
-              </td>
-              <td class="mono aw-table-mono">{{ formatLatency(item.latencyMs) }}</td>
-              <td class="detail-cell">
-                <span class="detail-link">详情 <i class="fa-solid fa-chevron-right" aria-hidden="true" /></span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <nav class="trace-pagination" aria-label="调用记录分页">
-          <span>共 {{ agentAudit.total }} 条 · 第 {{ agentAudit.page }} / {{ pageCount }} 页</span>
-          <div class="trace-pagination-controls">
-            <div class="trace-page-size">
-              <AppSelect
-                :model-value="agentAudit.pageSize"
-                :options="pageSizeSelectOptions"
-                :disabled="agentAudit.loading"
-                compact
-                aria-label="每页条数"
-                @update:model-value="changePageSize"
-              />
+    <p v-if="actionError" class="span-12 agent-audit-error">{{ actionError }}</p>
+
+    <template v-if="isPlatformAdmin && agentAudit.view === 'list'">
+      <ManagementSummaryStrip class="span-12" :items="auditSummaryItems" />
+
+      <section class="span-12 management-list-card agent-audit-list-card">
+        <ManagementList
+          class="agent-audit-management-list"
+          :rows="agentAudit.items"
+          :columns="auditColumns"
+          row-key="traceId"
+          storage-key="actweave:agent-audit:columns"
+          :sticky-right-keys="['actions']"
+          :selectable="true"
+          :loading="agentAudit.loading"
+          :has-loaded="listHasLoaded"
+          :search="searchInput"
+          search-placeholder="搜索 Trace ID 或 User..."
+          search-aria-label="搜索调用记录"
+          reset-label="重置"
+          reset-aria-label="重置搜索"
+          :pagination="auditPagination"
+          @select-row="onAuditSelectRow"
+          @update:search="onAuditSearchUpdate"
+          @reset="onAuditReset"
+          @page-change="onAuditPageChange"
+        >
+          <template #cell-traceId="{ row }">
+            <code class="aw-table-mono">{{ row.traceId }}</code>
+          </template>
+          <template #cell-startedAt="{ row }">
+            <span class="aw-table-meta">{{ formatTime(row.startedAt) }}</span>
+          </template>
+          <template #cell-model="{ row }">
+            <span class="aw-table-pill audit-model-pill">{{ row.model || "—" }}</span>
+          </template>
+          <template #cell-userLabel="{ row }">
+            <span class="aw-table-meta">{{ displayUserLabel(row.userLabel) }}</span>
+          </template>
+          <template #cell-status="{ row }">
+            <span class="aw-table-pill audit-status-pill" :class="row.status">{{ statusLabel(row.status) }}</span>
+          </template>
+          <template #cell-latencyMs="{ row }">
+            <span class="aw-table-mono">{{ formatLatency(row.latencyMs) }}</span>
+          </template>
+          <template #cell-actions>
+            <span class="audit-detail-link">详情</span>
+          </template>
+          <template #empty>
+            <div class="empty-state management-registry-empty-state">
+              <div class="management-empty-state-icon"><i class="fa-solid fa-chart-line" /></div>
+              <h2>暂无调用记录</h2>
+              <p>在业务空间内产生 Agent 运行后，将在此按 Trace 展示。</p>
             </div>
-            <button
-              class="trace-page-button"
-              type="button"
-              aria-label="上一页"
-              :disabled="agentAudit.loading || agentAudit.page <= 1"
-              @click="changePage(agentAudit.page - 1)"
-            >
-              <i class="fa-solid fa-chevron-left" aria-hidden="true" />
-            </button>
-            <button
-              v-for="pageNumber in visiblePageNumbers"
-              :key="pageNumber"
-              class="trace-page-button"
-              :class="{ active: agentAudit.page === pageNumber }"
-              type="button"
-              :aria-label="`第 ${pageNumber} 页`"
-              :aria-current="agentAudit.page === pageNumber ? 'page' : undefined"
-              :disabled="agentAudit.loading"
-              @click="changePage(pageNumber)"
-            >
-              {{ pageNumber }}
-            </button>
-            <button
-              class="trace-page-button"
-              type="button"
-              aria-label="下一页"
-              :disabled="agentAudit.loading || agentAudit.page >= pageCount"
-              @click="changePage(agentAudit.page + 1)"
-            >
-              <i class="fa-solid fa-chevron-right" aria-hidden="true" />
-            </button>
-          </div>
-        </nav>
-      </div>
+          </template>
+        </ManagementList>
+      </section>
     </template>
 
     <template v-else-if="isPlatformAdmin && agentAudit.view === 'detail' && agentAudit.selected">
-      <div class="detail-header">
+      <div class="span-12 detail-header">
         <button type="button" class="back-btn" @click="backToList">
           <i class="fa-solid fa-arrow-left"></i>
         </button>
@@ -430,8 +442,8 @@ async function runAction(action: () => Promise<void>, fallback: string) {
         </div>
       </div>
 
-      <div v-if="agentAudit.detailLoading" class="empty">加载详情中…</div>
-      <div v-else class="timeline">
+      <div v-if="agentAudit.detailLoading" class="span-12 empty">加载详情中…</div>
+      <div v-else class="span-12 timeline">
         <div v-for="(step, index) in agentAudit.selected.steps" :key="stepKey(step, index)" class="timeline-item">
           <div class="timeline-rail">
             <div class="timeline-icon" :class="step.type">
@@ -475,36 +487,9 @@ async function runAction(action: () => Promise<void>, fallback: string) {
 
 <style scoped>
 .agent-audit-page {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 1.5rem 1.25rem 3rem;
+  min-width: 0;
 }
-.agent-audit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-  flex-wrap: wrap;
-}
-.agent-audit-brand {
-  display: flex;
-  gap: 0.85rem;
-  align-items: center;
-}
-.agent-audit-brand h1 {
-  margin: 0;
-  font-size: 1.25rem;
-}
-.agent-audit-brand-icon {
-  width: 2.25rem;
-  height: 2.25rem;
-  border-radius: 0.75rem;
-  background: #10b981;
-  color: white;
-  display: grid;
-  place-items: center;
-}
+
 .agent-audit-mask {
   display: flex;
   align-items: center;
@@ -547,162 +532,64 @@ async function runAction(action: () => Promise<void>, fallback: string) {
   opacity: 0.6;
   cursor: not-allowed;
 }
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-.stat-card {
-  border: 1px solid #f3f4f6;
-  border-radius: 1.25rem;
-  padding: 1.1rem 1.2rem;
-  background: white;
-  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.04);
-}
-.stat-label {
-  color: #6b7280;
-  font-size: 0.85rem;
-  margin-bottom: 0.6rem;
-  display: flex;
-  gap: 0.4rem;
-  align-items: center;
-}
-.stat-value {
-  font-size: 1.75rem;
-  font-weight: 700;
-}
-.list-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.85rem;
-}
-.list-toolbar h2 {
-  margin: 0;
-  font-size: 1.1rem;
-  display: flex;
-  gap: 0.45rem;
-  align-items: center;
-}
-.list-tools {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-.search-input,
-.btn {
-  border: 1px solid #e5e7eb;
-  border-radius: 0.75rem;
-  padding: 0.55rem 0.8rem;
-  background: #f9fafb;
-  font-size: 0.875rem;
-}
-.search-input {
-  min-width: 220px;
-}
-.btn {
-  cursor: pointer;
-  font-weight: 600;
-}
-.table-card {
-  border: 1px solid #f3f4f6;
-  border-radius: 1.25rem;
-  overflow: hidden;
-  background: white;
-  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.04);
-}
-.table-card .trace-table {
-  display: table;
-}
-.trace-pagination {
-  display: flex;
-  min-height: 56px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  padding: 0 16px;
-  border-top: 1px solid #f3f4f6;
-  color: #6b7280;
-  font-size: 0.8125rem;
-  background: #fff;
-}
-.trace-pagination-controls {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.trace-page-size {
-  width: 128px;
-  flex: 0 0 auto;
+
+.agent-audit-list-card {
+  min-width: 0;
 }
 
-.trace-page-size :deep(.app-select) {
-  width: 100%;
-}
-.trace-page-button {
-  min-width: 32px;
-  min-height: 32px;
+.audit-model-pill {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 0.5rem;
-  background: transparent;
-  color: #6b7280;
-  font: inherit;
-  font-size: 0.8125rem;
-  cursor: pointer;
-}
-.trace-page-button:hover:not(:disabled),
-.trace-page-button.active {
+  padding: 2px 8px;
+  border-radius: 6px;
   background: #f3f4f6;
-  color: #111827;
+  color: #374151;
+}
+
+.audit-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.audit-status-pill.success {
+  background: #ecfdf5;
+  color: #059669;
+}
+.audit-status-pill.error {
+  background: #fff1f2;
+  color: #e11d48;
+}
+.audit-status-pill.running {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+/* Keep header/body of 操作 column on the same right edge. */
+.agent-audit-management-list :deep(.data-table th[data-column-key="actions"]),
+.agent-audit-management-list :deep(.data-table td[data-column-key="actions"]) {
+  text-align: right;
+  vertical-align: middle;
+}
+
+.agent-audit-management-list :deep(.data-table th[data-column-key="actions"] .data-table-sort-button),
+.agent-audit-management-list :deep(.data-table th[data-column-key="actions"]) {
+  justify-content: flex-end;
+}
+
+.audit-detail-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 100%;
+  color: #0f766e;
+  font-size: 12px;
   font-weight: 700;
-}
-.trace-page-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
+  line-height: 1;
   white-space: nowrap;
 }
-.trace-table {
-  width: 100%;
-  border-collapse: collapse;
-  text-align: left;
-  font-family: var(--aw-table-font, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
-}
-.trace-table th {
-  background: #f9fafb;
-  color: var(--aw-table-header-color, #6b7280);
-  font-size: var(--aw-table-header-size, 0.75rem);
-  font-weight: var(--aw-table-header-weight, 600);
-  padding: 0.9rem 1rem;
-}
-.trace-table td {
-  padding: 0.9rem 1rem;
-  border-top: 1px solid #f9fafb;
-  color: var(--aw-table-body-color, #374151);
-  font-size: var(--aw-table-body-size, 0.8125rem);
-  font-weight: var(--aw-table-body-weight, 400);
-}
-.trace-row {
-  cursor: pointer;
-}
-.trace-row:hover {
-  background: #fafafa;
-}
+
 .mono {
   font-family: var(--aw-table-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: var(--aw-table-mono-size, 0.75rem);
@@ -716,35 +603,6 @@ async function runAction(action: () => Promise<void>, fallback: string) {
   padding: 0.15rem 0.5rem;
   font-size: var(--aw-table-pill-size, 0.6875rem);
   font-weight: var(--aw-table-pill-weight, 600);
-}
-.status {
-  display: inline-flex;
-  border-radius: 0.5rem;
-  padding: 0.15rem 0.5rem;
-  font-size: var(--aw-table-pill-size, 0.6875rem);
-  font-weight: var(--aw-table-pill-weight, 600);
-}
-.status.success {
-  background: #ecfdf5;
-  color: #059669;
-}
-.status.error {
-  background: #fff1f2;
-  color: #e11d48;
-}
-.status.running {
-  background: #eff6ff;
-  color: #2563eb;
-}
-.trace-table th:last-child,
-.trace-table td.detail-cell {
-  width: 5.75rem;
-  min-width: 5.75rem;
-  max-width: 5.75rem;
-  padding-right: 1rem;
-  text-align: right;
-  white-space: nowrap;
-  vertical-align: middle;
 }
 .detail-link {
   display: inline-flex;

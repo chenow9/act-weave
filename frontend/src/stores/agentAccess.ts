@@ -137,13 +137,13 @@ export const useAgentAccessStore = defineStore("agentAccess", {
         );
         if (this.workspaceId !== workspaceId) return this.clients;
         this.clients = response.data.items;
+        // List-first UX: keep selection only if still present; do not auto-pick first client.
         if (!this.clients.some((client) => client.id === this.selectedClientId)) {
-          this.selectedClientId = this.clients[0]?.id || "";
-        }
-        if (this.selectedClientId) await this.loadClientDetail(this.selectedClientId);
-        else {
+          this.selectedClientId = "";
           this.credentials = [];
           this.grants = [];
+        } else if (this.selectedClientId) {
+          await this.loadClientDetail(this.selectedClientId);
         }
         this.hasLoaded = true;
         return this.clients;
@@ -153,6 +153,12 @@ export const useAgentAccessStore = defineStore("agentAccess", {
       } finally {
         this.loading = false;
       }
+    },
+    clearSelection() {
+      this.selectedClientId = "";
+      this.credentials = [];
+      this.grants = [];
+      this.detailLoading = false;
     },
     async loadClientDetail(clientId: string) {
       if (!this.workspaceId) return;

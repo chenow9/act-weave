@@ -3,6 +3,7 @@ import "./agent-access-page.css";
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 
 import AppSelect, { type AppSelectOption } from "../components/AppSelect.vue";
+import ManagementList, { type ManagementListColumn } from "../components/ManagementList.vue";
 import ManagementPageHeader from "../components/ManagementPageHeader.vue";
 import ManagementSummaryStrip from "../components/ManagementSummaryStrip.vue";
 import WorkspaceContextState from "../components/WorkspaceContextState.vue";
@@ -18,6 +19,7 @@ import { useAgentStore } from "../stores/agents";
 import { useAuthStore } from "../stores/auth";
 import { useWorkspaceStore } from "../stores/workspaces";
 
+type PageView = "list" | "detail";
 type DetailTab = "credentials" | "grants" | "configuration";
 type DangerTarget =
   | { kind: "credential"; value: AgentAccessCredential }
@@ -29,6 +31,7 @@ const agents = useAgentStore();
 const auth = useAuthStore();
 const workspaces = useWorkspaceStore();
 const query = ref("");
+const viewMode = ref<PageView>("list");
 const activeTab = ref<DetailTab>("credentials");
 const actionMessage = ref("");
 const actionError = ref("");
@@ -156,6 +159,52 @@ const selectedAuthMethodLabel = computed(() =>
   selectedClient.value?.authMethod === "private_key_jwt" ? "Private Key JWT" : "Client Secret Basic",
 );
 
+const clientColumns = computed<ManagementListColumn<AgentAccessClient>[]>(() => [
+  {
+    key: "name",
+    label: "名称",
+    width: 200,
+    getValue: (row) => row.name,
+  },
+  {
+    key: "clientId",
+    label: "Client ID",
+    width: 220,
+    getValue: (row) => row.clientId,
+  },
+  {
+    key: "authMethod",
+    label: "认证方式",
+    width: 150,
+    getValue: (row) => authMethodShort(row.authMethod),
+  },
+  {
+    key: "status",
+    label: "状态",
+    width: 100,
+    getValue: (row) => (row.status === "ACTIVE" ? "活动" : "已禁用"),
+  },
+  {
+    key: "tokenTtlSeconds",
+    label: "Token TTL",
+    width: 110,
+    getValue: (row) => `${row.tokenTtlSeconds}s`,
+  },
+  {
+    key: "updatedAt",
+    label: "更新时间",
+    width: 160,
+    getValue: (row) => formatTime(row.updatedAt),
+  },
+  {
+    key: "actions",
+    label: "操作",
+    width: 88,
+    align: "right",
+    headerAlign: "right",
+  },
+]);
+
 useModalFocus({ visible: createOpen, modalRef: createModalRef, onClose: () => (createOpen.value = false) });
 useModalFocus({ visible: rotateOpen, modalRef: rotateModalRef, onClose: () => (rotateOpen.value = false) });
 useModalFocus({ visible: grantOpen, modalRef: grantModalRef, onClose: () => (grantOpen.value = false) });
@@ -165,7 +214,10 @@ useModalFocus({ visible: dangerOpen, modalRef: dangerModalRef, onClose: closeDan
 onMounted(loadPage);
 onBeforeUnmount(clearSecret);
 watch(workspaceId, (next, previous) => {
-  if (next && next !== previous) void loadPage();
+  if (next && next !== previous) {
+    viewMode.value = "list";
+    void loadPage();
+  }
 });
 
 async function loadPage() {
@@ -176,6 +228,10 @@ async function loadPage() {
     if (currentUserId.value)
       // Permissions use workspace.currentUserRole; no member bulk load.
       await Promise.all([access.load(workspaceId.value), agents.loadAgents({ workspaceId: workspaceId.value })]);
+    // After refresh, stay on detail only if selection still valid.
+    if (viewMode.value === "detail" && !access.selectedClientId) {
+      viewMode.value = "list";
+    }
   } catch (error) {
     actionError.value = messageFor(error, "Agent Access 配置加载失败，请稍后重试。");
   }
@@ -184,7 +240,25 @@ async function loadPage() {
 async function selectClient(client: AgentAccessClient) {
   clearFeedback();
   clientIdCopyNotice.value = "";
+  activeTab.value = "credentials";
   await access.loadClientDetail(client.id);
+  viewMode.value = "detail";
+}
+
+function backToList() {
+  viewMode.value = "list";
+  activeTab.value = "credentials";
+  clientIdCopyNotice.value = "";
+  access.clearSelection();
+  clearFeedback();
+}
+
+function onClientSearchUpdate(value: string) {
+  query.value = value;
+}
+
+function onClientSearchReset() {
+  query.value = "";
 }
 
 function openCreate() {
@@ -221,6 +295,8 @@ async function createClient() {
       tokenTtlSeconds: createForm.tokenTtlSeconds,
     });
     createOpen.value = false;
+    activeTab.value = "credentials";
+    viewMode.value = "detail";
     if (result.secret) showSecret(result.secret, `Client ${result.client.name}`);
     else actionMessage.value = "Private Key Client 已注册；ActWeave 未生成或保存私钥。";
   }, "Client 创建失败，请检查认证配置。 ");
@@ -395,8 +471,9 @@ function authMethodShort(method: string) {
 </script>
 
 <template>
-  <div class="agent-access-page">
+  <div class="page-grid management-page-grid agent-access-page">
     <ManagementPageHeader
+      class="span-12"
       title="Agent Access"
       description="为第三方 Web / App 注册 Workspace 级 Client，管理凭证轮换和 Agent 数据面授权。"
       icon="fa-solid fa-shield-halved"
@@ -412,252 +489,328 @@ function authMethodShort(method: string) {
       </template>
     </ManagementPageHeader>
 
-    <WorkspaceContextState v-if="!hasWorkspaceContext" feature="Agent Access" @retry="loadPage" />
+    <WorkspaceContextState v-if="!hasWorkspaceContext" class="span-12" feature="Agent Access" @retry="loadPage" />
     <template v-else>
-      <p v-if="!canManage" data-testid="readonly-notice" class="readonly-notice">
+      <p v-if="!canManage" data-testid="readonly-notice" class="span-12 readonly-notice">
         <i class="fa-solid fa-eye" />当前 Workspace 角色仅可查看接入配置；创建、轮换和撤销操作需要 OWNER 或 ADMIN。
       </p>
-      <p v-if="actionMessage" class="action-feedback success" role="status">{{ actionMessage }}</p>
-      <p v-if="actionError || access.error" class="action-feedback error" role="alert">
+      <p v-if="actionMessage" class="span-12 action-feedback success" role="status">{{ actionMessage }}</p>
+      <p v-if="actionError || access.error" class="span-12 action-feedback error" role="alert">
         {{ actionError || access.error }}
       </p>
-      <ManagementSummaryStrip :items="summaryItems" />
+      <ManagementSummaryStrip v-if="viewMode === 'list'" class="span-12" :items="summaryItems" />
 
-      <section class="access-workbench" :aria-busy="access.loading">
-        <aside class="client-rail">
-          <label class="client-search">
-            <i class="fa-solid fa-magnifying-glass" />
-            <input
-              v-model="query"
-              type="search"
-              placeholder="搜索 Client ID 或名称"
-              aria-label="搜索 Agent Access Client"
-            />
-          </label>
-          <div v-if="access.loading && !access.hasLoaded" class="empty-state">正在加载接入配置…</div>
-          <div v-else-if="!filteredClients.length" class="empty-state">
-            <i class="fa-solid fa-shield" />
-            <strong>尚未注册 Client</strong>
-            <span>注册后即可为第三方平台签发独立凭证和 Agent Scope。</span>
-          </div>
-          <button
-            v-for="client in filteredClients"
-            :key="client.id"
-            class="client-card"
-            :class="{ selected: client.id === access.selectedClientId }"
-            type="button"
-            @click="selectClient(client)"
-          >
-            <span class="client-card-icon"
-              ><i :class="client.authMethod === 'private_key_jwt' ? 'fa-solid fa-fingerprint' : 'fa-solid fa-key'"
-            /></span>
-            <span class="client-card-copy">
-              <b>{{ client.name }}</b>
-              <small>{{ authMethodShort(client.authMethod) }} · {{ shortID(client.clientId) }}</small>
-            </span>
-            <span class="status-pill" :class="client.status.toLocaleLowerCase()">{{
-              client.status === "ACTIVE" ? "活动" : "已禁用"
+      <!-- List: Client table -->
+      <section
+        v-if="viewMode === 'list'"
+        class="span-12 management-list-card access-list-card"
+        :aria-busy="access.loading"
+      >
+        <ManagementList
+          class="access-client-management-list"
+          :rows="filteredClients"
+          :columns="clientColumns"
+          row-key="id"
+          storage-key="actweave:agent-access:columns"
+          :sticky-right-keys="['actions']"
+          :selectable="true"
+          :loading="access.loading"
+          :has-loaded="access.hasLoaded"
+          :search="query"
+          search-placeholder="搜索 Client ID 或名称"
+          search-aria-label="搜索 Agent Access Client"
+          reset-label="重置"
+          reset-aria-label="重置搜索"
+          @select-row="selectClient"
+          @update:search="onClientSearchUpdate"
+          @reset="onClientSearchReset"
+        >
+          <template #cell-name="{ row }">
+            <div class="access-client-name-cell">
+              <span class="access-client-icon" aria-hidden="true">
+                <i :class="row.authMethod === 'private_key_jwt' ? 'fa-solid fa-fingerprint' : 'fa-solid fa-key'" />
+              </span>
+              <span>
+                <strong class="aw-table-title">{{ row.name }}</strong>
+              </span>
+            </div>
+          </template>
+          <template #cell-clientId="{ row }">
+            <code class="aw-table-mono" :title="row.clientId">{{ row.clientId }}</code>
+          </template>
+          <template #cell-authMethod="{ row }">
+            <span class="aw-table-meta">{{ authMethodShort(row.authMethod) }}</span>
+          </template>
+          <template #cell-status="{ row }">
+            <span class="status-pill aw-table-pill" :class="row.status.toLocaleLowerCase()">{{
+              row.status === "ACTIVE" ? "活动" : "已禁用"
             }}</span>
+          </template>
+          <template #cell-tokenTtlSeconds="{ row }">
+            <span class="aw-table-mono">{{ row.tokenTtlSeconds }}s</span>
+          </template>
+          <template #cell-updatedAt="{ row }">
+            <span class="aw-table-meta">{{ formatTime(row.updatedAt) }}</span>
+          </template>
+          <template #cell-actions>
+            <span class="access-detail-link">详情</span>
+          </template>
+          <template #empty>
+            <div class="empty-state management-registry-empty-state">
+              <div class="management-empty-state-icon"><i class="fa-solid fa-shield" /></div>
+              <h2>尚未注册 Client</h2>
+              <p>注册后即可为第三方平台签发独立凭证和 Agent Scope。</p>
+            </div>
+          </template>
+        </ManagementList>
+      </section>
+
+      <!-- Detail: credential rotation / grants / config -->
+      <section
+        v-else-if="selectedClient"
+        class="span-12 client-detail access-detail-panel"
+        :aria-busy="access.detailLoading"
+      >
+        <header class="detail-header">
+          <button type="button" class="back-btn" aria-label="返回 Client 列表" @click="backToList">
+            <i class="fa-solid fa-arrow-left" />
           </button>
-        </aside>
-
-        <main v-if="selectedClient" class="client-detail" :aria-busy="access.detailLoading">
-          <header class="detail-header">
-            <div class="detail-title-block">
-              <div class="detail-title-row">
-                <h2>{{ selectedClient.name }}</h2>
-                <span class="status-pill" :class="selectedClient.status.toLocaleLowerCase()">
-                  {{ selectedClient.status === "ACTIVE" ? "活动" : "已禁用" }}
-                </span>
-              </div>
-              <div class="client-id-row">
-                <span class="client-id-label">Client ID</span>
-                <code class="client-id-value" :title="selectedClient.clientId">{{ selectedClient.clientId }}</code>
-                <button class="copy-id-button" type="button" aria-label="复制 Client ID" @click="copyClientId">
-                  <i class="fa-regular fa-copy" />
-                </button>
-                <span v-if="clientIdCopyNotice" class="copy-id-notice" role="status">{{ clientIdCopyNotice }}</span>
-              </div>
+          <div class="detail-title-block">
+            <div class="detail-title-row">
+              <h2>{{ selectedClient.name }}</h2>
+              <span class="status-pill" :class="selectedClient.status.toLocaleLowerCase()">
+                {{ selectedClient.status === "ACTIVE" ? "活动" : "已禁用" }}
+              </span>
             </div>
-            <div v-if="canManage" class="detail-actions">
-              <button
-                v-if="selectedClient.status === 'DISABLED'"
-                class="ghost-button"
-                type="button"
-                @click="enableClient(selectedClient)"
-              >
-                启用
+            <div class="client-id-row">
+              <span class="client-id-label">Client ID</span>
+              <code class="client-id-value" :title="selectedClient.clientId">{{ selectedClient.clientId }}</code>
+              <button class="copy-id-button" type="button" aria-label="复制 Client ID" @click="copyClientId">
+                <i class="fa-regular fa-copy" />
               </button>
-              <button
-                v-else
-                class="danger-button"
-                type="button"
-                @click="askDanger({ kind: 'client', value: selectedClient })"
-              >
-                禁用 Client
-              </button>
-            </div>
-          </header>
-
-          <div class="identity-chips" aria-label="Client 摘要">
-            <div class="identity-chip">
-              <span>认证方式</span>
-              <strong>{{ selectedAuthMethodLabel }}</strong>
-            </div>
-            <div class="identity-chip">
-              <span>Token TTL</span>
-              <strong>{{ selectedClient.tokenTtlSeconds }} 秒</strong>
-            </div>
-            <div class="identity-chip">
-              <span>Service Principal</span>
-              <strong :title="selectedClient.servicePrincipalId">{{
-                shortID(selectedClient.servicePrincipalId)
-              }}</strong>
-            </div>
-            <div class="identity-chip">
-              <span>最近更新</span>
-              <strong>{{ formatTime(selectedClient.updatedAt) }}</strong>
+              <span v-if="clientIdCopyNotice" class="copy-id-notice" role="status">{{ clientIdCopyNotice }}</span>
             </div>
           </div>
-
-          <nav class="detail-tabs" aria-label="Agent Access 详情">
-            <button type="button" :class="{ active: activeTab === 'credentials' }" @click="activeTab = 'credentials'">
-              凭证 <span>{{ access.credentials.length }}</span>
-            </button>
-            <button type="button" :class="{ active: activeTab === 'grants' }" @click="activeTab = 'grants'">
-              Agent 授权 <span>{{ access.grants.length }}</span>
+          <div v-if="canManage" class="detail-actions">
+            <button
+              v-if="selectedClient.status === 'DISABLED'"
+              class="ghost-button"
+              type="button"
+              @click="enableClient(selectedClient)"
+            >
+              启用
             </button>
             <button
+              v-else
+              class="danger-button"
               type="button"
-              :class="{ active: activeTab === 'configuration' }"
-              @click="activeTab = 'configuration'"
+              @click="askDanger({ kind: 'client', value: selectedClient })"
             >
-              接入配置
+              禁用 Client
             </button>
-          </nav>
+          </div>
+        </header>
 
-          <section v-if="activeTab === 'credentials'" class="detail-section">
-            <div class="section-heading">
-              <div>
-                <h3>凭证生命周期</h3>
-                <p>只展示公开 Hint 和使用时间；认证材料不可恢复。</p>
-              </div>
-              <button v-if="canManage" class="primary-button compact" type="button" @click="openRotate">
-                <i class="fa-solid fa-rotate" />轮换凭证
-              </button>
-            </div>
-            <article v-for="credential in access.credentials" :key="credential.id" class="resource-card">
-              <span class="resource-icon"
-                ><i :class="credential.type === 'jwk' ? 'fa-solid fa-fingerprint' : 'fa-solid fa-key'"
-              /></span>
-              <div class="resource-main">
-                <strong>{{ credential.type === "jwk" ? "JWK" : "Client Secret" }} · {{ credential.publicHint }}</strong>
-                <span
-                  >创建 {{ formatTime(credential.createdAt) }} · 最后使用 {{ formatTime(credential.lastUsedAt) }}</span
-                >
-                <small v-if="credential.expiresAt">有效至 {{ formatTime(credential.expiresAt) }}</small>
-              </div>
-              <div class="resource-actions">
-                <span class="status-pill" :class="credential.revokedAt ? 'revoked' : 'active'">{{
-                  credential.revokedAt ? "已撤销" : "活动"
-                }}</span>
-                <button
-                  v-if="canManage && !credential.revokedAt"
-                  class="text-danger"
-                  type="button"
-                  @click="askDanger({ kind: 'credential', value: credential })"
-                >
-                  撤销
-                </button>
-              </div>
-            </article>
-            <div v-if="!access.credentials.length" class="inline-empty">
-              <strong>暂无凭证</strong>
-              <span>轮换或创建 Client 后会在这里展示公开 Hint。</span>
-            </div>
-          </section>
+        <div class="identity-chips" aria-label="Client 摘要">
+          <div class="identity-chip">
+            <span>认证方式</span>
+            <strong>{{ selectedAuthMethodLabel }}</strong>
+          </div>
+          <div class="identity-chip">
+            <span>Token TTL</span>
+            <strong>{{ selectedClient.tokenTtlSeconds }} 秒</strong>
+          </div>
+          <div class="identity-chip">
+            <span>Service Principal</span>
+            <strong :title="selectedClient.servicePrincipalId">{{
+              shortID(selectedClient.servicePrincipalId)
+            }}</strong>
+          </div>
+          <div class="identity-chip">
+            <span>最近更新</span>
+            <strong>{{ formatTime(selectedClient.updatedAt) }}</strong>
+          </div>
+        </div>
 
-          <section v-else-if="activeTab === 'grants'" class="detail-section">
-            <div class="section-heading">
-              <div>
-                <h3>Agent 数据面授权</h3>
-                <p>每个 Grant 只包含受控数据面 Scope，不授予 Workspace 管理能力。</p>
-              </div>
-              <button v-if="canManage" class="primary-button compact" type="button" @click="openGrant">
-                <i class="fa-solid fa-link" />授权 Agent
-              </button>
-            </div>
-            <article v-for="grant in access.grants" :key="grant.id" class="resource-card">
-              <span class="resource-icon"><i class="fa-solid fa-robot" /></span>
-              <div class="resource-main">
-                <strong>{{ agentName(grant.agentId) }}</strong>
-                <div class="scope-list">
-                  <code v-for="scope in grant.scopes" :key="scope">{{ scope }}</code>
-                </div>
-                <small
-                  >有效期：{{ formatTime(grant.validFrom) }} →
-                  {{ grant.expiresAt ? formatTime(grant.expiresAt) : "长期" }}</small
-                >
-              </div>
-              <div class="resource-actions">
-                <span class="status-pill" :class="grant.status.toLocaleLowerCase()">{{
-                  grant.status === "ACTIVE" ? "活动" : "已撤销"
-                }}</span>
-                <button
-                  v-if="canManage && grant.status === 'ACTIVE'"
-                  class="text-danger"
-                  type="button"
-                  @click="askDanger({ kind: 'grant', value: grant })"
-                >
-                  撤销
-                </button>
-              </div>
-            </article>
-            <div v-if="!access.grants.length" class="inline-empty">
-              <strong>尚未授权 Agent</strong>
-              <span>为业务平台创建最小权限 Grant，绑定可调用的 Agent 与 Scope。</span>
-            </div>
-          </section>
+        <nav class="detail-tabs" aria-label="Agent Access 详情">
+          <button type="button" :class="{ active: activeTab === 'credentials' }" @click="activeTab = 'credentials'">
+            凭证 <span>{{ access.credentials.length }}</span>
+          </button>
+          <button type="button" :class="{ active: activeTab === 'grants' }" @click="activeTab = 'grants'">
+            Agent 授权 <span>{{ access.grants.length }}</span>
+          </button>
+          <button
+            type="button"
+            :class="{ active: activeTab === 'configuration' }"
+            @click="activeTab = 'configuration'"
+          >
+            接入配置
+          </button>
+        </nav>
 
-          <section v-else class="detail-section configuration-section">
-            <div class="section-heading">
-              <div>
-                <h3>接入与信任配置</h3>
-                <p>这些值参与浏览器接入、JWT 验证和外部 Subject 信任边界。</p>
-              </div>
+        <section v-if="activeTab === 'credentials'" class="detail-section">
+          <div class="section-heading">
+            <div>
+              <h3>凭证生命周期</h3>
+              <p>只展示公开 Hint 和使用时间；认证材料不可恢复。在此轮换或撤销凭证。</p>
             </div>
-            <dl class="config-list">
-              <div>
-                <dt>JWKS URI</dt>
-                <dd>{{ selectedClient.jwksUri || "不适用（Secret 认证）" }}</dd>
-              </div>
-              <div>
-                <dt>Trusted Subject Issuer</dt>
-                <dd>{{ selectedClient.trustedSubjectIssuer || "未启用 Token Exchange" }}</dd>
-              </div>
-              <div>
-                <dt>Trusted Subject JWKS</dt>
-                <dd>{{ selectedClient.trustedSubjectJwksUri || "—" }}</dd>
-              </div>
-              <div>
-                <dt>CORS Origins</dt>
-                <dd>
-                  <code v-for="origin in selectedClient.allowedCorsOrigins" :key="origin">{{ origin }}</code>
-                  <span v-if="!selectedClient.allowedCorsOrigins.length">仅服务端/BFF 接入</span>
-                </dd>
-              </div>
-            </dl>
-            <p class="config-note">
-              <i class="fa-solid fa-circle-info" />
-              认证方式和信任根是安全边界。v1 通过注册新 Client 变更，不在原 Client 上静默替换。
-            </p>
-          </section>
-        </main>
-        <main v-else class="client-detail empty-detail">
-          <i class="fa-solid fa-arrow-left" />
-          <strong>选择一个 Client 查看接入详情</strong>
-          <span>或点击右上角「注册 Client」开始接入第三方平台。</span>
-        </main>
+            <button v-if="canManage" class="primary-button compact" type="button" @click="openRotate">
+              <i class="fa-solid fa-rotate" />轮换凭证
+            </button>
+          </div>
+          <div v-if="access.credentials.length" class="access-table-shell">
+            <div class="data-table-scroll">
+              <table class="data-table access-resource-table">
+                <thead>
+                  <tr>
+                    <th>类型 / Hint</th>
+                    <th>创建时间</th>
+                    <th>最后使用</th>
+                    <th>有效期</th>
+                    <th>状态</th>
+                    <th class="is-align-right">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="credential in access.credentials" :key="credential.id">
+                    <td>
+                      <strong class="aw-table-title"
+                        >{{ credential.type === "jwk" ? "JWK" : "Client Secret" }} ·
+                        {{ credential.publicHint }}</strong
+                      >
+                    </td>
+                    <td><span class="aw-table-meta">{{ formatTime(credential.createdAt) }}</span></td>
+                    <td><span class="aw-table-meta">{{ formatTime(credential.lastUsedAt) }}</span></td>
+                    <td>
+                      <span class="aw-table-meta">{{
+                        credential.expiresAt ? formatTime(credential.expiresAt) : "—"
+                      }}</span>
+                    </td>
+                    <td>
+                      <span class="status-pill aw-table-pill" :class="credential.revokedAt ? 'revoked' : 'active'">{{
+                        credential.revokedAt ? "已撤销" : "活动"
+                      }}</span>
+                    </td>
+                    <td class="is-align-right">
+                      <button
+                        v-if="canManage && !credential.revokedAt"
+                        class="text-danger"
+                        type="button"
+                        @click="askDanger({ kind: 'credential', value: credential })"
+                      >
+                        撤销
+                      </button>
+                      <span v-else class="aw-table-meta">—</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div v-else class="inline-empty">
+            <strong>暂无凭证</strong>
+            <span>轮换或创建 Client 后会在这里展示公开 Hint。</span>
+          </div>
+        </section>
+
+        <section v-else-if="activeTab === 'grants'" class="detail-section">
+          <div class="section-heading">
+            <div>
+              <h3>Agent 数据面授权</h3>
+              <p>每个 Grant 只包含受控数据面 Scope，不授予 Workspace 管理能力。</p>
+            </div>
+            <button v-if="canManage" class="primary-button compact" type="button" @click="openGrant">
+              <i class="fa-solid fa-link" />授权 Agent
+            </button>
+          </div>
+          <div v-if="access.grants.length" class="access-table-shell">
+            <div class="data-table-scroll">
+              <table class="data-table access-resource-table">
+                <thead>
+                  <tr>
+                    <th>Agent</th>
+                    <th>Scopes</th>
+                    <th>有效期</th>
+                    <th>状态</th>
+                    <th class="is-align-right">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="grant in access.grants" :key="grant.id">
+                    <td>
+                      <strong class="aw-table-title">{{ agentName(grant.agentId) }}</strong>
+                    </td>
+                    <td>
+                      <div class="scope-list">
+                        <code v-for="scope in grant.scopes" :key="scope" class="aw-table-mono">{{ scope }}</code>
+                      </div>
+                    </td>
+                    <td>
+                      <span class="aw-table-meta"
+                        >{{ formatTime(grant.validFrom) }} →
+                        {{ grant.expiresAt ? formatTime(grant.expiresAt) : "长期" }}</span
+                      >
+                    </td>
+                    <td>
+                      <span class="status-pill aw-table-pill" :class="grant.status.toLocaleLowerCase()">{{
+                        grant.status === "ACTIVE" ? "活动" : "已撤销"
+                      }}</span>
+                    </td>
+                    <td class="is-align-right">
+                      <button
+                        v-if="canManage && grant.status === 'ACTIVE'"
+                        class="text-danger"
+                        type="button"
+                        @click="askDanger({ kind: 'grant', value: grant })"
+                      >
+                        撤销
+                      </button>
+                      <span v-else class="aw-table-meta">—</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div v-else class="inline-empty">
+            <strong>尚未授权 Agent</strong>
+            <span>为业务平台创建最小权限 Grant，绑定可调用的 Agent 与 Scope。</span>
+          </div>
+        </section>
+
+        <section v-else class="detail-section configuration-section">
+          <div class="section-heading">
+            <div>
+              <h3>接入与信任配置</h3>
+              <p>这些值参与浏览器接入、JWT 验证和外部 Subject 信任边界。</p>
+            </div>
+          </div>
+          <dl class="config-list">
+            <div>
+              <dt>JWKS URI</dt>
+              <dd>{{ selectedClient.jwksUri || "不适用（Secret 认证）" }}</dd>
+            </div>
+            <div>
+              <dt>Trusted Subject Issuer</dt>
+              <dd>{{ selectedClient.trustedSubjectIssuer || "未启用 Token Exchange" }}</dd>
+            </div>
+            <div>
+              <dt>Trusted Subject JWKS</dt>
+              <dd>{{ selectedClient.trustedSubjectJwksUri || "—" }}</dd>
+            </div>
+            <div>
+              <dt>CORS Origins</dt>
+              <dd>
+                <code v-for="origin in selectedClient.allowedCorsOrigins" :key="origin">{{ origin }}</code>
+                <span v-if="!selectedClient.allowedCorsOrigins.length">仅服务端/BFF 接入</span>
+              </dd>
+            </div>
+          </dl>
+          <p class="config-note">
+            <i class="fa-solid fa-circle-info" />
+            认证方式和信任根是安全边界。v1 通过注册新 Client 变更，不在原 Client 上静默替换。
+          </p>
+        </section>
       </section>
     </template>
 
@@ -919,6 +1072,87 @@ function authMethodShort(method: string) {
   display: grid;
   gap: 16px;
   min-width: 0;
+}
+
+.access-list-card {
+  min-width: 0;
+}
+
+.access-client-name-cell {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.access-client-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  border-radius: 8px;
+  background: #ecfdf5;
+  color: #059669;
+  font-size: 13px;
+}
+
+.access-detail-link {
+  display: inline-flex;
+  width: 100%;
+  justify-content: flex-end;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.access-detail-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  padding: 18px 20px 22px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 10px 30px -18px rgba(15, 23, 42, 0.12);
+}
+
+.access-detail-panel .detail-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.access-detail-panel .back-btn {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #475569;
+  cursor: pointer;
+}
+
+.access-detail-panel .back-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.access-detail-panel .detail-title-block {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.access-detail-panel .detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
 }
 
 .readonly-notice,
@@ -1671,4 +1905,65 @@ function authMethodShort(method: string) {
     justify-content: flex-start;
   }
 }
+
+.access-table-shell {
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+}
+.access-table-shell .data-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+.access-resource-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-family: var(--aw-table-font);
+}
+.access-resource-table thead tr {
+  background: #f8fafc;
+}
+.access-resource-table th {
+  padding: 10px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  color: var(--aw-table-header-color);
+  font-size: var(--aw-table-header-size);
+  font-weight: var(--aw-table-header-weight);
+  text-align: left;
+  white-space: nowrap;
+}
+.access-resource-table th.is-align-right,
+.access-resource-table td.is-align-right {
+  text-align: right;
+}
+.access-resource-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  color: var(--aw-table-body-color);
+  font-size: var(--aw-table-body-size);
+  font-weight: var(--aw-table-body-weight);
+  vertical-align: middle;
+}
+.access-resource-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.access-resource-table tbody tr:hover {
+  background: #fafafa;
+}
+.access-resource-table .scope-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.access-resource-table .scope-list code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  font-size: var(--aw-table-mono-size);
+}
+
 </style>

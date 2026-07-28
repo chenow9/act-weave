@@ -29,20 +29,33 @@ const credential = {
 } as const;
 const access = reactive({
   clients: [client],
-  selectedClientId: "client-1",
-  credentials: [credential],
-  grants: [],
+  selectedClientId: "" as string,
+  credentials: [] as typeof credential[],
+  grants: [] as unknown[],
   loading: false,
   detailLoading: false,
   mutating: false,
   error: "",
   hasLoaded: true,
-  selectedClient: computed(() => client),
-  activeCredentials: computed(() => [credential]),
+  selectedClient: computed(() => access.clients.find((item) => item.id === access.selectedClientId)),
+  activeCredentials: computed(() => access.credentials.filter((item) => !("revokedAt" in item && item.revokedAt))),
   activeGrants: computed(() => []),
   load: vi.fn(async () => [client]),
-  loadClientDetail: vi.fn(async () => undefined),
-  createClient: vi.fn(async () => ({ client, credential, secret: "awsk_live_once" })),
+  loadClientDetail: vi.fn(async (clientId: string) => {
+    access.selectedClientId = clientId;
+    access.credentials = [credential];
+    access.grants = [];
+  }),
+  clearSelection: vi.fn(() => {
+    access.selectedClientId = "";
+    access.credentials = [];
+    access.grants = [];
+  }),
+  createClient: vi.fn(async () => {
+    access.selectedClientId = client.id;
+    access.credentials = [credential];
+    return { client, credential, secret: "awsk_live_once" };
+  }),
   setClientStatus: vi.fn(async () => client),
   rotateCredential: vi.fn(),
   createGrant: vi.fn(),
@@ -70,6 +83,9 @@ vi.mock("../stores/auth", () => ({ useAuthStore: () => ({ user: { id: "user-1" }
 describe("Agent Access management view", () => {
   beforeEach(() => {
     fixture.canManage = true;
+    access.selectedClientId = "";
+    access.credentials = [];
+    access.grants = [];
     vi.clearAllMocks();
   });
 
@@ -79,6 +95,9 @@ describe("Agent Access management view", () => {
     await flushPromises();
     expect(wrapper.get('[data-testid="readonly-notice"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="create-client"]').exists()).toBe(false);
+    // Enter detail from list — write actions still hidden.
+    await wrapper.get('[data-testid="select-client-client-1"]').trigger("click");
+    await flushPromises();
     const actions = wrapper.findAll("button").map((button) => button.text());
     expect(actions).not.toContain("轮换凭证");
     expect(actions).not.toContain("撤销");
@@ -101,9 +120,14 @@ describe("Agent Access management view", () => {
     expect(JSON.stringify(access)).not.toContain("awsk_live_once");
   });
 
-  it("requires an explicit REVOKE phrase before destructive actions", async () => {
+  it("opens client detail from the list and requires REVOKE before destructive actions", async () => {
     const wrapper = mountView();
     await flushPromises();
+    expect(wrapper.find('[data-testid="select-client-client-1"]').exists()).toBe(true);
+    await wrapper.get('[data-testid="select-client-client-1"]').trigger("click");
+    await flushPromises();
+    expect(access.loadClientDetail).toHaveBeenCalledWith("client-1");
+    expect(wrapper.text()).toContain("轮换凭证");
     const revoke = wrapper.findAll("button").find((button) => button.text() === "撤销");
     await revoke?.trigger("click");
     const confirm = wrapper.get('[data-testid="confirm-danger"]');
@@ -120,9 +144,27 @@ function mountView() {
   return mount(AgentAccessView, {
     global: {
       stubs: {
-        ManagementSummaryStrip: { template: "<div><slot /></div>" },
+        ManagementSummaryStrip: { template: "<div data-testid='summary-strip' />" },
         ManagementPageHeader: {
           template: '<div><slot name="actions" /></div>',
+        },
+        ManagementList: {
+          props: ["rows"],
+          emits: ["select-row", "update:search", "reset", "page-change"],
+          template: `
+            <div data-testid="client-list">
+              <button
+                v-for="row in rows || []"
+                :key="row.id"
+                type="button"
+                :data-testid="'select-client-' + row.id"
+                @click="$emit('select-row', row)"
+              >
+                {{ row.name }}
+              </button>
+              <slot name="empty" />
+            </div>
+          `,
         },
         WorkspaceContextState: { template: "<div />" },
         AppSelect: {

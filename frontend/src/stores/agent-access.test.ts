@@ -18,14 +18,25 @@ describe("agent-access management store", () => {
     vi.clearAllMocks();
   });
 
-  it("loads Workspace-scoped Clients with public Credential metadata", async () => {
+  it("loads Workspace-scoped Clients without auto-opening the first client detail", async () => {
+    vi.mocked(apiClient.get).mockResolvedValueOnce({ data: { items: [client()] } } as never);
+    const store = useAgentAccessStore();
+    await store.load("workspace-1");
+    expect(apiClient.get).toHaveBeenCalledTimes(1);
+    expect(apiClient.get).toHaveBeenCalledWith("/workspaces/workspace-1/agent-access/clients");
+    expect(store.clients).toHaveLength(1);
+    expect(store.selectedClientId).toBe("");
+    expect(store.credentials).toEqual([]);
+  });
+
+  it("loads public Credential metadata when opening a Client detail", async () => {
     vi.mocked(apiClient.get)
-      .mockResolvedValueOnce({ data: { items: [client()] } } as never)
       .mockResolvedValueOnce({ data: { items: [credential()] } } as never)
       .mockResolvedValueOnce({ data: { items: [] } } as never);
     const store = useAgentAccessStore();
-    await store.load("workspace-1");
-    expect(apiClient.get).toHaveBeenNthCalledWith(1, "/workspaces/workspace-1/agent-access/clients");
+    store.workspaceId = "workspace-1";
+    store.clients = [client()];
+    await store.loadClientDetail("client-1");
     expect(apiClient.get).toHaveBeenCalledWith("/workspaces/workspace-1/agent-access/clients/client-1/credentials");
     expect(store.credentials[0]).toMatchObject({ publicHint: "…safe", lastUsedAt: "2026-07-20T01:00:00Z" });
   });
