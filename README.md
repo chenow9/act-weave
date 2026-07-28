@@ -20,7 +20,7 @@ ACTWEAVE 是一个面向业务操作编排的控制台型项目。当前主线�
 .
 ├── frontend/              # 主前端，Vue 3 + TypeScript + Vite
 ├── backend/               # 主后端，Go + Gin
-├── docs/                  # 架构设计、实施清单与 ADR
+├── docs/                  # AAP（Agent Access Protocol）文档与 OpenAPI
 └── docker-compose.yml     # 本地依赖与容器启动入口
 ```
 
@@ -125,7 +125,7 @@ go run ./cmd/server
 
 配置文件使用严格字段校验，未知字段、多个 YAML 文档和非法布尔值会阻止启动。环境变量被显式设置为空时也会覆盖文件值，并由必填校验报告错误，不会静默回退。`encryption.masterKey` 必须是 Base64 编码的 32 字节主密钥；Bootstrap 用户名和至少 12 位的密码必须成对提供，它们只在 `users` 为空时以事务锁创建第一个管理员。
 
-AAP Access Token 固定使用独立的 `EdDSA/Ed25519` 密钥，不复用用户 Session JWT 的 `HS256` Secret。仓库内的本地配置只会在 `backend/.local/` 缺失时创建权限为 `0600` 的开发密钥；生产必须把 `generateIfMissing` 设为 `false`，从 Secret Manager/KMS 受控挂载稳定的 PKCS#8 PEM 文件。Public JWKS 位于 `GET /api/agent-access/v1/.well-known/jwks.json`，只包含公开 OKP 字段。多实例预发布、轮换、回滚和旧公钥下线步骤见 [`docs/runbooks/aap-signing-key-rotation.md`](docs/runbooks/aap-signing-key-rotation.md)。
+AAP Access Token 固定使用独立的 `EdDSA/Ed25519` 密钥，不复用用户 Session JWT 的 `HS256` Secret。仓库内的本地配置只会在 `backend/.local/` 缺失时创建权限为 `0600` 的开发密钥；生产必须把 `generateIfMissing` 设为 `false`，从 Secret Manager/KMS 受控挂载稳定的 PKCS#8 PEM 文件。Public JWKS 位于 `GET /api/agent-access/v1/.well-known/jwks.json`，只包含公开 OKP 字段。AAP 配置、鉴权与数据面约定见 [`docs/guides/agent-access-developer-guide.md`](docs/guides/agent-access-developer-guide.md) 与 [`docs/guides/agent-access-api-reference.md`](docs/guides/agent-access-api-reference.md)。
 
 AAP Client 通过 `POST /api/agent-access/v1/oauth/token` 获取短期 Token；请求必须使用 `application/x-www-form-urlencoded`，携带 `grant_type=client_credentials`、一个 `agent_id` 和当前 Agent Grant 的 Scope 子集。Client 可使用 HTTP Basic 中的一次性注册 Secret，或提交标准 `client_assertion_type` 与 `private_key_jwt` Assertion；两种认证方式不能混用，也不支持 `client_secret_post`。成功响应遵循 OAuth `access_token/token_type/expires_in/scope` 字段且不签发 Refresh Token，并强制 `Cache-Control: no-store`。Token TTL 为 5～15 分钟，同时受 Client 配置、服务端签名窗口和 Grant 到期时间约束；每个 Token 只绑定一个 Workspace 和一个 Agent。AAP 数据面使用独立的 `EdDSA + typ=at+jwt + iss/aud` 验证器和 Principal Context；平台用户 `HS256` Session Token 与 AAP Token 在两个方向均不可互用。
 
@@ -144,7 +144,7 @@ AAP 普通数据面请求会把 Token 的 `ver` 与数据库当前 Service Princ
 
 ### AAP SSE 代理要求
 
-AAP Run Event Stream 每 15 秒发送一次无 `id` 的 `: ping <timestamp>` 注释。反向代理必须保留 `Cache-Control: no-cache, no-transform` 和 `X-Accel-Buffering: no`，关闭响应缓冲、Cache 与 gzip 动态压缩，并把读/空闲超时配置为至少 60 秒（仓库 Nginx 开发配置使用 75 秒）。Nginx Ingress、AWS ALB 和生产验证命令见 [`docs/runbooks/agent-access-protocol-sse-deployment.md`](docs/runbooks/agent-access-protocol-sse-deployment.md)。
+AAP Run Event Stream 每 15 秒发送一次无 `id` 的 `: ping <timestamp>` 注释。反向代理必须保留 `Cache-Control: no-cache, no-transform` 和 `X-Accel-Buffering: no`，关闭响应缓冲、Cache 与 gzip 动态压缩，并把读/空闲超时配置为至少 60 秒（仓库 Nginx 开发配置使用 75 秒）。Console 与 AAP 事件入口差异见 [`docs/runbooks/protocol-event-console-vs-aap-entrypoints.md`](docs/runbooks/protocol-event-console-vs-aap-entrypoints.md)；OpenAPI 契约见 [`docs/openapi/agent-access-v1.yaml`](docs/openapi/agent-access-v1.yaml)。
 
 ## 当前可用命令
 
@@ -218,12 +218,13 @@ go test ./...
 - Draft `ui` / 响应字段：`generatedBy=smart-dag.v2`、`sessionId`、`agentId`、`modelConfigId`、`promptId`、`promptHash`、`generationId`、`traceId`。
 - 指标（`GET /metrics`）：`smartdag_generate_total{result}`、`smartdag_guard_reject_total`、`workflow_trial_total`、`workflow_production_execute_total`；日志事件 `smartdag.generate.*` / `workflow.trial.*` / `workflow.production_execute.*`（不记录 prompt 全文）。
 
-### 相关文档
+### 相关文档（AAP）
 
-- 设计全文：[`docs/design/intelligent-orchestration-closed-loop.md`](docs/design/intelligent-orchestration-closed-loop.md)
-- 实施清单：[`docs/design/intelligent-orchestration-closed-loop-checklist.md`](docs/design/intelligent-orchestration-closed-loop-checklist.md)
-- Console API 草案：[`docs/design/intelligent-orchestration-api-draft.md`](docs/design/intelligent-orchestration-api-draft.md)
-- 多入口 Runbook：[`docs/runbooks/protocol-event-console-vs-aap-entrypoints.md`](docs/runbooks/protocol-event-console-vs-aap-entrypoints.md)
+- API 参考：[`docs/guides/agent-access-api-reference.md`](docs/guides/agent-access-api-reference.md)
+- 开发指南：[`docs/guides/agent-access-developer-guide.md`](docs/guides/agent-access-developer-guide.md)
+- 迁移指南：[`docs/guides/agent-access-migration-guide.md`](docs/guides/agent-access-migration-guide.md)
+- OpenAPI：[`docs/openapi/agent-access-v1.yaml`](docs/openapi/agent-access-v1.yaml)
+- Console vs AAP 入口：[`docs/runbooks/protocol-event-console-vs-aap-entrypoints.md`](docs/runbooks/protocol-event-console-vs-aap-entrypoints.md)
 
 > 遗留的 `POST .../workflows:generate`（`smart-dag.v1` 规则路径）不是产品主路径；Console 智能编排 UI 使用 session/turns。
 
@@ -236,3 +237,9 @@ go test ./...
 - 高级 Workflow 节点类型（如 `HTTP`、`SubWorkflow`、`Parallel`、`ForEach`）后端已支持编译/运行时接口，但前端编辑器未完整暴露对应配置能力。
 
 ## 建议先读的文档
+
+- [`docs/guides/agent-access-developer-guide.md`](docs/guides/agent-access-developer-guide.md) — AAP 快速接入与鉴权
+- [`docs/guides/agent-access-api-reference.md`](docs/guides/agent-access-api-reference.md) — AAP HTTP/SSE API
+- [`docs/openapi/agent-access-v1.yaml`](docs/openapi/agent-access-v1.yaml) — OpenAPI 契约
+- [`docs/guides/agent-access-migration-guide.md`](docs/guides/agent-access-migration-guide.md) — 迁移说明
+- [`docs/runbooks/protocol-event-console-vs-aap-entrypoints.md`](docs/runbooks/protocol-event-console-vs-aap-entrypoints.md) — Console 与 AAP 事件入口
