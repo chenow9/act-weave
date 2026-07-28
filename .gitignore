@@ -18,3 +18,5 @@ screenshots/
 .codex
 .grok
 .multica
+.agent_context
+docs/verification
