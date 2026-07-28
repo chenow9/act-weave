@@ -2,6 +2,7 @@ package tool
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -54,7 +55,7 @@ func TestToolTestRecordsExactVersionAndLatestPassingAttempt(t *testing.T) {
 		_, _ = writer.Write([]byte(`{"private":"upstream-sensitive-failure"}`))
 	}))
 	defer server.Close()
-	artifacts := &memoryToolTestArtifacts{ids: []string{
+	artifacts := &memoryToolTestArtifacts{db: db, ids: []string{
 		toolTestArtifactOneID, toolTestArtifactTwoID, toolTestArtifactThreeID,
 	}}
 	service := newToolTestService(t, repository, server.Client(), artifacts)
@@ -149,7 +150,7 @@ func TestToolTestRejectsConcurrentDraftDrift(t *testing.T) {
 	}))
 	defer server.Close()
 	defer release()
-	artifacts := &memoryToolTestArtifacts{ids: []string{toolTestArtifactFourID}}
+	artifacts := &memoryToolTestArtifacts{db: db, ids: []string{toolTestArtifactFourID}}
 	service := newToolTestService(t, repository, server.Client(), artifacts)
 	errorChannel := make(chan error, 1)
 	go func() {
@@ -184,7 +185,7 @@ func TestToolTestRejectsConcurrentDraftDrift(t *testing.T) {
 }
 
 func TestToolTestUsesTheSameCredentialInjectionBoundaryAsRuntime(t *testing.T) {
-	repository, _ := newRepositoryTest(t)
+	repository, db := newRepositoryTest(t)
 	_, version, err := repository.Create(context.Background(), validCreateInput())
 	if err != nil {
 		t.Fatal(err)
@@ -203,7 +204,7 @@ func TestToolTestUsesTheSameCredentialInjectionBoundaryAsRuntime(t *testing.T) {
 	}
 	injector := &toolTestCredentialInjector{}
 	service, err := NewTestServiceWithInjector(repository, registry,
-		&memoryToolTestArtifacts{ids: []string{toolTestArtifactFiveID}}, injector)
+		&memoryToolTestArtifacts{db: db, ids: []string{toolTestArtifactFiveID}}, injector)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +225,7 @@ func TestToolTestUsesTheSameCredentialInjectionBoundaryAsRuntime(t *testing.T) {
 }
 
 func TestToolTestRequestPassthroughEnvelopeReachesUpstream(t *testing.T) {
-	repository, _ := newRepositoryTest(t)
+	repository, db := newRepositoryTest(t)
 	_, version, err := repository.Create(context.Background(), validCreateInput())
 	if err != nil {
 		t.Fatal(err)
@@ -262,7 +263,7 @@ func TestToolTestRequestPassthroughEnvelopeReachesUpstream(t *testing.T) {
 		t.Fatal(err)
 	}
 	service, err := NewTestServiceWithInjector(repository, registry,
-		&memoryToolTestArtifacts{ids: []string{toolTestPassthroughArtifactID}}, injector)
+		&memoryToolTestArtifacts{db: db, ids: []string{toolTestPassthroughArtifactID}}, injector)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +345,7 @@ func TestToolTestRequestPassthroughEnvelopeReachesUpstream(t *testing.T) {
 }
 
 func TestToolTestRequestPassthroughRequiresEnvelope(t *testing.T) {
-	repository, _ := newRepositoryTest(t)
+	repository, db := newRepositoryTest(t)
 	_, version, err := repository.Create(context.Background(), validCreateInput())
 	if err != nil {
 		t.Fatal(err)
@@ -370,7 +371,7 @@ func TestToolTestRequestPassthroughRequiresEnvelope(t *testing.T) {
 		t.Fatal(err)
 	}
 	service, err := NewTestServiceWithInjector(repository, registry,
-		&memoryToolTestArtifacts{ids: []string{toolTestArtifactFiveID}}, injector)
+		&memoryToolTestArtifacts{db: db, ids: []string{toolTestArtifactFiveID}}, injector)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,6 +431,7 @@ func toolTestRunInput(testID, versionID, baseURL string, input json.RawMessage) 
 
 type memoryToolTestArtifacts struct {
 	mutex     sync.Mutex
+	db        *sql.DB
 	ids       []string
 	artifacts []ToolTestArtifact
 }
@@ -467,6 +469,22 @@ func (store *memoryToolTestArtifacts) WriteToolTestArtifact(_ context.Context, a
 	artifact.Request = cloneRaw(artifact.Request)
 	artifact.Response = cloneRaw(artifact.Response)
 	store.artifacts = append(store.artifacts, artifact)
+	// Baseline schema requires permanent TOOL_TEST_PAYLOAD metadata before tool_tests insert.
+	if store.db != nil {
+		if _, err := store.db.Exec(`
+			INSERT INTO stored_objects(
+				id, workspace_id, bucket, object_key, kind, content_type, size_bytes, sha256,
+				encryption_key_id, classification, retention_mode, created_by_type, created_by_id
+			) VALUES (
+				$1, $2, 'actweave-test', $3, 'TOOL_TEST_PAYLOAD', 'application/json', 2,
+				'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+				'test-key', 'SENSITIVE', 'PERMANENT', 'USER', $4
+			)
+			ON CONFLICT DO NOTHING
+		`, id, artifact.WorkspaceID, "tool-test/"+id, artifact.TestedBy); err != nil {
+			return "", err
+		}
+	}
 	return id, nil
 }
 

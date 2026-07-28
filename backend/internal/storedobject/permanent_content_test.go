@@ -8,8 +8,8 @@ import (
 
 func TestPermanentContentReferenceMigration(t *testing.T) {
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 28)
-	if !version.Applied || version.Number != 28 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("permanent content migration version = %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -39,13 +39,5 @@ func TestPermanentContentReferenceMigration(t *testing.T) {
 		`, constraint).Scan(&exists); err != nil || !exists {
 			t.Fatalf("expected constraint %s: exists=%v err=%v", constraint, exists, err)
 		}
-	}
-	version = testDatabase.MigrateTo(t, 27)
-	if !version.Applied || version.Number != 27 || version.Dirty {
-		t.Fatalf("permanent content rollback version = %+v", version)
-	}
-	version = testDatabase.MigrateTo(t, 28)
-	if !version.Applied || version.Number != 28 || version.Dirty {
-		t.Fatalf("permanent content reapply version = %+v", version)
 	}
 }

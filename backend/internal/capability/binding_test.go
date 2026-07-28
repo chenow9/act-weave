@@ -36,8 +36,8 @@ const (
 
 func TestCapabilityBindingMigration(t *testing.T) {
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 12)
-	if !version.Applied || version.Number != 12 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected binding migration version 12, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -78,15 +78,6 @@ func TestCapabilityBindingMigration(t *testing.T) {
 		WHERE agent_id=$1 AND capability_id=$2
 	`, bindingAgentID, bindingCapabilityID)
 
-	version = testDatabase.MigrateTo(t, 11)
-	if !version.Applied || version.Number != 11 || version.Dirty {
-		t.Fatalf("rollback binding migration: %+v", version)
-	}
-	assertBindingTableMissing(t, testDatabase.DSN())
-	version = testDatabase.MigrateTo(t, 12)
-	if !version.Applied || version.Number != 12 || version.Dirty {
-		t.Fatalf("reapply binding migration: %+v", version)
-	}
 }
 
 func TestCapabilityBindingServiceValidatesCompatibilityAndCatalog(t *testing.T) {
@@ -374,8 +365,8 @@ func bindingPublishInput(id, callableName, description string) PublishRelease {
 func newBindingRepositoryTest(t *testing.T) (*Repository, *sql.DB) {
 	t.Helper()
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 12)
-	if !version.Applied || version.Number != 12 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("unexpected migration: %+v", version)
 	}
 	db := testDatabase.Open(t)

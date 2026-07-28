@@ -34,7 +34,7 @@ const (
 func TestPublishToolAtomicallyFreezesReleaseVersionAndEvent(t *testing.T) {
 	repository, db := newRepositoryTest(t)
 	insertToolPublishMembers(t, db)
-	version := prepareTestedToolVersion(t, repository)
+	version := prepareTestedToolVersionWithDB(t, repository, db)
 	eventWriter := newTestPublishEventWriter(t, db)
 	service := newToolPublishService(t, repository, db, eventWriter)
 	result, err := service.Publish(context.Background(), PublishToolInput{
@@ -92,7 +92,7 @@ func TestPublishToolAtomicallyFreezesReleaseVersionAndEvent(t *testing.T) {
 func TestPublishToolRequiresEditorAndRollsBackEventFailure(t *testing.T) {
 	repository, db := newRepositoryTest(t)
 	insertToolPublishMembers(t, db)
-	version := prepareTestedToolVersion(t, repository)
+	version := prepareTestedToolVersionWithDB(t, repository, db)
 	eventWriter := newTestPublishEventWriter(t, db)
 	service := newToolPublishService(t, repository, db, eventWriter)
 	_, err := service.Publish(context.Background(), PublishToolInput{
@@ -129,7 +129,7 @@ func TestPublishToolRequiresEditorAndRollsBackEventFailure(t *testing.T) {
 func TestHTTPToolConcurrentPublishAcceptance(t *testing.T) {
 	repository, db := newRepositoryTest(t)
 	insertToolPublishMembers(t, db)
-	version := prepareTestedToolVersion(t, repository)
+	version := prepareTestedToolVersionWithDB(t, repository, db)
 	eventWriter := newTestPublishEventWriter(t, db)
 	service := newToolPublishService(t, repository, db, eventWriter)
 	inputs := []PublishToolInput{
@@ -201,7 +201,7 @@ func prepareTestedToolVersionWithDB(t *testing.T, repository *Repository, db *sq
 		// Latest schema requires permanent TOOL_TEST_PAYLOAD stored_objects rows.
 		insertPermanentToolPayload(t, db, toolTestArtifactOneID, "TOOL_TEST_PAYLOAD")
 	}
-	artifacts := &memoryToolTestArtifacts{ids: []string{toolTestArtifactOneID}}
+	artifacts := &memoryToolTestArtifacts{db: db, ids: []string{toolTestArtifactOneID}}
 	testService := newToolTestService(t, repository, server.Client(), artifacts)
 	input := toolTestRunInput(
 		toolTestSuccessID, version.ID, server.URL, json.RawMessage(`{"orderId":"A-100"}`),

@@ -16,10 +16,10 @@ func TestPostgresBaselineMigration(t *testing.T) {
 	testDSN := testDatabase.DSN()
 
 	applyMigrations(t, testDSN, func(migrator *database.Migrator) {
-		if err := migrator.To(2); err != nil {
-			t.Fatalf("apply baseline migrations: %v", err)
+		if err := migrator.Up(); err != nil {
+			t.Fatalf("apply baseline migration: %v", err)
 		}
-		assertMigrationVersion(t, migrator, 2)
+		assertMigrationVersion(t, migrator, 1)
 	})
 	assertPostgresBaseline(t, testDSN, true)
 
@@ -27,17 +27,23 @@ func TestPostgresBaselineMigration(t *testing.T) {
 		if err := migrator.Down(1); err != nil {
 			t.Fatalf("roll back baseline migration: %v", err)
 		}
-		assertMigrationVersion(t, migrator, 1)
+		version, err := migrator.Version()
+		if err != nil {
+			t.Fatalf("read migration version after down: %v", err)
+		}
+		if version.Applied {
+			t.Fatalf("expected no applied migration after full down, got %+v", version)
+		}
 	})
 	assertPostgresBaseline(t, testDSN, false)
 
 	applyMigrations(t, testDSN, func(migrator *database.Migrator) {
-		if err := migrator.To(2); err != nil {
+		if err := migrator.Up(); err != nil {
 			t.Fatalf("reapply baseline migration: %v", err)
 		}
-		assertMigrationVersion(t, migrator, 2)
-		if err := migrator.To(2); err != nil {
-			t.Fatalf("reapply baseline target as no-op: %v", err)
+		assertMigrationVersion(t, migrator, 1)
+		if err := migrator.Up(); err != nil {
+			t.Fatalf("reapply baseline as no-op: %v", err)
 		}
 	})
 	assertPostgresBaseline(t, testDSN, true)
@@ -97,31 +103,5 @@ func assertPostgresBaseline(t *testing.T, dsn string, wantInstalled bool) {
 		if timezone != "UTC" {
 			t.Fatalf("expected database timezone UTC, got %q", timezone)
 		}
-	}
-
-	rows, err := db.QueryContext(ctx, `
-		SELECT table_name
-		FROM information_schema.tables
-		WHERE table_schema = 'public'
-		  AND table_type = 'BASE TABLE'
-		  AND table_name <> 'schema_migrations'
-	`)
-	if err != nil {
-		t.Fatalf("query baseline tables: %v", err)
-	}
-	defer rows.Close()
-	var unexpectedTables []string
-	for rows.Next() {
-		var tableName string
-		if err := rows.Scan(&tableName); err != nil {
-			t.Fatalf("scan baseline table: %v", err)
-		}
-		unexpectedTables = append(unexpectedTables, tableName)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("iterate baseline tables: %v", err)
-	}
-	if len(unexpectedTables) != 0 {
-		t.Fatalf("baseline migration must not create business tables, got %v", unexpectedTables)
 	}
 }

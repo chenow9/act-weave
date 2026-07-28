@@ -84,8 +84,8 @@ func TestPostgresCheckPointStoreImplementsEinoInterfaces(t *testing.T) {
 func TestPostgresCheckPointStoreRoundTrip(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 61 || version.Dirty {
-		t.Fatalf("expected clean latest migration 61, got %+v", version)
+	if !version.Applied || version.Number != 1 || version.Dirty {
+		t.Fatalf("expected clean latest migration 1, got %+v", version)
 	}
 	db := testDatabase.Open(t)
 	store, err := einoruntime.NewPostgresCheckPointStore(db)
@@ -244,8 +244,8 @@ func TestPostgresCheckPointStoreRoundTrip(t *testing.T) {
 func TestPostgresCheckPointStoreDeleteExpiredKeepsNonExpired(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 61 || version.Dirty {
-		t.Fatalf("expected clean latest migration 61, got %+v", version)
+	if !version.Applied || version.Number != 1 || version.Dirty {
+		t.Fatalf("expected clean latest migration 1, got %+v", version)
 	}
 	db := testDatabase.Open(t)
 	store, err := einoruntime.NewPostgresCheckPointStore(db)
@@ -337,8 +337,8 @@ func TestPostgresCheckPointStoreDeleteExpiredKeepsNonExpired(t *testing.T) {
 func TestCheckpointCleanupWorkerDeletesExpiredAndRecordsMetrics(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 61 || version.Dirty {
-		t.Fatalf("expected clean latest migration 61, got %+v", version)
+	if !version.Applied || version.Number != 1 || version.Dirty {
+		t.Fatalf("expected clean latest migration 1, got %+v", version)
 	}
 	db := testDatabase.Open(t)
 	store, err := einoruntime.NewPostgresCheckPointStore(db)

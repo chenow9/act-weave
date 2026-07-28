@@ -160,7 +160,7 @@ func TestSensitivePayloadPolicy(t *testing.T) {
 func assertAppenderRejectsUnsafePayloadBeforePersistence(t *testing.T) {
 	t.Helper()
 	testDatabase := dbtest.New(t)
-	testDatabase.MigrateTo(t, 40)
+	testDatabase.MigrateToLatest(t)
 	db := testDatabase.Open(t)
 	insertProtocolEventFixtures(t, db)
 	insertProtocolStream(t, db)

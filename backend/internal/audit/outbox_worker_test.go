@@ -16,8 +16,8 @@ import (
 
 func TestOutboxWorkerClaimsPublishesRetriesAndStops(t *testing.T) {
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 33)
-	if !version.Applied || version.Number != 33 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("outbox worker migration = %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -158,14 +158,6 @@ func TestOutboxWorkerClaimsPublishesRetriesAndStops(t *testing.T) {
 		t.Fatal("outbox worker did not stop after cancellation")
 	}
 
-	version = testDatabase.MigrateTo(t, 32)
-	if !version.Applied || version.Number != 32 || version.Dirty {
-		t.Fatalf("outbox worker rollback = %+v", version)
-	}
-	version = testDatabase.MigrateTo(t, 33)
-	if !version.Applied || version.Number != 33 || version.Dirty {
-		t.Fatalf("outbox worker reapply = %+v", version)
-	}
 }
 
 type fixedBackoff time.Duration

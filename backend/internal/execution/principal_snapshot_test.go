@@ -31,7 +31,7 @@ const (
 func TestExternalPrincipalSnapshots(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 61 || version.Dirty {
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected Interaction decision binding migration 61, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -170,9 +170,10 @@ func TestExternalPrincipalSnapshots(t *testing.T) {
 }
 
 func TestExternalPrincipalSnapshotsMigration(t *testing.T) {
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 49)
-	if !version.Applied || version.Number != 49 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected migration 49, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -181,8 +182,8 @@ func TestExternalPrincipalSnapshotsMigration(t *testing.T) {
 		executionAgentRunID, invocationWorkflowExecutionID, invocationExecutionStepID,
 		"principal-migration")
 
-	version = testDatabase.MigrateTo(t, 50)
-	if !version.Applied || version.Number != 50 || version.Dirty {
+	version = testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("execution Principal migration=%+v", version)
 	}
 	for table, id := range map[string]string{
@@ -198,22 +199,6 @@ func TestExternalPrincipalSnapshotsMigration(t *testing.T) {
 		if snapshotVersion != "legacy.v1" || subjectType != "USER" || subjectID != executionOwnerID {
 			t.Fatalf("legacy %s snapshot=%s %s/%s", table, snapshotVersion, subjectType, subjectID)
 		}
-	}
-	version = testDatabase.MigrateTo(t, 49)
-	if !version.Applied || version.Number != 49 || version.Dirty {
-		t.Fatalf("execution Principal rollback=%+v", version)
-	}
-	var retained int
-	if err := db.QueryRow(`
-		SELECT (SELECT count(*) FROM agent_runs WHERE id=$1)
-		     + (SELECT count(*) FROM workflow_executions WHERE id=$2)
-		     + (SELECT count(*) FROM tool_invocations WHERE id=$3)
-	`, executionAgentRunID, invocationWorkflowExecutionID, invocationID).Scan(&retained); err != nil || retained != 3 {
-		t.Fatalf("rollback changed legacy execution facts count=%d err=%v", retained, err)
-	}
-	version = testDatabase.MigrateTo(t, 50)
-	if !version.Applied || version.Number != 50 || version.Dirty {
-		t.Fatalf("execution Principal reapply=%+v", version)
 	}
 }
 

@@ -16,8 +16,8 @@ const auditPayloadObjectID = "a48f1f2e-7b5a-7c3d-8e9f-123456789001"
 
 func TestInsertAuditEventIsRedactedScopedAndInsertOnly(t *testing.T) {
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 31)
-	if !version.Applied || version.Number != 31 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("audit payload migration = %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -90,20 +90,4 @@ func TestInsertAuditEventIsRedactedScopedAndInsertOnly(t *testing.T) {
 		t.Fatal("database allowed audit event update")
 	}
 
-	version = testDatabase.MigrateTo(t, 30)
-	if !version.Applied || version.Number != 30 || version.Dirty {
-		t.Fatalf("audit payload rollback = %+v", version)
-	}
-	var policyConstraint bool
-	if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM pg_constraint
-		WHERE conname='stored_objects_audit_event_payload_policy_check')`).Scan(&policyConstraint); err != nil {
-		t.Fatal(err)
-	}
-	if policyConstraint {
-		t.Fatal("audit payload policy remained after rollback")
-	}
-	version = testDatabase.MigrateTo(t, 31)
-	if !version.Applied || version.Number != 31 || version.Dirty {
-		t.Fatalf("audit payload reapply = %+v", version)
-	}
 }

@@ -1,3 +1,4 @@
+// Historical step-migration coverage was retired when migrations were squashed into 000001_init (see migrations_archive/).
 package capability_test
 
 import (
@@ -25,24 +26,16 @@ const (
 )
 
 func TestCapabilityMigration(t *testing.T) {
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 11)
-	if !version.Applied || version.Number != 11 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean capability migration version 11, got %+v", version)
 	}
 	db := testDatabase.Open(t)
 	insertCapabilityFixtures(t, db)
 	assertCapabilityConstraints(t, db)
 
-	version = testDatabase.MigrateTo(t, 10)
-	if !version.Applied || version.Number != 10 || version.Dirty {
-		t.Fatalf("expected clean capability rollback version 10, got %+v", version)
-	}
-	assertCapabilityTablesMissing(t, testDatabase.DSN())
-	version = testDatabase.MigrateTo(t, 11)
-	if !version.Applied || version.Number != 11 || version.Dirty {
-		t.Fatalf("expected clean capability migration reapply, got %+v", version)
-	}
 }
 
 func insertCapabilityFixtures(t *testing.T, db *sql.DB) {

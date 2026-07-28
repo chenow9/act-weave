@@ -9,7 +9,7 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 )
 
-func TestEmbeddedMigrationSetStartsWithToolingNoOp(t *testing.T) {
+func TestEmbeddedMigrationSetIsSingleBaseline(t *testing.T) {
 	source, err := iofs.New(migrationFiles, migrationDirectory)
 	if err != nil {
 		t.Fatalf("open embedded migrations: %v", err)
@@ -22,6 +22,9 @@ func TestEmbeddedMigrationSetStartsWithToolingNoOp(t *testing.T) {
 	}
 	if version != 1 {
 		t.Fatalf("expected first migration version 1, got %d", version)
+	}
+	if _, err := source.Next(version); err == nil {
+		t.Fatal("expected a single baseline migration with no next version")
 	}
 
 	for _, direction := range []struct {
@@ -42,17 +45,11 @@ func TestEmbeddedMigrationSetStartsWithToolingNoOp(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read %s migration body: %v", direction.name, err)
 			}
-			if identifier != "migration_tooling" {
+			if identifier != "init" {
 				t.Fatalf("unexpected migration identifier %q", identifier)
 			}
-			upper := strings.ToUpper(string(body))
-			if !strings.Contains(upper, "SELECT 1") {
-				t.Fatalf("tooling migration must be an executable no-op, got %q", body)
-			}
-			for _, forbidden := range []string{"CREATE TABLE", "ACTWEAVE_STATE"} {
-				if strings.Contains(upper, forbidden) {
-					t.Fatalf("tooling migration must not create business schema: found %q", forbidden)
-				}
+			if len(strings.TrimSpace(string(body))) == 0 {
+				t.Fatalf("%s migration body must not be empty", direction.name)
 			}
 		})
 	}

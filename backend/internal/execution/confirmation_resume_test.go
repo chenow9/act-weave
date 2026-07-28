@@ -324,25 +324,14 @@ func TestConfirmationResumeCrashRecoveryNeverDuplicatesUnknownSideEffect(t *test
 
 func TestConfirmationResumeMigrationRollbackAndReapply(t *testing.T) {
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 24)
-	if !version.Applied || version.Number != 24 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("migration version = %+v", version)
 	}
 	db := testDatabase.Open(t)
 	var exists bool
 	if err := db.QueryRow(`SELECT to_regclass('public.confirmation_resume_checkpoints') IS NOT NULL`).Scan(&exists); err != nil || !exists {
 		t.Fatalf("checkpoint table missing: exists=%v err=%v", exists, err)
-	}
-	version = testDatabase.MigrateTo(t, 23)
-	if !version.Applied || version.Number != 23 || version.Dirty {
-		t.Fatalf("rollback version = %+v", version)
-	}
-	if err := db.QueryRow(`SELECT to_regclass('public.confirmation_resume_checkpoints') IS NOT NULL`).Scan(&exists); err != nil || exists {
-		t.Fatalf("checkpoint table remained: exists=%v err=%v", exists, err)
-	}
-	version = testDatabase.MigrateTo(t, 24)
-	if !version.Applied || version.Number != 24 || version.Dirty {
-		t.Fatalf("reapply version = %+v", version)
 	}
 }
 

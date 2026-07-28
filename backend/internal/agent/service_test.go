@@ -289,7 +289,7 @@ func newAgentServiceTest(t *testing.T) (*Repository, *sql.DB) {
 	testDatabase := dbtest.New(t)
 	// PromptRun scan includes create-preview retention columns from migration 61.
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number < 61 || version.Dirty {
+	if !version.Applied || version.Number < 1 || version.Dirty {
 		t.Fatalf("unexpected migration: %+v", version)
 	}
 	db := testDatabase.Open(t)

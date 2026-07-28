@@ -236,8 +236,8 @@ func TestActiveSecretResolutionIsWorkspaceScopedAndWipesPlaintext(t *testing.T) 
 func newSecretServiceTest(t *testing.T) (*Service, *LocalEncryptor, *sql.DB) {
 	t.Helper()
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 6)
-	if !version.Applied || version.Number != 6 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean secret service migration version 6, got %+v", version)
 	}
 	db := testDatabase.Open(t)

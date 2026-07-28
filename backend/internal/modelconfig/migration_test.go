@@ -1,3 +1,4 @@
+// Historical step-migration coverage was retired when migrations were squashed into 000001_init (see migrations_archive/).
 package modelconfig_test
 
 import (
@@ -21,9 +22,10 @@ const (
 )
 
 func TestModelConfigMigration(t *testing.T) {
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 7)
-	if !version.Applied || version.Number != 7 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean model config migration version 7, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -31,15 +33,6 @@ func TestModelConfigMigration(t *testing.T) {
 	assertModelConfigSchema(t, db)
 	assertModelConfigConstraints(t, db)
 
-	version = testDatabase.MigrateTo(t, 6)
-	if !version.Applied || version.Number != 6 || version.Dirty {
-		t.Fatalf("expected clean model config rollback version 6, got %+v", version)
-	}
-	assertModelConfigTableMissing(t, testDatabase.DSN())
-	version = testDatabase.MigrateTo(t, 7)
-	if !version.Applied || version.Number != 7 || version.Dirty {
-		t.Fatalf("expected clean model config migration reapply, got %+v", version)
-	}
 }
 
 func insertModelConfigMigrationFixtures(t *testing.T, db *sql.DB) {

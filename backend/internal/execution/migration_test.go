@@ -1,3 +1,4 @@
+// Historical step-migration coverage was retired when migrations were squashed into 000001_init (see migrations_archive/).
 package execution_test
 
 import (
@@ -31,9 +32,10 @@ const (
 )
 
 func TestAgentRunMigration(t *testing.T) {
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 18)
-	if !version.Applied || version.Number != 18 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean agent run migration version 18, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -41,15 +43,6 @@ func TestAgentRunMigration(t *testing.T) {
 	assertAgentRunMigrationSchema(t, db)
 	assertAgentRunMigrationConstraints(t, db)
 
-	version = testDatabase.MigrateTo(t, 17)
-	if !version.Applied || version.Number != 17 || version.Dirty {
-		t.Fatalf("expected clean agent run rollback version 17, got %+v", version)
-	}
-	assertAgentRunTablesMissing(t, testDatabase.DSN())
-	version = testDatabase.MigrateTo(t, 18)
-	if !version.Applied || version.Number != 18 || version.Dirty {
-		t.Fatalf("expected clean agent run migration reapply, got %+v", version)
-	}
 }
 
 func insertAgentRunMigrationFixtures(t *testing.T, db *sql.DB) {

@@ -182,8 +182,8 @@ func TestDraftConflictConcurrentSavesDoNotOverwrite(t *testing.T) {
 func newDraftRepositoryTest(t *testing.T) (*Repository, *sql.DB) {
 	t.Helper()
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 16)
-	if !version.Applied || version.Number != 16 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("unexpected migration: %+v", version)
 	}
 	db := testDatabase.Open(t)

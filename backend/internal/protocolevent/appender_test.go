@@ -23,8 +23,8 @@ func TestConcurrentAppendInTx(t *testing.T) {
 	)
 	ctx := context.Background()
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 39)
-	if !version.Applied || version.Number != 39 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected protocol appender schema version 39, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -219,7 +219,7 @@ func assertPersistedSequences(t *testing.T, db *sql.DB, expected int) {
 func TestEventAppenderRejectsMixedScopeAndDuplicateID(t *testing.T) {
 	ctx := context.Background()
 	testDatabase := dbtest.New(t)
-	testDatabase.MigrateTo(t, 39)
+	testDatabase.MigrateToLatest(t)
 	db := testDatabase.Open(t)
 	insertProtocolEventFixtures(t, db)
 	insertProtocolStream(t, db)

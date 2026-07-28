@@ -208,8 +208,8 @@ func TestPersistParseCompletionIsConditionalAndAtomic(t *testing.T) {
 func newParseRepositoryTest(t *testing.T) (*Repository, *sql.DB) {
 	t.Helper()
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 15)
-	if !version.Applied || version.Number != 15 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("unexpected migration version: %+v", version)
 	}
 	db := testDatabase.Open(t)

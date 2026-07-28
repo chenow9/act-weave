@@ -23,8 +23,8 @@ const (
 
 func TestTransactionalOutbox(t *testing.T) {
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 32)
-	if !version.Applied || version.Number != 32 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("transactional outbox migration = %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -160,22 +160,6 @@ func TestTransactionalOutbox(t *testing.T) {
 		t.Fatalf("outbox workspace isolation: %+v err=%v", isolated, err)
 	}
 
-	version = testDatabase.MigrateTo(t, 31)
-	if !version.Applied || version.Number != 31 || version.Dirty {
-		t.Fatalf("transactional outbox rollback = %+v", version)
-	}
-	var schemaConstraint bool
-	if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM pg_constraint
-		WHERE conname='outbox_events_payload_schema_version_check')`).Scan(&schemaConstraint); err != nil {
-		t.Fatal(err)
-	}
-	if schemaConstraint {
-		t.Fatal("outbox schema contract remained after rollback")
-	}
-	version = testDatabase.MigrateTo(t, 32)
-	if !version.Applied || version.Number != 32 || version.Dirty {
-		t.Fatalf("transactional outbox reapply = %+v", version)
-	}
 }
 
 func assertProbeAndOutboxCounts(t *testing.T, db *sql.DB, wantProbe, wantOutbox int) {

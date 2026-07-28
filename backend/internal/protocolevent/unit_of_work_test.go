@@ -18,7 +18,7 @@ import (
 func TestProtocolUnitOfWork(t *testing.T) {
 	ctx := context.Background()
 	testDatabase := dbtest.New(t)
-	testDatabase.MigrateTo(t, 40)
+	testDatabase.MigrateToLatest(t)
 	db := testDatabase.Open(t)
 	insertProtocolEventFixtures(t, db)
 	insertProtocolStream(t, db)

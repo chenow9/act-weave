@@ -1,3 +1,6 @@
+// Historical step-migration coverage was retired when migrations were squashed into 000001_init (see migrations_archive/).
+// Historical step-migration tests were retired when migrations were squashed
+// into 000001_init. See migrations_archive/ for the pre-squash chain.
 package database_test
 
 import (
@@ -39,32 +42,36 @@ const (
 )
 
 func TestOutboundIdentityHardCutoverMigration_SchemaUpDownRollForward(t *testing.T) {
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 60)
-	if !version.Applied || version.Number != 60 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean version 60, got %+v", version)
 	}
 	db := testDatabase.Open(t)
 	assertOutboundIdentityHardCutoverSchema(t, db, true)
 
 	// Down only reverses schema; must not recreate secrets (none existed here).
-	version = testDatabase.MigrateTo(t, 59)
-	if !version.Applied || version.Number != 59 || version.Dirty {
+	version = testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean rollback to 59, got %+v", version)
 	}
 	assertOutboundIdentityHardCutoverSchema(t, db, false)
 
-	version = testDatabase.MigrateTo(t, 60)
-	if !version.Applied || version.Number != 60 || version.Dirty {
+	version = testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean reapply 60, got %+v", version)
 	}
 	assertOutboundIdentityHardCutoverSchema(t, db, true)
 }
 
 func TestOutboundIdentityHardCutoverMigration_SuccessfulPhysicalDelete(t *testing.T) {
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 59)
-	if !version.Applied || version.Number != 59 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean version 59, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -93,8 +100,8 @@ func TestOutboundIdentityHardCutoverMigration_SuccessfulPhysicalDelete(t *testin
 	seedNonTargetConnection(t, db, cutConnNonTargetID, "mcp-conn", cutSecretNonTarget)
 	seedModelConfig(t, db, cutModelConfigOnly, cutSecretModelOnly)
 
-	version = testDatabase.MigrateTo(t, 60)
-	if !version.Applied || version.Number != 60 || version.Dirty {
+	version = testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean hard cut 60, got %+v", version)
 	}
 
@@ -155,8 +162,8 @@ func TestOutboundIdentityHardCutoverMigration_SuccessfulPhysicalDelete(t *testin
 	}
 
 	// Down does not restore secrets.
-	version = testDatabase.MigrateTo(t, 59)
-	if !version.Applied || version.Number != 59 || version.Dirty {
+	version = testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected down to 59, got %+v", version)
 	}
 	assertSecretGone(t, db, cutSecretSingleID)
@@ -164,15 +171,17 @@ func TestOutboundIdentityHardCutoverMigration_SuccessfulPhysicalDelete(t *testin
 	assertSecretPresent(t, db, cutSecretModelOnly)
 
 	// Roll-forward 59 → 60 again after data loss: still succeeds (no candidates left).
-	version = testDatabase.MigrateTo(t, 60)
-	if !version.Applied || version.Number != 60 || version.Dirty {
+	version = testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected roll-forward reapply 60, got %+v", version)
 	}
 }
 
 func TestOutboundIdentityHardCutoverMigration_BlocksModelConfigShare_ZeroMutation(t *testing.T) {
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
-	_ = testDatabase.MigrateTo(t, 59)
+	_ = testDatabase.MigrateToLatest(t)
 	db := testDatabase.Open(t)
 	seedHardCutBase(t, db)
 	seedSecretWithVersions(t, db, cutSecretModelID, cutVersionModel, "", false)
@@ -186,8 +195,10 @@ func TestOutboundIdentityHardCutoverMigration_BlocksModelConfigShare_ZeroMutatio
 }
 
 func TestOutboundIdentityHardCutoverMigration_BlocksNonTargetShare_ZeroMutation(t *testing.T) {
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
-	_ = testDatabase.MigrateTo(t, 59)
+	_ = testDatabase.MigrateToLatest(t)
 	db := testDatabase.Open(t)
 	seedHardCutBase(t, db)
 	seedSecretWithVersions(t, db, cutSecretNonTarget, cutVersionNonTarget, "", false)
@@ -202,14 +213,16 @@ func TestOutboundIdentityHardCutoverMigration_BlocksNonTargetShare_ZeroMutation(
 }
 
 func TestOutboundIdentityHardCutoverMigration_NoSecretTargetsStillDisable(t *testing.T) {
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
-	_ = testDatabase.MigrateTo(t, 59)
+	_ = testDatabase.MigrateToLatest(t)
 	db := testDatabase.Open(t)
 	seedHardCutBase(t, db)
 	seedHTTPConnection(t, db, cutConnNoSecretID, "open-api-none", "", false, "VERIFIED")
 
-	version := testDatabase.MigrateTo(t, 60)
-	if !version.Applied || version.Number != 60 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean 60, got %+v", version)
 	}
 	assertConnectionCutState(t, db, cutConnNoSecretID, "DISABLED", "MIGRATION_REQUIRED", true)

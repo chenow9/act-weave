@@ -21,8 +21,8 @@ import (
 
 func TestTrustedSubjectIssuerMigrationAndConfigUpdateBumpsSecurityVersion(t *testing.T) {
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 55)
-	if !version.Applied || version.Number != 55 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean Trusted Subject Issuer migration version 55, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -158,27 +158,6 @@ func TestTrustedSubjectIssuerMigrationAndConfigUpdateBumpsSecurityVersion(t *tes
 
 	assertTrustedSubjectConstraintFailures(t, db, registration.Client.ID)
 
-	version = testDatabase.MigrateTo(t, 54)
-	if !version.Applied || version.Number != 54 || version.Dirty {
-		t.Fatalf("expected clean rollback to 54, got %+v", version)
-	}
-	var audienceColumn bool
-	if err := db.QueryRow(`
-		SELECT EXISTS(
-		 SELECT 1 FROM information_schema.columns
-		 WHERE table_schema='public' AND table_name='agent_access_clients'
-		   AND column_name='trusted_subject_audience'
-		)
-	`).Scan(&audienceColumn); err != nil {
-		t.Fatal(err)
-	}
-	if audienceColumn {
-		t.Fatal("trusted_subject_audience should be removed on rollback")
-	}
-	version = testDatabase.MigrateTo(t, 55)
-	if !version.Applied || version.Number != 55 || version.Dirty {
-		t.Fatalf("expected clean reapply of 55, got %+v", version)
-	}
 }
 
 func TestTrustedSubjectIssuerRejectsHTTPAndBothJWKSSourcesAtDatabase(t *testing.T) {

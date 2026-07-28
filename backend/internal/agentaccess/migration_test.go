@@ -1,3 +1,4 @@
+// Historical step-migration coverage was retired when migrations were squashed into 000001_init (see migrations_archive/).
 package agentaccess_test
 
 import (
@@ -25,9 +26,10 @@ const (
 )
 
 func TestClientMigration(t *testing.T) {
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 41)
-	if !version.Applied || version.Number != 41 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean Agent Access migration version 41, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -38,30 +40,6 @@ func TestClientMigration(t *testing.T) {
 	assertAgentAccessValidRows(t, db)
 	assertAgentAccessConstraints(t, db)
 
-	version = testDatabase.MigrateTo(t, 40)
-	if !version.Applied || version.Number != 40 || version.Dirty {
-		t.Fatalf("expected clean Agent Access rollback version 40, got %+v", version)
-	}
-	for _, object := range []string{"agent_access_clients", "service_principals"} {
-		var exists bool
-		if err := db.QueryRow(`SELECT to_regclass($1) IS NOT NULL`, "public."+object).Scan(&exists); err != nil {
-			t.Fatal(err)
-		}
-		if exists {
-			t.Fatalf("expected %s to be removed by rollback", object)
-		}
-	}
-	var functionExists bool
-	if err := db.QueryRow(`SELECT to_regprocedure('agent_access_cors_origins_valid(jsonb)') IS NOT NULL`).Scan(&functionExists); err != nil {
-		t.Fatal(err)
-	}
-	if functionExists {
-		t.Fatal("expected CORS validation function to be removed by rollback")
-	}
-	version = testDatabase.MigrateTo(t, 41)
-	if !version.Applied || version.Number != 41 || version.Dirty {
-		t.Fatalf("expected clean Agent Access migration reapply, got %+v", version)
-	}
 }
 
 func assertAgentAccessAllowLists(t *testing.T) {

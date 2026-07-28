@@ -95,7 +95,7 @@ func TestLoginLockoutConcurrentFailuresAreAtomic(t *testing.T) {
 func newLockoutRepository(t *testing.T) *identity.Repository {
 	t.Helper()
 	testDatabase := dbtest.New(t)
-	testDatabase.MigrateTo(t, 4)
+	testDatabase.MigrateToLatest(t)
 	db := testDatabase.Open(t)
 	repository, err := identity.NewRepository(db)
 	if err != nil {

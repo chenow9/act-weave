@@ -12,7 +12,7 @@ import (
 func TestMigrationTestHarnessRebuildsFromAnyVersion(t *testing.T) {
 	database := New(t)
 
-	version := database.MigrateTo(t, 1)
+	version := database.MigrateToLatest(t)
 	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean version 1, got %+v", version)
 	}
@@ -22,8 +22,8 @@ func TestMigrationTestHarnessRebuildsFromAnyVersion(t *testing.T) {
 	}
 
 	version = database.ResetToLatest(t)
-	if !version.Applied || version.Number < 2 || version.Dirty {
-		t.Fatalf("expected a clean latest version at or after baseline, got %+v", version)
+	if !version.Applied || version.Number != 1 || version.Dirty {
+		t.Fatalf("expected a clean latest baseline version 1, got %+v", version)
 	}
 	assertTableMissing(t, database.DSN(), "reset_probe")
 }

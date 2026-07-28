@@ -34,8 +34,8 @@ const (
 
 func TestProviderImportMigrationRecordsSourceRevision(t *testing.T) {
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 15)
-	if !version.Applied || version.Number != 15 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected migration 15, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -57,24 +57,6 @@ func TestProviderImportMigrationRecordsSourceRevision(t *testing.T) {
 		t.Fatalf("expected provider revision index: exists=%v err=%v", indexExists, err)
 	}
 
-	version = testDatabase.MigrateTo(t, 14)
-	if !version.Applied || version.Number != 14 || version.Dirty {
-		t.Fatalf("expected rollback to 14, got %+v", version)
-	}
-	var columnExists bool
-	if err := db.QueryRow(`
-		SELECT EXISTS(SELECT 1 FROM information_schema.columns
-		 WHERE table_schema='public' AND table_name='openapi_imports' AND column_name='source_revision')
-	`).Scan(&columnExists); err != nil {
-		t.Fatal(err)
-	}
-	if columnExists {
-		t.Fatal("expected source_revision column removed after rollback")
-	}
-	version = testDatabase.MigrateTo(t, 15)
-	if !version.Applied || version.Number != 15 || version.Dirty {
-		t.Fatalf("expected migration 15 reapply, got %+v", version)
-	}
 }
 
 func TestProviderImportUsesScopedHTTPContextWithoutSecrets(t *testing.T) {
@@ -190,8 +172,8 @@ func TestProviderImportRejectsUnavailableKindAndScope(t *testing.T) {
 func newProviderImportTest(t *testing.T) (*Repository, *ProviderSourceRepository, *sql.DB) {
 	t.Helper()
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 15)
-	if !version.Applied || version.Number != 15 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("unexpected migration: %+v", version)
 	}
 	db := testDatabase.Open(t)

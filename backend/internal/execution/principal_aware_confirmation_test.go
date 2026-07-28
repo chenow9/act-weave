@@ -28,7 +28,7 @@ const (
 func TestPrincipalAwareConfirmation(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 61 || version.Dirty {
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected Interaction decision binding migration 61, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -241,9 +241,10 @@ func TestPrincipalAwareConfirmation(t *testing.T) {
 }
 
 func TestPrincipalAwareConfirmationMigration(t *testing.T) {
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 50)
-	if !version.Applied || version.Number != 50 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("migration 50=%+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -260,8 +261,8 @@ func TestPrincipalAwareConfirmationMigration(t *testing.T) {
 		invocationConnectionID, executionOwnerID); err != nil {
 		t.Fatal(err)
 	}
-	version = testDatabase.MigrateTo(t, 51)
-	if !version.Applied || version.Number != 51 || version.Dirty {
+	version = testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("migration 51=%+v", version)
 	}
 	var snapshotVersion, actorType, actorID, subjectType, subjectID string
@@ -278,19 +279,6 @@ func TestPrincipalAwareConfirmationMigration(t *testing.T) {
 		subjectType != "USER" || subjectID != executionOwnerID {
 		t.Fatalf("legacy confirmation Principal=%s %s/%s %s/%s",
 			snapshotVersion, actorType, actorID, subjectType, subjectID)
-	}
-	version = testDatabase.MigrateTo(t, 50)
-	if !version.Applied || version.Number != 50 || version.Dirty {
-		t.Fatalf("rollback 50=%+v", version)
-	}
-	var retained int
-	if err := db.QueryRow(`SELECT count(*) FROM execution_confirmations WHERE id=$1`,
-		principalConfirmationLegacyID).Scan(&retained); err != nil || retained != 1 {
-		t.Fatalf("rollback retained=%d err=%v", retained, err)
-	}
-	version = testDatabase.MigrateTo(t, 51)
-	if !version.Applied || version.Number != 51 || version.Dirty {
-		t.Fatalf("reapply 51=%+v", version)
 	}
 }
 

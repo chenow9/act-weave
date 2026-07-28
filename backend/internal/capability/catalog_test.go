@@ -152,8 +152,8 @@ func TestCatalogPublishRejectsCallableNameConflict(t *testing.T) {
 func newCatalogRepositoryTest(t *testing.T) (*Repository, *sql.DB) {
 	t.Helper()
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 11)
-	if !version.Applied || version.Number != 11 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("unexpected migration: %+v", version)
 	}
 	db := testDatabase.Open(t)

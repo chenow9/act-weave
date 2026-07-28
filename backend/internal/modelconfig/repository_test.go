@@ -195,8 +195,8 @@ func TestConfigurationSecurityAcceptanceRejectsSecretsInModelOptions(t *testing.
 func newModelConfigRepositoryTest(t *testing.T, checker UsageChecker) (*Repository, *sql.DB) {
 	t.Helper()
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 7)
-	if !version.Applied || version.Number != 7 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean model config repository migration version 7, got %+v", version)
 	}
 	db := testDatabase.Open(t)

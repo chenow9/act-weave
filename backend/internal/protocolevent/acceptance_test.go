@@ -18,8 +18,8 @@ import (
 func TestEventKernelDatabaseAcceptance(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 61 || version.Dirty {
-		t.Fatalf("expected clean latest schema version 61, got %+v", version)
+	if !version.Applied || version.Number != 1 || version.Dirty {
+		t.Fatalf("expected clean latest schema version 1, got %+v", version)
 	}
 	db := testDatabase.Open(t)
 	insertProtocolEventFixtures(t, db)
@@ -73,16 +73,6 @@ func TestEventKernelDatabaseAcceptance(t *testing.T) {
 		t.Fatalf("legacy write entry point remains open: %v", err)
 	}
 
-	version = testDatabase.MigrateTo(t, 36)
-	if !version.Applied || version.Number != 36 || version.Dirty {
-		t.Fatalf("expected clean Event Kernel rollback to 36, got %+v", version)
-	}
-	assertProtocolTablesExist(t, db, false)
-	version = testDatabase.MigrateTo(t, 40)
-	if !version.Applied || version.Number != 40 || version.Dirty {
-		t.Fatalf("expected clean Event Kernel migration reapply to 40, got %+v", version)
-	}
-	assertProtocolTablesExist(t, db, true)
 }
 
 func assertNoProtocolOrphans(t *testing.T, db *sql.DB) {

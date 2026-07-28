@@ -217,8 +217,8 @@ func TestScopeResolutionAlwaysIncludesWorkspaceID(t *testing.T) {
 func newAuthorizationTest(t *testing.T) (*Service, *sql.DB) {
 	t.Helper()
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 5)
-	if !version.Applied || version.Number != 5 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean authorization migration version 5, got %+v", version)
 	}
 	db := testDatabase.Open(t)

@@ -15,8 +15,8 @@ import (
 
 func TestManagementCommandRepository(t *testing.T) {
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 45)
-	if !version.Applied || version.Number != 45 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean management command migration version 45, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -68,19 +68,4 @@ func TestManagementCommandRepository(t *testing.T) {
 		t.Fatalf("second completion error=%v want conflict", err)
 	}
 
-	version = testDatabase.MigrateTo(t, 44)
-	if !version.Applied || version.Number != 44 || version.Dirty {
-		t.Fatalf("expected clean rollback to version 44, got %+v", version)
-	}
-	var exists bool
-	if err := db.QueryRow(`SELECT to_regclass('public.agent_access_management_commands') IS NOT NULL`).Scan(&exists); err != nil {
-		t.Fatal(err)
-	}
-	if exists {
-		t.Fatal("management command table survived rollback")
-	}
-	version = testDatabase.MigrateTo(t, 45)
-	if !version.Applied || version.Number != 45 || version.Dirty {
-		t.Fatalf("expected clean migration 45 reapply, got %+v", version)
-	}
 }

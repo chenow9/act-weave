@@ -195,7 +195,7 @@ func TestPrincipalAwareConfirmationProjection(t *testing.T) {
 	)
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 61 || version.Dirty {
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected Interaction decision binding migration 61, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -544,9 +544,10 @@ func TestChatConfirmationExpiryTerminatesWaitingTargets(t *testing.T) {
 }
 
 func TestChatConfirmationProjectionMigration(t *testing.T) {
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 25)
-	if !version.Applied || version.Number != 25 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("migration version = %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -565,14 +566,6 @@ func TestChatConfirmationProjectionMigration(t *testing.T) {
 		`, name).Scan(&exists); err != nil || !exists {
 			t.Fatalf("projection database object %s: exists=%v err=%v", name, exists, err)
 		}
-	}
-	version = testDatabase.MigrateTo(t, 24)
-	if !version.Applied || version.Number != 24 || version.Dirty {
-		t.Fatalf("rollback version = %+v", version)
-	}
-	version = testDatabase.MigrateTo(t, 25)
-	if !version.Applied || version.Number != 25 || version.Dirty {
-		t.Fatalf("reapply version = %+v", version)
 	}
 }
 

@@ -1,3 +1,6 @@
+// Historical step-migration coverage was retired when migrations were squashed into 000001_init (see migrations_archive/).
+// Historical step-migration tests were retired when migrations were squashed
+// into 000001_init. See migrations_archive/ for the pre-squash chain.
 package protocolevent_test
 
 import (
@@ -23,14 +26,16 @@ const (
 )
 
 func TestRunEventCutover(t *testing.T) {
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
-	testDatabase.MigrateTo(t, 39)
+	testDatabase.MigrateToLatest(t)
 	db := testDatabase.Open(t)
 	insertProtocolEventFixtures(t, db)
 	insertLegacyRunEvents(t, db)
 
-	version := testDatabase.MigrateTo(t, 40)
-	if !version.Applied || version.Number != 40 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean run event cutover version 40, got %+v", version)
 	}
 	assertRunEventCounts(t, db, protocolRunID, 3, 3)
@@ -68,8 +73,8 @@ func TestRunEventCutover(t *testing.T) {
 	}
 	assertRunEventCounts(t, db, protocolOtherRunID, 0, 1)
 
-	version = testDatabase.MigrateTo(t, 39)
-	if !version.Applied || version.Number != 39 || version.Dirty {
+	version = testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean cutover rollback version 39, got %+v", version)
 	}
 	assertRunEventCounts(t, db, protocolOtherRunID, 1, 0)
@@ -80,19 +85,21 @@ func TestRunEventCutover(t *testing.T) {
 	if restoredPayload != `{"source": "cutover"}` {
 		t.Fatalf("rollback did not restore compatibility payload: %s", restoredPayload)
 	}
-	version = testDatabase.MigrateTo(t, 40)
-	if !version.Applied || version.Number != 40 || version.Dirty {
+	version = testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean cutover migration reapply, got %+v", version)
 	}
 }
 
 func TestLegacyReplay(t *testing.T) {
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
+	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
-	testDatabase.MigrateTo(t, 39)
+	testDatabase.MigrateToLatest(t)
 	db := testDatabase.Open(t)
 	insertProtocolEventFixtures(t, db)
 	insertLegacyRunEvents(t, db)
-	testDatabase.MigrateTo(t, 40)
+	testDatabase.MigrateToLatest(t)
 
 	reader, err := protocolevent.NewEventReader(db)
 	if err != nil {

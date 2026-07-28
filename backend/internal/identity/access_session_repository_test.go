@@ -251,7 +251,7 @@ func TestResolveAccessSessionStateInfrastructureErrorNotNotFound(t *testing.T) {
 func newAccessSessionRepositoryTest(t *testing.T) (*Repository, *sql.DB) {
 	t.Helper()
 	testDatabase := dbtest.New(t)
-	testDatabase.MigrateTo(t, 4)
+	testDatabase.MigrateToLatest(t)
 	db := testDatabase.Open(t)
 	repository, err := NewRepository(db)
 	if err != nil {
@@ -304,7 +304,7 @@ func openClosedAccessSessionDB(t *testing.T) *sql.DB {
 	// Open a real postgres handle then close it so QueryRowContext fails with a
 	// driver/infrastructure error rather than sql.ErrNoRows.
 	testDatabase := dbtest.New(t)
-	testDatabase.MigrateTo(t, 4)
+	testDatabase.MigrateToLatest(t)
 	db := testDatabase.Open(t)
 	if err := db.Close(); err != nil {
 		t.Fatalf("close db: %v", err)

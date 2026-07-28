@@ -260,7 +260,7 @@ func TestSessionConcurrentRefreshRotationOnlySucceedsOnce(t *testing.T) {
 func newSessionRepositoryTest(t *testing.T) (*identity.Repository, *sql.DB) {
 	t.Helper()
 	testDatabase := dbtest.New(t)
-	testDatabase.MigrateTo(t, 4)
+	testDatabase.MigrateToLatest(t)
 	db := testDatabase.Open(t)
 	repository, err := identity.NewRepository(db)
 	if err != nil {

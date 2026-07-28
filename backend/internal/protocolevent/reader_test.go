@@ -97,8 +97,8 @@ func TestScopeIsolation(t *testing.T) {
 func setupEventReader(t *testing.T) (*sql.DB, *protocolevent.EventReader) {
 	t.Helper()
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 39)
-	if !version.Applied || version.Number != 39 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected event reader schema version 39, got %+v", version)
 	}
 	db := testDatabase.Open(t)

@@ -166,8 +166,8 @@ func TestRetentionPolicyForcesPermanentSensitiveBusinessContent(t *testing.T) {
 
 func TestRetentionSecurityPolicyMigration(t *testing.T) {
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 27)
-	if !version.Applied || version.Number != 27 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("migration version = %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -202,14 +202,6 @@ func TestRetentionSecurityPolicyMigration(t *testing.T) {
 		if _, err := db.Exec(statement); err == nil {
 			t.Fatalf("expected policy statement failure: %s", statement)
 		}
-	}
-	version = testDatabase.MigrateTo(t, 26)
-	if !version.Applied || version.Number != 26 || version.Dirty {
-		t.Fatalf("rollback version = %+v", version)
-	}
-	version = testDatabase.MigrateTo(t, 27)
-	if !version.Applied || version.Number != 27 || version.Dirty {
-		t.Fatalf("reapply version = %+v", version)
 	}
 }
 

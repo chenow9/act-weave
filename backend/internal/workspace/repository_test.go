@@ -52,6 +52,22 @@ func TestCreateWorkspaceAtomicallyCreatesOwnerAndDefaults(t *testing.T) {
 		`, created.ID); err != nil {
 			return CreationDefaults{}, err
 		}
+		// Baseline schema defers FK checks for default agent/model until commit.
+		// Create the referenced rows inside the same transaction so commit succeeds.
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO model_configs(
+				id, workspace_id, name, provider, api_base, model_name, created_by, updated_by
+			) VALUES ($1, $2, 'Default Model', 'openai', 'https://models.example.test', 'default', $3, $3)
+		`, defaultModelID, created.ID, created.OwnerUserID); err != nil {
+			return CreationDefaults{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO agents(
+				id, workspace_id, name, model_config_id, created_by, updated_by
+			) VALUES ($1, $2, 'Default Agent', $3, $4, $4)
+		`, defaultAgentID, created.ID, defaultModelID, created.OwnerUserID); err != nil {
+			return CreationDefaults{}, err
+		}
 		return CreationDefaults{
 			DefaultAgentID:       &defaultAgentID,
 			DefaultModelConfigID: &defaultModelID,
@@ -214,8 +230,8 @@ func TestCreateWorkspaceAllowsReusingSlugAfterSoftDelete(t *testing.T) {
 func newWorkspaceRepositoryDatabase(t *testing.T) *sql.DB {
 	t.Helper()
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 5)
-	if !version.Applied || version.Number != 5 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean workspace repository migration version 5, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -231,8 +247,8 @@ func newWorkspaceRepositoryDatabase(t *testing.T) *sql.DB {
 func newWorkspaceRepositoryDatabaseAtLatestMigration(t *testing.T) *sql.DB {
 	t.Helper()
 	testDatabase := dbtest.New(t)
-	version := testDatabase.MigrateTo(t, 35)
-	if !version.Applied || version.Number != 35 || version.Dirty {
+	version := testDatabase.MigrateToLatest(t)
+	if !version.Applied || version.Number != 1 || version.Dirty {
 		t.Fatalf("expected clean latest workspace migration version 35, got %+v", version)
 	}
 	db := testDatabase.Open(t)
