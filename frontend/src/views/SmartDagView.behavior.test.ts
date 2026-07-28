@@ -33,13 +33,56 @@ vi.mock("../services/api", () => ({
 const graph = {
   schemaVersion: "workflow.graph.v1",
   nodes: [
-    { id: "start", type: "Start", label: "接收请求", position: { x: 120, y: 240 }, ports: [{ key: "output", label: "Output", direction: "output" }], data: {}, ui: { generated: true } },
-    { id: "result", type: "Transform", label: "整理结果", position: { x: 420, y: 240 }, ports: [{ key: "input", label: "Input", direction: "input" }, { key: "output", label: "Output", direction: "output" }], data: { template: "done" }, ui: { generated: true } },
-    { id: "end", type: "End", label: "返回结果", position: { x: 720, y: 240 }, ports: [{ key: "input", label: "Input", direction: "input" }], data: {}, ui: { generated: true } },
+    {
+      id: "start",
+      type: "Start",
+      label: "接收请求",
+      position: { x: 120, y: 240 },
+      ports: [{ key: "output", label: "Output", direction: "output" }],
+      data: {},
+      ui: { generated: true },
+    },
+    {
+      id: "result",
+      type: "Transform",
+      label: "整理结果",
+      position: { x: 420, y: 240 },
+      ports: [
+        { key: "input", label: "Input", direction: "input" },
+        { key: "output", label: "Output", direction: "output" },
+      ],
+      data: { template: "done" },
+      ui: { generated: true },
+    },
+    {
+      id: "end",
+      type: "End",
+      label: "返回结果",
+      position: { x: 720, y: 240 },
+      ports: [{ key: "input", label: "Input", direction: "input" }],
+      data: {},
+      ui: { generated: true },
+    },
   ],
   edges: [
-    { id: "start-result", sourceNodeId: "start", sourcePort: "output", targetNodeId: "result", targetPort: "input", data: {}, ui: {} },
-    { id: "result-end", sourceNodeId: "result", sourcePort: "output", targetNodeId: "end", targetPort: "input", data: {}, ui: {} },
+    {
+      id: "start-result",
+      sourceNodeId: "start",
+      sourcePort: "output",
+      targetNodeId: "result",
+      targetPort: "input",
+      data: {},
+      ui: {},
+    },
+    {
+      id: "result-end",
+      sourceNodeId: "result",
+      sourcePort: "output",
+      targetNodeId: "end",
+      targetPort: "input",
+      data: {},
+      ui: {},
+    },
   ],
   viewport: { x: 0, y: 0, zoom: 1 },
   ui: { generatedBy: "smart-dag.v1", businessGoal: "生成测试流程" },
@@ -115,19 +158,21 @@ function configureAPI() {
     if (url.endsWith("/model-configs")) {
       return {
         data: {
-          items: [{
-            id: "model-1",
-            name: "test-model",
-            provider: "openai",
-            apiBase: "https://example.com/v1",
-            modelName: "gpt-test",
-            status: "VERIFIED",
-            createdBy: "user-1",
-            updatedBy: "user-1",
-            createdAt: "2026-07-15T00:00:00Z",
-            updatedAt: "2026-07-15T00:00:00Z",
-            lockVersion: 1,
-          }],
+          items: [
+            {
+              id: "model-1",
+              name: "test-model",
+              provider: "openai",
+              apiBase: "https://example.com/v1",
+              modelName: "gpt-test",
+              status: "VERIFIED",
+              createdBy: "user-1",
+              updatedBy: "user-1",
+              createdAt: "2026-07-15T00:00:00Z",
+              updatedAt: "2026-07-15T00:00:00Z",
+              lockVersion: 1,
+            },
+          ],
         },
       };
     }
@@ -204,7 +249,17 @@ function configureAPI() {
       };
     }
     if (url.includes("/compilations/comp-ai-1:trial")) {
-      return { data: { id: "trial-1", compilationId: "comp-ai-1", executionId: "execution-1", status: "SUCCEEDED", inputHash: "hash", startedBy: "user-1", startedAt: "2026-07-15T00:00:00Z" } };
+      return {
+        data: {
+          id: "trial-1",
+          compilationId: "comp-ai-1",
+          executionId: "execution-1",
+          status: "SUCCEEDED",
+          inputHash: "hash",
+          startedBy: "user-1",
+          startedAt: "2026-07-15T00:00:00Z",
+        },
+      };
     }
     throw new Error("Unexpected POST " + url);
   });
@@ -215,7 +270,18 @@ function mountSmartDagView() {
   const pinia = createPinia();
   setActivePinia(pinia);
   const workspaces = useWorkspaceStore();
-  workspaces.items = [{ id: "workspace-1", name: "workspace-1", displayName: "测试空间", mode: "Production", status: "Active", defaultAgentId: "", modelConfigId: "", healthScore: 100 }];
+  workspaces.items = [
+    {
+      id: "workspace-1",
+      name: "workspace-1",
+      displayName: "测试空间",
+      mode: "Production",
+      status: "Active",
+      defaultAgentId: "",
+      modelConfigId: "",
+      healthScore: 100,
+    },
+  ];
   workspaces.activeWorkspaceId = "workspace-1";
   wrapper = mount(SmartDagView, { attachTo: document.body, global: { plugins: [pinia] } });
   return wrapper;

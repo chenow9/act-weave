@@ -260,8 +260,13 @@ describe("workflow v1 store", () => {
     vi.mocked(apiClient.get)
       .mockResolvedValueOnce({ data: draftDTO(), headers: { etag: '"draft-4-7"' } })
       .mockResolvedValueOnce({ data: readinessDTO() })
-      .mockResolvedValueOnce({ data: readinessDTO({ stage: "COMPILE_REQUIRED", canTrial: false, compilationCurrent: false }) });
-    vi.mocked(apiClient.put).mockResolvedValue({ data: draftDTO({ draftVersion: 5, lockVersion: 8 }), headers: { etag: '"draft-5-8"' } });
+      .mockResolvedValueOnce({
+        data: readinessDTO({ stage: "COMPILE_REQUIRED", canTrial: false, compilationCurrent: false }),
+      });
+    vi.mocked(apiClient.put).mockResolvedValue({
+      data: draftDTO({ draftVersion: 5, lockVersion: 8 }),
+      headers: { etag: '"draft-5-8"' },
+    });
 
     const loaded = await store.loadWorkflowDraft("wf-order");
     await store.saveWorkflowDraft("wf-order", { ...loaded.draft, graph: { ...graph, ui: { dirty: true } } });
@@ -319,20 +324,23 @@ describe("workflow v1 store", () => {
         finishedAt: "2026-07-02T04:00:01Z",
       },
     });
-    vi.mocked(apiClient.get).mockResolvedValue({ data: readinessDTO({ stage: "PUBLISH_READY", canPublish: true, trialCurrent: true, trialSuccessful: true }) });
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: readinessDTO({ stage: "PUBLISH_READY", canPublish: true, trialCurrent: true, trialSuccessful: true }),
+    });
 
     const execution = await store.trialRunWorkflow("wf-order", { orderId: "A-1" });
 
-    expect(apiClient.post).toHaveBeenCalledWith(
-      "/workspaces/order/workflows/wf-order/compilations/comp-1:trial",
-      { input: { orderId: "A-1" } },
-    );
+    expect(apiClient.post).toHaveBeenCalledWith("/workspaces/order/workflows/wf-order/compilations/comp-1:trial", {
+      input: { orderId: "A-1" },
+    });
     expect(execution.id).toBe("exec-9");
   });
 
   it("publishes a compilation and preserves the immutable revision ID", async () => {
     const store = seedWorkflow();
-    vi.mocked(apiClient.post).mockResolvedValue({ data: { revision: revisionDTO(), releaseId: "release-7", releaseNo: 7, trialId: "trial-9" } });
+    vi.mocked(apiClient.post).mockResolvedValue({
+      data: { revision: revisionDTO(), releaseId: "release-7", releaseNo: 7, trialId: "trial-9" },
+    });
     vi.mocked(apiClient.get).mockImplementation(async (url) =>
       url.endsWith("/readiness")
         ? { data: readinessDTO({ stage: "PUBLISHED", published: true, activeRevisionId: "rev-immutable-7" }) }
@@ -353,17 +361,34 @@ describe("workflow v1 store", () => {
     const store = seedWorkflow();
     vi.mocked(apiClient.get).mockImplementation(async (url) => {
       if (url.endsWith("/revisions")) return { data: { items: [revisionDTO("rev-a", 1), revisionDTO("rev-b", 2)] } };
-      if (url.includes("revisions:diff")) return { data: { from: revisionDTO("rev-a", 1), to: revisionDTO("rev-b", 2), changes: { draft: true, spec: false, plan: true, planHash: true } } };
-      if (url.endsWith("/readiness")) return { data: readinessDTO({ stage: "PUBLISHED", published: true, activeRevisionId: "rev-a" }) };
+      if (url.includes("revisions:diff"))
+        return {
+          data: {
+            from: revisionDTO("rev-a", 1),
+            to: revisionDTO("rev-b", 2),
+            changes: { draft: true, spec: false, plan: true, planHash: true },
+          },
+        };
+      if (url.endsWith("/readiness"))
+        return { data: readinessDTO({ stage: "PUBLISHED", published: true, activeRevisionId: "rev-a" }) };
       return { data: { ...workflowDTO(), activeRevisionId: "rev-a" } };
     });
-    vi.mocked(apiClient.post).mockResolvedValue({ data: { revision: revisionDTO("rev-a", 1), releaseId: "release-8", releaseNo: 8, eventType: "WORKFLOW_REVISION_ACTIVATED" } });
+    vi.mocked(apiClient.post).mockResolvedValue({
+      data: {
+        revision: revisionDTO("rev-a", 1),
+        releaseId: "release-8",
+        releaseNo: 8,
+        eventType: "WORKFLOW_REVISION_ACTIVATED",
+      },
+    });
 
     await store.loadWorkflowRevisions("wf-order");
     const diff = await store.loadWorkflowRevisionDiff("wf-order", "rev-a", "rev-b");
     await store.activateWorkflowRevision("wf-order", "rev-a");
 
-    expect(apiClient.get).toHaveBeenCalledWith("/workspaces/order/workflows/wf-order/revisions:diff?from=rev-a&to=rev-b");
+    expect(apiClient.get).toHaveBeenCalledWith(
+      "/workspaces/order/workflows/wf-order/revisions:diff?from=rev-a&to=rev-b",
+    );
     expect(apiClient.post).toHaveBeenCalledWith("/workspaces/order/workflows/wf-order/revisions/rev-a:activate");
     expect(diff.changes).toEqual({ draft: true, spec: false, plan: true, planHash: true });
   });

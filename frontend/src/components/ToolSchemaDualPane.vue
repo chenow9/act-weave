@@ -30,16 +30,7 @@ const props = defineProps<{
   rootLabel: string;
 }>();
 
-const anchorPalette = [
-  "#0f766e",
-  "#2563eb",
-  "#b45309",
-  "#be123c",
-  "#7c3aed",
-  "#047857",
-  "#c2410c",
-  "#0369a1",
-];
+const anchorPalette = ["#0f766e", "#2563eb", "#b45309", "#be123c", "#7c3aed", "#047857", "#c2410c", "#0369a1"];
 
 const dualPaneRef = ref<HTMLElement | null>(null);
 const hoveredFieldId = ref("");
@@ -58,7 +49,12 @@ const summaryText = computed(() => {
   return `${total} 个节点 · ${required} 个必填 · ${maxDepth} 层结构`;
 });
 
-function buildLinkedRows(nodes: ToolSchemaNode[], depth = 0, parentPath = "", inheritedLocation = ""): LinkedSchemaRow[] {
+function buildLinkedRows(
+  nodes: ToolSchemaNode[],
+  depth = 0,
+  parentPath = "",
+  inheritedLocation = "",
+): LinkedSchemaRow[] {
   return nodes.flatMap((node, index) => {
     const fieldId = schemaFieldId(node, `${parentPath || "root"}.${node.name || index}`);
     const name = node.name || "(未命名字段)";
@@ -88,7 +84,12 @@ function buildLinkedRows(nodes: ToolSchemaNode[], depth = 0, parentPath = "", in
   });
 }
 
-function buildArrayItemRows(node: ToolSchemaNode, depth: number, parentPath: string, inheritedLocation: string): LinkedSchemaRow[] {
+function buildArrayItemRows(
+  node: ToolSchemaNode,
+  depth: number,
+  parentPath: string,
+  inheritedLocation: string,
+): LinkedSchemaRow[] {
   const fieldId = schemaFieldId(node, `${parentPath}.items`);
   const path = `${parentPath}[]`;
   const row: LinkedSchemaRow = {
@@ -102,11 +103,19 @@ function buildArrayItemRows(node: ToolSchemaNode, depth: number, parentPath: str
     location: node.location || inheritedLocation,
     kind: "array-item",
   };
-  const childRows = node.type === "object" ? buildLinkedRows(node.children || [], depth + 1, path, node.location || inheritedLocation) : [];
+  const childRows =
+    node.type === "object"
+      ? buildLinkedRows(node.children || [], depth + 1, path, node.location || inheritedLocation)
+      : [];
   return [row, ...childRows];
 }
 
-function buildAdditionalPropertyRows(node: ToolSchemaNode, depth: number, parentPath: string, inheritedLocation: string): LinkedSchemaRow[] {
+function buildAdditionalPropertyRows(
+  node: ToolSchemaNode,
+  depth: number,
+  parentPath: string,
+  inheritedLocation: string,
+): LinkedSchemaRow[] {
   const fieldId = schemaFieldId(node, `${parentPath}.additionalProperties`);
   const path = `${parentPath}.{key}`;
   const row: LinkedSchemaRow = {
@@ -120,14 +129,24 @@ function buildAdditionalPropertyRows(node: ToolSchemaNode, depth: number, parent
     location: node.location || inheritedLocation,
     kind: "additional-properties",
   };
-  const childRows = node.type === "object" ? buildLinkedRows(node.children || [], depth + 1, path, node.location || inheritedLocation) : [];
+  const childRows =
+    node.type === "object"
+      ? buildLinkedRows(node.children || [], depth + 1, path, node.location || inheritedLocation)
+      : [];
   return [row, ...childRows];
 }
 
 function buildLinkedJsonLines(nodes: ToolSchemaNode[]): LinkedJsonLine[] {
   const lines: LinkedJsonLine[] = [{ key: "root-open", text: "{", fieldId: "" }];
   nodes.forEach((node, index) => {
-    appendNodeJsonLines(lines, node, node.name || `field${index + 1}`, 1, index === nodes.length - 1, `root.${node.name || index}`);
+    appendNodeJsonLines(
+      lines,
+      node,
+      node.name || `field${index + 1}`,
+      1,
+      index === nodes.length - 1,
+      `root.${node.name || index}`,
+    );
   });
   lines.push({ key: "root-close", text: "}", fieldId: "" });
   return lines;
@@ -190,17 +209,33 @@ function buildNodeJsonEntries(node: ToolSchemaNode, indent: number, path: string
     entries.push(buildArrayItemsEntry(node.item, indent, `${path}.items`, fieldId));
   }
   if (node.additionalProperties) {
-    entries.push(buildAdditionalPropertiesEntry(node.additionalProperties, indent, `${path}.additionalProperties`, fieldId));
+    entries.push(
+      buildAdditionalPropertiesEntry(node.additionalProperties, indent, `${path}.additionalProperties`, fieldId),
+    );
   }
 
   return entries;
 }
 
-function buildObjectPropertiesEntry(node: ToolSchemaNode, indent: number, path: string, fieldId: string): LinkedJsonLine[] {
-  const entry: LinkedJsonLine[] = [{ key: `${fieldId}:properties-open`, text: `${indentText(indent)}"properties": {`, fieldId }];
+function buildObjectPropertiesEntry(
+  node: ToolSchemaNode,
+  indent: number,
+  path: string,
+  fieldId: string,
+): LinkedJsonLine[] {
+  const entry: LinkedJsonLine[] = [
+    { key: `${fieldId}:properties-open`, text: `${indentText(indent)}"properties": {`, fieldId },
+  ];
   const children = node.children || [];
   children.forEach((child, index) => {
-    appendNodeJsonLines(entry, child, child.name || `field${index + 1}`, indent + 1, index === children.length - 1, `${path}.properties.${child.name || index}`);
+    appendNodeJsonLines(
+      entry,
+      child,
+      child.name || `field${index + 1}`,
+      indent + 1,
+      index === children.length - 1,
+      `${path}.properties.${child.name || index}`,
+    );
   });
   entry.push({ key: `${fieldId}:properties-close`, text: `${indentText(indent)}}`, fieldId });
   return entry;
@@ -215,8 +250,15 @@ function buildArrayItemsEntry(node: ToolSchemaNode, indent: number, path: string
   return entry;
 }
 
-function buildAdditionalPropertiesEntry(node: ToolSchemaNode, indent: number, path: string, fieldId: string): LinkedJsonLine[] {
-  const entry: LinkedJsonLine[] = [{ key: `${fieldId}:additional-open`, text: `${indentText(indent)}"additionalProperties": {`, fieldId }];
+function buildAdditionalPropertiesEntry(
+  node: ToolSchemaNode,
+  indent: number,
+  path: string,
+  fieldId: string,
+): LinkedJsonLine[] {
+  const entry: LinkedJsonLine[] = [
+    { key: `${fieldId}:additional-open`, text: `${indentText(indent)}"additionalProperties": {`, fieldId },
+  ];
   for (const additionalEntry of buildNodeJsonEntries(node, indent + 1, path, schemaFieldId(node, path))) {
     entry.push(...additionalEntry);
   }
@@ -224,7 +266,14 @@ function buildAdditionalPropertiesEntry(node: ToolSchemaNode, indent: number, pa
   return entry;
 }
 
-function jsonPropertyLine(fieldId: string, path: string, key: string, indent: number, suffix: string, value: unknown): LinkedJsonLine {
+function jsonPropertyLine(
+  fieldId: string,
+  path: string,
+  key: string,
+  indent: number,
+  suffix: string,
+  value: unknown,
+): LinkedJsonLine {
   return {
     key: `${fieldId}:${suffix}:${path}`,
     text: `${indentText(indent)}${JSON.stringify(key)}: ${JSON.stringify(value)}`,
@@ -317,7 +366,10 @@ function fieldNameLabel(row: LinkedSchemaRow) {
 
 <template>
   <div ref="dualPaneRef" class="tool-contract-dual-pane tool-schema-linked-workbench">
-    <section class="tool-contract-editor-shell tool-contract-editor-shell-ide tool-schema-linked-json-pane" aria-label="JSON 只读映射预览">
+    <section
+      class="tool-contract-editor-shell tool-contract-editor-shell-ide tool-schema-linked-json-pane"
+      aria-label="JSON 只读映射预览"
+    >
       <div class="tool-contract-editor-caption">
         <div class="tool-contract-editor-dots">
           <span />
@@ -334,7 +386,11 @@ function fieldNameLabel(row: LinkedSchemaRow) {
           v-for="(line, index) in linkedJsonLines"
           :key="line.key"
           class="tool-schema-linked-code-line"
-          :class="{ 'is-linked': isLinked(line.fieldId), 'is-selected': isSelected(line.fieldId), 'is-static': !isInteractive(line.fieldId) }"
+          :class="{
+            'is-linked': isLinked(line.fieldId),
+            'is-selected': isSelected(line.fieldId),
+            'is-static': !isInteractive(line.fieldId),
+          }"
           type="button"
           role="listitem"
           :data-schema-field-id="line.fieldId || undefined"
@@ -389,13 +445,25 @@ function fieldNameLabel(row: LinkedSchemaRow) {
                 <div class="tool-schema-linked-field-name" :title="row.path">
                   <span class="tool-schema-view-spec-indent" :style="{ width: `${row.depth * 22}px` }" />
                   <span v-if="row.depth > 0" class="tool-schema-view-branch-spec">└</span>
-                  <span class="tool-schema-view-name" :class="{ 'is-root': row.depth === 0 }">{{ fieldNameLabel(row) }}</span>
+                  <span class="tool-schema-view-name" :class="{ 'is-root': row.depth === 0 }">{{
+                    fieldNameLabel(row)
+                  }}</span>
                 </div>
               </td>
-              <td><span class="tool-schema-cell-text tool-schema-cell-text-spec">{{ locationLabel(row) }}</span></td>
-              <td><span class="tool-schema-view-type">{{ typeLabel(row.type) }}</span></td>
-              <td><span class="tool-schema-view-required" :class="{ optional: !row.required }">{{ row.required ? "YES" : "Optional" }}</span></td>
-              <td><span class="tool-schema-view-description">{{ row.description || "暂无说明" }}</span></td>
+              <td>
+                <span class="tool-schema-cell-text tool-schema-cell-text-spec">{{ locationLabel(row) }}</span>
+              </td>
+              <td>
+                <span class="tool-schema-view-type">{{ typeLabel(row.type) }}</span>
+              </td>
+              <td>
+                <span class="tool-schema-view-required" :class="{ optional: !row.required }">{{
+                  row.required ? "YES" : "Optional"
+                }}</span>
+              </td>
+              <td>
+                <span class="tool-schema-view-description">{{ row.description || "暂无说明" }}</span>
+              </td>
             </tr>
           </tbody>
         </table>

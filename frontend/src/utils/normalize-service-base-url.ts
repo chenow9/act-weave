@@ -50,8 +50,7 @@ export function normalizeServiceBaseURL(input: {
   const portRaw = input.port === undefined || input.port === null ? "" : String(input.port).trim();
   const basePath = (input.basePath || "").trim();
   const pathPart = basePath ? (basePath.startsWith("/") ? basePath : `/${basePath}`) : "";
-  const normalizedPath =
-    pathPart.length > 1 && pathPart.endsWith("/") ? pathPart.slice(0, -1) : pathPart;
+  const normalizedPath = pathPart.length > 1 && pathPart.endsWith("/") ? pathPart.slice(0, -1) : pathPart;
   // If host already embeds :port, do not append again (fixes :18080:18080).
   const hostHasPort = /:\d+$/.test(host.replace(/^\[|\]$/g, ""));
   const portSuffix = portRaw && !hostHasPort ? `:${portRaw}` : "";

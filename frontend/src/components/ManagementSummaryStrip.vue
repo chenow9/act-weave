@@ -16,7 +16,9 @@ defineProps<{ items: ManagementSummaryItem[] }>();
   <section class="management-summary-strip" aria-label="页面摘要">
     <article v-for="item in items" :key="item.label" :class="`tone-${item.tone || 'default'}`">
       <span><i :class="item.icon" aria-hidden="true" />{{ item.label }}</span>
-      <strong>{{ item.value }}<small v-if="item.note">{{ item.note }}</small></strong>
+      <strong
+        >{{ item.value }}<small v-if="item.note">{{ item.note }}</small></strong
+      >
     </article>
   </section>
 </template>

@@ -4,16 +4,6 @@ import AppShell from "../components/AppShell.vue";
 import { useAuthStore } from "../stores/auth";
 import LoginView from "../views/LoginView.vue";
 import ChangePasswordView from "../views/ChangePasswordView.vue";
-import AgentsView from "../views/AgentsView.vue";
-import AgentAccessView from "../views/AgentAccessView.vue";
-import ModelAPIConfigsView from "../views/ModelAPIConfigsView.vue";
-import OpenAPIImportsView from "../views/OpenAPIImportsView.vue";
-import OverviewView from "../views/OverviewView.vue";
-import PlaceholderView from "../views/PlaceholderView.vue";
-import ProvidersView from "../views/ProvidersView.vue";
-import ServiceConnectionsView from "../views/ServiceConnectionsView.vue";
-import ToolsView from "../views/ToolsView.vue";
-import WorkspacesView from "../views/WorkspacesView.vue";
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -27,15 +17,23 @@ export const router = createRouter({
       meta: { requiresAuth: true },
       children: [
         { path: "", redirect: "/overview" },
-        { path: "overview", name: "overview", component: OverviewView },
-        { path: "workspaces", name: "workspaces", component: WorkspacesView },
-		{ path: "agents", name: "agents", component: AgentsView },
-		{ path: "agent-access", name: "agent-access", component: AgentAccessView },
-        { path: "providers", name: "providers", component: ProvidersView },
-        { path: "connections", name: "connections", component: ServiceConnectionsView },
-        { path: "openapi-imports", name: "openapi-imports", component: OpenAPIImportsView },
-        { path: "model-apis", name: "model-apis", component: ModelAPIConfigsView },
-        { path: "tools", name: "tools", component: ToolsView },
+        { path: "overview", name: "overview", component: () => import("../views/OverviewView.vue") },
+        { path: "workspaces", name: "workspaces", component: () => import("../views/WorkspacesView.vue") },
+        { path: "agents", name: "agents", component: () => import("../views/AgentsView.vue") },
+        { path: "agent-access", name: "agent-access", component: () => import("../views/AgentAccessView.vue") },
+        { path: "providers", name: "providers", component: () => import("../views/ProvidersView.vue") },
+        {
+          path: "connections",
+          name: "connections",
+          component: () => import("../views/ServiceConnectionsView.vue"),
+        },
+        {
+          path: "openapi-imports",
+          name: "openapi-imports",
+          component: () => import("../views/OpenAPIImportsView.vue"),
+        },
+        { path: "model-apis", name: "model-apis", component: () => import("../views/ModelAPIConfigsView.vue") },
+        { path: "tools", name: "tools", component: () => import("../views/ToolsView.vue") },
         { path: "workflow", name: "workflow", component: () => import("../views/WorkflowView.vue") },
         { path: "smart-dag", name: "smart-dag", component: () => import("../views/SmartDagView.vue") },
         { path: "chat", name: "chat", component: () => import("../views/ChatExecutionView.vue") },
@@ -51,7 +49,8 @@ export const router = createRouter({
           component: () => import("../views/UserAccessView.vue"),
           meta: { requiresPlatformAdmin: true },
         },
-        { path: ":moduleId", name: "placeholder", component: PlaceholderView },
+        // D8-A: unknown path → NotFound inside AppShell (not MVP placeholder).
+        { path: ":pathMatch(.*)*", name: "not-found", component: () => import("../views/NotFoundView.vue") },
       ],
     },
   ],

@@ -4,9 +4,7 @@ import { normalizeServiceBaseURL } from "./normalize-service-base-url";
 
 describe("normalizeServiceBaseURL", () => {
   it("keeps absolute URL port without doubling", () => {
-    expect(normalizeServiceBaseURL({ domain: "http://localhost:18080/api" })).toBe(
-      "http://localhost:18080/api",
-    );
+    expect(normalizeServiceBaseURL({ domain: "http://localhost:18080/api" })).toBe("http://localhost:18080/api");
   });
 
   it("does not append port when domain already includes it", () => {

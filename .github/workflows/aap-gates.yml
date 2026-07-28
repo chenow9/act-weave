@@ -138,14 +138,41 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22.22.3"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: pin npm to package engines
+        run: |
+          npm install -g npm@10.9.8
+          node -e "const e=require('./package.json').engines; if(process.version!=='v'+e.node){console.error('node',process.version,'!=',e.node); process.exit(1)}"
+          node -e "const e=require('./package.json').engines; const v=require('child_process').execSync('npm --version',{encoding:'utf8'}).trim(); if(v!==e.npm){console.error('npm',v,'!=',e.npm); process.exit(1)}"
       - name: install
         run: npm ci
-      - name: test + type-check + build
+      - name: lint + format
         run: |
-          npm test
+          npm run lint
+          npm run format:check
+      - name: unit + type-check + build + bundle budget
+        run: |
+          npm test -- --run
           npm run type-check
           npm run build
+          npm run bundle:check
+      - name: install playwright browser (smoke only)
+        run: npx playwright install --with-deps chromium
+      - name: e2e smoke (vite build + preview via playwright webServer)
+        run: npm run e2e:smoke
+        env:
+          CI: true
+      - name: upload playwright failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-artifacts
+          path: |
+            frontend/test-results/
+            frontend/playwright-report/
+          if-no-files-found: ignore
 
   examples:
     runs-on: ubuntu-latest

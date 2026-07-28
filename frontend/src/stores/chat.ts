@@ -30,12 +30,7 @@ import type {
 } from "../types/domain";
 
 /** ZKL-56: per-run stream health for calibration / DEGRADED UX. */
-export type RunStreamHealth =
-  | "CONNECTING"
-  | "HEALTHY"
-  | "RECONNECTING"
-  | "CALIBRATING"
-  | "DEGRADED";
+export type RunStreamHealth = "CONNECTING" | "HEALTHY" | "RECONNECTING" | "CALIBRATING" | "DEGRADED";
 
 interface ChatState {
   sessions: WorkspaceChatSession[];
@@ -118,7 +113,10 @@ export const useChatStore = defineStore("chat", {
       return this.sessions;
     },
     async createSession(workspaceId: string, agentId: string, title = "新对话") {
-      const response = await apiClient.post<ChatSession>(`/workspaces/${workspaceId}/chat/sessions`, { agentId, title });
+      const response = await apiClient.post<ChatSession>(`/workspaces/${workspaceId}/chat/sessions`, {
+        agentId,
+        title,
+      });
       const session: WorkspaceChatSession = { ...response.data, workspaceId };
       this.upsertSession(session);
       this.activeSessionId = session.id;
@@ -217,7 +215,14 @@ export const useChatStore = defineStore("chat", {
     },
     async loadExecutions(
       workspaceId: string,
-      filter: { status?: string; traceId?: string; workflowId?: string; startedAfter?: string; startedBefore?: string; limit?: number } = {},
+      filter: {
+        status?: string;
+        traceId?: string;
+        workflowId?: string;
+        startedAfter?: string;
+        startedBefore?: string;
+        limit?: number;
+      } = {},
     ) {
       const params = new URLSearchParams();
       if (filter.status) params.set("status", filter.status);
@@ -227,7 +232,9 @@ export const useChatStore = defineStore("chat", {
       if (filter.startedBefore) params.set("startedBefore", filter.startedBefore);
       if (filter.limit) params.set("limit", String(filter.limit));
       const suffix = params.size ? `?${params.toString()}` : "";
-      const response = await apiClient.get<{ items: WorkflowExecution[] }>(`/workspaces/${workspaceId}/executions${suffix}`);
+      const response = await apiClient.get<{ items: WorkflowExecution[] }>(
+        `/workspaces/${workspaceId}/executions${suffix}`,
+      );
       this.executions = response.data.items;
       return response.data.items;
     },
@@ -471,10 +478,7 @@ export const useChatStore = defineStore("chat", {
       const { state, effects } = projectStreamFrame(prior, frame);
       projectors.set(frame.runId, state);
 
-      this.runEventCursorByRun[frame.runId] = Math.max(
-        this.runEventCursorByRun[frame.runId] || 0,
-        effects.sequenceNo,
-      );
+      this.runEventCursorByRun[frame.runId] = Math.max(this.runEventCursorByRun[frame.runId] || 0, effects.sequenceNo);
 
       this.applyStreamEffects(effects);
 
@@ -502,8 +506,7 @@ export const useChatStore = defineStore("chat", {
       // before item.delta finishes. Refresh only for confirmation waits or legacy step frames.
       const session = this.activeSession;
       const needsRuntimeRefresh =
-        effects.runStatus === "WAITING_CONFIRMATION" ||
-        (effects.kind === "legacy" && !effects.skipLoadRun);
+        effects.runStatus === "WAITING_CONFIRMATION" || (effects.kind === "legacy" && !effects.skipLoadRun);
       if (session && needsRuntimeRefresh) {
         void this.loadRun(frame.runId, session.workspaceId).catch(() => undefined);
       }
@@ -550,9 +553,8 @@ export const useChatStore = defineStore("chat", {
     },
     upsertRunStep(step: AgentRunStep) {
       const exists = this.latestRunSteps.some((item) => item.id === step.id);
-      this.latestRunSteps = (exists
-        ? this.latestRunSteps.map((item) => (item.id === step.id ? step : item))
-        : [...this.latestRunSteps, step]
+      this.latestRunSteps = (
+        exists ? this.latestRunSteps.map((item) => (item.id === step.id ? step : item)) : [...this.latestRunSteps, step]
       ).sort((left, right) => left.sequenceNo - right.sequenceNo);
     },
     appendMessage(message: ChatMessage) {
@@ -652,7 +654,8 @@ function localUserMessage(content: string): ChatMessage {
 }
 
 function replaceLocalMessage(messages: ChatMessage[], serverMessage: ChatMessage, localMessageId: string) {
-  if (messages.some((message) => message.id === serverMessage.id)) return messages.filter((message) => message.id !== localMessageId);
+  if (messages.some((message) => message.id === serverMessage.id))
+    return messages.filter((message) => message.id !== localMessageId);
   return messages.map((message) => (message.id === localMessageId ? serverMessage : message));
 }
 
@@ -676,7 +679,10 @@ function pendingConfirmationProjection(session: WorkspaceChatSession): ChatConfi
 }
 
 function persistActiveSession(session: WorkspaceChatSession) {
-  writeSessionStorage(activeSessionStorageKey, JSON.stringify({ sessionId: session.id, workspaceId: session.workspaceId }));
+  writeSessionStorage(
+    activeSessionStorageKey,
+    JSON.stringify({ sessionId: session.id, workspaceId: session.workspaceId }),
+  );
 }
 
 function readActiveSession(): { sessionId: string; workspaceId: string } | undefined {

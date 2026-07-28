@@ -27,7 +27,8 @@ interface WorkflowState {
   workflows: WorkflowSummary[];
   pageItems: WorkflowSummary[];
   pagination: ListPagination;
-  listQuery: Required<Pick<WorkflowListQuery, "query" | "page" | "pageSize">> & Pick<WorkflowListQuery, "status" | "sortBy" | "sortOrder">;
+  listQuery: Required<Pick<WorkflowListQuery, "query" | "page" | "pageSize">> &
+    Pick<WorkflowListQuery, "status" | "sortBy" | "sortOrder">;
   pageLoading: boolean;
   pageError: string | null;
   pageHasLoaded: boolean;
@@ -111,10 +112,16 @@ export const useWorkflowStore = defineStore("workflow", {
               );
               const readiness = readinessFromDTO(readinessResponse.data);
               this.readinessByWorkflowId[value.id] = readiness;
-              return summaryFromDTO(value, workspaceID, readiness, {
-                nodeCount: value.nodeCount,
-                edgeCount: value.edgeCount,
-              }, this.workflows.find((item) => item.id === value.id));
+              return summaryFromDTO(
+                value,
+                workspaceID,
+                readiness,
+                {
+                  nodeCount: value.nodeCount,
+                  edgeCount: value.edgeCount,
+                },
+                this.workflows.find((item) => item.id === value.id),
+              );
             }),
           );
         }),
@@ -193,13 +200,16 @@ export const useWorkflowStore = defineStore("workflow", {
       return created;
     },
     async updateWorkflow(workflowId: string, workflow: Workflow) {
-      const response = await apiClient.patch<WorkflowDTO>(`/workspaces/${workflow.workspaceId}/workflows/${workflowId}`, {
-        name: workflow.name,
-        slug: workflow.slug || slugify(workflow.name),
-        description: workflow.description,
-        status: workflow.status === "Disabled" ? "DISABLED" : "ACTIVE",
-        lockVersion: workflow.lockVersion,
-      });
+      const response = await apiClient.patch<WorkflowDTO>(
+        `/workspaces/${workflow.workspaceId}/workflows/${workflowId}`,
+        {
+          name: workflow.name,
+          slug: workflow.slug || slugify(workflow.name),
+          description: workflow.description,
+          status: workflow.status === "Disabled" ? "DISABLED" : "ACTIVE",
+          lockVersion: workflow.lockVersion,
+        },
+      );
       const readiness = this.readinessByWorkflowId[workflowId] || workflow.readiness || emptyReadiness();
       const updated = workflowFromDTO(response.data, workflow.workspaceId, readiness);
       this.upsertWorkflow(updated);
@@ -253,7 +263,9 @@ export const useWorkflowStore = defineStore("workflow", {
     },
     async deleteWorkflow(workflowId: string) {
       const workflow = this.requireWorkflow(workflowId);
-      await apiClient.delete(`/workspaces/${workflow.workspaceId}/workflows/${workflowId}?lockVersion=${workflow.lockVersion}`);
+      await apiClient.delete(
+        `/workspaces/${workflow.workspaceId}/workflows/${workflowId}?lockVersion=${workflow.lockVersion}`,
+      );
       this.workflows = this.workflows.filter((item) => item.id !== workflowId);
       this.pageItems = this.pageItems.filter((item) => item.id !== workflowId);
       this.pagination = { ...this.pagination, total: Math.max(0, this.pagination.total - 1) };
@@ -293,9 +305,10 @@ export const useWorkflowStore = defineStore("workflow", {
     ) {
       const workflow = this.requireWorkflow(workflowId);
       const readiness = this.readinessByWorkflowId[workflowId] || (await this.loadWorkflowReadiness(workflowId));
-      const compilationID = this.activeCompilation?.workflowId === workflowId
-        ? this.activeCompilation.id
-        : readiness.compilationId || workflow.latestCompilationId;
+      const compilationID =
+        this.activeCompilation?.workflowId === workflowId
+          ? this.activeCompilation.id
+          : readiness.compilationId || workflow.latestCompilationId;
       if (!compilationID) throw new Error("Compile the current Workflow Draft before trial run.");
       const body: Record<string, unknown> = { input };
       if (outboundCredentials) body.outboundCredentials = outboundCredentials;
@@ -326,17 +339,18 @@ export const useWorkflowStore = defineStore("workflow", {
         revisionId: string;
         status: string;
         traceId: string;
-      }>(
-        `/workspaces/${workflow.workspaceId}/workflows/${workflowId}/revisions/${revisionId}:execute`,
-        { input, trigger: "console" },
-      );
-      const status: Execution["status"] = response.data.status === "SUCCEEDED"
-        ? "Success"
-        : response.data.status === "RUNNING" || response.data.status === "PENDING"
-          ? "Running"
-          : response.data.status === "WAITING_CONFIRMATION"
-            ? "Approval"
-            : "Failed";
+      }>(`/workspaces/${workflow.workspaceId}/workflows/${workflowId}/revisions/${revisionId}:execute`, {
+        input,
+        trigger: "console",
+      });
+      const status: Execution["status"] =
+        response.data.status === "SUCCEEDED"
+          ? "Success"
+          : response.data.status === "RUNNING" || response.data.status === "PENDING"
+            ? "Running"
+            : response.data.status === "WAITING_CONFIRMATION"
+              ? "Approval"
+              : "Failed";
       const execution: Execution = {
         id: response.data.executionId,
         workflowId: response.data.workflowId,
@@ -360,9 +374,10 @@ export const useWorkflowStore = defineStore("workflow", {
     async publishWorkflow(workflowId: string) {
       const workflow = this.requireWorkflow(workflowId);
       const readiness = this.readinessByWorkflowId[workflowId] || (await this.loadWorkflowReadiness(workflowId));
-      const compilationID = this.activeCompilation?.workflowId === workflowId
-        ? this.activeCompilation.id
-        : readiness.compilationId || workflow.latestCompilationId;
+      const compilationID =
+        this.activeCompilation?.workflowId === workflowId
+          ? this.activeCompilation.id
+          : readiness.compilationId || workflow.latestCompilationId;
       if (!compilationID) throw new Error("Compile and trial the current Workflow Draft before publishing.");
       const response = await apiClient.post<WorkflowPublishDTO>(
         `/workspaces/${workflow.workspaceId}/workflows/${workflowId}/compilations/${compilationID}:publish`,
@@ -439,8 +454,12 @@ export const useWorkflowStore = defineStore("workflow", {
       this.readinessByWorkflowId[workflowId] = readiness;
       const detail = this.workflowDetails[workflowId];
       if (detail) this.workflowDetails[workflowId] = { ...detail, readiness };
-      this.workflows = this.workflows.map((item) => (item.id === workflowId ? { ...item, status: statusFromReadiness(readiness), readiness } : item));
-      this.pageItems = this.pageItems.map((item) => (item.id === workflowId ? { ...item, status: statusFromReadiness(readiness), readiness } : item));
+      this.workflows = this.workflows.map((item) =>
+        item.id === workflowId ? { ...item, status: statusFromReadiness(readiness), readiness } : item,
+      );
+      this.pageItems = this.pageItems.map((item) =>
+        item.id === workflowId ? { ...item, status: statusFromReadiness(readiness), readiness } : item,
+      );
       return readiness;
     },
     async disableWorkflow(workflowId: string) {
@@ -448,7 +467,16 @@ export const useWorkflowStore = defineStore("workflow", {
       return this.updateWorkflow(workflowId, { ...current, status: "Disabled" });
     },
 
-    async loadExecutions(filter: { workflowId?: string; status?: string; traceId?: string; startedAfter?: string; startedBefore?: string; limit?: number } = {}) {
+    async loadExecutions(
+      filter: {
+        workflowId?: string;
+        status?: string;
+        traceId?: string;
+        startedAfter?: string;
+        startedBefore?: string;
+        limit?: number;
+      } = {},
+    ) {
       const params = new URLSearchParams();
       if (filter.workflowId) params.set("workflowId", filter.workflowId);
       if (filter.status) params.set("status", filter.status);
@@ -457,10 +485,14 @@ export const useWorkflowStore = defineStore("workflow", {
       if (filter.startedBefore) params.set("startedBefore", filter.startedBefore);
       if (filter.limit) params.set("limit", String(filter.limit));
       const suffix = params.toString() ? `?${params.toString()}` : "";
-      const workspaceIDs = filter.workflowId ? [this.workspaceIDFor(filter.workflowId)] : await accessibleWorkspaceIDs();
+      const workspaceIDs = filter.workflowId
+        ? [this.workspaceIDFor(filter.workflowId)]
+        : await accessibleWorkspaceIDs();
       const responses = await Promise.all(
         workspaceIDs.map(async (workspaceID) => {
-          const response = await apiClient.get<{ items: WorkflowExecution[] }>(`/workspaces/${workspaceID}/executions${suffix}`);
+          const response = await apiClient.get<{ items: WorkflowExecution[] }>(
+            `/workspaces/${workspaceID}/executions${suffix}`,
+          );
           return response.data.items.map((execution) => executionFromV1(execution, workspaceID, []));
         }),
       );
@@ -479,7 +511,9 @@ export const useWorkflowStore = defineStore("workflow", {
       return execution;
     },
     workspaceIDFor(workflowId: string) {
-      const workspaceID = this.workflowDetails[workflowId]?.workspaceId || this.workflows.find((item) => item.id === workflowId)?.workspaceId;
+      const workspaceID =
+        this.workflowDetails[workflowId]?.workspaceId ||
+        this.workflows.find((item) => item.id === workflowId)?.workspaceId;
       if (!workspaceID) throw new Error(`Workflow ${workflowId} is not loaded.`);
       return workspaceID;
     },
@@ -622,14 +656,12 @@ interface WorkflowRevisionDiffDTO {
 async function accessibleWorkspaceIDs() {
   const store = useWorkspaceStore();
   if (!store.items.length) await store.load();
-  // Scope catalog reads to the shared top-bar active workspace so switching it refreshes page data.
-  if (store.activeWorkspaceId) {
-    const activeExists = !store.items.length || store.items.some((workspace) => workspace.id === store.activeWorkspaceId);
-    if (activeExists) return [store.activeWorkspaceId];
+  // ZKL-64: never fan out over a page of workspaces — only active context.
+  const activeId = store.activeWorkspaceId || store.items[0]?.id || "";
+  if (!activeId) {
+    throw new Error("当前没有可用的业务空间。请先创建业务空间，或联系管理员加入已有空间。");
   }
-  const ids = store.items.map((workspace) => workspace.id);
-  if (ids.length) return ids;
-  throw new Error("当前没有可用的业务空间。请先创建业务空间，或联系管理员加入已有空间。");
+  return [activeId];
 }
 
 function workflowFromDTO(value: WorkflowDTO, workspaceId: string, readiness: WorkflowReadiness): Workflow {
@@ -693,7 +725,12 @@ function workflowFromSummary(value: WorkflowSummary): Workflow {
   return { ...value };
 }
 
-function draftFromDTO(value: WorkflowDraftDTO, workspaceId: string, workflowId: string, etag?: string): WorkflowDraftRecord {
+function draftFromDTO(
+  value: WorkflowDraftDTO,
+  workspaceId: string,
+  workflowId: string,
+  etag?: string,
+): WorkflowDraftRecord {
   return {
     ...value,
     workflowId,
@@ -798,7 +835,8 @@ function statusFromReadiness(readiness: WorkflowReadiness): WorkflowStatus {
 }
 
 function executionFromTrial(value: WorkflowTrialDTO, workflow: Workflow): Execution {
-  const status: Execution["status"] = value.status === "SUCCEEDED" ? "Success" : value.status === "RUNNING" ? "Running" : "Failed";
+  const status: Execution["status"] =
+    value.status === "SUCCEEDED" ? "Success" : value.status === "RUNNING" ? "Running" : "Failed";
   return {
     id: value.executionId,
     workflowId: workflow.id,
@@ -817,13 +855,14 @@ function executionFromTrial(value: WorkflowTrialDTO, workflow: Workflow): Execut
 }
 
 function executionFromV1(value: WorkflowExecution, workspaceId: string, steps: WorkflowExecutionStep[]): Execution {
-  const status: Execution["status"] = value.status === "SUCCEEDED"
-    ? "Success"
-    : value.status === "RUNNING" || value.status === "PENDING"
-      ? "Running"
-      : value.status === "WAITING_CONFIRMATION"
-        ? "Approval"
-        : "Failed";
+  const status: Execution["status"] =
+    value.status === "SUCCEEDED"
+      ? "Success"
+      : value.status === "RUNNING" || value.status === "PENDING"
+        ? "Running"
+        : value.status === "WAITING_CONFIRMATION"
+          ? "Approval"
+          : "Failed";
   const startedAt = Date.parse(value.startedAt);
   const finishedAt = value.finishedAt ? Date.parse(value.finishedAt) : Number.NaN;
   return {
@@ -846,7 +885,18 @@ function executionFromV1(value: WorkflowExecution, workspaceId: string, steps: W
       name: step.nodeType || step.nodeId,
       nodeId: step.nodeId,
       nodeType: step.nodeType,
-      status: step.status === "SUCCEEDED" ? "Passed" : step.status === "RUNNING" ? "Running" : step.status === "WAITING_CONFIRMATION" ? "WaitingApproval" : step.status === "SKIPPED" ? "Skipped" : step.status === "CANCELLED" ? "Cancelled" : "Failed",
+      status:
+        step.status === "SUCCEEDED"
+          ? "Passed"
+          : step.status === "RUNNING"
+            ? "Running"
+            : step.status === "WAITING_CONFIRMATION"
+              ? "WaitingApproval"
+              : step.status === "SKIPPED"
+                ? "Skipped"
+                : step.status === "CANCELLED"
+                  ? "Cancelled"
+                  : "Failed",
       inputSummary: runtimeSummaryText(step.inputSummary),
       outputSummary: runtimeSummaryText(step.outputSummary),
       errorMessage: step.errorCode,
@@ -873,7 +923,9 @@ function filterWorkflows(items: WorkflowSummary[], query: string, status?: Workf
   return items.filter((workflow) => {
     if (status && workflow.status !== status) return false;
     if (!needle) return true;
-    return [workflow.name, workflow.slug, workflow.description, workflow.status].some((value) => value.toLocaleLowerCase().includes(needle));
+    return [workflow.name, workflow.slug, workflow.description, workflow.status].some((value) =>
+      value.toLocaleLowerCase().includes(needle),
+    );
   });
 }
 
@@ -885,15 +937,22 @@ function sortWorkflows(items: WorkflowSummary[], sortBy?: string, sortOrder?: "a
     const key = sortBy === "workspace" ? "workspaceName" : sortBy;
     const leftValue = left[key as keyof WorkflowSummary];
     const rightValue = right[key as keyof WorkflowSummary];
-    const comparison = typeof leftValue === "number" && typeof rightValue === "number"
-      ? leftValue - rightValue
-      : String(leftValue || "").localeCompare(String(rightValue || ""), "zh-Hans");
+    const comparison =
+      typeof leftValue === "number" && typeof rightValue === "number"
+        ? leftValue - rightValue
+        : String(leftValue || "").localeCompare(String(rightValue || ""), "zh-Hans");
     return sortOrder === "asc" ? comparison : -comparison;
   });
 }
 
 function slugify(value: string) {
-  return value.trim().toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `workflow-${Date.now()}`;
+  return (
+    value
+      .trim()
+      .toLocaleLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || `workflow-${Date.now()}`
+  );
 }
 
 function upsertByID<T extends { id: string }>(items: T[], replacement: T) {

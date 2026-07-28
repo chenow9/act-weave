@@ -60,7 +60,11 @@ const nextAction = computed(() => {
 
 const checklist = computed(() => [
   { key: "draft", label: "草稿", ready: Boolean(props.readiness?.hasDraft) },
-  { key: "compile", label: "编译", ready: Boolean(props.readiness?.compilationCurrent && props.readiness?.compilationValid) },
+  {
+    key: "compile",
+    label: "编译",
+    ready: Boolean(props.readiness?.compilationCurrent && props.readiness?.compilationValid),
+  },
   { key: "trial", label: "试运行", ready: Boolean(props.readiness?.trialCurrent && props.readiness?.trialSuccessful) },
   { key: "publish", label: "发布", ready: Boolean(props.readiness?.published || props.readiness?.canPublish) },
 ]);
@@ -74,19 +78,17 @@ const checklist = computed(() => [
     </div>
 
     <div class="workflow-readiness-checklist">
-      <span
-        v-for="item in checklist"
-        :key="item.key"
-        class="workflow-readiness-check"
-        :class="{ ready: item.ready }"
-      >
+      <span v-for="item in checklist" :key="item.key" class="workflow-readiness-check" :class="{ ready: item.ready }">
         <i :class="item.ready ? 'fa-solid fa-check' : 'fa-solid fa-clock'" />
         {{ item.label }}
       </span>
     </div>
 
     <div v-if="!compact && readiness?.blockers?.length" class="workflow-readiness-blockers">
-      <article v-for="blocker in readiness.blockers" :key="`${blocker.code}-${blocker.nodeId || blocker.edgeId || blocker.fieldPath || ''}`">
+      <article
+        v-for="blocker in readiness.blockers"
+        :key="`${blocker.code}-${blocker.nodeId || blocker.edgeId || blocker.fieldPath || ''}`"
+      >
         <span>{{ blocker.severity }}</span>
         <strong>{{ blockerMessageLabels[blocker.code] || blocker.message }}</strong>
         <small>{{ blockerActionLabels[blocker.code] || blocker.action }}</small>

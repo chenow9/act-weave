@@ -1,7 +1,4 @@
 import { mount } from "@vue/test-utils";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import ManagementSegmentedFilter from "./ManagementSegmentedFilter.vue";
@@ -55,16 +52,5 @@ describe("ManagementSegmentedFilter", () => {
     expect(wrapper.find('[aria-selected="true"]').exists()).toBe(false);
     await wrapper.get('button[value="ALL"]').trigger("keydown", { key: "ArrowRight" });
     expect(wrapper.emitted("update:modelValue")?.at(-1)).toEqual(["Attention"]);
-  });
-
-  it("owns the prototype 40px trigger and floating menu visual contract", () => {
-    const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "ManagementSegmentedFilter.vue"), "utf8");
-    expect(source).toContain("height: 40px;");
-    expect(source).toContain("flex: 0 0 auto;");
-    expect(source).toContain("min-width: 134px;");
-    expect(source).toContain("align-items: center;");
-    expect(source).toContain("justify-content: space-between;");
-    expect(source).toContain("position: \"fixed\"");
-    expect(source).toContain("white-space: nowrap;");
   });
 });

@@ -28,7 +28,9 @@ describe("user access management view", () => {
       .mockResolvedValueOnce(userPage([userFixture()]))
       .mockResolvedValueOnce(userPage([userFixture({ username: "searched.user" })]))
       .mockResolvedValueOnce(userPage([userFixture(), userFixture({ id: "user-2", username: "new.user" })]));
-    vi.mocked(apiClient.post).mockResolvedValueOnce({ data: userFixture({ id: "user-2", username: "new.user", displayName: "New User" }) });
+    vi.mocked(apiClient.post).mockResolvedValueOnce({
+      data: userFixture({ id: "user-2", username: "new.user", displayName: "New User" }),
+    });
     const wrapper = mountView();
     await flushPromises();
 
@@ -51,9 +53,14 @@ describe("user access management view", () => {
     await inputs[3].setValue("temporary-password-1");
     await dialog.get("form").trigger("submit");
     await flushPromises();
-    expect(apiClient.post).toHaveBeenCalledWith("/admin/users", expect.objectContaining({
-      username: "new.user", displayName: "New User", platformRole: "USER",
-    }));
+    expect(apiClient.post).toHaveBeenCalledWith(
+      "/admin/users",
+      expect.objectContaining({
+        username: "new.user",
+        displayName: "New User",
+        platformRole: "USER",
+      }),
+    );
   });
 
   it("uses required dropdowns for language and timezone fields", async () => {
@@ -66,8 +73,12 @@ describe("user access management view", () => {
     const createDialog = wrapper.get('[role="dialog"][aria-label="新建平台用户"]');
     expect(createDialog.find("select").exists()).toBe(false);
     expect(createDialog.findAll(".user-field-required")).toHaveLength(6);
-    expect(createDialog.get('input[role="combobox"][aria-label="新用户语言"]').attributes("aria-required")).toBe("true");
-    expect(createDialog.get('input[role="combobox"][aria-label="新用户时区"]').attributes("aria-required")).toBe("true");
+    expect(createDialog.get('input[role="combobox"][aria-label="新用户语言"]').attributes("aria-required")).toBe(
+      "true",
+    );
+    expect(createDialog.get('input[role="combobox"][aria-label="新用户时区"]').attributes("aria-required")).toBe(
+      "true",
+    );
 
     await button(createDialog, "取消").trigger("click");
     await selectSecurityAction(wrapper, "编辑用户资料");
@@ -106,9 +117,14 @@ describe("user access management view", () => {
 
   it("shows request ids when last-administrator protection rejects a role change", async () => {
     vi.mocked(apiClient.get).mockResolvedValueOnce(userPage([userFixture({ platformRole: "PLATFORM_ADMIN" })]));
-    vi.mocked(apiClient.post).mockRejectedValueOnce(new APIError({
-      status: 409, code: "CONFLICT", message: "The resource state conflicts.", requestId: "request-last-admin",
-    }));
+    vi.mocked(apiClient.post).mockRejectedValueOnce(
+      new APIError({
+        status: 409,
+        code: "CONFLICT",
+        message: "The resource state conflicts.",
+        requestId: "request-last-admin",
+      }),
+    );
     const wrapper = mountView();
     await flushPromises();
     await selectSecurityAction(wrapper, "降为普通用户");
@@ -124,10 +140,20 @@ describe("user access management view", () => {
   it("loads and renders workspace memberships", async () => {
     vi.mocked(apiClient.get)
       .mockResolvedValueOnce(userPage([userFixture()]))
-      .mockResolvedValueOnce({ data: { items: [{
-        workspaceId: "workspace-1", workspaceSlug: "core", workspaceDisplayName: "核心空间",
-        workspaceStatus: "ACTIVE", role: "EDITOR", joinedAt: "2026-07-15T03:00:00Z",
-      }] } });
+      .mockResolvedValueOnce({
+        data: {
+          items: [
+            {
+              workspaceId: "workspace-1",
+              workspaceSlug: "core",
+              workspaceDisplayName: "核心空间",
+              workspaceStatus: "ACTIVE",
+              role: "EDITOR",
+              joinedAt: "2026-07-15T03:00:00Z",
+            },
+          ],
+        },
+      });
     const wrapper = mountView();
     await flushPromises();
     await selectSecurityAction(wrapper, "查看业务空间");
@@ -185,9 +211,16 @@ function userPage(items: AuthUserDTO[]) {
 
 function userFixture(overrides: Partial<AuthUserDTO> = {}): AuthUserDTO {
   return {
-    id: "user-1", username: "platform.admin", displayName: "Platform Admin",
-    status: "ACTIVE", platformRole: "USER", locale: "zh-CN", timezone: "Asia/Singapore",
-    createdAt: "2026-07-15T03:00:00Z", updatedAt: "2026-07-15T03:00:00Z", lockVersion: 1,
+    id: "user-1",
+    username: "platform.admin",
+    displayName: "Platform Admin",
+    status: "ACTIVE",
+    platformRole: "USER",
+    locale: "zh-CN",
+    timezone: "Asia/Singapore",
+    createdAt: "2026-07-15T03:00:00Z",
+    updatedAt: "2026-07-15T03:00:00Z",
+    lockVersion: 1,
     ...overrides,
   };
 }

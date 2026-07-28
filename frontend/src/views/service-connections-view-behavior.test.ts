@@ -2,22 +2,51 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { reactive } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { CapabilityProvider, ProviderAsset, ServiceConnection, ServiceConnectionVerification } from "../types/domain";
+import type {
+  CapabilityProvider,
+  ProviderAsset,
+  ServiceConnection,
+  ServiceConnectionVerification,
+} from "../types/domain";
 import ServiceConnectionsView from "./ServiceConnectionsView.vue";
 
 const secretID = "019f68d9-d405-7032-9b21-542a7bf46d22";
-const fixture = vi.hoisted(() => ({ store: null as any, workspaces: null as any, router: { push: vi.fn() } }));
+const fixture = vi.hoisted(() => ({
+  connections: null as any,
+  providers: null as any,
+  workspaces: null as any,
+  router: { push: vi.fn() },
+}));
 
-vi.mock("../stores/integration", () => ({ useIntegrationStore: () => fixture.store }));
+vi.mock("../stores/connections", () => ({ useConnectionsStore: () => fixture.connections }));
+vi.mock("../stores/providers", () => ({ useProvidersStore: () => fixture.providers }));
 vi.mock("../stores/workspaces", () => ({ useWorkspaceStore: () => fixture.workspaces }));
 vi.mock("vue-router", () => ({ useRouter: () => fixture.router }));
 
-function createStore() {
+function createStores() {
   const provider = providerFixture();
   const connection = connectionFixture();
-  const store = reactive({
+  const providers = reactive({
     providers: [provider],
     providerAssetsByProvider: {} as Record<string, ProviderAsset[]>,
+    loadProviders: vi.fn(async () => providers.providers),
+    createProvider: vi.fn(async (draft: CapabilityProvider) => ({ ...draft, id: "provider-created", lockVersion: 1 })),
+    updateProvider: vi.fn(async (draft: CapabilityProvider) => ({ ...draft, lockVersion: draft.lockVersion + 1 })),
+    deleteProvider: vi.fn(async () => undefined),
+    syncProvider: vi.fn(async () => ({
+      id: "sync-1",
+      status: "SUCCEEDED",
+      discoveredCount: 1,
+      changedCount: 1,
+      errorSummary: {},
+    })),
+    loadProviderAssets: vi.fn(async (providerId: string) => {
+      providers.providerAssetsByProvider[providerId] = [assetFixture()];
+      return providers.providerAssetsByProvider[providerId];
+    }),
+    materializeProviderAsset: vi.fn(async () => ({ capabilityId: "cap-1" })),
+  });
+  const connections = reactive({
     serviceConnectionPageItems: [connection],
     serviceConnectionPagination: { page: 1, pageSize: 10, total: 1, pageSizeOptions: [10, 20, 50] },
     serviceConnectionListQuery: { query: "", page: 1, pageSize: 10 },
@@ -25,11 +54,10 @@ function createStore() {
     serviceConnectionRegistryTotal: 1,
     verificationByConnectionId: {} as Record<string, ServiceConnectionVerification>,
     get serviceConnections() {
-      return store.serviceConnectionCatalog;
+      return connections.serviceConnectionCatalog;
     },
-    loadProviders: vi.fn(async () => store.providers),
-    loadServiceConnectionPage: vi.fn(async () => store.serviceConnectionPageItems),
-    loadServiceConnectionCatalog: vi.fn(async () => store.serviceConnectionCatalog),
+    loadServiceConnectionPage: vi.fn(async () => connections.serviceConnectionPageItems),
+    loadServiceConnectionCatalog: vi.fn(async () => connections.serviceConnectionCatalog),
     createCredentialSecret: vi.fn(async () => ({ id: secretID })),
     createServiceConnection: vi.fn(async (draft: ServiceConnection, _credential = "", _options = {}) => ({
       ...connection,
@@ -37,26 +65,42 @@ function createStore() {
       id: "connection-created",
       lockVersion: 1,
     })),
-    updateServiceConnection: vi.fn(async (_id: string, draft: ServiceConnection) => ({ ...draft, lockVersion: draft.lockVersion + 1 })),
+    updateServiceConnection: vi.fn(async (_id: string, draft: ServiceConnection) => ({
+      ...draft,
+      lockVersion: draft.lockVersion + 1,
+    })),
     deleteServiceConnection: vi.fn(async () => undefined),
     verifyConnection: vi.fn(async () => verificationFixture()),
-    createProvider: vi.fn(async (draft: CapabilityProvider) => ({ ...draft, id: "provider-created", lockVersion: 1 })),
-    updateProvider: vi.fn(async (draft: CapabilityProvider) => ({ ...draft, lockVersion: draft.lockVersion + 1 })),
-    deleteProvider: vi.fn(async () => undefined),
-    syncProvider: vi.fn(async () => ({ id: "sync-1", status: "SUCCEEDED", discoveredCount: 1, changedCount: 1, errorSummary: {} })),
-    loadProviderAssets: vi.fn(async (providerId: string) => {
-      store.providerAssetsByProvider[providerId] = [assetFixture()];
-      return store.providerAssetsByProvider[providerId];
-    }),
-    materializeProviderAsset: vi.fn(async () => ({ capabilityId: "cap-1" })),
+    previewConnectionImpact: vi.fn(async () => ({ impactConfirmationProof: "proof-1" })),
   });
-  return store;
+  return { providers, connections };
 }
 
 function mountView() {
   return mount(ServiceConnectionsView, {
     attachTo: document.body,
-    global: { directives: { loading: () => undefined }, stubs: { teleport: true } },
+    global: {
+      directives: { loading: () => undefined },
+      stubs: {
+        teleport: true,
+        AppSelect: {
+          name: "AppSelect",
+          props: ["modelValue", "options", "placeholder", "disabled", "ariaLabel"],
+          emits: ["update:modelValue"],
+          template: `
+            <select
+              :value="modelValue"
+              :disabled="disabled"
+              :aria-label="ariaLabel"
+              data-testid="app-select-stub"
+              @change="$emit('update:modelValue', ($event.target).value)"
+            >
+              <option v-for="opt in options || []" :key="String(opt.value)" :value="opt.value">{{ opt.label }}</option>
+            </select>
+          `,
+        },
+      },
+    },
   });
 }
 
@@ -65,11 +109,15 @@ describe("service connections v1 behavior", () => {
     document.body.innerHTML = "";
     localStorage.clear();
     window.history.pushState({}, "", "/connections");
-    fixture.store = createStore();
+    const stores = createStores();
+    fixture.providers = stores.providers;
+    fixture.connections = stores.connections;
     fixture.workspaces = reactive({
       activeWorkspaceId: "workspace-1",
       items: [{ id: "workspace-1", name: "Workspace 1" }],
       load: vi.fn(async () => undefined),
+      can: vi.fn(() => true),
+      roleFor: vi.fn(() => "EDITOR"),
     });
     vi.clearAllMocks();
   });
@@ -80,7 +128,9 @@ describe("service connections v1 behavior", () => {
 
     await wrapper.get(".connection-header-actions .primary-button").trigger("click");
     expect(wrapper.text()).toContain("服务 API（Capability Provider）");
-    expect(wrapper.findAll("input").some((input) => (input.element as HTMLInputElement).value === "https://orders.example")).toBe(true);
+    expect(
+      wrapper.findAll("input").some((input) => (input.element as HTMLInputElement).value === "https://orders.example"),
+    ).toBe(true);
     expect(wrapper.html()).not.toContain("https://orders.example/openapi.json");
     expect(wrapper.get('[data-testid="connection-outbound-strategy"]').exists()).toBe(true);
     expect(wrapper.text()).toContain("出站身份策略");
@@ -106,8 +156,8 @@ describe("service connections v1 behavior", () => {
     await wrapper.get('[data-testid="connection-save-draft"]').trigger("click");
     await flushPromises();
 
-    expect(fixture.store.createCredentialSecret).not.toHaveBeenCalled();
-    expect(fixture.store.createServiceConnection).toHaveBeenCalledWith(
+    expect(fixture.connections.createCredentialSecret).not.toHaveBeenCalled();
+    expect(fixture.connections.createServiceConnection).toHaveBeenCalledWith(
       expect.objectContaining({
         providerId: "provider-1",
         name: "Billing production",
@@ -131,12 +181,14 @@ describe("service connections v1 behavior", () => {
     await wrapper.get('[data-testid="outbound-mode-BROKER_OBO"]').trigger("click");
     await flushPromises();
     await wrapper.get('[data-testid="broker-client-id"]').setValue("billing-client");
-    await wrapper.get('[data-testid="broker-machine-credential"]').setValue("-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----");
+    await wrapper
+      .get('[data-testid="broker-machine-credential"]')
+      .setValue("-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----");
     await wrapper.get('[data-testid="connection-save-draft"]').trigger("click");
     await flushPromises();
 
-    expect(fixture.store.createCredentialSecret).not.toHaveBeenCalled();
-    expect(fixture.store.createServiceConnection).toHaveBeenCalledWith(
+    expect(fixture.connections.createCredentialSecret).not.toHaveBeenCalled();
+    expect(fixture.connections.createServiceConnection).toHaveBeenCalledWith(
       expect.objectContaining({
         providerId: "provider-1",
         name: "Broker billing",
@@ -177,9 +229,9 @@ describe("service connections v1 behavior", () => {
 
   it("keeps a migration-required Connection marked until the wizard form is used", async () => {
     const legacy = migrationConnectionFixture();
-    fixture.store.serviceConnectionPageItems = [legacy];
-    fixture.store.serviceConnectionCatalog = [legacy];
-    fixture.store.serviceConnectionRegistryTotal = 1;
+    fixture.connections.serviceConnectionPageItems = [legacy];
+    fixture.connections.serviceConnectionCatalog = [legacy];
+    fixture.connections.serviceConnectionRegistryTotal = 1;
     const wrapper = mountView();
     await flushPromises();
 
@@ -197,7 +249,7 @@ describe("service connections v1 behavior", () => {
     await wrapper.get('button[aria-label="更多操作"]').trigger("click");
     await wrapper.get('button[aria-label="验证连接"]').trigger("click");
     await flushPromises();
-    expect(fixture.store.verifyConnection).toHaveBeenCalledWith("connection-1");
+    expect(fixture.connections.verifyConnection).toHaveBeenCalledWith("connection-1");
     expect(wrapper.text()).toContain("已通过连接验证");
   });
 });

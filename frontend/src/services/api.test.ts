@@ -90,7 +90,7 @@ describe("v1 API client", () => {
     expect(calls).toBe(1);
   });
 
-  it("reuses a just-completed GET within the same page-load window", async () => {
+  it("does not cache settled GET responses (D5-A in-flight only)", async () => {
     let calls = 0;
     apiClient.defaults.adapter = async (config) => {
       calls += 1;
@@ -100,7 +100,7 @@ describe("v1 API client", () => {
     await apiClient.get("/workspaces/workspace-1/providers");
     await apiClient.get("/workspaces/workspace-1/providers");
 
-    expect(calls).toBe(1);
+    expect(calls).toBe(2);
   });
 
   it("clears authentication once when a coalesced refresh fails", async () => {

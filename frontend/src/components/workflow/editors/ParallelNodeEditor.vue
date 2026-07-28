@@ -44,7 +44,11 @@ function updateBranches(value: string) {
         <small>{{ Array.isArray(node.data.branches) ? node.data.branches.length : 0 }} 个</small>
       </div>
       <div class="workflow-token-list">
-        <span v-for="branch in (Array.isArray(node.data.branches) ? node.data.branches : [])" :key="String(branch)" class="workflow-token">
+        <span
+          v-for="branch in Array.isArray(node.data.branches) ? node.data.branches : []"
+          :key="String(branch)"
+          class="workflow-token"
+        >
           {{ String(branch) }}
         </span>
       </div>

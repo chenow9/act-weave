@@ -20,6 +20,8 @@ type WorkspaceService interface {
 	Create(context.Context, workspace.NewWorkspace) (workspace.Workspace, error)
 	Get(context.Context, string) (workspace.Workspace, error)
 	ListAccessible(context.Context, string, int) ([]workspace.Workspace, error)
+	ListAccessiblePage(context.Context, string, workspace.WorkspaceListQuery) (workspace.WorkspacePage, error)
+	GetAccessible(context.Context, string, string) (workspace.AccessibleWorkspace, error)
 	Update(context.Context, string, workspace.UpdateWorkspaceInput) (workspace.Workspace, error)
 	SetStatus(context.Context, string, workspace.Status, string, int64) (workspace.Workspace, error)
 	SoftDelete(context.Context, string, string, int64) error
@@ -87,6 +89,8 @@ type workspaceDTO struct {
 	CreatedAt            time.Time        `json:"createdAt"`
 	UpdatedAt            time.Time        `json:"updatedAt"`
 	LockVersion          int64            `json:"lockVersion"`
+	// CurrentUserRole is the caller's effective membership role (ZKL-64 D1-A).
+	CurrentUserRole workspace.Role `json:"currentUserRole,omitempty"`
 }
 
 type memberDTO struct {
@@ -106,22 +110,36 @@ type memberCandidateDTO struct {
 
 func (routes *WorkspaceRoutes) listWorkspaces(c *gin.Context) {
 	principal, _ := PrincipalFrom(c.Request.Context())
-	limit, err := queryLimit(c, 100)
+	query, err := parseWorkspaceListQuery(c)
 	if err != nil {
 		RespondError(c, err)
 		return
 	}
-	values, err := routes.service.ListAccessible(c.Request.Context(), principal.UserID, limit)
+	page, err := routes.service.ListAccessiblePage(c.Request.Context(), principal.UserID, query)
 	if err != nil {
 		RespondError(c, err)
 		return
 	}
-	items, err := routes.toWorkspaceDTOs(c.Request.Context(), values)
+	items, err := routes.toAccessibleWorkspaceDTOs(c.Request.Context(), page.Items)
 	if err != nil {
 		RespondError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items})
+	response := gin.H{
+		"items": items,
+		"pagination": gin.H{
+			"page":     page.Page,
+			"pageSize": page.PageSize,
+			"total":    page.Total,
+		},
+		"summary": gin.H{
+			"total":       page.Summary.Total,
+			"active":      page.Summary.Active,
+			"production":  page.Summary.Production,
+			"boundAgents": page.Summary.BoundAgents,
+		},
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 type createWorkspaceRequest struct {
@@ -157,6 +175,7 @@ func (routes *WorkspaceRoutes) createWorkspace(c *gin.Context) {
 		RespondError(c, err)
 		return
 	}
+	dto.CurrentUserRole = workspace.RoleOwner
 	c.JSON(http.StatusCreated, dto)
 }
 
@@ -164,12 +183,13 @@ func (routes *WorkspaceRoutes) getWorkspace(c *gin.Context) {
 	if !routes.authorize(c, c.Param("wid"), authz.ActionView) {
 		return
 	}
-	value, err := routes.service.Get(c.Request.Context(), c.Param("wid"))
+	principal, _ := PrincipalFrom(c.Request.Context())
+	accessible, err := routes.service.GetAccessible(c.Request.Context(), principal.UserID, c.Param("wid"))
 	if err != nil {
 		RespondError(c, err)
 		return
 	}
-	dto, err := routes.toWorkspaceDTO(c.Request.Context(), value)
+	dto, err := routes.toAccessibleWorkspaceDTO(c.Request.Context(), accessible)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -202,7 +222,7 @@ func (routes *WorkspaceRoutes) updateWorkspace(c *gin.Context) {
 		RespondError(c, err)
 		return
 	}
-	dto, err := routes.toWorkspaceDTO(c.Request.Context(), value)
+	dto, err := routes.toWorkspaceDTOWithRole(c.Request.Context(), principal.UserID, value)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -259,7 +279,7 @@ func (routes *WorkspaceRoutes) setWorkspaceStatus(c *gin.Context, status workspa
 		RespondError(c, err)
 		return
 	}
-	dto, err := routes.toWorkspaceDTO(c.Request.Context(), value)
+	dto, err := routes.toWorkspaceDTOWithRole(c.Request.Context(), principal.UserID, value)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -423,6 +443,63 @@ func queryLimit(c *gin.Context, fallback int) (int, error) {
 	return value, nil
 }
 
+func parseWorkspaceListQuery(c *gin.Context) (workspace.WorkspaceListQuery, error) {
+	rawPage := strings.TrimSpace(c.Query("page"))
+	rawPageSize := strings.TrimSpace(c.Query("pageSize"))
+	// Legacy bridge: only when neither page nor pageSize is present.
+	if rawPage == "" && rawPageSize == "" {
+		limit, err := queryLimit(c, 100)
+		if err != nil {
+			return workspace.WorkspaceListQuery{}, err
+		}
+		return workspace.WorkspaceListQuery{LegacyLimit: limit}, nil
+	}
+	page := 1
+	if rawPage != "" {
+		value, err := strconv.Atoi(rawPage)
+		if err != nil || value < 1 {
+			return workspace.WorkspaceListQuery{}, workspace.ErrInvalid
+		}
+		page = value
+	}
+	pageSize := 20
+	if rawPageSize != "" {
+		value, err := strconv.Atoi(rawPageSize)
+		if err != nil || (value != 10 && value != 20 && value != 50) {
+			return workspace.WorkspaceListQuery{}, workspace.ErrInvalid
+		}
+		pageSize = value
+	} else if rawPage != "" {
+		// page alone defaults pageSize=20
+		pageSize = 20
+	}
+	query := workspace.WorkspaceListQuery{
+		Query:     strings.TrimSpace(c.Query("query")),
+		Page:      page,
+		PageSize:  pageSize,
+		SortBy:    strings.TrimSpace(c.Query("sortBy")),
+		SortOrder: strings.ToLower(strings.TrimSpace(c.Query("sortOrder"))),
+	}
+	if raw := strings.TrimSpace(c.Query("status")); raw != "" {
+		status := workspace.Status(strings.ToUpper(raw))
+		if status != workspace.StatusActive && status != workspace.StatusDisabled {
+			return workspace.WorkspaceListQuery{}, workspace.ErrInvalid
+		}
+		query.Status = &status
+	}
+	if raw := strings.TrimSpace(c.Query("mode")); raw != "" {
+		mode := workspace.Mode(strings.ToUpper(raw))
+		if mode != workspace.ModeProduction && mode != workspace.ModeSandbox {
+			return workspace.WorkspaceListQuery{}, workspace.ErrInvalid
+		}
+		query.Mode = &mode
+	}
+	if query.SortOrder != "" && query.SortOrder != "asc" && query.SortOrder != "desc" {
+		return workspace.WorkspaceListQuery{}, workspace.ErrInvalid
+	}
+	return query, nil
+}
+
 func toWorkspaceDTO(value workspace.Workspace) workspaceDTO {
 	return workspaceDTO{
 		ID: value.ID, Slug: value.Slug, DisplayName: value.DisplayName,
@@ -439,6 +516,50 @@ func (routes *WorkspaceRoutes) toWorkspaceDTO(ctx context.Context, value workspa
 		return workspaceDTO{}, err
 	}
 	return items[0], nil
+}
+
+func (routes *WorkspaceRoutes) toWorkspaceDTOWithRole(
+	ctx context.Context,
+	userID string,
+	value workspace.Workspace,
+) (workspaceDTO, error) {
+	dto, err := routes.toWorkspaceDTO(ctx, value)
+	if err != nil {
+		return workspaceDTO{}, err
+	}
+	accessible, err := routes.service.GetAccessible(ctx, userID, value.ID)
+	if err != nil {
+		return workspaceDTO{}, err
+	}
+	dto.CurrentUserRole = accessible.CurrentUserRole
+	return dto, nil
+}
+
+func (routes *WorkspaceRoutes) toAccessibleWorkspaceDTO(
+	ctx context.Context,
+	value workspace.AccessibleWorkspace,
+) (workspaceDTO, error) {
+	dto, err := routes.toWorkspaceDTO(ctx, value.Workspace)
+	if err != nil {
+		return workspaceDTO{}, err
+	}
+	dto.CurrentUserRole = value.CurrentUserRole
+	return dto, nil
+}
+
+func (routes *WorkspaceRoutes) toAccessibleWorkspaceDTOs(
+	ctx context.Context,
+	values []workspace.AccessibleWorkspace,
+) ([]workspaceDTO, error) {
+	items := make([]workspaceDTO, len(values))
+	for index, value := range values {
+		dto, err := routes.toAccessibleWorkspaceDTO(ctx, value)
+		if err != nil {
+			return nil, err
+		}
+		items[index] = dto
+	}
+	return items, nil
 }
 
 func (routes *WorkspaceRoutes) toWorkspaceDTOs(

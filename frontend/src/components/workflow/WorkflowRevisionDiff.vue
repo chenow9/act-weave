@@ -71,7 +71,9 @@ function edgeChangeSummary(change: WorkflowRevisionDiff["edgeChanges"][number]) 
         <h4>不可变快照变化</h4>
         <div class="workflow-revision-diff-list">
           <article v-for="change in snapshotChanges" :key="change.key" class="workflow-revision-diff-item">
-            <span class="status-pill" :class="change.changed ? 'datachanged' : 'unchanged'">{{ change.changed ? "Changed" : "Unchanged" }}</span>
+            <span class="status-pill" :class="change.changed ? 'datachanged' : 'unchanged'">{{
+              change.changed ? "Changed" : "Unchanged"
+            }}</span>
             <span>
               <strong>{{ change.label }}</strong>
               <small>{{ change.changed ? "两个 revision 的快照不同" : "两个 revision 的快照一致" }}</small>
@@ -81,33 +83,41 @@ function edgeChangeSummary(change: WorkflowRevisionDiff["edgeChanges"][number]) 
       </div>
 
       <template v-else>
-      <div class="workflow-revision-diff-group">
-        <h4>节点变化</h4>
-        <div v-if="nodeChanges.length" class="workflow-revision-diff-list">
-          <article v-for="change in nodeChanges" :key="`${change.nodeId}-${change.changeType}`" class="workflow-revision-diff-item">
-            <span class="status-pill" :class="statusClass(change.changeType)">{{ change.changeType }}</span>
-            <span>
-              <strong>{{ change.nodeId }}</strong>
-              <small>{{ nodeChangeSummary(change) }}</small>
-            </span>
-          </article>
+        <div class="workflow-revision-diff-group">
+          <h4>节点变化</h4>
+          <div v-if="nodeChanges.length" class="workflow-revision-diff-list">
+            <article
+              v-for="change in nodeChanges"
+              :key="`${change.nodeId}-${change.changeType}`"
+              class="workflow-revision-diff-item"
+            >
+              <span class="status-pill" :class="statusClass(change.changeType)">{{ change.changeType }}</span>
+              <span>
+                <strong>{{ change.nodeId }}</strong>
+                <small>{{ nodeChangeSummary(change) }}</small>
+              </span>
+            </article>
+          </div>
+          <p v-else>节点没有变化。</p>
         </div>
-        <p v-else>节点没有变化。</p>
-      </div>
 
-      <div class="workflow-revision-diff-group">
-        <h4>连线变化</h4>
-        <div v-if="edgeChanges.length" class="workflow-revision-diff-list">
-          <article v-for="change in edgeChanges" :key="`${change.edgeId}-${change.changeType}`" class="workflow-revision-diff-item">
-            <span class="status-pill" :class="statusClass(change.changeType)">{{ change.changeType }}</span>
-            <span>
-              <strong>{{ change.edgeId }}</strong>
-              <small>{{ edgeChangeSummary(change) }}</small>
-            </span>
-          </article>
+        <div class="workflow-revision-diff-group">
+          <h4>连线变化</h4>
+          <div v-if="edgeChanges.length" class="workflow-revision-diff-list">
+            <article
+              v-for="change in edgeChanges"
+              :key="`${change.edgeId}-${change.changeType}`"
+              class="workflow-revision-diff-item"
+            >
+              <span class="status-pill" :class="statusClass(change.changeType)">{{ change.changeType }}</span>
+              <span>
+                <strong>{{ change.edgeId }}</strong>
+                <small>{{ edgeChangeSummary(change) }}</small>
+              </span>
+            </article>
+          </div>
+          <p v-else>连线没有变化。</p>
         </div>
-        <p v-else>连线没有变化。</p>
-      </div>
       </template>
     </div>
 

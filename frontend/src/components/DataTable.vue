@@ -79,7 +79,9 @@ let tableResizeObserver: ResizeObserver | null = null;
 
 const columnByKey = computed(() => new Map(props.columns.map((column) => [column.key, column])));
 const hidableColumns = computed(() => props.columns.filter((column) => column.hidable));
-const hasInternalColumnSettings = computed(() => props.visibleColumnKeys === undefined && hidableColumns.value.length > 0);
+const hasInternalColumnSettings = computed(
+  () => props.visibleColumnKeys === undefined && hidableColumns.value.length > 0,
+);
 
 const defaultVisibleKeys = computed(() =>
   props.columns
@@ -105,15 +107,23 @@ const resolvedVisibleColumnKeys = computed(() => {
   return Array.from(new Set([...requiredKeys, ...requestedKeys]));
 });
 
-const visibleColumns = computed(() => props.columns.filter((column) => resolvedVisibleColumnKeys.value.includes(column.key)));
+const visibleColumns = computed(() =>
+  props.columns.filter((column) => resolvedVisibleColumnKeys.value.includes(column.key)),
+);
 const SELECTION_COLUMN_WIDTH = 44;
 const tableMinWidth = computed(() =>
   visibleColumns.value.reduce((total, column) => total + column.width, props.checkable ? SELECTION_COLUMN_WIDTH : 0),
 );
-const visibleStickyLeftKeys = computed(() => props.stickyLeftKeys.filter((key) => resolvedVisibleColumnKeys.value.includes(key)));
-const visibleStickyRightKeys = computed(() => props.stickyRightKeys.filter((key) => resolvedVisibleColumnKeys.value.includes(key)));
+const visibleStickyLeftKeys = computed(() =>
+  props.stickyLeftKeys.filter((key) => resolvedVisibleColumnKeys.value.includes(key)),
+);
+const visibleStickyRightKeys = computed(() =>
+  props.stickyRightKeys.filter((key) => resolvedVisibleColumnKeys.value.includes(key)),
+);
 const expandableVisibleWidth = computed(() =>
-  visibleColumns.value.filter((column) => !visibleStickyRightKeys.value.includes(column.key)).reduce((total, column) => total + column.width, 0),
+  visibleColumns.value
+    .filter((column) => !visibleStickyRightKeys.value.includes(column.key))
+    .reduce((total, column) => total + column.width, 0),
 );
 const distributableTableSurplus = computed(() => {
   if (visibleStickyRightKeys.value.length === 0) return 0;
@@ -121,11 +131,11 @@ const distributableTableSurplus = computed(() => {
 });
 const currentRowKeys = computed(() => props.rows.map(rowIdentity));
 const checkedRowKeySet = computed(() => new Set(props.checkedRowKeys));
-const allCurrentRowsChecked = computed(() =>
-  currentRowKeys.value.length > 0 && currentRowKeys.value.every((key) => checkedRowKeySet.value.has(key)),
+const allCurrentRowsChecked = computed(
+  () => currentRowKeys.value.length > 0 && currentRowKeys.value.every((key) => checkedRowKeySet.value.has(key)),
 );
-const someCurrentRowsChecked = computed(() =>
-  !allCurrentRowsChecked.value && currentRowKeys.value.some((key) => checkedRowKeySet.value.has(key)),
+const someCurrentRowsChecked = computed(
+  () => !allCurrentRowsChecked.value && currentRowKeys.value.some((key) => checkedRowKeySet.value.has(key)),
 );
 
 watch(
@@ -392,10 +402,6 @@ function syncTableMetrics() {
   canScrollRight.value = maxScrollLeft > 1 && scrollElement.scrollLeft < maxScrollLeft - 1;
 }
 
-function syncTableViewportWidth() {
-  syncTableMetrics();
-}
-
 function readStoredVisibleKeys() {
   if (!props.storageKey || typeof window === "undefined") return null;
   try {
@@ -411,13 +417,10 @@ function writeStoredVisibleKeys(keys: string[]) {
   window.localStorage.setItem(props.storageKey, JSON.stringify(keys));
 }
 
-watch(
-  [visibleColumns, () => props.rows.length, () => props.checkable],
-  async () => {
-    await nextTick();
-    syncTableMetrics();
-  },
-);
+watch([visibleColumns, () => props.rows.length, () => props.checkable], async () => {
+  await nextTick();
+  syncTableMetrics();
+});
 
 onMounted(() => {
   document.addEventListener("pointerdown", handleColumnSettingsPointerdown);
@@ -453,9 +456,20 @@ onBeforeUnmount(() => {
       >
         <i class="fa-solid fa-table-columns" aria-hidden="true" />
       </button>
-      <div v-if="settingsOpen" :id="columnSettingsId" class="data-table-column-menu" role="group" aria-label="表格列设置">
+      <div
+        v-if="settingsOpen"
+        :id="columnSettingsId"
+        class="data-table-column-menu"
+        role="group"
+        aria-label="表格列设置"
+      >
         <div class="data-table-column-menu-title">设置显示列</div>
-        <label v-for="column in columns" :key="column.key" class="data-table-column-option" :class="{ locked: !column.hidable }">
+        <label
+          v-for="column in columns"
+          :key="column.key"
+          class="data-table-column-option"
+          :class="{ locked: !column.hidable }"
+        >
           <input
             type="checkbox"
             :value="column.key"
@@ -466,7 +480,9 @@ onBeforeUnmount(() => {
           <span>{{ column.label }}</span>
           <i v-if="!column.hidable" class="fa-solid fa-lock data-table-column-option-lock" aria-label="固定列" />
         </label>
-        <button class="data-table-column-reset" type="button" aria-label="恢复默认列" @click="restoreDefaultColumns">恢复默认列</button>
+        <button class="data-table-column-reset" type="button" aria-label="恢复默认列" @click="restoreDefaultColumns">
+          恢复默认列
+        </button>
       </div>
     </div>
 
@@ -482,7 +498,11 @@ onBeforeUnmount(() => {
       <table class="data-table" :style="{ minWidth: `${tableMinWidth}px` }">
         <colgroup>
           <col v-if="checkable" :style="{ width: `${SELECTION_COLUMN_WIDTH}px` }" />
-          <col v-for="column in visibleColumns" :key="column.key" :style="{ width: `${effectiveColumnWidth(column)}px` }" />
+          <col
+            v-for="column in visibleColumns"
+            :key="column.key"
+            :style="{ width: `${effectiveColumnWidth(column)}px` }"
+          />
         </colgroup>
         <thead>
           <tr>
@@ -510,11 +530,23 @@ onBeforeUnmount(() => {
               scope="col"
               :aria-sort="column.sortable ? ariaSort(column) : undefined"
             >
-              <button v-if="column.sortable" class="data-table-sort-button" type="button" :aria-label="sortButtonLabel(column)" @click="nextSort(column)">
+              <button
+                v-if="column.sortable"
+                class="data-table-sort-button"
+                type="button"
+                :aria-label="sortButtonLabel(column)"
+                @click="nextSort(column)"
+              >
                 <span>{{ column.label }}</span>
                 <i
                   class="fa-solid"
-                  :class="columnSortOrder(column) === 'asc' ? 'fa-arrow-up' : columnSortOrder(column) === 'desc' ? 'fa-arrow-down' : 'fa-sort'"
+                  :class="
+                    columnSortOrder(column) === 'asc'
+                      ? 'fa-arrow-up'
+                      : columnSortOrder(column) === 'desc'
+                        ? 'fa-arrow-down'
+                        : 'fa-sort'
+                  "
                   aria-hidden="true"
                 />
               </button>
@@ -547,7 +579,13 @@ onBeforeUnmount(() => {
                   @change="toggleRowChecked(row, ($event.target as HTMLInputElement).checked)"
                 />
               </td>
-              <td v-for="column in visibleColumns" :key="column.key" :class="bodyColumnClasses(column)" :style="columnStyle(column)" :data-column-key="column.key">
+              <td
+                v-for="column in visibleColumns"
+                :key="column.key"
+                :class="bodyColumnClasses(column)"
+                :style="columnStyle(column)"
+                :data-column-key="column.key"
+              >
                 <slot :name="`cell-${column.key}`" :row="row" :column="column" :value="columnValue(row, column)">
                   {{ displayValue(row, column) }}
                 </slot>
@@ -594,7 +632,11 @@ onBeforeUnmount(() => {
   background: #f9fafb;
   color: #4b5563;
   cursor: pointer;
-  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
 }
 
 .data-table-column-button:hover,
@@ -710,7 +752,17 @@ onBeforeUnmount(() => {
   table-layout: fixed;
   text-align: left;
   white-space: nowrap;
-  font-family: var(--aw-table-font, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
+  font-family: var(
+    --aw-table-font,
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial,
+    sans-serif
+  );
 }
 
 .data-table thead tr {
@@ -913,5 +965,4 @@ onBeforeUnmount(() => {
 .data-table-scroll.has-scroll-right .data-table .is-sticky-boundary-left {
   box-shadow: -4px 0 10px -6px rgba(15, 23, 42, 0.16);
 }
-
 </style>

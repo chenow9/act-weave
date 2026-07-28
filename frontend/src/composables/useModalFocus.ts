@@ -56,7 +56,8 @@ export function useModalFocus(options: ModalFocusOptions) {
     if (!modal) return;
 
     const initialTarget =
-      modal.querySelector<HTMLElement>(options.initialFocusSelector || "[data-modal-initial-focus]") || focusableElements(modal)[0];
+      modal.querySelector<HTMLElement>(options.initialFocusSelector || "[data-modal-initial-focus]") ||
+      focusableElements(modal)[0];
     initialTarget?.focus();
   }
 

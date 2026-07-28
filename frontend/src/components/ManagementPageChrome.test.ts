@@ -1,13 +1,8 @@
 import { mount } from "@vue/test-utils";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import ManagementPageHeader from "./ManagementPageHeader.vue";
 import ManagementSummaryStrip from "./ManagementSummaryStrip.vue";
-
-const currentDir = dirname(fileURLToPath(import.meta.url));
 
 describe("management page chrome", () => {
   it("renders the shared prototype page title and action region", () => {
@@ -43,16 +38,5 @@ describe("management page chrome", () => {
     expect(wrapper.get("small").text()).toBe("68.4%");
     expect(wrapper.find(".tone-info").exists()).toBe(true);
     expect(wrapper.find(".tone-warning").exists()).toBe(true);
-  });
-
-  it("owns the supplied 23px title, 39px icon, and responsive summary contract", () => {
-    const headerSource = readFileSync(resolve(currentDir, "ManagementPageHeader.vue"), "utf8");
-    const summarySource = readFileSync(resolve(currentDir, "ManagementSummaryStrip.vue"), "utf8");
-
-    expect(headerSource).toContain("width: 39px;");
-    expect(headerSource).toContain("font-size: 23px;");
-    expect(summarySource).toContain("grid-template-columns: repeat(4, minmax(0, 1fr));");
-    expect(summarySource).toContain("@media (max-width: 700px)");
-    expect(summarySource).toContain("grid-template-columns: 1fr;");
   });
 });

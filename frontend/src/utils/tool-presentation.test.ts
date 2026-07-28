@@ -44,7 +44,9 @@ describe("tool presentation", () => {
   });
 
   it("uses explicit protocol versions before the OpenAPI provider fallback", () => {
-    expect(getToolProtocolLabel(tool({ actionConfig: { openapiVersion: "3.1" } }), openAPIProvider)).toBe("OpenAPI 3.1");
+    expect(getToolProtocolLabel(tool({ actionConfig: { openapiVersion: "3.1" } }), openAPIProvider)).toBe(
+      "OpenAPI 3.1",
+    );
     expect(getToolProtocolLabel(tool(), openAPIProvider)).toBe("OpenAPI 3.0");
     expect(getToolProtocolLabel(tool({ protocol: "WORKFLOW" }), openAPIProvider)).toBe("Internal");
   });

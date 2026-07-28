@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import "./agent-access-page.css";
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 
 import AppSelect, { type AppSelectOption } from "../components/AppSelect.vue";
@@ -6,7 +7,13 @@ import ManagementPageHeader from "../components/ManagementPageHeader.vue";
 import ManagementSummaryStrip from "../components/ManagementSummaryStrip.vue";
 import WorkspaceContextState from "../components/WorkspaceContextState.vue";
 import { useModalFocus } from "../composables/useModalFocus";
-import { useAgentAccessStore, type AgentAccessClient, type AgentAccessCredential, type AgentAccessGrant, type AgentAccessScope } from "../stores/agentAccess";
+import {
+  useAgentAccessStore,
+  type AgentAccessClient,
+  type AgentAccessCredential,
+  type AgentAccessGrant,
+  type AgentAccessScope,
+} from "../stores/agentAccess";
 import { useAgentStore } from "../stores/agents";
 import { useAuthStore } from "../stores/auth";
 import { useWorkspaceStore } from "../stores/workspaces";
@@ -43,39 +50,58 @@ const dangerTarget = ref<DangerTarget | null>(null);
 const confirmationPhrase = ref("");
 
 const createForm = reactive({
-  name: "", authMethod: "client_secret_basic" as "client_secret_basic" | "private_key_jwt",
-  jwksUri: "", jwkThumbprint: "", publicHint: "", corsOrigins: "", tokenTtlSeconds: 600,
-  trustedSubjectIssuer: "", trustedSubjectJwksUri: "",
+  name: "",
+  authMethod: "client_secret_basic" as "client_secret_basic" | "private_key_jwt",
+  jwksUri: "",
+  jwkThumbprint: "",
+  publicHint: "",
+  corsOrigins: "",
+  tokenTtlSeconds: 600,
+  trustedSubjectIssuer: "",
+  trustedSubjectJwksUri: "",
 });
 const rotateForm = reactive({
-  replacesCredentialId: "", overlapSeconds: 3600, jwkThumbprint: "", publicHint: "",
+  replacesCredentialId: "",
+  overlapSeconds: 3600,
+  jwkThumbprint: "",
+  publicHint: "",
 });
 const grantForm = reactive({
-  agentId: "", scopes: ["agent:read", "run:create", "run:read", "event:read"] as AgentAccessScope[],
-  serviceDecision: false, maxRisk: "low" as "low" | "medium", expiresAt: "",
+  agentId: "",
+  scopes: ["agent:read", "run:create", "run:read", "event:read"] as AgentAccessScope[],
+  serviceDecision: false,
+  maxRisk: "low" as "low" | "medium",
+  expiresAt: "",
 });
 
 const workspaceId = computed(() => workspaces.activeWorkspaceId || workspaces.items[0]?.id || "");
 const hasWorkspaceContext = computed(() => Boolean(workspaceId.value));
 const currentUserId = computed(() => auth.user?.id || "");
-const canManage = computed(() => Boolean(
-  workspaceId.value && currentUserId.value && workspaces.can(workspaceId.value, currentUserId.value, "MANAGE"),
-));
+const canManage = computed(() => Boolean(workspaceId.value && workspaces.can(workspaceId.value, "MANAGE")));
 const selectedClient = computed(() => access.selectedClient);
 const filteredClients = computed(() => {
   const needle = query.value.trim().toLocaleLowerCase();
   if (!needle) return access.clients;
   return access.clients.filter((client) =>
-    [client.name, client.clientId, client.authMethod, client.status].some((value) => value.toLocaleLowerCase().includes(needle)),
+    [client.name, client.clientId, client.authMethod, client.status].some((value) =>
+      value.toLocaleLowerCase().includes(needle),
+    ),
   );
 });
 const activeCredentialOptions = computed(() => access.credentials.filter((credential) => !credential.revokedAt));
-const activeAgentOptions = computed(() => agents.items.filter((agent) => agent.workspaceId === workspaceId.value && agent.status === "ACTIVE"));
+const activeAgentOptions = computed(() =>
+  agents.items.filter((agent) => agent.workspaceId === workspaceId.value && agent.status === "ACTIVE"),
+);
 const summaryItems = computed(() => [
   { label: "接入 Client", value: access.clients.length, icon: "fa-solid fa-id-card" },
   { label: "活动凭证", value: access.activeCredentials.length, icon: "fa-solid fa-key", tone: "info" as const },
   { label: "活动 Agent 授权", value: access.activeGrants.length, icon: "fa-solid fa-link", tone: "default" as const },
-  { label: "需关注", value: access.clients.filter((client) => client.status === "DISABLED").length, icon: "fa-solid fa-shield-halved", tone: "warning" as const },
+  {
+    label: "需关注",
+    value: access.clients.filter((client) => client.status === "DISABLED").length,
+    icon: "fa-solid fa-shield-halved",
+    tone: "warning" as const,
+  },
 ]);
 const dangerTitle = computed(() => {
   if (dangerTarget.value?.kind === "client") return "禁用 Agent Access Client";
@@ -83,8 +109,10 @@ const dangerTitle = computed(() => {
   return "撤销接入凭证";
 });
 const dangerDescription = computed(() => {
-  if (dangerTarget.value?.kind === "client") return "现有 Token 将在安全版本校验或 SSE 重校验时失效，所有新请求会立即被拒绝。";
-  if (dangerTarget.value?.kind === "grant") return "该业务平台将立即失去此 Agent 的全部已授予 Scope，活动事件流会被重新校验。";
+  if (dangerTarget.value?.kind === "client")
+    return "现有 Token 将在安全版本校验或 SSE 重校验时失效，所有新请求会立即被拒绝。";
+  if (dangerTarget.value?.kind === "grant")
+    return "该业务平台将立即失去此 Agent 的全部已授予 Scope，活动事件流会被重新校验。";
   return "凭证撤销不可恢复。请先确认已有可用轮换凭证，避免业务平台中断。";
 });
 
@@ -145,8 +173,9 @@ async function loadPage() {
   try {
     if (!workspaces.items.length) await workspaces.load();
     if (!workspaceId.value) return;
-    if (currentUserId.value) await workspaces.loadMemberRoles(currentUserId.value, [workspaces.requireWorkspace(workspaceId.value)]);
-    await Promise.all([access.load(workspaceId.value), agents.loadAgents({ workspaceId: workspaceId.value })]);
+    if (currentUserId.value)
+      // Permissions use workspace.currentUserRole; no member bulk load.
+      await Promise.all([access.load(workspaceId.value), agents.loadAgents({ workspaceId: workspaceId.value })]);
   } catch (error) {
     actionError.value = messageFor(error, "Agent Access 配置加载失败，请稍后重试。");
   }
@@ -161,9 +190,15 @@ async function selectClient(client: AgentAccessClient) {
 function openCreate() {
   if (!canManage.value) return;
   Object.assign(createForm, {
-    name: "", authMethod: "client_secret_basic", jwksUri: "", jwkThumbprint: "",
-    publicHint: "", corsOrigins: "", tokenTtlSeconds: 600,
-    trustedSubjectIssuer: "", trustedSubjectJwksUri: "",
+    name: "",
+    authMethod: "client_secret_basic",
+    jwksUri: "",
+    jwkThumbprint: "",
+    publicHint: "",
+    corsOrigins: "",
+    tokenTtlSeconds: 600,
+    trustedSubjectIssuer: "",
+    trustedSubjectJwksUri: "",
   });
   createOpen.value = true;
 }
@@ -172,13 +207,17 @@ async function createClient() {
   if (!canManage.value || !createForm.name.trim()) return;
   await runAction(async () => {
     const result = await access.createClient({
-      name: createForm.name.trim(), authMethod: createForm.authMethod,
+      name: createForm.name.trim(),
+      authMethod: createForm.authMethod,
       jwksUri: createForm.authMethod === "private_key_jwt" ? createForm.jwksUri.trim() : undefined,
       jwkThumbprint: createForm.authMethod === "private_key_jwt" ? createForm.jwkThumbprint.trim() : undefined,
       credentialPublicHint: createForm.authMethod === "private_key_jwt" ? createForm.publicHint.trim() : undefined,
       trustedSubjectIssuer: createForm.trustedSubjectIssuer.trim() || undefined,
       trustedSubjectJwksUri: createForm.trustedSubjectJwksUri.trim() || undefined,
-      allowedCorsOrigins: createForm.corsOrigins.split(/\r?\n/).map((value) => value.trim()).filter(Boolean),
+      allowedCorsOrigins: createForm.corsOrigins
+        .split(/\r?\n/)
+        .map((value) => value.trim())
+        .filter(Boolean),
       tokenTtlSeconds: createForm.tokenTtlSeconds,
     });
     createOpen.value = false;
@@ -191,8 +230,10 @@ function openRotate() {
   if (!canManage.value || !selectedClient.value) return;
   const replacement = activeCredentialOptions.value[0];
   Object.assign(rotateForm, {
-    replacesCredentialId: replacement?.id || "", overlapSeconds: 3600,
-    jwkThumbprint: "", publicHint: "",
+    replacesCredentialId: replacement?.id || "",
+    overlapSeconds: 3600,
+    jwkThumbprint: "",
+    publicHint: "",
   });
   rotateOpen.value = true;
 }
@@ -205,7 +246,8 @@ async function rotateCredential() {
     const isSecret = client.authMethod === "client_secret_basic";
     const result = await access.rotateCredential(client.id, {
       type: isSecret ? "client_secret" : "jwk",
-      replacesCredentialId: replacement.id, replacesLockVersion: replacement.lockVersion,
+      replacesCredentialId: replacement.id,
+      replacesLockVersion: replacement.lockVersion,
       overlapSeconds: Number(rotateForm.overlapSeconds),
       jwkThumbprint: isSecret ? undefined : rotateForm.jwkThumbprint.trim(),
       publicHint: isSecret ? undefined : rotateForm.publicHint.trim(),
@@ -221,7 +263,9 @@ function openGrant() {
   Object.assign(grantForm, {
     agentId: activeAgentOptions.value[0]?.id || "",
     scopes: ["agent:read", "run:create", "run:read", "event:read"],
-    serviceDecision: false, maxRisk: "low", expiresAt: "",
+    serviceDecision: false,
+    maxRisk: "low",
+    expiresAt: "",
   });
   grantOpen.value = true;
 }
@@ -231,10 +275,9 @@ async function createGrant() {
   if (!canManage.value || !client || !grantForm.agentId || !grantForm.scopes.length) return;
   await runAction(async () => {
     await access.createGrant(client.id, {
-      agentId: grantForm.agentId, scopes: [...grantForm.scopes],
-      policy: grantForm.serviceDecision
-        ? { serviceDecision: { enabled: true, maxRisk: grantForm.maxRisk } }
-        : {},
+      agentId: grantForm.agentId,
+      scopes: [...grantForm.scopes],
+      policy: grantForm.serviceDecision ? { serviceDecision: { enabled: true, maxRisk: grantForm.maxRisk } } : {},
       expiresAt: grantForm.expiresAt ? new Date(grantForm.expiresAt).toISOString() : undefined,
     });
     grantOpen.value = false;
@@ -375,14 +418,21 @@ function authMethodShort(method: string) {
         <i class="fa-solid fa-eye" />当前 Workspace 角色仅可查看接入配置；创建、轮换和撤销操作需要 OWNER 或 ADMIN。
       </p>
       <p v-if="actionMessage" class="action-feedback success" role="status">{{ actionMessage }}</p>
-      <p v-if="actionError || access.error" class="action-feedback error" role="alert">{{ actionError || access.error }}</p>
+      <p v-if="actionError || access.error" class="action-feedback error" role="alert">
+        {{ actionError || access.error }}
+      </p>
       <ManagementSummaryStrip :items="summaryItems" />
 
       <section class="access-workbench" :aria-busy="access.loading">
         <aside class="client-rail">
           <label class="client-search">
             <i class="fa-solid fa-magnifying-glass" />
-            <input v-model="query" type="search" placeholder="搜索 Client ID 或名称" aria-label="搜索 Agent Access Client" />
+            <input
+              v-model="query"
+              type="search"
+              placeholder="搜索 Client ID 或名称"
+              aria-label="搜索 Agent Access Client"
+            />
           </label>
           <div v-if="access.loading && !access.hasLoaded" class="empty-state">正在加载接入配置…</div>
           <div v-else-if="!filteredClients.length" class="empty-state">
@@ -398,12 +448,16 @@ function authMethodShort(method: string) {
             type="button"
             @click="selectClient(client)"
           >
-            <span class="client-card-icon"><i :class="client.authMethod === 'private_key_jwt' ? 'fa-solid fa-fingerprint' : 'fa-solid fa-key'" /></span>
+            <span class="client-card-icon"
+              ><i :class="client.authMethod === 'private_key_jwt' ? 'fa-solid fa-fingerprint' : 'fa-solid fa-key'"
+            /></span>
             <span class="client-card-copy">
               <b>{{ client.name }}</b>
               <small>{{ authMethodShort(client.authMethod) }} · {{ shortID(client.clientId) }}</small>
             </span>
-            <span class="status-pill" :class="client.status.toLocaleLowerCase()">{{ client.status === "ACTIVE" ? "活动" : "已禁用" }}</span>
+            <span class="status-pill" :class="client.status.toLocaleLowerCase()">{{
+              client.status === "ACTIVE" ? "活动" : "已禁用"
+            }}</span>
           </button>
         </aside>
 
@@ -426,8 +480,22 @@ function authMethodShort(method: string) {
               </div>
             </div>
             <div v-if="canManage" class="detail-actions">
-              <button v-if="selectedClient.status === 'DISABLED'" class="ghost-button" type="button" @click="enableClient(selectedClient)">启用</button>
-              <button v-else class="danger-button" type="button" @click="askDanger({ kind: 'client', value: selectedClient })">禁用 Client</button>
+              <button
+                v-if="selectedClient.status === 'DISABLED'"
+                class="ghost-button"
+                type="button"
+                @click="enableClient(selectedClient)"
+              >
+                启用
+              </button>
+              <button
+                v-else
+                class="danger-button"
+                type="button"
+                @click="askDanger({ kind: 'client', value: selectedClient })"
+              >
+                禁用 Client
+              </button>
             </div>
           </header>
 
@@ -442,7 +510,9 @@ function authMethodShort(method: string) {
             </div>
             <div class="identity-chip">
               <span>Service Principal</span>
-              <strong :title="selectedClient.servicePrincipalId">{{ shortID(selectedClient.servicePrincipalId) }}</strong>
+              <strong :title="selectedClient.servicePrincipalId">{{
+                shortID(selectedClient.servicePrincipalId)
+              }}</strong>
             </div>
             <div class="identity-chip">
               <span>最近更新</span>
@@ -457,7 +527,11 @@ function authMethodShort(method: string) {
             <button type="button" :class="{ active: activeTab === 'grants' }" @click="activeTab = 'grants'">
               Agent 授权 <span>{{ access.grants.length }}</span>
             </button>
-            <button type="button" :class="{ active: activeTab === 'configuration' }" @click="activeTab = 'configuration'">
+            <button
+              type="button"
+              :class="{ active: activeTab === 'configuration' }"
+              @click="activeTab = 'configuration'"
+            >
               接入配置
             </button>
           </nav>
@@ -473,15 +547,28 @@ function authMethodShort(method: string) {
               </button>
             </div>
             <article v-for="credential in access.credentials" :key="credential.id" class="resource-card">
-              <span class="resource-icon"><i :class="credential.type === 'jwk' ? 'fa-solid fa-fingerprint' : 'fa-solid fa-key'" /></span>
+              <span class="resource-icon"
+                ><i :class="credential.type === 'jwk' ? 'fa-solid fa-fingerprint' : 'fa-solid fa-key'"
+              /></span>
               <div class="resource-main">
                 <strong>{{ credential.type === "jwk" ? "JWK" : "Client Secret" }} · {{ credential.publicHint }}</strong>
-                <span>创建 {{ formatTime(credential.createdAt) }} · 最后使用 {{ formatTime(credential.lastUsedAt) }}</span>
+                <span
+                  >创建 {{ formatTime(credential.createdAt) }} · 最后使用 {{ formatTime(credential.lastUsedAt) }}</span
+                >
                 <small v-if="credential.expiresAt">有效至 {{ formatTime(credential.expiresAt) }}</small>
               </div>
               <div class="resource-actions">
-                <span class="status-pill" :class="credential.revokedAt ? 'revoked' : 'active'">{{ credential.revokedAt ? "已撤销" : "活动" }}</span>
-                <button v-if="canManage && !credential.revokedAt" class="text-danger" type="button" @click="askDanger({ kind: 'credential', value: credential })">撤销</button>
+                <span class="status-pill" :class="credential.revokedAt ? 'revoked' : 'active'">{{
+                  credential.revokedAt ? "已撤销" : "活动"
+                }}</span>
+                <button
+                  v-if="canManage && !credential.revokedAt"
+                  class="text-danger"
+                  type="button"
+                  @click="askDanger({ kind: 'credential', value: credential })"
+                >
+                  撤销
+                </button>
               </div>
             </article>
             <div v-if="!access.credentials.length" class="inline-empty">
@@ -504,12 +591,26 @@ function authMethodShort(method: string) {
               <span class="resource-icon"><i class="fa-solid fa-robot" /></span>
               <div class="resource-main">
                 <strong>{{ agentName(grant.agentId) }}</strong>
-                <div class="scope-list"><code v-for="scope in grant.scopes" :key="scope">{{ scope }}</code></div>
-                <small>有效期：{{ formatTime(grant.validFrom) }} → {{ grant.expiresAt ? formatTime(grant.expiresAt) : "长期" }}</small>
+                <div class="scope-list">
+                  <code v-for="scope in grant.scopes" :key="scope">{{ scope }}</code>
+                </div>
+                <small
+                  >有效期：{{ formatTime(grant.validFrom) }} →
+                  {{ grant.expiresAt ? formatTime(grant.expiresAt) : "长期" }}</small
+                >
               </div>
               <div class="resource-actions">
-                <span class="status-pill" :class="grant.status.toLocaleLowerCase()">{{ grant.status === "ACTIVE" ? "活动" : "已撤销" }}</span>
-                <button v-if="canManage && grant.status === 'ACTIVE'" class="text-danger" type="button" @click="askDanger({ kind: 'grant', value: grant })">撤销</button>
+                <span class="status-pill" :class="grant.status.toLocaleLowerCase()">{{
+                  grant.status === "ACTIVE" ? "活动" : "已撤销"
+                }}</span>
+                <button
+                  v-if="canManage && grant.status === 'ACTIVE'"
+                  class="text-danger"
+                  type="button"
+                  @click="askDanger({ kind: 'grant', value: grant })"
+                >
+                  撤销
+                </button>
               </div>
             </article>
             <div v-if="!access.grants.length" class="inline-empty">
@@ -526,9 +627,18 @@ function authMethodShort(method: string) {
               </div>
             </div>
             <dl class="config-list">
-              <div><dt>JWKS URI</dt><dd>{{ selectedClient.jwksUri || "不适用（Secret 认证）" }}</dd></div>
-              <div><dt>Trusted Subject Issuer</dt><dd>{{ selectedClient.trustedSubjectIssuer || "未启用 Token Exchange" }}</dd></div>
-              <div><dt>Trusted Subject JWKS</dt><dd>{{ selectedClient.trustedSubjectJwksUri || "—" }}</dd></div>
+              <div>
+                <dt>JWKS URI</dt>
+                <dd>{{ selectedClient.jwksUri || "不适用（Secret 认证）" }}</dd>
+              </div>
+              <div>
+                <dt>Trusted Subject Issuer</dt>
+                <dd>{{ selectedClient.trustedSubjectIssuer || "未启用 Token Exchange" }}</dd>
+              </div>
+              <div>
+                <dt>Trusted Subject JWKS</dt>
+                <dd>{{ selectedClient.trustedSubjectJwksUri || "—" }}</dd>
+              </div>
               <div>
                 <dt>CORS Origins</dt>
                 <dd>
@@ -552,33 +662,67 @@ function authMethodShort(method: string) {
     </template>
 
     <div v-if="createOpen" class="modal-backdrop" @click.self="createOpen = false">
-      <section ref="createModalRef" class="modal-card access-modal" role="dialog" aria-modal="true" aria-label="注册 Agent Access Client" tabindex="-1">
+      <section
+        ref="createModalRef"
+        class="modal-card access-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="注册 Agent Access Client"
+        tabindex="-1"
+      >
         <div class="modal-card-head">
           <div>
             <span>注册外部 Client</span>
             <h3>注册 Agent Access Client</h3>
           </div>
-          <button class="icon-action-button" type="button" aria-label="关闭" @click="createOpen = false"><i class="fa-solid fa-xmark" /></button>
+          <button class="icon-action-button" type="button" aria-label="关闭" @click="createOpen = false">
+            <i class="fa-solid fa-xmark" />
+          </button>
         </div>
         <div class="modal-form access-modal-form form-grid">
-          <label class="span-2"><span>Client 名称</span><input v-model="createForm.name" data-modal-initial-focus placeholder="例如：会员运营 App" /></label>
+          <label class="span-2"
+            ><span>Client 名称</span
+            ><input v-model="createForm.name" data-modal-initial-focus placeholder="例如：会员运营 App"
+          /></label>
           <label>
             <span>认证方式</span>
             <AppSelect v-model="createForm.authMethod" :options="authMethodOptions" aria-label="认证方式" />
           </label>
-          <label><span>Token TTL（秒）</span><input v-model.number="createForm.tokenTtlSeconds" type="number" min="60" max="900" /></label>
+          <label
+            ><span>Token TTL（秒）</span
+            ><input v-model.number="createForm.tokenTtlSeconds" type="number" min="60" max="900"
+          /></label>
           <template v-if="createForm.authMethod === 'private_key_jwt'">
-            <label class="span-2"><span>JWKS URI</span><input v-model="createForm.jwksUri" placeholder="https://platform.example/.well-known/jwks.json" /></label>
+            <label class="span-2"
+              ><span>JWKS URI</span
+              ><input v-model="createForm.jwksUri" placeholder="https://platform.example/.well-known/jwks.json"
+            /></label>
             <label><span>JWK Thumbprint（Base64URL）</span><input v-model="createForm.jwkThumbprint" /></label>
-            <label><span>公开 Hint / kid</span><input v-model="createForm.publicHint" placeholder="kid-prod-2026-01" /></label>
+            <label
+              ><span>公开 Hint / kid</span><input v-model="createForm.publicHint" placeholder="kid-prod-2026-01"
+            /></label>
           </template>
-          <label class="span-2"><span>CORS Origins（每行一个精确 HTTPS Origin）</span><textarea v-model="createForm.corsOrigins" rows="3" placeholder="https://app.example.com" /></label>
-          <label><span>Trusted Subject Issuer（可选）</span><input v-model="createForm.trustedSubjectIssuer" placeholder="https://identity.example.com" /></label>
-          <label><span>Subject JWKS URI（可选）</span><input v-model="createForm.trustedSubjectJwksUri" placeholder="https://identity.example.com/jwks" /></label>
+          <label class="span-2"
+            ><span>CORS Origins（每行一个精确 HTTPS Origin）</span
+            ><textarea v-model="createForm.corsOrigins" rows="3" placeholder="https://app.example.com" />
+          </label>
+          <label
+            ><span>Trusted Subject Issuer（可选）</span
+            ><input v-model="createForm.trustedSubjectIssuer" placeholder="https://identity.example.com"
+          /></label>
+          <label
+            ><span>Subject JWKS URI（可选）</span
+            ><input v-model="createForm.trustedSubjectJwksUri" placeholder="https://identity.example.com/jwks"
+          /></label>
         </div>
         <div class="access-modal-footer">
           <button class="ghost-button" type="button" @click="createOpen = false">取消</button>
-          <button class="primary-button" type="button" :disabled="access.mutating || !createForm.name.trim()" @click="createClient">
+          <button
+            class="primary-button"
+            type="button"
+            :disabled="access.mutating || !createForm.name.trim()"
+            @click="createClient"
+          >
             {{ access.mutating ? "创建中…" : "创建 Client" }}
           </button>
         </div>
@@ -586,13 +730,22 @@ function authMethodShort(method: string) {
     </div>
 
     <div v-if="rotateOpen" class="modal-backdrop" @click.self="rotateOpen = false">
-      <section ref="rotateModalRef" class="modal-card access-modal compact-modal" role="dialog" aria-modal="true" aria-label="轮换 Agent Access 凭证" tabindex="-1">
+      <section
+        ref="rotateModalRef"
+        class="modal-card access-modal compact-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="轮换 Agent Access 凭证"
+        tabindex="-1"
+      >
         <div class="modal-card-head">
           <div>
             <span>安全轮换</span>
             <h3>轮换 Credential</h3>
           </div>
-          <button class="icon-action-button" type="button" aria-label="关闭" @click="rotateOpen = false"><i class="fa-solid fa-xmark" /></button>
+          <button class="icon-action-button" type="button" aria-label="关闭" @click="rotateOpen = false">
+            <i class="fa-solid fa-xmark" />
+          </button>
         </div>
         <div class="modal-form access-modal-form form-grid">
           <label class="span-2">
@@ -615,7 +768,12 @@ function authMethodShort(method: string) {
         </div>
         <div class="access-modal-footer">
           <button class="ghost-button" type="button" @click="rotateOpen = false">取消</button>
-          <button class="primary-button" type="button" :disabled="access.mutating || !rotateForm.replacesCredentialId" @click="rotateCredential">
+          <button
+            class="primary-button"
+            type="button"
+            :disabled="access.mutating || !rotateForm.replacesCredentialId"
+            @click="rotateCredential"
+          >
             开始安全轮换
           </button>
         </div>
@@ -623,13 +781,22 @@ function authMethodShort(method: string) {
     </div>
 
     <div v-if="grantOpen" class="modal-backdrop" @click.self="grantOpen = false">
-      <section ref="grantModalRef" class="modal-card access-modal" role="dialog" aria-modal="true" aria-label="授权 Agent" tabindex="-1">
+      <section
+        ref="grantModalRef"
+        class="modal-card access-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="授权 Agent"
+        tabindex="-1"
+      >
         <div class="modal-card-head">
           <div>
             <span>最小权限</span>
             <h3>授权 Agent 数据面能力</h3>
           </div>
-          <button class="icon-action-button" type="button" aria-label="关闭" @click="grantOpen = false"><i class="fa-solid fa-xmark" /></button>
+          <button class="icon-action-button" type="button" aria-label="关闭" @click="grantOpen = false">
+            <i class="fa-solid fa-xmark" />
+          </button>
         </div>
         <div class="modal-form access-modal-form">
           <label>
@@ -640,7 +807,10 @@ function authMethodShort(method: string) {
             <legend>数据面 Scope</legend>
             <label v-for="scope in scopeOptions" :key="scope.value">
               <input v-model="grantForm.scopes" type="checkbox" :value="scope.value" />
-              <span><b>{{ scope.label }}</b><code>{{ scope.value }}</code></span>
+              <span
+                ><b>{{ scope.label }}</b
+                ><code>{{ scope.value }}</code></span
+              >
             </label>
           </fieldset>
           <label class="decision-toggle">
@@ -658,7 +828,12 @@ function authMethodShort(method: string) {
         </div>
         <div class="access-modal-footer">
           <button class="ghost-button" type="button" @click="grantOpen = false">取消</button>
-          <button class="primary-button" type="button" :disabled="access.mutating || !grantForm.agentId || !grantForm.scopes.length" @click="createGrant">
+          <button
+            class="primary-button"
+            type="button"
+            :disabled="access.mutating || !grantForm.agentId || !grantForm.scopes.length"
+            @click="createGrant"
+          >
             创建最小权限 Grant
           </button>
         </div>
@@ -666,7 +841,14 @@ function authMethodShort(method: string) {
     </div>
 
     <div v-if="secretOpen" class="modal-backdrop critical" @click.self="closeSecret">
-      <section ref="secretModalRef" class="modal-card access-modal secret-modal" role="dialog" aria-modal="true" aria-label="一次性 Client Secret" tabindex="-1">
+      <section
+        ref="secretModalRef"
+        class="modal-card access-modal secret-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="一次性 Client Secret"
+        tabindex="-1"
+      >
         <div class="modal-card-head">
           <div>
             <span>一次性密钥</span>
@@ -691,13 +873,22 @@ function authMethodShort(method: string) {
     </div>
 
     <div v-if="dangerOpen" class="modal-backdrop critical" @click.self="closeDanger">
-      <section ref="dangerModalRef" class="modal-card access-modal danger-modal" role="alertdialog" aria-modal="true" :aria-label="dangerTitle" tabindex="-1">
+      <section
+        ref="dangerModalRef"
+        class="modal-card access-modal danger-modal"
+        role="alertdialog"
+        aria-modal="true"
+        :aria-label="dangerTitle"
+        tabindex="-1"
+      >
         <div class="modal-card-head">
           <div>
             <span>高风险变更</span>
             <h3>{{ dangerTitle }}</h3>
           </div>
-          <button class="icon-action-button" type="button" aria-label="关闭" @click="closeDanger"><i class="fa-solid fa-xmark" /></button>
+          <button class="icon-action-button" type="button" aria-label="关闭" @click="closeDanger">
+            <i class="fa-solid fa-xmark" />
+          </button>
         </div>
         <div class="modal-form access-modal-form">
           <p class="danger-copy">{{ dangerDescription }}</p>

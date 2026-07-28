@@ -16,9 +16,11 @@ const integrationState = {
   tools: [] as Tool[],
   toolPageItems: [] as Tool[],
   toolPagination: { page: 1, pageSize: 10, total: 0, pageSizeOptions: [10, 20, 50] },
+  toolListQuery: { query: "", page: 1, pageSize: 10 } as Record<string, unknown>,
   toolPageLoading: false,
   toolPageError: null as string | null,
   toolPageHasLoaded: true,
+  toolConnectionsByWorkspace: {} as Record<string, ServiceConnection[]>,
   protocols: [],
   openAPIImports: [],
   verificationByConnectionId: {},
@@ -29,6 +31,8 @@ const integrationState = {
   publishTool: vi.fn(),
   updateTool: vi.fn(),
   createTool: vi.fn(),
+  testTool: vi.fn(),
+  testToolWithOutbound: vi.fn(),
 };
 
 const workspaceState = {
@@ -51,6 +55,8 @@ const workspaceState = {
   activeWorkspaceId: "workspace-1",
   loading: false,
   load: loadWorkspacesMock,
+  can: vi.fn(() => true),
+  roleFor: vi.fn(() => "EDITOR"),
 };
 
 const agentState = {
@@ -78,8 +84,14 @@ vi.mock("vue-router", () => ({
   useRouter: () => ({ push: routerPushMock }),
 }));
 
-vi.mock("../stores/integration", () => ({
-  useIntegrationStore: () => integrationState,
+vi.mock("../stores/tools", () => ({
+  useToolsStore: () => integrationState,
+}));
+vi.mock("../stores/providers", () => ({
+  useProvidersStore: () => integrationState,
+}));
+vi.mock("../stores/connections", () => ({
+  useConnectionsStore: () => integrationState,
 }));
 
 vi.mock("../stores/workspaces", () => ({
@@ -187,7 +199,8 @@ function mountToolsView() {
         AppSelect: {
           props: ["modelValue", "options"],
           emits: ["update:modelValue"],
-          template: "<select class='app-select-stub' :value='modelValue' @change=\"$emit('update:modelValue', $event.target.value)\"><option v-for='option in options' :key='option.value' :value='option.value'>{{ option.label }}</option></select>",
+          template:
+            "<select class='app-select-stub' :value='modelValue' @change=\"$emit('update:modelValue', $event.target.value)\"><option v-for='option in options' :key='option.value' :value='option.value'>{{ option.label }}</option></select>",
         },
         ToolSchemaTreeEditor: { template: "<div class='schema-editor-stub' />" },
         ToolSchemaTreeView: { template: "<div class='schema-view-stub' />" },
@@ -201,7 +214,9 @@ function mountToolsView() {
 async function triggerToolMenuAction(wrapper: ReturnType<typeof mountToolsView>, actionKey: string, rowIndex = 0) {
   await wrapper.findAll('button[aria-label="更多工具操作"]')[rowIndex].trigger("click");
   await wrapper.vm.$nextTick();
-  const action = document.body.querySelector<HTMLButtonElement>(`[role="menu"][aria-label="更多工具操作"] button[data-action-key="${actionKey}"]`);
+  const action = document.body.querySelector<HTMLButtonElement>(
+    `[role="menu"][aria-label="更多工具操作"] button[data-action-key="${actionKey}"]`,
+  );
   expect(action).not.toBeNull();
   action!.click();
   await wrapper.vm.$nextTick();
@@ -229,9 +244,17 @@ describe("tools view detail behavior", () => {
     ];
     workspaceState.activeWorkspaceId = "workspace-1";
     integrationState.serviceConnections = [makeConnection()];
-    integrationState.tools = [makeTool("tool-missing-connection", "missing-connection", "缺失连接 Tool"), makeTool("tool-valid", "connection-1", "有效连接 Tool")];
+    integrationState.tools = [
+      makeTool("tool-missing-connection", "missing-connection", "缺失连接 Tool"),
+      makeTool("tool-valid", "connection-1", "有效连接 Tool"),
+    ];
     integrationState.toolPageItems = [...integrationState.tools];
-    integrationState.toolPagination = { page: 1, pageSize: 10, total: integrationState.tools.length, pageSizeOptions: [10, 20, 50] };
+    integrationState.toolPagination = {
+      page: 1,
+      pageSize: 10,
+      total: integrationState.tools.length,
+      pageSizeOptions: [10, 20, 50],
+    };
     loadM2AssetsMock.mockResolvedValue(undefined);
     loadToolPageMock.mockResolvedValue(integrationState.toolPageItems);
     loadWorkspacesMock.mockResolvedValue(undefined);
@@ -255,7 +278,13 @@ describe("tools view detail behavior", () => {
     const wrapper = mountToolsView();
     await flushPromises();
 
-    expect(loadToolPageMock).toHaveBeenCalledWith({ query: "", status: undefined, type: undefined, page: 1, pageSize: 10 });
+    expect(loadToolPageMock).toHaveBeenCalledWith({
+      query: "",
+      status: undefined,
+      type: undefined,
+      page: 1,
+      pageSize: 10,
+    });
     wrapper.unmount();
   });
 
@@ -304,7 +333,15 @@ describe("tools view detail behavior", () => {
     await wrapper.get('button[aria-label="按工具名称升序排序"]').trigger("click");
     await flushPromises();
 
-    expect(loadToolPageMock).toHaveBeenLastCalledWith({ query: "", status: undefined, type: undefined, page: 1, pageSize: 20, sortBy: "name", sortOrder: "asc" });
+    expect(loadToolPageMock).toHaveBeenLastCalledWith({
+      query: "",
+      status: undefined,
+      type: undefined,
+      page: 1,
+      pageSize: 20,
+      sortBy: "name",
+      sortOrder: "asc",
+    });
     wrapper.unmount();
   });
 
@@ -320,7 +357,14 @@ describe("tools view detail behavior", () => {
     await actionCell.get('button[aria-label="更多工具操作"]').trigger("click");
     const menu = document.body.querySelector<HTMLElement>('[role="menu"][aria-label="更多工具操作"]');
     expect(menu).not.toBeNull();
-    expect(Array.from(menu!.querySelectorAll("button")).map((button) => button.dataset.actionKey)).toEqual(["detail", "test", "edit", "publish", "availability", "delete"]);
+    expect(Array.from(menu!.querySelectorAll("button")).map((button) => button.dataset.actionKey)).toEqual([
+      "detail",
+      "test",
+      "edit",
+      "publish",
+      "availability",
+      "delete",
+    ]);
     expect(menu!.querySelector<HTMLButtonElement>('button[data-action-key="publish"]')?.disabled).toBe(true);
     wrapper.unmount();
   });

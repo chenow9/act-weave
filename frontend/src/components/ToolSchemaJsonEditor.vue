@@ -120,7 +120,9 @@ onBeforeUnmount(() => {
       </div>
       <div class="tool-contract-editor-caption-main">
         <span class="tool-contract-editor-filename">payload_schema.jsonc</span>
-        <button class="tool-contract-editor-caption-action" type="button" @click="emit('formatDocument')">格式化</button>
+        <button class="tool-contract-editor-caption-action" type="button" @click="emit('formatDocument')">
+          格式化
+        </button>
       </div>
     </div>
     <div ref="editorHost" class="tool-contract-code-editor" />

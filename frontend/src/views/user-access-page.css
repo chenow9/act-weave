@@ -1,0 +1,142 @@
+/* user-access page styles extracted from app.css (ZKL-64 item 18). */
+.user-access-grid {
+  align-content: start;
+}
+
+.user-access-panel.management-list-card {
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.user-access-grid .user-row-actions .management-row-action-button {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.user-access-grid .user-row-actions .management-row-action-button:hover:not(:disabled),
+.user-access-grid .user-row-actions .management-row-action-button:focus-visible {
+  border: 0;
+  background: var(--aw-soft-2, #f1f5f3);
+  box-shadow: none;
+  color: var(--aw-ink, #18211e);
+}
+
+.user-access-form label,
+.user-access-confirm label {
+  display: grid;
+  gap: 7px;
+  color: var(--aw-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.user-access-form label > input,
+.user-access-confirm label > input {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--aw-border);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--aw-text);
+  padding: 0 11px;
+}
+
+.user-access-form .app-select .el-select__wrapper {
+  min-height: 40px;
+  border-radius: 8px;
+}
+
+.user-access-feedback {
+  margin: 14px 18px;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.user-access-feedback.success {
+  color: #0f766e;
+  background: #ccfbf1;
+}
+
+.user-access-feedback.error {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.user-access-modal {
+  width: min(680px, calc(100vw - 32px));
+}
+
+.user-access-modal > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--aw-border);
+}
+
+.user-access-modal > header span,
+.user-access-confirm > span {
+  color: var(--aw-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.user-access-modal > header h3,
+.user-access-confirm h3 {
+  margin: 4px 0 0;
+  color: var(--aw-text);
+}
+
+.user-access-modal > header > .icon-action-button {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+}
+
+.user-access-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 22px;
+}
+
+.user-access-form label:nth-child(4),
+.user-access-form footer {
+  grid-column: 1 / -1;
+}
+
+.user-access-form label small {
+  color: var(--aw-muted);
+  font-weight: 400;
+}
+
+.user-access-form footer,
+.user-access-confirm footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.user-access-form footer button,
+.user-access-confirm footer button {
+  min-height: 40px;
+}
+
+.user-access-confirm {
+  width: min(500px, calc(100vw - 32px));
+  padding: 24px;
+  box-shadow: var(--aw-shadow-premium);
+}
+
+.user-access-confirm p {
+  color: #334155;
+  line-height: 1.65;
+}

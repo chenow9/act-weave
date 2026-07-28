@@ -4,9 +4,7 @@ import { computed, ref, watch } from "vue";
 import AppSelect from "../../AppSelect.vue";
 import type { WorkflowGraphNode } from "../../../types/domain";
 
-type MappingValue =
-  | { kind: "ref"; path: string }
-  | { kind: "literal"; value: unknown };
+type MappingValue = { kind: "ref"; path: string } | { kind: "literal"; value: unknown };
 
 const props = defineProps<{
   node: WorkflowGraphNode;
@@ -32,7 +30,11 @@ watch(
   () => [props.node.data.input, props.node.data.inputMapping] as const,
   ([rawInput, rawMapping]) => {
     inputMode.value = rawInput && typeof rawInput === "object" && !Array.isArray(rawInput) ? "json" : "mapping";
-    rawInputText.value = JSON.stringify(rawInput && typeof rawInput === "object" && !Array.isArray(rawInput) ? rawInput : {}, null, 2);
+    rawInputText.value = JSON.stringify(
+      rawInput && typeof rawInput === "object" && !Array.isArray(rawInput) ? rawInput : {},
+      null,
+      2,
+    );
     const nextDraft = normalizeMappingDraft(rawMapping);
     mappingDraft.value = nextDraft.length ? nextDraft : [{ key: "value", kind: "ref", path: "", value: "" }];
   },
@@ -108,7 +110,9 @@ function updateRawInput(value: string) {
         inputMapping: undefined,
       },
     });
-  } catch {}
+  } catch {
+    // Ignore invalid JSON drafts while typing.
+  }
 }
 
 function renameMappingKey(index: number, nextKey: string) {
@@ -147,7 +151,9 @@ function setRefMapping(key: string, path: string) {
 }
 
 function setLiteralMapping(key: string, value: string) {
-  mappingDraft.value = mappingDraft.value.map((entry) => (entry.key === key ? { ...entry, kind: "literal", value } : entry));
+  mappingDraft.value = mappingDraft.value.map((entry) =>
+    entry.key === key ? { ...entry, kind: "literal", value } : entry,
+  );
   emitInputMapping();
 }
 
@@ -211,7 +217,8 @@ function normalizeMappingDraft(rawMapping: unknown) {
         key,
         kind: "literal" as const,
         path: "",
-        value: typeof record.value === "string" ? record.value : record.value == null ? "" : JSON.stringify(record.value),
+        value:
+          typeof record.value === "string" ? record.value : record.value == null ? "" : JSON.stringify(record.value),
       };
     }
     return {
@@ -252,10 +259,20 @@ function normalizeMappingDraft(rawMapping: unknown) {
         <small>支持 `input` 或 `inputMapping`</small>
       </div>
       <div class="workflow-tool-mapping-mode" role="group" aria-label="HTTP 输入模式">
-        <button type="button" data-action="http-input-mode-mapping" :class="{ active: inputMode === 'mapping' }" @click="updateInputMode('mapping')">
+        <button
+          type="button"
+          data-action="http-input-mode-mapping"
+          :class="{ active: inputMode === 'mapping' }"
+          @click="updateInputMode('mapping')"
+        >
           变量映射
         </button>
-        <button type="button" data-action="http-input-mode-json" :class="{ active: inputMode === 'json' }" @click="updateInputMode('json')">
+        <button
+          type="button"
+          data-action="http-input-mode-json"
+          :class="{ active: inputMode === 'json' }"
+          @click="updateInputMode('json')"
+        >
           JSON 输入
         </button>
       </div>
@@ -277,10 +294,18 @@ function normalizeMappingDraft(rawMapping: unknown) {
             />
           </label>
           <div class="workflow-tool-mapping-mode" role="group" aria-label="HTTP 字段映射方式">
-            <button type="button" :class="{ active: mappingKind(entry.key) === 'ref' }" @click="setMappingKind(entry.key, 'ref')">
+            <button
+              type="button"
+              :class="{ active: mappingKind(entry.key) === 'ref' }"
+              @click="setMappingKind(entry.key, 'ref')"
+            >
               变量
             </button>
-            <button type="button" :class="{ active: mappingKind(entry.key) === 'literal' }" @click="setMappingKind(entry.key, 'literal')">
+            <button
+              type="button"
+              :class="{ active: mappingKind(entry.key) === 'literal' }"
+              @click="setMappingKind(entry.key, 'literal')"
+            >
               固定值
             </button>
           </div>

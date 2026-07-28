@@ -4,11 +4,12 @@ import { apiClient, toAPIError } from "../services/api";
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, type ListPagination } from "../services/paginated-list";
 import type {
   Workspace,
+  WorkspaceAccessibleSummary,
   WorkspaceListQuery,
   WorkspaceMember,
-  WorkspaceMemberCandidate,
   WorkspaceRole,
 } from "../types/domain";
+import { useWorkspaceMembersStore, type MembersLoadStatus } from "./workspaceMembers";
 
 /** Mirrors backend/internal/authz/workspace_policy.go Action set. */
 export type WorkspaceAction = "VIEW" | "EDIT" | "TEST" | "PUBLISH" | "EXECUTE" | "MANAGE" | "DELETE";
@@ -41,20 +42,28 @@ interface WorkspaceDTO {
   createdAt: string;
   updatedAt: string;
   lockVersion: number;
+  currentUserRole?: WorkspaceRole;
 }
 
-/** Members load state per workspace — mutations fail closed while LOADING/ERROR. */
-export type MembersLoadStatus = "IDLE" | "LOADING" | "LOADED" | "ERROR";
+interface WorkspaceListResponse {
+  items: WorkspaceDTO[];
+  pagination: { page: number; pageSize: number; total: number };
+  summary: { total: number; active: number; production: number; boundAgents: number };
+}
+
+export type { MembersLoadStatus };
 
 interface WorkspaceState {
+  /** Switcher / bootstrap page (bounded server page, not a full catalog). */
   items: Workspace[];
+  /** Management list page results. */
   pageItems: Workspace[];
-  membersByWorkspace: Record<string, WorkspaceMember[]>;
-  membersLoadStatusByWorkspace: Record<string, MembersLoadStatus>;
   pagination: ListPagination;
   listQuery: Required<Pick<WorkspaceListQuery, "query" | "page" | "pageSize">> &
     Pick<WorkspaceListQuery, "status" | "mode" | "sortBy" | "sortOrder">;
   activeWorkspaceId: string;
+  /** Full-set summary for management cards (D9-A). */
+  summary: WorkspaceAccessibleSummary;
   loading: boolean;
   pageLoading: boolean;
   pageError: string | null;
@@ -65,33 +74,41 @@ export const useWorkspaceStore = defineStore("workspaces", {
   state: (): WorkspaceState => ({
     items: [],
     pageItems: [],
-    membersByWorkspace: {},
-    membersLoadStatusByWorkspace: {},
     pagination: { page: 1, pageSize: DEFAULT_PAGE_SIZE, total: 0, pageSizeOptions: [...PAGE_SIZE_OPTIONS] },
     listQuery: { query: "", page: 1, pageSize: DEFAULT_PAGE_SIZE, sortBy: undefined, sortOrder: undefined },
     activeWorkspaceId: readActiveWorkspaceID(),
+    summary: { total: 0, active: 0, production: 0, boundAgents: 0 },
     loading: false,
     pageLoading: false,
     pageError: null,
     pageHasLoaded: false,
   }),
   getters: {
-    activeWorkspace: (state) => state.items.find((item) => item.id === state.activeWorkspaceId) || state.items[0] || null,
+    activeWorkspace: (state) =>
+      state.items.find((item) => item.id === state.activeWorkspaceId) ||
+      state.pageItems.find((item) => item.id === state.activeWorkspaceId) ||
+      state.items[0] ||
+      null,
+    /** Compatibility projection onto the members store (member UI only). */
+    membersByWorkspace(): Record<string, WorkspaceMember[]> {
+      return useWorkspaceMembersStore().membersByWorkspace;
+    },
+    membersLoadStatusByWorkspace(): Record<string, MembersLoadStatus> {
+      return useWorkspaceMembersStore().membersLoadStatusByWorkspace;
+    },
   },
   actions: {
-    async fetchCatalog() {
-      const response = await apiClient.get<{ items: WorkspaceDTO[] }>("/workspaces?limit=500");
-      return response.data.items.map(workspaceFromDTO);
-    },
+    /**
+     * Bootstrap / switcher load: first server page only (no limit=500).
+     * Active id restored via detail when not on the first page.
+     */
     async load() {
       this.loading = true;
       try {
-        this.items = await this.fetchCatalog();
-        if (!this.items.some((workspace) => workspace.id === this.activeWorkspaceId)) {
-          this.selectWorkspace(this.items[0]?.id || "");
-        } else {
-          writeActiveWorkspaceID(this.activeWorkspaceId);
-        }
+        const page = await this.fetchWorkspacePage({ page: 1, pageSize: 50 });
+        this.items = page.items;
+        this.summary = page.summary;
+        await this.ensureActiveWorkspace();
         return this.items;
       } finally {
         this.loading = false;
@@ -106,7 +123,7 @@ export const useWorkspaceStore = defineStore("workspaces", {
           ? query.sortOrder
           : this.listQuery.sortOrder
         : undefined;
-      const requestQuery = {
+      const requestQuery: WorkspaceListQuery = {
         ...this.listQuery,
         ...query,
         query: query.query ?? this.listQuery.query,
@@ -116,30 +133,94 @@ export const useWorkspaceStore = defineStore("workspaces", {
         sortOrder,
       };
       try {
-        const catalog = await this.fetchCatalog();
-        const filtered = filterWorkspaces(catalog, requestQuery);
-        const sorted = sortWorkspaces(filtered, sortBy, sortOrder);
-        const page = Math.max(1, requestQuery.page);
-        const pageSize = Math.max(1, requestQuery.pageSize);
-        const offset = (page - 1) * pageSize;
-        this.pageItems = sorted.slice(offset, offset + pageSize);
-        this.pagination = { page, pageSize, total: sorted.length, pageSizeOptions: [...PAGE_SIZE_OPTIONS] };
+        const page = await this.fetchWorkspacePage(requestQuery);
+        this.pageItems = page.items;
+        this.pagination = {
+          page: page.pagination.page,
+          pageSize: page.pagination.pageSize,
+          total: page.pagination.total,
+          pageSizeOptions: [...PAGE_SIZE_OPTIONS],
+        };
+        this.summary = page.summary;
         this.listQuery = {
-          query: requestQuery.query,
+          query: requestQuery.query || "",
           status: requestQuery.status,
           mode: requestQuery.mode,
-          page,
-          pageSize,
+          page: page.pagination.page,
+          pageSize: page.pagination.pageSize,
           sortBy,
           sortOrder,
         };
         this.pageHasLoaded = true;
+        // Keep switcher cache in sync for loaded rows.
+        for (const item of page.items) {
+          this.upsertInList("items", item);
+        }
         return this.pageItems;
       } catch (error) {
         this.pageError = toAPIError(error).message;
         return this.pageItems;
       } finally {
         this.pageLoading = false;
+      }
+    },
+    async fetchWorkspacePage(query: WorkspaceListQuery = {}) {
+      const params = buildWorkspaceListParams(query);
+      const response = await apiClient.get<WorkspaceListResponse>("/workspaces", { params });
+      const items = (response.data.items || []).map(workspaceFromDTO);
+      const pagination = response.data.pagination || {
+        page: query.page || 1,
+        pageSize: query.pageSize || DEFAULT_PAGE_SIZE,
+        total: items.length,
+      };
+      const summary = response.data.summary || {
+        total: pagination.total,
+        active: 0,
+        production: 0,
+        boundAgents: 0,
+      };
+      return {
+        items,
+        pagination: {
+          page: pagination.page,
+          pageSize: pagination.pageSize,
+          total: pagination.total,
+        },
+        summary: {
+          total: summary.total,
+          active: summary.active,
+          production: summary.production,
+          boundAgents: summary.boundAgents,
+        },
+      };
+    },
+    async fetchWorkspaceDetail(workspaceId: string) {
+      const response = await apiClient.get<WorkspaceDTO>(`/workspaces/${workspaceId}`);
+      return workspaceFromDTO(response.data);
+    },
+    async ensureActiveWorkspace() {
+      const activeId = this.activeWorkspaceId;
+      if (!activeId) {
+        this.selectWorkspace(this.items[0]?.id || "");
+        return;
+      }
+      const known =
+        this.items.find((item) => item.id === activeId) || this.pageItems.find((item) => item.id === activeId);
+      if (known) {
+        writeActiveWorkspaceID(activeId);
+        return;
+      }
+      try {
+        const detail = await this.fetchWorkspaceDetail(activeId);
+        this.upsertInList("items", detail);
+        writeActiveWorkspaceID(activeId);
+      } catch (error) {
+        const status = toAPIError(error).status;
+        if (status === 403 || status === 404) {
+          this.selectWorkspace(this.items[0]?.id || "");
+          return;
+        }
+        throw error;
       }
     },
     async createWorkspace(workspace: Workspace) {
@@ -152,6 +233,7 @@ export const useWorkspaceStore = defineStore("workspaces", {
       const created = workspaceFromDTO(response.data);
       this.upsertWorkspace(created);
       this.selectWorkspace(created.id);
+      await this.loadWorkspacePage({ page: 1 });
       return created;
     },
     async updateWorkspace(workspaceId: string, workspace: Workspace) {
@@ -182,121 +264,102 @@ export const useWorkspaceStore = defineStore("workspaces", {
     },
     async deleteWorkspace(workspaceId: string) {
       const current = this.requireWorkspace(workspaceId);
-      await apiClient.delete(`/workspaces/${workspaceId}?lockVersion=${current.lockVersion}`);
-      this.items = this.items.filter((workspace) => workspace.id !== workspaceId);
-      this.pageItems = this.pageItems.filter((workspace) => workspace.id !== workspaceId);
-      delete this.membersByWorkspace[workspaceId];
-      this.pagination = { ...this.pagination, total: Math.max(0, this.pagination.total - 1) };
+      await apiClient.delete(`/workspaces/${workspaceId}`, {
+        params: { lockVersion: current.lockVersion },
+      });
+      this.items = this.items.filter((item) => item.id !== workspaceId);
+      this.pageItems = this.pageItems.filter((item) => item.id !== workspaceId);
       if (this.activeWorkspaceId === workspaceId) {
         this.selectWorkspace(this.items[0]?.id || "");
       }
+      // Reload current management page; if empty, step back one page.
+      const page = this.listQuery.page;
+      await this.loadWorkspacePage({ page });
+      if (this.pageItems.length === 0 && page > 1) {
+        await this.loadWorkspacePage({ page: page - 1 });
+      }
     },
     async loadMembers(workspaceId: string, includeDisabled = false) {
-      this.membersLoadStatusByWorkspace[workspaceId] = "LOADING";
-      const suffix = includeDisabled ? "?includeDisabled=true" : "";
-      try {
-        const response = await apiClient.get<{ items: WorkspaceMember[] }>(`/workspaces/${workspaceId}/members${suffix}`);
-        this.membersByWorkspace[workspaceId] = response.data.items;
-        this.membersLoadStatusByWorkspace[workspaceId] = "LOADED";
-        return response.data.items;
-      } catch (error) {
-        this.membersLoadStatusByWorkspace[workspaceId] = "ERROR";
-        throw error;
-      }
+      return useWorkspaceMembersStore().loadMembers(workspaceId, includeDisabled);
     },
     async searchMemberCandidates(workspaceId: string, query = "", limit = 20) {
-      const params = new URLSearchParams({ query: query.trim(), limit: String(limit) });
-      const response = await apiClient.get<{ items: WorkspaceMemberCandidate[] }>(
-        `/workspaces/${workspaceId}/member-candidates?${params.toString()}`,
-      );
-      return response.data.items;
-    },
-    async loadMemberRoles(userId: string, workspaces?: Workspace[]) {
-      const targets = workspaces || this.pageItems;
-      await Promise.all(
-        targets.map(async (workspace) => {
-          if (workspace.ownerUserId === userId || this.membersByWorkspace[workspace.id]) {
-            return;
-          }
-          await this.loadMembers(workspace.id);
-        }),
-      );
+      return useWorkspaceMembersStore().searchMemberCandidates(workspaceId, query, limit);
     },
     async addMember(workspaceId: string, userId: string, role: WorkspaceRole) {
-      const response = await apiClient.post<WorkspaceMember>(`/workspaces/${workspaceId}/members`, { userId, role });
-      this.upsertMember(workspaceId, response.data);
-      return response.data;
+      return useWorkspaceMembersStore().addMember(workspaceId, userId, role);
     },
     async changeMemberRole(workspaceId: string, userId: string, role: WorkspaceRole) {
-      const response = await apiClient.patch<WorkspaceMember>(`/workspaces/${workspaceId}/members/${userId}`, { role });
-      this.upsertMember(workspaceId, response.data);
-      return response.data;
+      return useWorkspaceMembersStore().changeMemberRole(workspaceId, userId, role);
     },
     async removeMember(workspaceId: string, userId: string) {
-      await apiClient.delete(`/workspaces/${workspaceId}/members/${userId}`);
-      this.membersByWorkspace[workspaceId] = (this.membersByWorkspace[workspaceId] || []).filter(
-        (member) => member.userId !== userId,
-      );
+      return useWorkspaceMembersStore().removeMember(workspaceId, userId);
     },
-    roleFor(workspaceId: string, userId: string): WorkspaceRole | "" {
+    roleFor(workspaceId: string, _userId?: string): WorkspaceRole | "" {
       const workspace =
-        this.items.find((item) => item.id === workspaceId) ||
-        this.pageItems.find((item) => item.id === workspaceId);
-      if (workspace?.ownerUserId === userId) {
-        return "OWNER";
-      }
-      return this.membersByWorkspace[workspaceId]?.find((member) => member.userId === userId && !member.disabledAt)?.role || "";
+        this.items.find((item) => item.id === workspaceId) || this.pageItems.find((item) => item.id === workspaceId);
+      return workspace?.currentUserRole || "";
     },
     /**
      * Authorization helper aligned with backend CanWorkspace.
-     * - VIEW: allowed when role known (owner or loaded member).
-     * - Mutations: fail closed when members are LOADING/ERROR and user is not owner.
-     * - Unknown role/action → false.
+     * Prefers DTO currentUserRole; members list is not used for permission.
      */
-    can(workspaceId: string, userId: string, action: WorkspaceAction) {
-      const role = this.roleFor(workspaceId, userId);
+    can(workspaceId: string, userIdOrAction: string, maybeAction?: WorkspaceAction) {
+      // Support both can(id, action) and legacy can(id, userId, action).
+      const action = (maybeAction || userIdOrAction) as WorkspaceAction;
+      const role = this.roleFor(workspaceId);
       if (!role) {
-        // Fail closed for mutations; VIEW still false without known membership.
         return false;
-      }
-      if (action !== "VIEW") {
-        const membersStatus = this.membersLoadStatusByWorkspace[workspaceId] || "IDLE";
-        // Owner is known from workspace DTO without members list.
-        if (role !== "OWNER" && (membersStatus === "LOADING" || membersStatus === "ERROR" || membersStatus === "IDLE")) {
-          // If members are already present in cache (e.g. hydrated), treat as LOADED.
-          if (!this.membersByWorkspace[workspaceId]?.length) {
-            return false;
-          }
-        }
       }
       const allowed = WORKSPACE_ROLE_ACTIONS[role];
       return Boolean(allowed?.includes(action));
     },
     selectWorkspace(workspaceId: string) {
       if (workspaceId && this.items.length && !this.items.some((workspace) => workspace.id === workspaceId)) {
-        return;
+        // Allow selecting an id not on the current switcher page when detail recovered it into pageItems.
+        if (!this.pageItems.some((workspace) => workspace.id === workspaceId)) {
+          return;
+        }
       }
       this.activeWorkspaceId = workspaceId;
       writeActiveWorkspaceID(workspaceId);
     },
     requireWorkspace(workspaceId: string) {
-      const workspace = this.items.find((item) => item.id === workspaceId) || this.pageItems.find((item) => item.id === workspaceId);
+      const workspace =
+        this.items.find((item) => item.id === workspaceId) || this.pageItems.find((item) => item.id === workspaceId);
       if (!workspace) {
         throw new Error(`Workspace ${workspaceId} is not loaded.`);
       }
       return workspace;
     },
     upsertWorkspace(workspace: Workspace) {
-      this.items = upsertByID(this.items, workspace);
+      this.upsertInList("items", workspace);
       if (this.pageItems.some((item) => item.id === workspace.id)) {
-        this.pageItems = upsertByID(this.pageItems, workspace);
+        this.upsertInList("pageItems", workspace);
       }
     },
+    upsertInList(list: "items" | "pageItems", workspace: Workspace) {
+      this[list] = upsertByID(this[list], workspace);
+    },
     upsertMember(workspaceId: string, member: WorkspaceMember) {
-      this.membersByWorkspace[workspaceId] = upsertMemberByID(this.membersByWorkspace[workspaceId] || [], member);
+      useWorkspaceMembersStore().upsertMember(workspaceId, member);
     },
   },
 });
+
+function buildWorkspaceListParams(query: WorkspaceListQuery) {
+  const params: Record<string, string | number> = {
+    page: query.page || 1,
+    pageSize: query.pageSize || DEFAULT_PAGE_SIZE,
+  };
+  if (query.query?.trim()) params.query = query.query.trim();
+  if (query.status === "Active") params.status = "ACTIVE";
+  if (query.status === "Disabled") params.status = "DISABLED";
+  if (query.mode === "Production") params.mode = "PRODUCTION";
+  if (query.mode === "Sandbox") params.mode = "SANDBOX";
+  if (query.sortBy) params.sortBy = query.sortBy;
+  if (query.sortOrder) params.sortOrder = query.sortOrder;
+  return params;
+}
 
 function readActiveWorkspaceID() {
   if (typeof window === "undefined") return "";
@@ -321,7 +384,7 @@ function workspaceFromDTO(value: WorkspaceDTO): Workspace {
     defaultAgentId: value.defaultAgentId || "",
     defaultModelConfigId: value.defaultModelConfigId,
     modelConfigId: value.defaultModelConfigId || "",
-    settings: value.settings || {},
+    settings: value.settings,
     createdBy: value.createdBy,
     createdByUsername: value.createdByUsername,
     updatedBy: value.updatedBy,
@@ -329,60 +392,20 @@ function workspaceFromDTO(value: WorkspaceDTO): Workspace {
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
     lockVersion: value.lockVersion,
+    owner: value.ownerUserId,
     healthScore: 0,
+    currentUserRole: value.currentUserRole,
   };
 }
 
-function modeToDTO(mode: Workspace["mode"]): WorkspaceDTO["mode"] {
-  return mode === "Production" ? "PRODUCTION" : "SANDBOX";
+function modeToDTO(mode: string) {
+  return mode === "Production" || mode === "PRODUCTION" ? "PRODUCTION" : "SANDBOX";
 }
 
-function filterWorkspaces(items: Workspace[], query: WorkspaceListQuery) {
-  const needle = query.query?.trim().toLocaleLowerCase() || "";
-  return items.filter((workspace) => {
-    if (query.status && workspace.status !== query.status) return false;
-    if (query.mode && workspace.mode !== query.mode) return false;
-    if (!needle) return true;
-    return [
-      workspace.name,
-      workspace.displayName,
-      workspace.createdByUsername || "",
-      workspace.updatedByUsername || "",
-      workspace.createdBy || "",
-      workspace.updatedBy || "",
-    ].some((value) =>
-      value.toLocaleLowerCase().includes(needle),
-    );
-  });
-}
-
-function sortWorkspaces(items: Workspace[], sortBy?: string, order?: "asc" | "desc") {
-  if (!sortBy || !order) return items;
-  const allowed = new Set(["name", "displayName", "status", "mode", "createdBy", "updatedBy", "createdAt", "updatedAt"]);
-  if (!allowed.has(sortBy)) return items;
-  return [...items].sort((left, right) => {
-    const comparison = workspaceSortValue(left, sortBy).localeCompare(
-      workspaceSortValue(right, sortBy),
-      "zh-Hans",
-    );
-    return order === "asc" ? comparison : -comparison;
-  });
-}
-
-function workspaceSortValue(workspace: Workspace, sortBy: string) {
-  if (sortBy === "createdBy") return workspace.createdByUsername || workspace.createdBy || "";
-  if (sortBy === "updatedBy") return workspace.updatedByUsername || workspace.updatedBy || "";
-  return String(workspace[sortBy as keyof Workspace] || "");
-}
-
-function upsertByID(items: Workspace[], value: Workspace) {
-  return items.some((item) => item.id === value.id)
-    ? items.map((item) => (item.id === value.id ? value : item))
-    : [value, ...items];
-}
-
-function upsertMemberByID(items: WorkspaceMember[], value: WorkspaceMember) {
-  return items.some((item) => item.userId === value.userId)
-    ? items.map((item) => (item.userId === value.userId ? value : item))
-    : [...items, value];
+function upsertByID(items: Workspace[], workspace: Workspace) {
+  const index = items.findIndex((item) => item.id === workspace.id);
+  if (index < 0) return [workspace, ...items];
+  const next = items.slice();
+  next[index] = workspace;
+  return next;
 }

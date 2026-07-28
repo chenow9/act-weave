@@ -20,21 +20,21 @@ export type PlatformRole = User["platformRole"];
 export type UserStatus = User["status"];
 
 export interface UserListQuery {
-	query?: string;
-	status?: UserStatus;
-	platformRole?: PlatformRole;
-	page?: number;
-	pageSize?: number;
+  query?: string;
+  status?: UserStatus;
+  platformRole?: PlatformRole;
+  page?: number;
+  pageSize?: number;
 }
 
 export interface UserWorkspaceMembership {
-	workspaceId: string;
-	workspaceSlug: string;
-	workspaceDisplayName: string;
-	workspaceStatus: "ACTIVE" | "DISABLED";
-	role: WorkspaceRole;
-	joinedAt: string;
-	disabledAt?: string;
+  workspaceId: string;
+  workspaceSlug: string;
+  workspaceDisplayName: string;
+  workspaceStatus: "ACTIVE" | "DISABLED";
+  role: WorkspaceRole;
+  joinedAt: string;
+  disabledAt?: string;
 }
 
 export interface Workspace {
@@ -61,6 +61,15 @@ export interface Workspace {
   toolCount?: number;
   workflowCount?: number;
   agentCount?: number;
+  /** Effective role for the current principal (ZKL-64 D1-A). */
+  currentUserRole?: WorkspaceRole;
+}
+
+export interface WorkspaceAccessibleSummary {
+  total: number;
+  active: number;
+  production: number;
+  boundAgents: number;
 }
 
 export type WorkspaceRole = "OWNER" | "ADMIN" | "EDITOR" | "OPERATOR" | "VIEWER";
@@ -719,7 +728,14 @@ export interface OpenAPIImportEndpointDetail {
 
 export type WorkflowStatus = "Draft" | "Review" | "Published" | "Disabled";
 export type ExecutionStatus = "Running" | "Approval" | "Success" | "Failed";
-export type ExecutionStepStatus = "Queued" | "Running" | "Passed" | "Skipped" | "WaitingApproval" | "Failed" | "Cancelled";
+export type ExecutionStepStatus =
+  | "Queued"
+  | "Running"
+  | "Passed"
+  | "Skipped"
+  | "WaitingApproval"
+  | "Failed"
+  | "Cancelled";
 export type WorkflowIssueStage = "graph" | "semantic" | "spec" | "plan" | "runtime";
 export type WorkflowCompilationStatus = "PENDING" | "VALID" | "INVALID" | "Pending" | "Valid" | "Invalid";
 export type WorkflowReadinessStage =
@@ -1089,7 +1105,14 @@ export type ChatMessageStatus = "PROCESSING" | "PENDING_CONFIRMATION" | "EXECUTE
 export type ChatConfirmationStatus = "PENDING" | "CONFIRMED" | "CANCELLED" | "EXPIRED";
 export type AgentTargetType = "TOOL" | "WORKFLOW";
 export type AgentRunStatus = "PENDING" | "RUNNING" | "WAITING_CONFIRMATION" | "SUCCEEDED" | "FAILED" | "CANCELLED";
-export type AgentRunStepStatus = "QUEUED" | "RUNNING" | "WAITING_CONFIRMATION" | "SUCCEEDED" | "FAILED" | "SKIPPED" | "CANCELLED";
+export type AgentRunStepStatus =
+  | "QUEUED"
+  | "RUNNING"
+  | "WAITING_CONFIRMATION"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "SKIPPED"
+  | "CANCELLED";
 
 export interface ChatSession {
   id: string;

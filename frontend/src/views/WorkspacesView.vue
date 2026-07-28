@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import "./workspaces-page.css";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 
@@ -78,10 +79,14 @@ const workspaceRoleLabels: Record<WorkspaceRole, string> = {
   OPERATOR: "操作员",
   VIEWER: "查看者",
 };
-const assignableWorkspaceRoleOptions = (["ADMIN", "EDITOR", "OPERATOR", "VIEWER"] as WorkspaceRole[])
-  .map((role) => ({ label: workspaceRoleLabels[role], value: role }));
-const workspaceRoleOptions = (["OWNER", "ADMIN", "EDITOR", "OPERATOR", "VIEWER"] as WorkspaceRole[])
-  .map((role) => ({ label: workspaceRoleLabels[role], value: role }));
+const assignableWorkspaceRoleOptions = (["ADMIN", "EDITOR", "OPERATOR", "VIEWER"] as WorkspaceRole[]).map((role) => ({
+  label: workspaceRoleLabels[role],
+  value: role,
+}));
+const workspaceRoleOptions = (["OWNER", "ADMIN", "EDITOR", "OPERATOR", "VIEWER"] as WorkspaceRole[]).map((role) => ({
+  label: workspaceRoleLabels[role],
+  value: role,
+}));
 const memberCandidateOptions = computed(() =>
   memberCandidates.value.map((candidate) => ({
     label: `${candidate.displayName} (@${candidate.username}) · ${candidate.platformRole}`,
@@ -92,10 +97,14 @@ const memberCandidateOptions = computed(() =>
 const visibleWorkspaceIds = computed(() => workspaces.pageItems.map((workspace) => workspace.id));
 const checkedWorkspaceKeys = computed(() => Array.from(selectedWorkspaceIds.value));
 const allPageWorkspacesSelected = computed(
-  () => visibleWorkspaceIds.value.length > 0 && visibleWorkspaceIds.value.every((workspaceId) => selectedWorkspaceIds.value.has(workspaceId)),
+  () =>
+    visibleWorkspaceIds.value.length > 0 &&
+    visibleWorkspaceIds.value.every((workspaceId) => selectedWorkspaceIds.value.has(workspaceId)),
 );
-const somePageWorkspacesSelected = computed(
-  () => visibleWorkspaceIds.value.some((workspaceId) => selectedWorkspaceIds.value.has(workspaceId)) && !allPageWorkspacesSelected.value,
+const _somePageWorkspacesSelected = computed(
+  () =>
+    visibleWorkspaceIds.value.some((workspaceId) => selectedWorkspaceIds.value.has(workspaceId)) &&
+    !allPageWorkspacesSelected.value,
 );
 
 function setCheckedWorkspaceKeys(keys: Array<string | number>) {
@@ -103,29 +112,87 @@ function setCheckedWorkspaceKeys(keys: Array<string | number>) {
 }
 const workspaceColumns = computed<ManagementListColumn<Workspace>[]>(() => [
   { key: "selection", label: "选择", width: 48, headerAlign: "center" },
-  { key: "identity", label: "业务空间", width: 240, sortable: true, sortKey: "name", getValue: (workspace) => `${workspace.name} ${workspace.displayName}` },
-  { key: "mode", label: "环境", width: 124, hidable: true, sortable: true, sortKey: "mode", getValue: (workspace) => workspace.mode },
+  {
+    key: "identity",
+    label: "业务空间",
+    width: 240,
+    sortable: true,
+    sortKey: "name",
+    getValue: (workspace) => `${workspace.name} ${workspace.displayName}`,
+  },
+  {
+    key: "mode",
+    label: "环境",
+    width: 124,
+    hidable: true,
+    sortable: true,
+    sortKey: "mode",
+    getValue: (workspace) => workspace.mode,
+  },
   { key: "defaultAgent", label: "默认 Agent", width: 180, hidable: true, getValue: getDefaultAgentLabel },
-  { key: "model", label: "模型配置", width: 210, hidable: true, getValue: (workspace) => getModelConfigLabel(workspace.modelConfigId) },
-  { key: "status", label: "状态", width: 124, hidable: true, sortable: true, sortKey: "status", getValue: (workspace) => workspace.status },
-  { key: "updatedAt", label: "最近修改", width: 130, hidable: true, sortable: true, sortKey: "updatedAt", getValue: formatWorkspaceUpdatedAt },
-  { key: "createdBy", label: "创建者", width: 180, hidable: true, defaultHidden: true, sortable: true, sortKey: "createdBy", getValue: (workspace) => workspaceActorLabel(workspace, "created") },
-  { key: "updatedBy", label: "修改者", width: 180, hidable: true, defaultHidden: true, sortable: true, sortKey: "updatedBy", getValue: (workspace) => workspaceActorLabel(workspace, "updated") },
+  {
+    key: "model",
+    label: "模型配置",
+    width: 210,
+    hidable: true,
+    getValue: (workspace) => getModelConfigLabel(workspace.modelConfigId),
+  },
+  {
+    key: "status",
+    label: "状态",
+    width: 124,
+    hidable: true,
+    sortable: true,
+    sortKey: "status",
+    getValue: (workspace) => workspace.status,
+  },
+  {
+    key: "updatedAt",
+    label: "最近修改",
+    width: 130,
+    hidable: true,
+    sortable: true,
+    sortKey: "updatedAt",
+    getValue: formatWorkspaceUpdatedAt,
+  },
+  {
+    key: "createdBy",
+    label: "创建者",
+    width: 180,
+    hidable: true,
+    defaultHidden: true,
+    sortable: true,
+    sortKey: "createdBy",
+    getValue: (workspace) => workspaceActorLabel(workspace, "created"),
+  },
+  {
+    key: "updatedBy",
+    label: "修改者",
+    width: 180,
+    hidable: true,
+    defaultHidden: true,
+    sortable: true,
+    sortKey: "updatedBy",
+    getValue: (workspace) => workspaceActorLabel(workspace, "updated"),
+  },
   { key: "actions", label: "操作", width: 68, align: "right", headerAlign: "center" },
 ]);
 
-const hasWorkspaceRecords = computed(() => workspaces.items.length > 0);
+const hasWorkspaceRecords = computed(() => workspaces.summary.total > 0 || workspaces.pageItems.length > 0);
 const workspaceSummaryItems = computed<ManagementSummaryItem[]>(() => {
-  const total = workspaces.items.length;
-  const active = workspaces.items.filter((workspace) => workspace.status === "Active").length;
-  const production = workspaces.items.filter((workspace) => workspace.mode === "Production").length;
-  const boundAgents = workspaces.items.reduce(
-    (count, workspace) => count + (workspace.agentCount ?? (workspace.defaultAgentId ? 1 : 0)),
-    0,
-  );
+  // D9-A: cards use full accessible-set summary from the server, not the current page.
+  const total = workspaces.summary.total;
+  const active = workspaces.summary.active;
+  const production = workspaces.summary.production;
+  const boundAgents = workspaces.summary.boundAgents;
   return [
     { label: "空间总数", value: total, icon: "fa-solid fa-layer-group" },
-    { label: "在线空间", value: active, note: total ? `${((active / total) * 100).toFixed(1)}%` : "0%", icon: "fa-solid fa-circle-check" },
+    {
+      label: "在线空间",
+      value: active,
+      note: total ? `${((active / total) * 100).toFixed(1)}%` : "0%",
+      icon: "fa-solid fa-circle-check",
+    },
     { label: "生产环境", value: production, icon: "fa-solid fa-cubes" },
     { label: "已绑定 Agent", value: boundAgents, icon: "fa-solid fa-user-gear" },
   ];
@@ -141,8 +208,12 @@ const workspaceModeFilterOptions = computed<Array<{ label: string; value: Worksp
   { label: "沙箱", value: "Sandbox" },
 ]);
 
-const detailWorkspace = computed(() => workspaces.items.find((workspace) => workspace.id === detailWorkspaceId.value) || null);
-const hasActiveFilters = computed(() => Boolean(query.value.trim()) || statusFilter.value !== "ALL" || modeFilter.value !== "ALL");
+const detailWorkspace = computed(
+  () => workspaces.items.find((workspace) => workspace.id === detailWorkspaceId.value) || null,
+);
+const hasActiveFilters = computed(
+  () => Boolean(query.value.trim()) || statusFilter.value !== "ALL" || modeFilter.value !== "ALL",
+);
 const currentWorkspaceAgents = computed(() => {
   const workspace = detailWorkspace.value;
   if (!workspace) return [];
@@ -170,14 +241,15 @@ const workspaceFormErrors = computed(() => {
   return errors;
 });
 const workspaceNameInvalid = computed(() => workspaceFormTouched.value && Boolean(workspaceNameError.value));
-const workspaceDisplayNameInvalid = computed(() => workspaceFormTouched.value && Boolean(workspaceDisplayNameError.value));
+const workspaceDisplayNameInvalid = computed(
+  () => workspaceFormTouched.value && Boolean(workspaceDisplayNameError.value),
+);
 const canSaveWorkspaceDraft = computed(() => workspaceFormErrors.value.length === 0);
 const workspaceFormMissingHint = computed(() => {
   if (canSaveWorkspaceDraft.value) return "";
-  const missing = [
-    workspaceNameError.value && "英文名称",
-    workspaceDisplayNameError.value && "中文描述",
-  ].filter(Boolean);
+  const missing = [workspaceNameError.value && "英文名称", workspaceDisplayNameError.value && "中文描述"].filter(
+    Boolean,
+  );
   return `请填写：${missing.join("、")}`;
 });
 const canConfirmWorkspaceDelete = computed(() => {
@@ -204,7 +276,7 @@ async function loadWorkspacePage() {
   workspacePageError.value = "";
   try {
     await Promise.all([workspaces.load(), workspaces.loadWorkspacePage({ page: 1 }), modelConfigs.loadModelConfigs()]);
-    if (auth.user?.id) await workspaces.loadMemberRoles(auth.user.id);
+    // Role projection comes from list/detail currentUserRole (ZKL-64); no member N+1.
     workspacePageError.value = workspaces.pageError || "";
   } catch (error) {
     workspacePageError.value = workspaceLoadErrorMessage(error);
@@ -283,8 +355,9 @@ function closeWorkspaceDetail() {
   workspaceDetailTab.value = "overview";
   resetMemberCandidatePicker();
   void nextTick(() => {
-    const target = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-workspace-detail-id]"))
-      .find((candidate) => candidate.dataset.workspaceDetailId === workspaceId);
+    const target = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-workspace-detail-id]")).find(
+      (candidate) => candidate.dataset.workspaceDetailId === workspaceId,
+    );
     target?.focus();
   });
 }
@@ -298,7 +371,7 @@ function selectWorkspaceDetailTab(tab: WorkspaceDetailTab) {
 
 async function loadWorkspaceMemberContext(workspaceId: string) {
   await workspaces.loadMembers(workspaceId);
-  if (workspaces.can(workspaceId, auth.user?.id || "", "MANAGE")) {
+  if (workspaces.can(workspaceId, "MANAGE")) {
     await loadMemberCandidates(workspaceId);
   }
 }
@@ -363,7 +436,7 @@ async function loadWorkspaceRegistry(overrides: WorkspaceListQuery = {}) {
     sortBy,
     sortOrder,
   });
-  if (auth.user?.id) await workspaces.loadMemberRoles(auth.user.id);
+
   return result;
 }
 
@@ -411,7 +484,7 @@ function toggleWorkspaceSelection(workspace: Workspace, checked: boolean) {
   selectedWorkspaceIds.value = next;
 }
 
-function togglePageWorkspaceSelection(checked: boolean) {
+function _togglePageWorkspaceSelection(checked: boolean) {
   const next = new Set(selectedWorkspaceIds.value);
   for (const workspaceId of visibleWorkspaceIds.value) {
     if (checked) {
@@ -435,7 +508,7 @@ async function bulkSetSelectedWorkspaceStatus(status: Workspace["status"]) {
       (workspace) =>
         selectedWorkspaceIds.value.has(workspace.id) &&
         workspace.status !== status &&
-        workspaces.can(workspace.id, auth.user?.id || "", "MANAGE"),
+        workspaces.can(workspace.id, "MANAGE"),
     );
     for (const workspace of selected) {
       if (status === "Active") {
@@ -482,13 +555,20 @@ function closeWorkspaceModal() {
 
 async function focusWorkspaceModal() {
   await nextTick();
-  const target = workspaceModalMode.value === "create" ? workspaceNameInputRef.value : workspaceModalRef.value?.querySelector<HTMLInputElement>("input:not([disabled])");
+  const target =
+    workspaceModalMode.value === "create"
+      ? workspaceNameInputRef.value
+      : workspaceModalRef.value?.querySelector<HTMLInputElement>("input:not([disabled])");
   target?.focus();
 }
 
 async function focusDialog(dialog: HTMLElement | null, preferredTarget?: HTMLElement | null) {
   await nextTick();
-  const target = preferredTarget || dialog?.querySelector<HTMLElement>('button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])');
+  const target =
+    preferredTarget ||
+    dialog?.querySelector<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
   target?.focus();
 }
 
@@ -504,7 +584,9 @@ function trapModalFocus(event: KeyboardEvent) {
   const modal = workspaceModalRef.value || workspaceStatusModalRef.value || workspaceDeleteModalRef.value;
   if (!modal) return;
   const focusable = Array.from(
-    modal.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'),
+    modal.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
   ).filter((element) => !element.hasAttribute("disabled") && element.offsetParent !== null);
   if (!focusable.length) return;
   const first = focusable[0];
@@ -567,17 +649,17 @@ async function saveDraftWorkspace() {
 /** List-row menu: view → edit → lifecycle → danger (ZKL-33 menu-only). */
 function workspaceMenuActions(workspace: Workspace): ManagementRowAction[] {
   const actions: ManagementRowAction[] = [{ key: "view", label: "查看详情", icon: "fa-solid fa-eye", tone: "primary" }];
-  if (workspaces.can(workspace.id, auth.user?.id || "", "EDIT")) {
+  if (workspaces.can(workspace.id, "EDIT")) {
     actions.push({ key: "edit", label: "编辑信息", icon: "fa-solid fa-pen" });
   }
-  if (workspaces.can(workspace.id, auth.user?.id || "", "MANAGE")) {
+  if (workspaces.can(workspace.id, "MANAGE")) {
     actions.push({
       key: "toggle",
       label: workspace.status === "Active" ? "停用空间" : "启用空间",
       icon: workspace.status === "Active" ? "fa-solid fa-power-off" : "fa-solid fa-circle-play",
     });
   }
-  if (workspaces.can(workspace.id, auth.user?.id || "", "DELETE")) {
+  if (workspaces.can(workspace.id, "DELETE")) {
     actions.push({ key: "delete", label: "删除空间", icon: "fa-solid fa-trash", tone: "danger" });
   }
   return actions;
@@ -709,7 +791,11 @@ function getModelConfigLabel(configId: string) {
 }
 
 function getDefaultAgentLabel(workspace: Workspace) {
-  return agents.items.find((agent) => agent.id === workspace.defaultAgentId)?.name || workspace.defaultAgentId || "未绑定 Agent";
+  return (
+    agents.items.find((agent) => agent.id === workspace.defaultAgentId)?.name ||
+    workspace.defaultAgentId ||
+    "未绑定 Agent"
+  );
 }
 
 function formatWorkspaceUpdatedAt(workspace: Workspace) {
@@ -802,7 +888,9 @@ function reconcileWorkspaceListContext() {
         <button class="ghost-button" type="button" :disabled="pageInitialLoading" @click="reloadWorkspacePage">
           {{ pageInitialLoading ? "重试中..." : "重新加载" }}
         </button>
-        <button v-if="workspacePageError.includes('会话')" class="primary-button" type="button" @click="goLogin">重新登录</button>
+        <button v-if="workspacePageError.includes('会话')" class="primary-button" type="button" @click="goLogin">
+          重新登录
+        </button>
       </div>
     </section>
 
@@ -830,7 +918,9 @@ function reconcileWorkspaceListContext() {
           <div>
             <span>列表管理</span>
             <strong>{{ workspaces.pagination.total }} 个匹配空间</strong>
-            <small>全量目录共 {{ workspaces.items.length }} 个业务空间；当前页由 v1 目录在客户端筛选、排序与分页。</small>
+            <small
+              >全量目录共 {{ workspaces.items.length }} 个业务空间；当前页由 v1 目录在客户端筛选、排序与分页。</small
+            >
           </div>
           <p class="workspace-narrow-notice">字段较多时可横向滚动，固定列保持可见。</p>
         </header>
@@ -887,16 +977,16 @@ function reconcileWorkspaceListContext() {
             </button>
           </template>
           <template #filters>
-<!--            <label class="workspace-page-selection-toggle">-->
-<!--              <input-->
-<!--                type="checkbox"-->
-<!--                :checked="allPageWorkspacesSelected"-->
-<!--                :indeterminate.prop="somePageWorkspacesSelected"-->
-<!--                aria-label="选择当前页全部业务空间"-->
-<!--                @change="togglePageWorkspaceSelection(($event.target as HTMLInputElement).checked)"-->
-<!--              />-->
-<!--              <span>选择当前页</span>-->
-<!--            </label>-->
+            <!--            <label class="workspace-page-selection-toggle">-->
+            <!--              <input-->
+            <!--                type="checkbox"-->
+            <!--                :checked="allPageWorkspacesSelected"-->
+            <!--                :indeterminate.prop="somePageWorkspacesSelected"-->
+            <!--                aria-label="选择当前页全部业务空间"-->
+            <!--                @change="togglePageWorkspaceSelection(($event.target as HTMLInputElement).checked)"-->
+            <!--              />-->
+            <!--              <span>选择当前页</span>-->
+            <!--            </label>-->
             <ManagementSegmentedFilter
               :model-value="modeFilter"
               :options="workspaceModeFilterOptions"
@@ -912,7 +1002,7 @@ function reconcileWorkspaceListContext() {
           </template>
 
           <template #cell-selection="{ row: workspace }">
-            <label v-if="workspaces.can(workspace.id, auth.user?.id || '', 'MANAGE')" class="workspace-checkbox-hitarea" @click.stop>
+            <label v-if="workspaces.can(workspace.id, 'MANAGE')" class="workspace-checkbox-hitarea" @click.stop>
               <input
                 type="checkbox"
                 :checked="selectedWorkspaceIds.has(workspace.id)"
@@ -945,20 +1035,34 @@ function reconcileWorkspaceListContext() {
             </span>
           </template>
           <template #cell-mode="{ row: workspace }">
-            <span :class="['workspace-mode-pill', 'aw-table-pill', modeTone(workspace.mode)]">{{ workspace.mode }}</span>
+            <span :class="['workspace-mode-pill', 'aw-table-pill', modeTone(workspace.mode)]">{{
+              workspace.mode
+            }}</span>
           </template>
           <template #cell-defaultAgent="{ row: workspace }">
-            <span class="workspace-agent-chip aw-table-pill" :title="getDefaultAgentLabel(workspace)"><i class="fa-solid fa-user-gear" aria-hidden="true" />{{ getDefaultAgentLabel(workspace) }}</span>
+            <span class="workspace-agent-chip aw-table-pill" :title="getDefaultAgentLabel(workspace)"
+              ><i class="fa-solid fa-user-gear" aria-hidden="true" />{{ getDefaultAgentLabel(workspace) }}</span
+            >
           </template>
           <template #cell-model="{ row: workspace }">
-            <span class="workspace-model-name aw-table-meta" :title="getModelConfigLabel(workspace.modelConfigId)"><i class="fa-solid fa-brain" aria-hidden="true" /><span>{{ getModelConfigLabel(workspace.modelConfigId) }}</span></span>
+            <span class="workspace-model-name aw-table-meta" :title="getModelConfigLabel(workspace.modelConfigId)"
+              ><i class="fa-solid fa-brain" aria-hidden="true" /><span>{{
+                getModelConfigLabel(workspace.modelConfigId)
+              }}</span></span
+            >
           </template>
-          <template #cell-updatedAt="{ row: workspace }"><span class="workspace-updated-at aw-table-meta">{{ formatWorkspaceUpdatedAt(workspace) }}</span></template>
+          <template #cell-updatedAt="{ row: workspace }"
+            ><span class="workspace-updated-at aw-table-meta">{{ formatWorkspaceUpdatedAt(workspace) }}</span></template
+          >
           <template #cell-createdBy="{ row: workspace }">
-            <span class="workspace-owner-name aw-table-meta" :title="workspaceActorTitle(workspace, 'created')">{{ workspaceActorLabel(workspace, "created") }}</span>
+            <span class="workspace-owner-name aw-table-meta" :title="workspaceActorTitle(workspace, 'created')">{{
+              workspaceActorLabel(workspace, "created")
+            }}</span>
           </template>
           <template #cell-updatedBy="{ row: workspace }">
-            <span class="workspace-owner-name aw-table-meta" :title="workspaceActorTitle(workspace, 'updated')">{{ workspaceActorLabel(workspace, "updated") }}</span>
+            <span class="workspace-owner-name aw-table-meta" :title="workspaceActorTitle(workspace, 'updated')">{{
+              workspaceActorLabel(workspace, "updated")
+            }}</span>
           </template>
           <template #cell-actions="{ row: workspace }">
             <ManagementRowActions
@@ -978,7 +1082,7 @@ function reconcileWorkspaceListContext() {
           <template #error>
             <div class="workspace-load-error" role="alert">
               <i class="fa-solid fa-circle-exclamation" aria-hidden="true" />
-              <span>{{ workspaces.pageError || '业务空间列表加载失败' }}</span>
+              <span>{{ workspaces.pageError || "业务空间列表加载失败" }}</span>
               <button class="ghost-button" type="button" @click="loadWorkspaceRegistry()">重试</button>
             </div>
           </template>
@@ -1010,7 +1114,9 @@ function reconcileWorkspaceListContext() {
                     <i class="workspace-status-dot" aria-hidden="true" />
                     {{ displayWorkspaceStatus(detailWorkspace.status) }}
                   </span>
-                  <span :class="['workspace-mode-pill', modeTone(detailWorkspace.mode)]">{{ detailWorkspace.mode }}</span>
+                  <span :class="['workspace-mode-pill', modeTone(detailWorkspace.mode)]">{{
+                    detailWorkspace.mode
+                  }}</span>
                 </div>
               </div>
             </div>
@@ -1021,7 +1127,7 @@ function reconcileWorkspaceListContext() {
               复制物理 ID
             </button>
             <button
-              v-if="workspaces.can(detailWorkspace.id, auth.user?.id || '', 'EDIT')"
+              v-if="workspaces.can(detailWorkspace.id, 'EDIT')"
               type="button"
               class="primary-button workspace-detail-edit"
               @click="openEditWorkspace(detailWorkspace)"
@@ -1047,7 +1153,9 @@ function reconcileWorkspaceListContext() {
             aria-controls="workspace-detail-panel-overview"
             :class="{ active: workspaceDetailTab === 'overview' }"
             @click="selectWorkspaceDetailTab('overview')"
-          ><i class="fa-solid fa-chart-pie" aria-hidden="true" />概览</button>
+          >
+            <i class="fa-solid fa-chart-pie" aria-hidden="true" />概览
+          </button>
           <button
             id="workspace-detail-tab-members"
             type="button"
@@ -1056,7 +1164,10 @@ function reconcileWorkspaceListContext() {
             aria-controls="workspace-detail-panel-members"
             :class="{ active: workspaceDetailTab === 'members' }"
             @click="selectWorkspaceDetailTab('members')"
-          ><i class="fa-solid fa-user-group" aria-hidden="true" />成员 <em>{{ workspaceMembers(detailWorkspace.id).length }}</em></button>
+          >
+            <i class="fa-solid fa-user-group" aria-hidden="true" />成员
+            <em>{{ workspaceMembers(detailWorkspace.id).length }}</em>
+          </button>
           <button
             id="workspace-detail-tab-agents"
             type="button"
@@ -1065,7 +1176,9 @@ function reconcileWorkspaceListContext() {
             aria-controls="workspace-detail-panel-agents"
             :class="{ active: workspaceDetailTab === 'agents' }"
             @click="selectWorkspaceDetailTab('agents')"
-          ><i class="fa-solid fa-robot" aria-hidden="true" />Agent <em>{{ workspaceAgentCount }}</em></button>
+          >
+            <i class="fa-solid fa-robot" aria-hidden="true" />Agent <em>{{ workspaceAgentCount }}</em>
+          </button>
         </nav>
 
         <div class="workspace-detail-page-body">
@@ -1077,9 +1190,21 @@ function reconcileWorkspaceListContext() {
             aria-labelledby="workspace-detail-tab-overview"
           >
             <div class="workspace-detail-summary-grid">
-              <article><span><i class="fa-solid fa-user-group" aria-hidden="true" />空间成员</span><strong>{{ workspaceMembers(detailWorkspace.id).length }}</strong><small>拥有空间访问权限的成员</small></article>
-              <article><span><i class="fa-solid fa-robot" aria-hidden="true" />协作 Agent</span><strong>{{ workspaceAgentCount }}</strong><small>当前空间内的活动 Agent</small></article>
-              <article><span><i class="fa-solid fa-shield-halved" aria-hidden="true" />隔离环境</span><strong>{{ detailWorkspace.mode === 'Production' ? '生产' : '沙箱' }}</strong><small>资源与执行策略独立隔离</small></article>
+              <article>
+                <span><i class="fa-solid fa-user-group" aria-hidden="true" />空间成员</span
+                ><strong>{{ workspaceMembers(detailWorkspace.id).length }}</strong
+                ><small>拥有空间访问权限的成员</small>
+              </article>
+              <article>
+                <span><i class="fa-solid fa-robot" aria-hidden="true" />协作 Agent</span
+                ><strong>{{ workspaceAgentCount }}</strong
+                ><small>当前空间内的活动 Agent</small>
+              </article>
+              <article>
+                <span><i class="fa-solid fa-shield-halved" aria-hidden="true" />隔离环境</span
+                ><strong>{{ detailWorkspace.mode === "Production" ? "生产" : "沙箱" }}</strong
+                ><small>资源与执行策略独立隔离</small>
+              </article>
             </div>
 
             <div class="workspace-detail-overview-grid">
@@ -1089,10 +1214,26 @@ function reconcileWorkspaceListContext() {
                   <div><strong>空间身份与归属</strong><small>用于权限校验、审计和资源隔离的基础信息</small></div>
                 </header>
                 <dl class="workspace-detail-metadata">
-                  <div><dt>空间物理 ID</dt><dd :title="detailWorkspace.id">{{ detailWorkspace.id }}</dd></div>
-                  <div><dt>环境模式</dt><dd>{{ detailWorkspace.mode }}</dd></div>
-                  <div><dt>创建者</dt><dd :title="workspaceActorTitle(detailWorkspace, 'created')">{{ workspaceActorLabel(detailWorkspace, 'created') }}</dd></div>
-                  <div><dt>最后修改者</dt><dd :title="workspaceActorTitle(detailWorkspace, 'updated')">{{ workspaceActorLabel(detailWorkspace, 'updated') }}</dd></div>
+                  <div>
+                    <dt>空间物理 ID</dt>
+                    <dd :title="detailWorkspace.id">{{ detailWorkspace.id }}</dd>
+                  </div>
+                  <div>
+                    <dt>环境模式</dt>
+                    <dd>{{ detailWorkspace.mode }}</dd>
+                  </div>
+                  <div>
+                    <dt>创建者</dt>
+                    <dd :title="workspaceActorTitle(detailWorkspace, 'created')">
+                      {{ workspaceActorLabel(detailWorkspace, "created") }}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>最后修改者</dt>
+                    <dd :title="workspaceActorTitle(detailWorkspace, 'updated')">
+                      {{ workspaceActorLabel(detailWorkspace, "updated") }}
+                    </dd>
+                  </div>
                 </dl>
               </article>
 
@@ -1130,7 +1271,7 @@ function reconcileWorkspaceListContext() {
                 <em>{{ workspaceMembers(detailWorkspace.id).length }} 人</em>
               </header>
 
-              <div v-if="workspaces.can(detailWorkspace.id, auth.user?.id || '', 'MANAGE')" class="workspace-member-add">
+              <div v-if="workspaces.can(detailWorkspace.id, 'MANAGE')" class="workspace-member-add">
                 <div class="workspace-member-picker">
                   <label for="workspace-member-search-input">搜索用户</label>
                   <div class="workspace-member-search">
@@ -1147,7 +1288,9 @@ function reconcileWorkspaceListContext() {
                       aria-label="搜索候选用户"
                       :disabled="memberCandidatesLoading"
                       @click="loadMemberCandidates(detailWorkspace.id)"
-                    ><i class="fa-solid fa-magnifying-glass" aria-hidden="true" /></button>
+                    >
+                      <i class="fa-solid fa-magnifying-glass" aria-hidden="true" />
+                    </button>
                   </div>
                   <label class="workspace-member-candidate-select">
                     <span>候选用户</span>
@@ -1160,40 +1303,64 @@ function reconcileWorkspaceListContext() {
                       aria-label="选择成员用户"
                     />
                   </label>
-                  <small v-if="memberCandidatesError" class="workspace-member-candidate-error" role="alert">{{ memberCandidatesError }}</small>
-                  <small v-else-if="!memberCandidatesLoading && !memberCandidates.length">没有可添加的正常状态用户</small>
+                  <small v-if="memberCandidatesError" class="workspace-member-candidate-error" role="alert">{{
+                    memberCandidatesError
+                  }}</small>
+                  <small v-else-if="!memberCandidatesLoading && !memberCandidates.length"
+                    >没有可添加的正常状态用户</small
+                  >
                 </div>
                 <label class="workspace-member-role-field">
                   <span>空间角色</span>
-                  <AppSelect v-model="newMemberRole" :options="assignableWorkspaceRoleOptions" aria-label="新成员角色" />
+                  <AppSelect
+                    v-model="newMemberRole"
+                    :options="assignableWorkspaceRoleOptions"
+                    aria-label="新成员角色"
+                  />
                 </label>
-                <button type="button" class="primary-button workspace-member-add-button" :disabled="!newMemberUserId" @click="addWorkspaceMember(detailWorkspace.id)">
+                <button
+                  type="button"
+                  class="primary-button workspace-member-add-button"
+                  :disabled="!newMemberUserId"
+                  @click="addWorkspaceMember(detailWorkspace.id)"
+                >
                   <i class="fa-solid fa-user-plus" aria-hidden="true" />添加成员
                 </button>
               </div>
 
               <div class="workspace-member-list">
-                <div v-for="member in workspaceMembers(detailWorkspace.id)" :key="member.userId" class="workspace-member-row">
+                <div
+                  v-for="member in workspaceMembers(detailWorkspace.id)"
+                  :key="member.userId"
+                  class="workspace-member-row"
+                >
                   <span class="workspace-member-identity">
                     <i class="fa-solid fa-user" aria-hidden="true" />
-                    <span><strong>{{ member.userId }}</strong><small>{{ workspaceRoleLabels[member.role] }}</small></span>
+                    <span
+                      ><strong>{{ member.userId }}</strong
+                      ><small>{{ workspaceRoleLabels[member.role] }}</small></span
+                    >
                   </span>
                   <label>
                     <AppSelect
                       :model-value="member.role"
                       :options="workspaceRoleOptions"
                       aria-label="成员角色"
-                      :disabled="!workspaces.can(detailWorkspace.id, auth.user?.id || '', 'MANAGE') || member.role === 'OWNER'"
-                      @update:model-value="changeWorkspaceMemberRole(detailWorkspace.id, member.userId, String($event) as WorkspaceRole)"
+                      :disabled="!workspaces.can(detailWorkspace.id, 'MANAGE') || member.role === 'OWNER'"
+                      @update:model-value="
+                        changeWorkspaceMemberRole(detailWorkspace.id, member.userId, String($event) as WorkspaceRole)
+                      "
                     />
                   </label>
                   <button
-                    v-if="workspaces.can(detailWorkspace.id, auth.user?.id || '', 'MANAGE') && member.role !== 'OWNER'"
+                    v-if="workspaces.can(detailWorkspace.id, 'MANAGE') && member.role !== 'OWNER'"
                     type="button"
                     class="icon-action-button danger"
                     aria-label="移除成员"
                     @click="removeWorkspaceMember(detailWorkspace.id, member.userId)"
-                  ><i class="fa-solid fa-user-minus" aria-hidden="true" /></button>
+                  >
+                    <i class="fa-solid fa-user-minus" aria-hidden="true" />
+                  </button>
                 </div>
                 <div v-if="!workspaceMembers(detailWorkspace.id).length" class="workspace-detail-empty-state">
                   <i class="fa-solid fa-user-group" aria-hidden="true" />
@@ -1214,13 +1381,22 @@ function reconcileWorkspaceListContext() {
             <article class="workspace-detail-content-card">
               <header class="workspace-detail-section-title workspace-detail-section-title--split">
                 <span><i class="fa-solid fa-robot" aria-hidden="true" /></span>
-                <div><strong>空间内协作 Agent</strong><small>按默认 Agent 优先排序，便于快速确认空间执行入口</small></div>
+                <div>
+                  <strong>空间内协作 Agent</strong><small>按默认 Agent 优先排序，便于快速确认空间执行入口</small>
+                </div>
                 <em>{{ workspaceAgentCount }} 个活动 Agent</em>
               </header>
-              <div class="workspace-detail-agent-list" v-loading="agents.loading" :class="{ 'is-refreshing': agents.loading }">
+              <div
+                class="workspace-detail-agent-list"
+                v-loading="agents.loading"
+                :class="{ 'is-refreshing': agents.loading }"
+              >
                 <div v-for="agent in displayedWorkspaceAgents" :key="agent.id" class="workspace-detail-agent">
                   <i class="fa-solid fa-robot" aria-hidden="true" />
-                  <span><strong>{{ agent.name }}</strong><small>{{ agent.roleDescription }}</small></span>
+                  <span
+                    ><strong>{{ agent.name }}</strong
+                    ><small>{{ agent.roleDescription }}</small></span
+                  >
                   <em v-if="agent.isDefault" class="workspace-detail-agent-default">默认 Agent</em>
                 </div>
                 <div v-if="!displayedWorkspaceAgents.length" class="workspace-detail-empty-state">
@@ -1235,78 +1411,112 @@ function reconcileWorkspaceListContext() {
       </section>
     </template>
     <Transition name="modal-fade">
-      <div v-if="showWorkspaceModal" class="modal-backdrop" data-testid="workspace-modal-backdrop" @keydown.esc.stop.prevent="closeWorkspaceModal" @keydown="trapModalFocus">
-        <section ref="workspaceModalRef" class="modal-card workspace-modal-card" role="dialog" aria-modal="true" :aria-label="workspaceModalTitle" @keydown.esc.stop.prevent="closeWorkspaceModal">
-        <header class="modal-card-head">
-          <div>
-            <span>Workspace Setup</span>
-            <h3>{{ workspaceModalTitle }}</h3>
-          </div>
-          <button class="icon-action-button" type="button" title="关闭" aria-label="关闭业务空间表单" @click="closeWorkspaceModal">
-            <i class="fa-solid fa-xmark" aria-hidden="true" />
-          </button>
-        </header>
-
-        <div class="modal-form">
-          <label class="modal-field">
-            <span>英文名称 <em aria-label="必填">*</em></span>
-            <input
-              v-model.trim="draftWorkspace.name"
-              ref="workspaceNameInputRef"
-              placeholder="例如: customer-service"
-              :disabled="workspaceModalMode === 'edit'"
-              :aria-invalid="workspaceNameInvalid"
-              aria-describedby="workspace-name-helper"
-              required
-              @blur="workspaceFormTouched = true"
-            />
-            <small id="workspace-name-helper">以字母开头，3-32 位，仅支持字母、数字、下划线和中划线。创建后不再修改。</small>
-            <small v-if="workspaceNameInvalid" class="field-error">{{ workspaceNameError }}</small>
-          </label>
-          <label class="modal-field">
-            <span>中文描述 <em aria-label="必填">*</em></span>
-            <input
-              v-model.trim="draftWorkspace.displayName"
-              placeholder="例如: 客户服务业务空间"
-              :aria-invalid="workspaceDisplayNameInvalid"
-              required
-              @blur="workspaceFormTouched = true"
-            />
-            <small v-if="workspaceDisplayNameInvalid" class="field-error">{{ workspaceDisplayNameError }}</small>
-          </label>
-          <div class="modal-field">
-            <span>环境模式</span>
-            <div class="workspace-modal-segment" role="radiogroup" aria-label="环境模式">
-              <button
-                v-for="option in modeOptions"
-                :key="option.value"
-                type="button"
-                role="radio"
-                :aria-checked="draftWorkspace.mode === option.value"
-                :class="['workspace-segment-option', `tone-${option.value.toLowerCase()}`, { selected: draftWorkspace.mode === option.value }]"
-                @click="draftWorkspace.mode = option.value"
-              >
-                <i v-if="draftWorkspace.mode === option.value" class="fa-solid fa-circle-check" aria-hidden="true" />
-                {{ option.value === "Sandbox" ? "Sandbox (沙箱)" : "Production (生产)" }}
-              </button>
+      <div
+        v-if="showWorkspaceModal"
+        class="modal-backdrop"
+        data-testid="workspace-modal-backdrop"
+        @keydown.esc.stop.prevent="closeWorkspaceModal"
+        @keydown="trapModalFocus"
+      >
+        <section
+          ref="workspaceModalRef"
+          class="modal-card workspace-modal-card"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="workspaceModalTitle"
+          @keydown.esc.stop.prevent="closeWorkspaceModal"
+        >
+          <header class="modal-card-head">
+            <div>
+              <span>Workspace Setup</span>
+              <h3>{{ workspaceModalTitle }}</h3>
             </div>
+            <button
+              class="icon-action-button"
+              type="button"
+              title="关闭"
+              aria-label="关闭业务空间表单"
+              @click="closeWorkspaceModal"
+            >
+              <i class="fa-solid fa-xmark" aria-hidden="true" />
+            </button>
+          </header>
+
+          <div class="modal-form">
+            <label class="modal-field">
+              <span>英文名称 <em aria-label="必填">*</em></span>
+              <input
+                v-model.trim="draftWorkspace.name"
+                ref="workspaceNameInputRef"
+                placeholder="例如: customer-service"
+                :disabled="workspaceModalMode === 'edit'"
+                :aria-invalid="workspaceNameInvalid"
+                aria-describedby="workspace-name-helper"
+                required
+                @blur="workspaceFormTouched = true"
+              />
+              <small id="workspace-name-helper"
+                >以字母开头，3-32 位，仅支持字母、数字、下划线和中划线。创建后不再修改。</small
+              >
+              <small v-if="workspaceNameInvalid" class="field-error">{{ workspaceNameError }}</small>
+            </label>
+            <label class="modal-field">
+              <span>中文描述 <em aria-label="必填">*</em></span>
+              <input
+                v-model.trim="draftWorkspace.displayName"
+                placeholder="例如: 客户服务业务空间"
+                :aria-invalid="workspaceDisplayNameInvalid"
+                required
+                @blur="workspaceFormTouched = true"
+              />
+              <small v-if="workspaceDisplayNameInvalid" class="field-error">{{ workspaceDisplayNameError }}</small>
+            </label>
+            <div class="modal-field">
+              <span>环境模式</span>
+              <div class="workspace-modal-segment" role="radiogroup" aria-label="环境模式">
+                <button
+                  v-for="option in modeOptions"
+                  :key="option.value"
+                  type="button"
+                  role="radio"
+                  :aria-checked="draftWorkspace.mode === option.value"
+                  :class="[
+                    'workspace-segment-option',
+                    `tone-${option.value.toLowerCase()}`,
+                    { selected: draftWorkspace.mode === option.value },
+                  ]"
+                  @click="draftWorkspace.mode = option.value"
+                >
+                  <i v-if="draftWorkspace.mode === option.value" class="fa-solid fa-circle-check" aria-hidden="true" />
+                  {{ option.value === "Sandbox" ? "Sandbox (沙箱)" : "Production (生产)" }}
+                </button>
+              </div>
+            </div>
+            <div v-if="workspaceFormTouched && workspaceFormErrors.length" class="workspace-form-errors" role="alert">
+              <span v-for="error in workspaceFormErrors" :key="error">{{ error }}</span>
+            </div>
+            <p v-if="workspaceFormMissingHint" class="form-helper workspace-form-missing">
+              {{ workspaceFormMissingHint }}
+            </p>
+            <p class="form-helper">
+              {{
+                workspaceModalMode === "create"
+                  ? "创建业务空间后，请在「Agent 管理」中按需创建 Agent，并绑定模型与工具。"
+                  : "保存后会影响该空间下后续新请求使用的属性配置。"
+              }}
+            </p>
           </div>
-          <div v-if="workspaceFormTouched && workspaceFormErrors.length" class="workspace-form-errors" role="alert">
-            <span v-for="error in workspaceFormErrors" :key="error">{{ error }}</span>
-          </div>
-          <p v-if="workspaceFormMissingHint" class="form-helper workspace-form-missing">{{ workspaceFormMissingHint }}</p>
-          <p class="form-helper">
-            {{
-              workspaceModalMode === "create"
-                ? "创建业务空间后，请在「Agent 管理」中按需创建 Agent，并绑定模型与工具。"
-                : "保存后会影响该空间下后续新请求使用的属性配置。"
-            }}
-          </p>
-        </div>
 
           <div class="workspace-modal-actions">
-            <button class="ghost-button" type="button" :disabled="workspaceSaving" @click="closeWorkspaceModal">取消返回</button>
-            <button class="primary-button" type="button" :disabled="workspaceSaving || !canSaveWorkspaceDraft" @click="saveDraftWorkspace">
+            <button class="ghost-button" type="button" :disabled="workspaceSaving" @click="closeWorkspaceModal">
+              取消返回
+            </button>
+            <button
+              class="primary-button"
+              type="button"
+              :disabled="workspaceSaving || !canSaveWorkspaceDraft"
+              @click="saveDraftWorkspace"
+            >
               {{
                 workspaceSaving
                   ? workspaceModalMode === "create"
@@ -1330,35 +1540,60 @@ function reconcileWorkspaceListContext() {
         @keydown.esc.stop.prevent="closeWorkspaceStatusConfirm"
         @keydown="trapModalFocus"
       >
-        <section ref="workspaceStatusModalRef" class="modal-card workspace-confirm-card" role="dialog" aria-modal="true" aria-label="业务空间状态变更确认" @keydown.esc.stop.prevent="closeWorkspaceStatusConfirm">
-        <header class="modal-card-head">
-          <div>
-            <span>Lifecycle Guard</span>
-            <h3>{{ pendingWorkspaceStatusAction === "disable" ? "停用业务空间" : "启用业务空间" }}</h3>
-          </div>
-          <button class="icon-action-button" type="button" title="关闭" aria-label="关闭状态变更确认" @click="closeWorkspaceStatusConfirm">
-            <i class="fa-solid fa-xmark" aria-hidden="true" />
-          </button>
-        </header>
+        <section
+          ref="workspaceStatusModalRef"
+          class="modal-card workspace-confirm-card"
+          role="dialog"
+          aria-modal="true"
+          aria-label="业务空间状态变更确认"
+          @keydown.esc.stop.prevent="closeWorkspaceStatusConfirm"
+        >
+          <header class="modal-card-head">
+            <div>
+              <span>Lifecycle Guard</span>
+              <h3>{{ pendingWorkspaceStatusAction === "disable" ? "停用业务空间" : "启用业务空间" }}</h3>
+            </div>
+            <button
+              class="icon-action-button"
+              type="button"
+              title="关闭"
+              aria-label="关闭状态变更确认"
+              @click="closeWorkspaceStatusConfirm"
+            >
+              <i class="fa-solid fa-xmark" aria-hidden="true" />
+            </button>
+          </header>
 
-        <div class="workspace-confirm-body">
-          <i :class="pendingWorkspaceStatusAction === 'disable' ? 'fa-solid fa-circle-pause' : 'fa-solid fa-circle-play'" aria-hidden="true" />
-          <div>
-            <strong>{{ workspaceStatusTarget.name }}</strong>
-            <p v-if="pendingWorkspaceStatusAction === 'disable'">
-              停用后该空间下的 Agent / Tool / Workflow 入口会从运行链路中隔离，后续可重新启用。
-            </p>
-            <p v-else>启用后该空间会重新进入运行链路，请确认模型、Agent 和工具配置已经就绪。</p>
-            <ul class="workspace-lifecycle-effects">
-              <li>新请求会被阻止或恢复进入该空间。</li>
-              <li>运行中的执行不会在此处自动取消。</li>
-              <li>若当前顶部空间选择为该空间，后续入口会按最新状态刷新。</li>
-            </ul>
+          <div class="workspace-confirm-body">
+            <i
+              :class="
+                pendingWorkspaceStatusAction === 'disable' ? 'fa-solid fa-circle-pause' : 'fa-solid fa-circle-play'
+              "
+              aria-hidden="true"
+            />
+            <div>
+              <strong>{{ workspaceStatusTarget.name }}</strong>
+              <p v-if="pendingWorkspaceStatusAction === 'disable'">
+                停用后该空间下的 Agent / Tool / Workflow 入口会从运行链路中隔离，后续可重新启用。
+              </p>
+              <p v-else>启用后该空间会重新进入运行链路，请确认模型、Agent 和工具配置已经就绪。</p>
+              <ul class="workspace-lifecycle-effects">
+                <li>新请求会被阻止或恢复进入该空间。</li>
+                <li>运行中的执行不会在此处自动取消。</li>
+                <li>若当前顶部空间选择为该空间，后续入口会按最新状态刷新。</li>
+              </ul>
+            </div>
           </div>
-        </div>
 
           <div class="workspace-modal-actions">
-            <button class="ghost-button" type="button" :disabled="workspaceStatusSaving" @click="closeWorkspaceStatusConfirm">取消</button>
+            <button
+              class="ghost-button"
+              type="button"
+              :disabled="workspaceStatusSaving"
+              @click="closeWorkspaceStatusConfirm"
+            >
+              取消
+            </button>
             <button
               class="primary-button"
               type="button"
@@ -1366,7 +1601,13 @@ function reconcileWorkspaceListContext() {
               :disabled="workspaceStatusSaving"
               @click="confirmWorkspaceStatusChange"
             >
-              {{ workspaceStatusSaving ? "处理中..." : pendingWorkspaceStatusAction === "disable" ? "确认停用" : "确认启用" }}
+              {{
+                workspaceStatusSaving
+                  ? "处理中..."
+                  : pendingWorkspaceStatusAction === "disable"
+                    ? "确认停用"
+                    : "确认启用"
+              }}
             </button>
           </div>
         </section>
@@ -1381,26 +1622,41 @@ function reconcileWorkspaceListContext() {
         @keydown.esc.stop.prevent="closeWorkspaceDeleteConfirm"
         @keydown="trapModalFocus"
       >
-        <section ref="workspaceDeleteModalRef" class="modal-card workspace-confirm-card" role="dialog" aria-modal="true" aria-label="删除业务空间确认" @keydown.esc.stop.prevent="closeWorkspaceDeleteConfirm">
-        <header class="modal-card-head">
-          <div>
-            <span>Danger Zone</span>
-            <h3>删除业务空间</h3>
-          </div>
-          <button class="icon-action-button" type="button" title="关闭" aria-label="关闭删除确认" @click="closeWorkspaceDeleteConfirm">
-            <i class="fa-solid fa-xmark" aria-hidden="true" />
-          </button>
-        </header>
+        <section
+          ref="workspaceDeleteModalRef"
+          class="modal-card workspace-confirm-card"
+          role="dialog"
+          aria-modal="true"
+          aria-label="删除业务空间确认"
+          @keydown.esc.stop.prevent="closeWorkspaceDeleteConfirm"
+        >
+          <header class="modal-card-head">
+            <div>
+              <span>Danger Zone</span>
+              <h3>删除业务空间</h3>
+            </div>
+            <button
+              class="icon-action-button"
+              type="button"
+              title="关闭"
+              aria-label="关闭删除确认"
+              @click="closeWorkspaceDeleteConfirm"
+            >
+              <i class="fa-solid fa-xmark" aria-hidden="true" />
+            </button>
+          </header>
 
-        <div class="workspace-confirm-body">
-          <i class="fa-solid fa-triangle-exclamation" aria-hidden="true" />
-          <div>
-            <strong>{{ workspaceDeleteTarget.name }}</strong>
-            <p>删除后会移除该业务边界，并影响其下关联的 Agent / Tool / Workflow。此操作当前不可在页面内撤销。</p>
+          <div class="workspace-confirm-body">
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true" />
+            <div>
+              <strong>{{ workspaceDeleteTarget.name }}</strong>
+              <p>删除后会移除该业务边界，并影响其下关联的 Agent / Tool / Workflow。此操作当前不可在页面内撤销。</p>
+            </div>
           </div>
-        </div>
           <label class="modal-field workspace-confirm-input">
-            <span>请输入空间名称 <em>{{ workspaceDeleteTarget.name }}</em> 以确认删除</span>
+            <span
+              >请输入空间名称 <em>{{ workspaceDeleteTarget.name }}</em> 以确认删除</span
+            >
             <input
               ref="workspaceDeleteInputRef"
               v-model.trim="workspaceDeleteConfirmName"
@@ -1408,13 +1664,29 @@ function reconcileWorkspaceListContext() {
               :aria-invalid="workspaceDeleteConfirmName.length > 0 && !canConfirmWorkspaceDelete"
               aria-describedby="workspace-delete-name-helper workspace-delete-name-error"
             />
-            <small id="workspace-delete-name-helper">需精确匹配空间英文名称；首尾空格会被自动忽略，大小写必须一致。</small>
-            <small v-if="workspaceDeleteNameError" id="workspace-delete-name-error" class="field-error">{{ workspaceDeleteNameError }}</small>
+            <small id="workspace-delete-name-helper"
+              >需精确匹配空间英文名称；首尾空格会被自动忽略，大小写必须一致。</small
+            >
+            <small v-if="workspaceDeleteNameError" id="workspace-delete-name-error" class="field-error">{{
+              workspaceDeleteNameError
+            }}</small>
           </label>
 
           <div class="workspace-modal-actions">
-            <button class="ghost-button" type="button" :disabled="workspaceDeleteSaving" @click="closeWorkspaceDeleteConfirm">取消</button>
-            <button class="primary-button danger" type="button" :disabled="workspaceDeleteSaving || !canConfirmWorkspaceDelete" @click="confirmDeleteWorkspace">
+            <button
+              class="ghost-button"
+              type="button"
+              :disabled="workspaceDeleteSaving"
+              @click="closeWorkspaceDeleteConfirm"
+            >
+              取消
+            </button>
+            <button
+              class="primary-button danger"
+              type="button"
+              :disabled="workspaceDeleteSaving || !canConfirmWorkspaceDelete"
+              @click="confirmDeleteWorkspace"
+            >
               <i class="fa-solid fa-trash" aria-hidden="true" />
               {{ workspaceDeleteSaving ? "删除中..." : "删除空间" }}
             </button>
@@ -1423,8 +1695,16 @@ function reconcileWorkspaceListContext() {
       </div>
     </Transition>
 
-    <div v-if="workspaceActionNote && !showWorkspaceModal" :class="['action-toast', workspaceActionTone === 'error' && 'error']" role="status" aria-live="polite">
-      <i :class="workspaceActionTone === 'error' ? 'fa-solid fa-circle-exclamation' : 'fa-solid fa-circle-check'" aria-hidden="true" />
+    <div
+      v-if="workspaceActionNote && !showWorkspaceModal"
+      :class="['action-toast', workspaceActionTone === 'error' && 'error']"
+      role="status"
+      aria-live="polite"
+    >
+      <i
+        :class="workspaceActionTone === 'error' ? 'fa-solid fa-circle-exclamation' : 'fa-solid fa-circle-check'"
+        aria-hidden="true"
+      />
       <span>{{ workspaceActionNote }}</span>
       <button type="button" aria-label="关闭反馈提示" @click="clearWorkspaceToast">
         <i class="fa-solid fa-xmark" aria-hidden="true" />

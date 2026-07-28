@@ -2,7 +2,11 @@
 import { computed, ref, watch } from "vue";
 
 import WorkflowSchemaBuilder from "../WorkflowSchemaBuilder.vue";
-import { buildWorkflowObjectSchema, parseWorkflowObjectSchema, type WorkflowSchemaFieldDraft } from "../../../utils/workflow-graph";
+import {
+  buildWorkflowObjectSchema,
+  parseWorkflowObjectSchema,
+  type WorkflowSchemaFieldDraft,
+} from "../../../utils/workflow-graph";
 import type { WorkflowGraphNode } from "../../../types/domain";
 
 const props = defineProps<{
@@ -65,7 +69,9 @@ function updateRawJson(value: string) {
   <section class="workflow-start-node-editor">
     <div class="workflow-schema-mode-switch">
       <button type="button" :class="{ active: mode === 'builder' }" @click="mode = 'builder'">可视化</button>
-      <button type="button" :class="{ active: mode === 'raw' }" data-mode="raw-schema" @click="mode = 'raw'">JSON</button>
+      <button type="button" :class="{ active: mode === 'raw' }" data-mode="raw-schema" @click="mode = 'raw'">
+        JSON
+      </button>
     </div>
 
     <WorkflowSchemaBuilder v-if="mode === 'builder'" :fields="fields" @update:fields="fields = $event" />

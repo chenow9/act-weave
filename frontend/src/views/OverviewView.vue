@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import "./overview-page.css";
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 
@@ -320,10 +321,18 @@ function formatPct(rate: number | null) {
         </article>
       </div>
       <div class="overview-inventory">
-        <p><span>业务空间</span><strong>{{ inventory?.workspaceCount ?? "—" }}</strong></p>
-        <p><span>Agent</span><strong>{{ inventory?.agentCount ?? "—" }}</strong></p>
-        <p><span>工具</span><strong>{{ inventory?.toolCount ?? "—" }}</strong></p>
-        <p><span>工作流</span><strong>{{ inventory?.workflowCount ?? "—" }}</strong></p>
+        <p>
+          <span>业务空间</span><strong>{{ inventory?.workspaceCount ?? "—" }}</strong>
+        </p>
+        <p>
+          <span>Agent</span><strong>{{ inventory?.agentCount ?? "—" }}</strong>
+        </p>
+        <p>
+          <span>工具</span><strong>{{ inventory?.toolCount ?? "—" }}</strong>
+        </p>
+        <p>
+          <span>工作流</span><strong>{{ inventory?.workflowCount ?? "—" }}</strong>
+        </p>
         <p>
           <span>连接（已验证/全部）</span>
           <strong>{{ inventory ? `${inventory.connectionVerified}/${inventory.connectionTotal}` : "—" }}</strong>

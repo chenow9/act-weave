@@ -20,7 +20,13 @@ export function defaultOAuthContract(tokenUrlTemplate = ""): ProviderAuthContrac
         description: "Provider 负责 Token 协议，Connection 只填写当前环境的账号和 Secret。",
         fields: [
           { key: "clientId", label: "Client ID", kind: "TEXT", required: true, placeholder: "客户端标识" },
-          { key: "clientSecret", label: "Client Secret", kind: "SECRET", required: true, help: "明文只用于创建或替换 Secret。" },
+          {
+            key: "clientSecret",
+            label: "Client Secret",
+            kind: "SECRET",
+            required: true,
+            help: "明文只用于创建或替换 Secret。",
+          },
           { key: "scope", label: "Scope", kind: "TEXT", placeholder: "例如：read write" },
         ],
         oauth2: {
@@ -52,7 +58,13 @@ export function noAuthenticationContract(): ProviderAuthContract {
 
 export function providerAuthContract(provider?: CapabilityProvider): ProviderAuthContract | null {
   const candidate = provider?.driverConfig?.authentication;
-  if (!candidate || candidate.version !== PROVIDER_AUTH_VERSION || !Array.isArray(candidate.schemes) || !candidate.schemes.length) return null;
+  if (
+    !candidate ||
+    candidate.version !== PROVIDER_AUTH_VERSION ||
+    !Array.isArray(candidate.schemes) ||
+    !candidate.schemes.length
+  )
+    return null;
   if (!candidate.schemes.some((scheme) => scheme.key === candidate.defaultSchemeKey)) return null;
   return candidate;
 }
@@ -61,11 +73,17 @@ export function providerAuthSchemes(provider?: CapabilityProvider): ProviderAuth
   return providerAuthContract(provider)?.schemes || [];
 }
 
-export function providerAuthScheme(provider: CapabilityProvider | undefined, schemeKey?: string): ProviderAuthScheme | null {
+export function providerAuthScheme(
+  provider: CapabilityProvider | undefined,
+  schemeKey?: string,
+): ProviderAuthScheme | null {
   const contract = providerAuthContract(provider);
   if (!contract) return null;
-  return contract.schemes.find((scheme) => scheme.key === schemeKey) ||
-    contract.schemes.find((scheme) => scheme.key === contract.defaultSchemeKey) || null;
+  return (
+    contract.schemes.find((scheme) => scheme.key === schemeKey) ||
+    contract.schemes.find((scheme) => scheme.key === contract.defaultSchemeKey) ||
+    null
+  );
 }
 
 export function connectionProviderAuthScheme(
@@ -124,10 +142,13 @@ export function providerHasOutboundIdentity(provider?: CapabilityProvider): bool
   const identity = (provider.driverConfig as Record<string, unknown> | undefined)?.outboundIdentity;
   if (!identity || typeof identity !== "object") return false;
   const modes = (identity as { supportedModes?: unknown }).supportedModes;
-  return Array.isArray(modes) && modes.some((m) => {
-    const mode = String(m).toUpperCase();
-    return mode === "BROKER_OBO" || mode === "REQUEST_PASSTHROUGH";
-  });
+  return (
+    Array.isArray(modes) &&
+    modes.some((m) => {
+      const mode = String(m).toUpperCase();
+      return mode === "BROKER_OBO" || mode === "REQUEST_PASSTHROUGH";
+    })
+  );
 }
 
 export function isProviderReadyForConnections(provider: CapabilityProvider) {
@@ -143,5 +164,10 @@ export function isProviderReadyForConnections(provider: CapabilityProvider) {
 
 export function legacySchemeForConnection(connection: ServiceConnection): ProviderAuthScheme {
   const label = connection.authConfig.label || connection.authMode || "Legacy authentication";
-  return { key: "legacy-readonly", type: connection.authMode === "NONE" ? "NONE" : "OAUTH2_CLIENT", displayName: label, fields: [] };
+  return {
+    key: "legacy-readonly",
+    type: connection.authMode === "NONE" ? "NONE" : "OAUTH2_CLIENT",
+    displayName: label,
+    fields: [],
+  };
 }

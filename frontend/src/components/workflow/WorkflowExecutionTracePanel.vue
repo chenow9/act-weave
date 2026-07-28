@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Execution, ExecutionStepRecord } from "../../types/domain";
 
-const props = defineProps<{
+defineProps<{
   execution?: Execution;
   selectedNodeId?: string;
 }>();

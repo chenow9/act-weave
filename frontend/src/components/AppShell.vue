@@ -2,12 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
-import {
-  groupNavItemsBySection,
-  navItems,
-  primaryNavigationIds,
-  type NavItem,
-} from "../config/navigation";
+import { groupNavItemsBySection, navItems, primaryNavigationIds, type NavItem } from "../config/navigation";
 import { useAuthStore } from "../stores/auth";
 import { useOverviewStore } from "../stores/overview";
 import { useWorkspaceStore } from "../stores/workspaces";
@@ -22,6 +17,9 @@ const navigationOpen = ref(false);
 const navigationQuery = ref("");
 const workspaceMenuOpen = ref(false);
 const workspaceQuery = ref("");
+const switcherResults = ref(workspaces.items);
+const switcherSearching = ref(false);
+let workspaceSearchTimer: ReturnType<typeof setTimeout> | null = null;
 const profileMenuOpen = ref(false);
 const navigationRef = ref<HTMLElement | null>(null);
 const navigationSearchInput = ref<HTMLInputElement | null>(null);
@@ -35,7 +33,9 @@ const visibleNavItems = computed(() =>
   navItems.filter((item) => !item.platformAdminOnly || auth.user?.platformRole === "PLATFORM_ADMIN"),
 );
 const activeModule = computed(() => String(route.path.split("/")[1] || "overview"));
-const activeNavItem = computed(() => visibleNavItems.value.find((item) => item.id === activeModule.value) || visibleNavItems.value[0]);
+const activeNavItem = computed(
+  () => visibleNavItems.value.find((item) => item.id === activeModule.value) || visibleNavItems.value[0],
+);
 const primaryNavigation = computed(() =>
   primaryNavigationIds
     .map((id) => visibleNavItems.value.find((item) => item.id === id))
@@ -57,13 +57,7 @@ const visiblePrimaryNavigation = computed(() => {
 const hasNavigationResults = computed(() => filteredNavigationItems.value.length > 0);
 const showPrimaryShortcuts = computed(() => visiblePrimaryNavigation.value.length > 0);
 const activeWorkspace = computed(() => workspaces.activeWorkspace);
-const filteredWorkspaces = computed(() => {
-  const query = workspaceQuery.value.trim().toLocaleLowerCase();
-  if (!query) return workspaces.items;
-  return workspaces.items.filter((workspace) =>
-    [workspace.displayName, workspace.name, workspace.mode].some((value) => value.toLocaleLowerCase().includes(query)),
-  );
-});
+const filteredWorkspaces = computed(() => switcherResults.value);
 const userInitials = computed(() => {
   const source = auth.user?.displayName || auth.user?.username || "AW";
   const parts = source.trim().split(/\s+/).filter(Boolean);
@@ -112,8 +106,47 @@ function getHttpStatus(error: unknown) {
 
 function moduleMeta(item?: NavItem) {
   if (!item) return "管理控制台";
-  if (item.id === "workspaces") return `${workspaces.items.length} 个可访问空间`;
+  if (item.id === "workspaces") {
+    const total = workspaces.summary.total || workspaces.items.length;
+    return `${total} 个可访问空间`;
+  }
   return item.badge ? `${item.section} · ${item.badge}` : item.section;
+}
+
+watch(
+  () => workspaces.items,
+  (items) => {
+    if (!workspaceQuery.value.trim()) switcherResults.value = items;
+  },
+  { immediate: true },
+);
+
+watch(workspaceQuery, (query) => {
+  if (workspaceSearchTimer) clearTimeout(workspaceSearchTimer);
+  const trimmed = query.trim();
+  if (!trimmed) {
+    switcherResults.value = workspaces.items;
+    switcherSearching.value = false;
+    return;
+  }
+  workspaceSearchTimer = setTimeout(() => {
+    void runWorkspaceRemoteSearch(trimmed);
+  }, 250);
+});
+
+async function runWorkspaceRemoteSearch(query: string) {
+  switcherSearching.value = true;
+  try {
+    const page = await workspaces.fetchWorkspacePage({ page: 1, pageSize: 20, query });
+    switcherResults.value = page.items;
+    for (const item of page.items) {
+      workspaces.upsertInList("items", item);
+    }
+  } catch {
+    // Keep last good switcher list on search failure.
+  } finally {
+    switcherSearching.value = false;
+  }
 }
 
 function workspaceDisplayName(workspace = activeWorkspace.value) {
@@ -226,7 +259,10 @@ function handleDocumentKeydown(event: KeyboardEvent) {
       <section ref="navigationRef" class="fluid-island" :class="{ open: navigationOpen }" aria-label="主导航">
         <button class="fluid-trigger" type="button" :aria-expanded="navigationOpen" @click="toggleNavigation">
           <span class="live-orb" aria-hidden="true" />
-          <span class="fluid-current"><b>{{ activeNavItem?.label }}</b><small>{{ moduleMeta(activeNavItem) }}</small></span>
+          <span class="fluid-current"
+            ><b>{{ activeNavItem?.label }}</b
+            ><small>{{ moduleMeta(activeNavItem) }}</small></span
+          >
           <i class="fa-solid fa-chevron-down fluid-chevron" aria-hidden="true" />
         </button>
 
@@ -234,9 +270,17 @@ function handleDocumentKeydown(event: KeyboardEvent) {
           <div class="island-tools">
             <label class="island-search">
               <i class="fa-solid fa-magnifying-glass" aria-hidden="true" />
-              <input ref="navigationSearchInput" v-model="navigationQuery" type="search" placeholder="搜索模块或工作区域…" aria-label="搜索模块" />
+              <input
+                ref="navigationSearchInput"
+                v-model="navigationQuery"
+                type="search"
+                placeholder="搜索模块或工作区域…"
+                aria-label="搜索模块"
+              />
             </label>
-            <button class="island-close" type="button" aria-label="关闭导航中心" @click="closeNavigation(true)"><i class="fa-solid fa-xmark" /></button>
+            <button class="island-close" type="button" aria-label="关闭导航中心" @click="closeNavigation(true)">
+              <i class="fa-solid fa-xmark" />
+            </button>
           </div>
 
           <div v-if="showPrimaryShortcuts" class="island-section">
@@ -251,7 +295,10 @@ function handleDocumentKeydown(event: KeyboardEvent) {
                 @click="closeNavigation(true)"
               >
                 <span class="island-module-icon"><i :class="item.icon" aria-hidden="true" /></span>
-                <span><b>{{ item.label }}</b><small>{{ moduleMeta(item) }}</small></span>
+                <span
+                  ><b>{{ item.label }}</b
+                  ><small>{{ moduleMeta(item) }}</small></span
+                >
               </router-link>
             </div>
           </div>
@@ -278,13 +325,19 @@ function handleDocumentKeydown(event: KeyboardEvent) {
           </div>
 
           <p v-if="!hasNavigationResults" class="island-empty">没有匹配的模块</p>
-          <footer class="island-footer"><span>当前空间：{{ workspaceDisplayName() }}</span></footer>
+          <footer class="island-footer">
+            <span>当前空间：{{ workspaceDisplayName() }}</span>
+          </footer>
         </div>
       </section>
 
       <div class="topbar-right top-right">
         <!-- 空间总览是全平台聚合视图，不展示「当前业务空间」切换器。 -->
-        <div v-if="workspaces.items.length && activeModule !== 'overview'" ref="workspaceSwitcherRef" class="workspace-switcher">
+        <div
+          v-if="workspaces.items.length && activeModule !== 'overview'"
+          ref="workspaceSwitcherRef"
+          class="workspace-switcher"
+        >
           <button
             class="workspace-switcher-trigger workspace-switch"
             data-testid="workspace-switcher"
@@ -301,7 +354,13 @@ function handleDocumentKeydown(event: KeyboardEvent) {
           <section v-if="workspaceMenuOpen" class="workspace-switcher-menu" role="dialog" aria-label="选择业务空间">
             <header>
               <i class="fa-solid fa-magnifying-glass" aria-hidden="true" />
-              <input ref="workspaceSearchInput" v-model="workspaceQuery" type="search" placeholder="搜索业务空间" aria-label="搜索业务空间" />
+              <input
+                ref="workspaceSearchInput"
+                v-model="workspaceQuery"
+                type="search"
+                placeholder="搜索业务空间"
+                aria-label="搜索业务空间"
+              />
             </header>
             <div class="workspace-switcher-options" role="listbox" aria-label="可访问的业务空间">
               <button
@@ -315,32 +374,66 @@ function handleDocumentKeydown(event: KeyboardEvent) {
                 @click="selectWorkspace(workspace.id)"
               >
                 <span class="workspace-option-icon"><i class="fa-solid fa-layer-group" aria-hidden="true" /></span>
-                <span class="workspace-option-copy"><strong>{{ workspaceDisplayName(workspace) }}</strong><small>{{ workspace.name }}</small></span>
+                <span class="workspace-option-copy"
+                  ><strong>{{ workspaceDisplayName(workspace) }}</strong
+                  ><small>{{ workspace.name }}</small></span
+                >
                 <span class="workspace-option-meta">
                   <em>{{ workspaceModeLabel(workspace.mode) }}</em>
                   <em v-if="workspace.status === 'Disabled'" class="disabled">已停用</em>
-                  <i v-if="workspace.id === workspaces.activeWorkspaceId" class="fa-solid fa-check" aria-hidden="true" />
+                  <i
+                    v-if="workspace.id === workspaces.activeWorkspaceId"
+                    class="fa-solid fa-check"
+                    aria-hidden="true"
+                  />
                 </span>
               </button>
               <p v-if="!filteredWorkspaces.length">没有匹配的业务空间</p>
             </div>
-            <footer><button type="button" @click="goWorkspaceManagement"><i class="fa-solid fa-gear" aria-hidden="true" />管理业务空间</button></footer>
+            <footer>
+              <button type="button" @click="goWorkspaceManagement">
+                <i class="fa-solid fa-gear" aria-hidden="true" />管理业务空间
+              </button>
+            </footer>
           </section>
         </div>
 
         <div ref="profileMenuRef" class="profile-menu-wrap">
-          <button class="user-avatar avatar" type="button" aria-label="打开用户菜单" :aria-expanded="profileMenuOpen" @click="toggleProfileMenu">{{ userInitials }}</button>
+          <button
+            class="user-avatar avatar"
+            type="button"
+            aria-label="打开用户菜单"
+            :aria-expanded="profileMenuOpen"
+            @click="toggleProfileMenu"
+          >
+            {{ userInitials }}
+          </button>
           <section v-if="profileMenuOpen" class="profile-menu" aria-label="用户菜单">
-            <header><strong>{{ auth.user?.displayName || auth.user?.username }}</strong><small>{{ auth.user?.role }}</small></header>
-            <button type="button" @click="goRuntimeStatus"><i class="fa-solid fa-wave-square" aria-hidden="true" />运行时状态</button>
-            <button type="button" @click="goNotifications"><i class="fa-regular fa-bell" aria-hidden="true" />通知与审计</button>
-            <button class="logout-button" type="button" aria-label="退出登录" @click="logout"><i class="fa-solid fa-power-off" aria-hidden="true" />退出登录</button>
+            <header>
+              <strong>{{ auth.user?.displayName || auth.user?.username }}</strong
+              ><small>{{ auth.user?.role }}</small>
+            </header>
+            <button type="button" @click="goRuntimeStatus">
+              <i class="fa-solid fa-wave-square" aria-hidden="true" />运行时状态
+            </button>
+            <button type="button" @click="goNotifications">
+              <i class="fa-regular fa-bell" aria-hidden="true" />通知与审计
+            </button>
+            <button class="logout-button" type="button" aria-label="退出登录" @click="logout">
+              <i class="fa-solid fa-power-off" aria-hidden="true" />退出登录
+            </button>
           </section>
         </div>
       </div>
     </header>
 
-    <button v-if="navigationOpen" class="nav-scrim open" type="button" aria-label="关闭导航中心" @click="closeNavigation(true)" />
+    <button
+      v-if="navigationOpen"
+      class="nav-scrim open"
+      type="button"
+      aria-label="关闭导航中心"
+      @click="closeNavigation(true)"
+    />
 
     <main class="main-shell">
       <section :class="['content-area', { 'content-area--workspace': activeModule === 'chat' }]">

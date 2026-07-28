@@ -302,7 +302,9 @@ export function checklistHasWarnings(items: PublishChecklistItem[]) {
 }
 
 function extractPathParamNames(path: string) {
-  return Array.from(path.matchAll(/\{([^}]+)\}/g)).map((match) => match[1] || "").filter(Boolean);
+  return Array.from(path.matchAll(/\{([^}]+)\}/g))
+    .map((match) => match[1] || "")
+    .filter(Boolean);
 }
 
 function hasNamedFields(params: ToolRequestParam[]) {

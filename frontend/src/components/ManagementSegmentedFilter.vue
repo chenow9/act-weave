@@ -27,10 +27,17 @@ const optionRefs = ref<HTMLButtonElement[]>([]);
 const menuOpen = ref(false);
 const menuStyle = ref<Record<string, string>>({ position: "fixed", visibility: "hidden" });
 const enabledIndexes = computed(() =>
-  props.options.map((option, index) => ({ option, index })).filter(({ option }) => !option.disabled).map(({ index }) => index),
+  props.options
+    .map((option, index) => ({ option, index }))
+    .filter(({ option }) => !option.disabled)
+    .map(({ index }) => index),
 );
-const selectedIndex = computed(() => props.options.findIndex((option) => !option.disabled && option.value === props.modelValue));
-const selectedOption = computed(() => props.options[selectedIndex.value] || props.options.find((option) => !option.disabled));
+const selectedIndex = computed(() =>
+  props.options.findIndex((option) => !option.disabled && option.value === props.modelValue),
+);
+const selectedOption = computed(
+  () => props.options[selectedIndex.value] || props.options.find((option) => !option.disabled),
+);
 
 function setOptionRef(element: HTMLButtonElement | null, index: number) {
   if (element) optionRefs.value[index] = element;
@@ -43,7 +50,10 @@ function positionMenu() {
   const gap = 7;
   const width = Math.max(triggerRect.width, menuRef.value.offsetWidth || 160);
   const height = menuRef.value.offsetHeight;
-  const left = Math.min(Math.max(viewportMargin, triggerRect.left), Math.max(viewportMargin, window.innerWidth - width - viewportMargin));
+  const left = Math.min(
+    Math.max(viewportMargin, triggerRect.left),
+    Math.max(viewportMargin, window.innerWidth - width - viewportMargin),
+  );
   const below = triggerRect.bottom + gap;
   const above = triggerRect.top - height - gap;
   const top = below + height <= window.innerHeight - viewportMargin || above < viewportMargin ? below : above;
@@ -264,7 +274,9 @@ onBeforeUnmount(() => {
   border: 1px solid #f3f4f6;
   border-radius: 0.75rem;
   background: #fff;
-  box-shadow: 0 16px 44px rgba(15, 23, 42, 0.1), 0 2px 7px rgba(15, 23, 42, 0.04);
+  box-shadow:
+    0 16px 44px rgba(15, 23, 42, 0.1),
+    0 2px 7px rgba(15, 23, 42, 0.04);
 }
 
 .management-filter-menu button {

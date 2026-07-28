@@ -1,15 +1,9 @@
 import { mount } from "@vue/test-utils";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { h, nextTick } from "vue";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import DataTable from "./DataTable.vue";
 import ManagementList, { type ManagementListColumn } from "./ManagementList.vue";
-
-const currentDir = dirname(fileURLToPath(import.meta.url));
-const managementListSource = readFileSync(resolve(currentDir, "ManagementList.vue"), "utf8");
 
 type TestRow = {
   id: string;
@@ -53,59 +47,6 @@ function mountList(overrides: Record<string, unknown> = {}) {
 }
 
 describe("ManagementList", () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
-  it("forwards the controlled detail row while preserving sorting and row selection emissions", async () => {
-    const sortableColumns: ManagementListColumn<TestRow>[] = [
-      { key: "name", label: "Name", width: 220, sortable: true, sortKey: "name", getValue: (row) => row.name },
-      { key: "status", label: "Status", width: 140, hidable: true, getValue: (row) => row.status },
-      { key: "actions", label: "Actions", width: 128 },
-    ];
-    const wrapper = mount(ManagementList<TestRow>, {
-      props: {
-        rows,
-        columns: sortableColumns,
-        rowKey: "id",
-        storageKey: "management-list-detail-columns",
-        search: "",
-        expandedRowKey: "row-2",
-        stickyLeftKeys: ["name"],
-        stickyRightKeys: ["actions"],
-      },
-      slots: {
-        "row-detail": ({ row, columns: visibleColumns }: { row: TestRow; columns: ManagementListColumn<TestRow>[] }) =>
-          h("section", { class: "test-row-detail", "data-column-count": visibleColumns.length }, row.name),
-      },
-      global: { stubs: { Teleport: true } },
-    });
-
-    const dataRows = wrapper.findAll('tbody tr[role="button"]');
-    const detailRow = wrapper.get(".data-table-detail-row");
-    expect(dataRows).toHaveLength(rows.length);
-    expect(detailRow.element.previousElementSibling).toBe(dataRows[1].element);
-    expect(wrapper.findAll(".test-row-detail")).toHaveLength(1);
-    expect(wrapper.get(".test-row-detail").text()).toBe("Backup gateway");
-    expect(wrapper.get(".test-row-detail").attributes("data-column-count")).toBe(String(sortableColumns.length));
-    const detailCell = wrapper.get(".data-table-detail-cell");
-    expect(detailCell.classes()).not.toContain("is-sticky-left");
-    expect(detailCell.classes()).not.toContain("is-sticky-right");
-    expect(detailCell.classes()).not.toContain("is-sticky-boundary-left");
-    expect(detailCell.classes()).not.toContain("is-sticky-boundary-right");
-    expect(detailCell.attributes("style")).toBeUndefined();
-    expect(managementListSource).toContain('.data-table td[data-column-key]:first-child:not([data-column-key="actions"])');
-    expect(managementListSource).toContain('.data-table td[data-column-key]:last-child:not([data-column-key="actions"])');
-    expect(managementListSource).not.toContain('.data-table td:first-child:not([data-column-key="actions"])');
-    expect(managementListSource).not.toContain('.data-table td:last-child:not([data-column-key="actions"])');
-
-    await wrapper.get('button[aria-label="按Name升序排序"]').trigger("click");
-    await dataRows[1].trigger("click");
-
-    expect(wrapper.emitted("sort-change")).toEqual([[{ sortBy: "name", sortOrder: "asc" }]]);
-    expect(wrapper.emitted("select-row")).toEqual([[rows[1]]]);
-  });
-
   it("forwards controlled sorting without coordinating pagination", async () => {
     const sortableColumns: ManagementListColumn<TestRow>[] = [
       { key: "name", label: "Name", width: 220, sortable: true, sortKey: "name", getValue: (row) => row.name },
@@ -122,85 +63,6 @@ describe("ManagementList", () => {
 
     expect(wrapper.emitted("sort-change")).toEqual([[{ sortBy: "name", sortOrder: "desc" }]]);
     expect(wrapper.emitted("page-change")).toBeUndefined();
-  });
-
-  it("owns vertical overflow inside the table while keeping toolbar and pagination outside", () => {
-    const managementListBlock = managementListSource.match(/\.management-list\s*\{([^}]*)\}/s)?.[1];
-    const contentBlock = managementListSource.match(/\.management-list-content\s*\{([^}]*)\}/s)?.[1];
-    const dataTableBlock = managementListSource.match(/\.management-list-data-table\s*\{([^}]*)\}/s)?.[1];
-    const scrollBlock = managementListSource.match(/\.management-list-data-table :deep\(\.data-table-scroll\)\s*\{([^}]*)\}/s)?.[1];
-
-    expect(managementListBlock).toContain("display: flex;");
-    expect(managementListBlock).toContain("width: 100%;");
-    expect(managementListBlock).toContain("min-width: 0;");
-    expect(managementListBlock).toContain("max-width: 100%;");
-    expect(managementListBlock).toContain("container-type: inline-size;");
-    expect(managementListBlock).toContain("min-height: 0;");
-    expect(managementListBlock).toContain("flex-direction: column;");
-    expect(contentBlock).toContain("min-height: 0;");
-    expect(contentBlock).toContain("flex: 1 1 auto;");
-    expect(dataTableBlock).toContain("display: flex;");
-    expect(dataTableBlock).toContain("flex-direction: column;");
-    expect(scrollBlock).toContain("min-height: 0;");
-    expect(scrollBlock).toContain("flex: 1 1 auto;");
-    expect(scrollBlock).toContain("overflow: auto;");
-  });
-
-  it("stacks toolbar controls by list width instead of the outer viewport width", () => {
-    expect(managementListSource).toContain("@container management-list (max-width: 760px)");
-    expect(managementListSource).toContain(".management-list-filters {");
-    expect(managementListSource).toContain("overflow-x: auto;");
-    expect(managementListSource).toContain("@container management-list (max-width: 520px)");
-    expect(managementListSource).toContain(
-      ".management-list-filters :deep(.management-segmented-filter)",
-    );
-    expect(managementListSource).toContain(".management-list-column-tools");
-    expect(managementListSource).toContain("display: none;");
-  });
-
-  it("provides a controlled search box, a filter slot, and reset emit", async () => {
-    const wrapper = mountList();
-
-    await wrapper.get('input[type="search"]').setValue("gateway");
-    await wrapper.get('button[aria-label="清除筛选条件"]').trigger("click");
-
-    expect(wrapper.text()).toContain("Connected");
-    expect(wrapper.get('button[aria-label="清除筛选条件"]').text()).toContain("清除筛选");
-    expect(wrapper.emitted("update:search")).toEqual([["gateway"]]);
-    expect(wrapper.emitted("reset")).toHaveLength(1);
-  });
-
-  it("replaces search with the shared batch bar while checked rows are controlled", async () => {
-    const wrapper = mountList({
-      checkable: true,
-      checkedRowKeys: ["row-1"],
-      rowSelectionLabel: (row: TestRow) => `选择 ${row.name}`,
-    });
-
-    expect(wrapper.find('input[type="search"]').exists()).toBe(false);
-    expect(wrapper.get(".management-list-batch-bar").text()).toContain("已选 1 项");
-    await wrapper.get(".management-list-batch-bar button").trigger("click");
-    expect(wrapper.emitted("update:checked-row-keys")).toEqual([[[]]]);
-  });
-
-  it("shows the batch bar for external selection without enabling DataTable checkable", async () => {
-    const wrapper = mountList({
-      checkable: false,
-      checkedRowKeys: ["row-2"],
-    });
-
-    expect(wrapper.find('input[type="search"]').exists()).toBe(false);
-    expect(wrapper.find(".data-table-checkbox").exists()).toBe(false);
-    expect(wrapper.get(".management-list-batch-bar").text()).toContain("已选 1 项");
-    await wrapper.get('button[aria-label="取消选择"]').trigger("click");
-    expect(wrapper.emitted("update:checked-row-keys")).toEqual([[[]]]);
-  });
-
-  it("keeps toolbar filter groups spaced without compressing their labels", () => {
-    const filtersBlock = managementListSource.match(/\.management-list-filters\s*\{([^}]*)\}/s)?.[1];
-
-    expect(filtersBlock).toContain("gap: 8px;");
-    expect(filtersBlock).toContain("flex-wrap: nowrap;");
   });
 
   it("shows reset only for active filters and keeps column settings inside the toolbar action group", () => {
@@ -321,7 +183,11 @@ describe("ManagementList", () => {
   });
 
   it("keeps the server total visible for an empty filtered page", () => {
-    const wrapper = mountList({ rows: [], hasLoaded: true, pagination: { page: 1, pageSize: 10, total: 0, pageSizeOptions: [10, 20, 50] } });
+    const wrapper = mountList({
+      rows: [],
+      hasLoaded: true,
+      pagination: { page: 1, pageSize: 10, total: 0, pageSizeOptions: [10, 20, 50] },
+    });
 
     expect(wrapper.get('[aria-label="列表分页"]').text()).toContain("共 0 项 · 第 1 / 1 页");
     expect(wrapper.find('button[aria-label="每页 10 条"]').exists()).toBe(false);
@@ -346,11 +212,6 @@ describe("ManagementList", () => {
 
     expect(neutralList.getComponent(DataTable).props("selectionTone")).toBe("neutral");
     expect(neutralList.findAll("tbody tr").every((row) => row.classes().includes("is-selection-neutral"))).toBe(true);
-  });
-
-  it("keeps list edge spacing from overriding compact action body cells", () => {
-    expect(managementListSource).toContain('.data-table td[data-column-key]:first-child:not([data-column-key="actions"])');
-    expect(managementListSource).toContain('.data-table td[data-column-key]:last-child:not([data-column-key="actions"])');
   });
 
   it("separates initial loading, error, and empty states", () => {

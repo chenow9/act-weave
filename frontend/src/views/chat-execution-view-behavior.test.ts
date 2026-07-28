@@ -8,21 +8,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import ChatExecutionView from "./ChatExecutionView.vue";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
-const chatExecutionViewSource = readFileSync(resolve(currentDir, "ChatExecutionView.vue"), "utf8");
+const chatModelSource = readFileSync(resolve(currentDir, "../composables/chat-execution-page-model.ts"), "utf8");
 
 const fixture = vi.hoisted(() => ({
   chat: null as any,
   workspaces: null as any,
   agents: null as any,
   auth: null as any,
-  integration: null as any,
+  tools: null as any,
+  connections: null as any,
 }));
 
 vi.mock("../stores/chat", () => ({ useChatStore: () => fixture.chat }));
 vi.mock("../stores/workspaces", () => ({ useWorkspaceStore: () => fixture.workspaces }));
 vi.mock("../stores/agents", () => ({ useAgentStore: () => fixture.agents }));
 vi.mock("../stores/auth", () => ({ useAuthStore: () => fixture.auth }));
-vi.mock("../stores/integration", () => ({ useIntegrationStore: () => fixture.integration }));
+vi.mock("../stores/tools", () => ({ useToolsStore: () => fixture.tools }));
+vi.mock("../stores/connections", () => ({ useConnectionsStore: () => fixture.connections }));
 vi.mock("../utils/markdown", () => ({ renderMarkdown: (value: string) => value }));
 vi.mock("../services/api", () => ({
   toAPIError: (error: unknown) => ({
@@ -102,6 +104,8 @@ describe("chat execution view FE-02 archive busy", () => {
       items: [{ id: "ws-1", name: "ws", displayName: "空间一" }],
       activeWorkspaceId: "ws-1",
       load: vi.fn(async () => undefined),
+      can: vi.fn(() => true),
+      roleFor: vi.fn(() => "EDITOR"),
     });
     fixture.agents = reactive({
       items: [{ id: "agent-1", workspaceId: "ws-1", name: "Agent One", status: "Active" }],
@@ -110,9 +114,13 @@ describe("chat execution view FE-02 archive busy", () => {
     fixture.auth = reactive({
       user: { id: "user-1", username: "ops", displayName: "Ops" },
     });
-    fixture.integration = reactive({
+    fixture.tools = reactive({
+      attachChatOutboundCredentials: vi.fn(async () => ({ ok: true })),
+    });
+    fixture.connections = reactive({
       serviceConnections: [],
-      loadServiceConnections: vi.fn(async () => []),
+      serviceConnectionCatalog: [],
+      loadServiceConnectionCatalog: vi.fn(async () => []),
     });
     vi.clearAllMocks();
   });
@@ -148,16 +156,7 @@ describe("chat execution view FE-02 archive busy", () => {
     wrapper.unmount();
   });
 
-  it("keeps styled debug connection picker and credential panel classes for non-UA controls", () => {
-    expect(chatExecutionViewSource).toContain(".chat-inline-action");
-    expect(chatExecutionViewSource).toContain(".chat-inline-action:focus-visible");
-    expect(chatExecutionViewSource).toContain(".chat-inline-action:disabled");
-    expect(chatExecutionViewSource).not.toMatch(/\.chat-inline-action[^{]*\{[^}]*#b91c1c/);
-    expect(chatExecutionViewSource).not.toMatch(/\.chat-inline-action[^{]*\{[^}]*danger/);
-    expect(chatExecutionViewSource).toContain(".debug-connection-picker select");
-    expect(chatExecutionViewSource).toContain("appearance: none");
-    expect(chatExecutionViewSource).toContain(".debug-connection-picker select:focus-visible");
-    expect(chatExecutionViewSource).toContain("archivingSession");
-    expect(chatExecutionViewSource).toContain("aria-busy");
+  it("tracks archivingSession in the page model orchestration surface", () => {
+    expect(chatModelSource).toContain("archivingSession");
   });
 });

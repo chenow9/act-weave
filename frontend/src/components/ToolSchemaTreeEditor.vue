@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { ensureVxe } from "../plugins/register-vxe";
+import { computed, getCurrentInstance } from "vue";
+const __app = getCurrentInstance()?.appContext.app;
+if (__app) ensureVxe(__app);
 
 import AppSelect from "./AppSelect.vue";
 import ToolSchemaTreeNodeEditor from "./ToolSchemaTreeNodeEditor.vue";
@@ -100,7 +103,10 @@ function toTableRow(node: ToolSchemaNode, kind: SchemaRowKind = "node", ownerId?
 }
 
 function countNodes(nodes: ToolSchemaNode[]): number {
-  return nodes.reduce((total, node) => total + 1 + countNodes(node.children || []) + (node.item ? countNodes([node.item]) : 0), 0);
+  return nodes.reduce(
+    (total, node) => total + 1 + countNodes(node.children || []) + (node.item ? countNodes([node.item]) : 0),
+    0,
+  );
 }
 
 function countRequiredNodes(nodes: ToolSchemaNode[]): number {
@@ -153,7 +159,13 @@ function updateRowField<K extends keyof ToolSchemaNode>(row: SchemaTableRow, key
         nextNode.item = null;
       }
     }
-    if (key === "location" && props.locationEnabled && typeof value === "string" && nextNode.type === "array" && nextNode.item) {
+    if (
+      key === "location" &&
+      props.locationEnabled &&
+      typeof value === "string" &&
+      nextNode.type === "array" &&
+      nextNode.item
+    ) {
       nextNode.item = { ...nextNode.item, location: value };
     }
     return nextNode;
@@ -194,11 +206,19 @@ function removeRootNode(targetId: string) {
   emitModelValue(removeSchemaNode(props.modelValue, targetId));
 }
 
-function updateSchemaNode(nodes: ToolSchemaNode[], targetId: string, updater: (node: ToolSchemaNode) => ToolSchemaNode): ToolSchemaNode[] {
+function updateSchemaNode(
+  nodes: ToolSchemaNode[],
+  targetId: string,
+  updater: (node: ToolSchemaNode) => ToolSchemaNode,
+): ToolSchemaNode[] {
   return nodes.map((node) => updateSchemaNodeEntry(node, targetId, updater));
 }
 
-function updateSchemaNodeEntry(node: ToolSchemaNode, targetId: string, updater: (node: ToolSchemaNode) => ToolSchemaNode): ToolSchemaNode {
+function updateSchemaNodeEntry(
+  node: ToolSchemaNode,
+  targetId: string,
+  updater: (node: ToolSchemaNode) => ToolSchemaNode,
+): ToolSchemaNode {
   if (node.id === targetId) {
     return updater(node);
   }
@@ -210,11 +230,19 @@ function updateSchemaNodeEntry(node: ToolSchemaNode, targetId: string, updater: 
   };
 }
 
-function updateArrayItemNode(nodes: ToolSchemaNode[], ownerId: string, updater: (node: ToolSchemaNode) => ToolSchemaNode): ToolSchemaNode[] {
+function updateArrayItemNode(
+  nodes: ToolSchemaNode[],
+  ownerId: string,
+  updater: (node: ToolSchemaNode) => ToolSchemaNode,
+): ToolSchemaNode[] {
   return nodes.map((node) => updateArrayItemNodeEntry(node, ownerId, updater));
 }
 
-function updateArrayItemNodeEntry(node: ToolSchemaNode, ownerId: string, updater: (node: ToolSchemaNode) => ToolSchemaNode): ToolSchemaNode {
+function updateArrayItemNodeEntry(
+  node: ToolSchemaNode,
+  ownerId: string,
+  updater: (node: ToolSchemaNode) => ToolSchemaNode,
+): ToolSchemaNode {
   if (node.id === ownerId) {
     return {
       ...node,
@@ -337,10 +365,22 @@ function removeSchemaNode(nodes: ToolSchemaNode[], targetId: string): ToolSchema
         <vxe-column title="操作" width="160" align="center">
           <template #default="{ row }">
             <div class="tool-schema-row-actions">
-              <button v-if="showChildAction(row)" class="icon-action-button" type="button" title="添加子字段" @click="addChildRow(row)">
+              <button
+                v-if="showChildAction(row)"
+                class="icon-action-button"
+                type="button"
+                title="添加子字段"
+                @click="addChildRow(row)"
+              >
                 <i class="fa-solid fa-plus" />
               </button>
-              <button v-if="showDeleteAction(row)" class="icon-action-button danger" type="button" title="删除字段" @click="deleteRow(row)">
+              <button
+                v-if="showDeleteAction(row)"
+                class="icon-action-button danger"
+                type="button"
+                title="删除字段"
+                @click="deleteRow(row)"
+              >
                 <i class="fa-solid fa-trash" />
               </button>
             </div>

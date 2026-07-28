@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import "@vue-flow/core/dist/style.css";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import {
   BaseEdge,
@@ -17,11 +18,7 @@ import {
 import type { WorkflowGraphDraft } from "../../types/domain";
 import { primaryPortKey } from "../../utils/workflow-graph";
 import { WORKFLOW_BRANCH_OPTIONS } from "./WorkflowEdgeInspector.vue";
-import {
-  LONG_EDGE_MIN_DX,
-  SAME_LANE_EPS,
-  buildFlowchartEdgePath,
-} from "./workflow-edge-path";
+import { LONG_EDGE_MIN_DX, SAME_LANE_EPS, buildFlowchartEdgePath } from "./workflow-edge-path";
 
 const props = defineProps<{
   graph: WorkflowGraphDraft;
@@ -134,8 +131,7 @@ const flowEdges = computed(() => {
       }
     }
 
-    const mergeSlot =
-      (inboundCount.get(edge.targetNodeId) || 0) > 1 ? inboundIndex.get(edge.targetNodeId) || 0 : 0;
+    const mergeSlot = (inboundCount.get(edge.targetNodeId) || 0) > 1 ? inboundIndex.get(edge.targetNodeId) || 0 : 0;
     if ((inboundCount.get(edge.targetNodeId) || 0) > 1) {
       inboundIndex.set(edge.targetNodeId, mergeSlot + 1);
     }
@@ -218,8 +214,6 @@ function branchLabel(branch: unknown) {
   return WORKFLOW_BRANCH_OPTIONS.find((option) => option.value === branch)?.label || branch;
 }
 
-
-
 function handleNodeDragStop(event: NodeDragEvent) {
   if (!event.node.id || !event.node.position) {
     return;
@@ -245,7 +239,12 @@ function handleViewportMoveStart() {
   }
 }
 
-function handleConnect(connection: { source?: string | null; sourceHandle?: string | null; target?: string | null; targetHandle?: string | null }) {
+function handleConnect(connection: {
+  source?: string | null;
+  sourceHandle?: string | null;
+  target?: string | null;
+  targetHandle?: string | null;
+}) {
   if (!connection.source || !connection.target || !connection.sourceHandle || !connection.targetHandle) {
     return;
   }
@@ -280,9 +279,13 @@ function pointerPosition(event: { clientX?: number; clientY?: number } | undefin
 function handleEdgeClick(...args: unknown[]) {
   const payload = args[0];
   const maybePayloadEdge =
-    payload && typeof payload === "object" && "edge" in payload ? (payload as { edge?: { id?: string } }).edge : undefined;
+    payload && typeof payload === "object" && "edge" in payload
+      ? (payload as { edge?: { id?: string } }).edge
+      : undefined;
   const maybeDirectEdge =
-    payload && typeof payload === "object" && "id" in (payload as Record<string, unknown>) ? (payload as { id?: string }) : undefined;
+    payload && typeof payload === "object" && "id" in (payload as Record<string, unknown>)
+      ? (payload as { id?: string })
+      : undefined;
   const maybeEdge =
     args[1] && typeof args[1] === "object" && "id" in (args[1] as Record<string, unknown>)
       ? (args[1] as { id?: string })
@@ -306,7 +309,10 @@ function handleNodeContextMenu(nodeId: string, event: MouseEvent) {
 function handleEdgeContextMenu(payload: unknown) {
   const maybePayload =
     payload && typeof payload === "object"
-      ? (payload as { edge?: { id?: string }; event?: { clientX?: number; clientY?: number; preventDefault?: () => void } })
+      ? (payload as {
+          edge?: { id?: string };
+          event?: { clientX?: number; clientY?: number; preventDefault?: () => void };
+        })
       : undefined;
   const edgeId = maybePayload?.edge?.id;
 
@@ -400,7 +406,7 @@ function fitCanvasView(source: "auto" | "user" = "user") {
           @contextmenu.prevent.stop="handleNodeContextMenu(nodeProps.id, $event)"
         >
           <Handle
-            v-for="port in (nodeProps.data.ports || [])"
+            v-for="port in nodeProps.data.ports || []"
             :id="port.key"
             :key="port.key"
             :type="port.direction === 'input' ? 'target' : 'source'"

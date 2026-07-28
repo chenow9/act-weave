@@ -60,12 +60,48 @@ describe("provider authentication contract", () => {
 
 function legacyConnection(): ServiceConnection {
   return {
-    id: "connection-1", providerId: "provider-1", name: "Legacy OAuth", alias: "legacy-oauth", environment: "PRODUCTION",
-    protocol: "HTTP", protocolSchema: "provider.http-openapi.v1",
-    protocolConfig: { domain: "https://api.example", host: "api.example", port: "", basePath: "", verificationMethod: "GET", verificationPath: "", expectedStatus: "200-299", expectedResponseContains: "", commonHeaders: {} },
+    id: "connection-1",
+    providerId: "provider-1",
+    name: "Legacy OAuth",
+    alias: "legacy-oauth",
+    environment: "PRODUCTION",
+    protocol: "HTTP",
+    protocolSchema: "provider.http-openapi.v1",
+    protocolConfig: {
+      domain: "https://api.example",
+      host: "api.example",
+      port: "",
+      basePath: "",
+      verificationMethod: "GET",
+      verificationPath: "",
+      expectedStatus: "200-299",
+      expectedResponseContains: "",
+      commonHeaders: {},
+    },
     authMode: "OAUTH2_CLIENT",
-    authConfig: { mode: "oauth2-client", label: "Legacy OAuth2", tokenUrl: "https://legacy.example/token", clientId: "legacy-client", clientAuth: "client_secret_post", scope: "orders.read", refreshUrl: "", refreshMode: "none", accessTokenPath: "access_token", refreshTokenPath: "", expiresPath: "expires_in", injectionTemplate: "", retryOn401Policy: "", refreshFailurePolicy: "" },
-    credentialConfigured: true, grantedScopes: [], policy: {}, status: "UNVERIFIED", createdBy: "user-1", updatedBy: "user-1", lockVersion: 1,
+    authConfig: {
+      mode: "oauth2-client",
+      label: "Legacy OAuth2",
+      tokenUrl: "https://legacy.example/token",
+      clientId: "legacy-client",
+      clientAuth: "client_secret_post",
+      scope: "orders.read",
+      refreshUrl: "",
+      refreshMode: "none",
+      accessTokenPath: "access_token",
+      refreshTokenPath: "",
+      expiresPath: "expires_in",
+      injectionTemplate: "",
+      retryOn401Policy: "",
+      refreshFailurePolicy: "",
+    },
+    credentialConfigured: true,
+    grantedScopes: [],
+    policy: {},
+    status: "UNVERIFIED",
+    createdBy: "user-1",
+    updatedBy: "user-1",
+    lockVersion: 1,
   };
 }
 
@@ -73,8 +109,21 @@ function fixture(): CapabilityProvider {
   const authentication = defaultOAuthContract("https://login.example/{{tenantId}}/token");
   authentication.schemes[0].fields.splice(0, 0, { key: "tenantId", label: "Tenant", kind: "TEXT", required: true });
   return {
-    id: "provider-1", name: "Orders", kind: "HTTP_OPENAPI", driverKey: "http_openapi", transport: "HTTP",
-    endpointConfig: { schemaVersion: 2, serviceBaseUrl: "https://api.example", discovery: { documentUrl: "https://api.example/openapi.json" } },
-    driverConfig: { authentication }, discoveryMode: "ON_DEMAND", status: "ACTIVE", createdBy: "user-1", updatedBy: "user-1", lockVersion: 1,
+    id: "provider-1",
+    name: "Orders",
+    kind: "HTTP_OPENAPI",
+    driverKey: "http_openapi",
+    transport: "HTTP",
+    endpointConfig: {
+      schemaVersion: 2,
+      serviceBaseUrl: "https://api.example",
+      discovery: { documentUrl: "https://api.example/openapi.json" },
+    },
+    driverConfig: { authentication },
+    discoveryMode: "ON_DEMAND",
+    status: "ACTIVE",
+    createdBy: "user-1",
+    updatedBy: "user-1",
+    lockVersion: 1,
   };
 }

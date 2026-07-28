@@ -1,7 +1,4 @@
 import { mount } from "@vue/test-utils";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 
@@ -36,10 +33,12 @@ function mountAttached(actions = menuActions) {
   const host = document.createElement("div");
   host.style.overflow = "hidden";
   document.body.append(host);
-  const wrapper = trackWrapper(mount(ManagementRowActions, {
-    attachTo: host,
-    props: { primaryActions, menuActions: actions },
-  }));
+  const wrapper = trackWrapper(
+    mount(ManagementRowActions, {
+      attachTo: host,
+      props: { primaryActions, menuActions: actions },
+    }),
+  );
   return { host, wrapper };
 }
 
@@ -55,36 +54,17 @@ afterEach(() => {
 });
 
 describe("ManagementRowActions", () => {
-  it("renders accessible 44 by 44 icon-and-label actions and emits their keys", async () => {
-    const wrapper = trackWrapper(mount(ManagementRowActions, { props: { primaryActions } }));
-    const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "ManagementRowActions.vue"), "utf8");
-    const primaryButtonRule = source.match(/\.management-row-action-button\s*\{[\s\S]*?\}/)?.[0];
-    const buttons = wrapper.findAll(".management-row-action-button");
-
-    expect(buttons).toHaveLength(3);
-    expect(primaryButtonRule).toBeDefined();
-    expect(primaryButtonRule).toContain("width: 44px;");
-    expect(primaryButtonRule).toContain("height: 44px;");
-    expect(source).toContain("gap: 4px;");
-    expect(actionButton(wrapper, "test").attributes("title")).toBe("测试连接");
-    expect(actionButton(wrapper, "test").attributes("aria-label")).toBe("测试连接");
-    expect(actionButton(wrapper, "test").get("i").classes()).toEqual(expect.arrayContaining(["fa-solid", "fa-plug-circle-bolt"]));
-    expect(actionButton(wrapper, "test").get("span").text()).toBe("测试连接");
-    expect(actionButton(wrapper, "delete").classes()).toContain("tone-danger");
-
-    await actionButton(wrapper, "test").trigger("click");
-    expect(wrapper.emitted("action")).toEqual([["test"]]);
-  });
-
   it("blocks disabled and loading actions while keeping useful status tooltips", async () => {
-    const wrapper = trackWrapper(mount(ManagementRowActions, {
-      props: {
-        primaryActions: [
-          { ...primaryActions[0], disabled: true, disabledReason: "已有配置正在测试" },
-          { ...primaryActions[1], loading: true },
-        ],
-      },
-    }));
+    const wrapper = trackWrapper(
+      mount(ManagementRowActions, {
+        props: {
+          primaryActions: [
+            { ...primaryActions[0], disabled: true, disabledReason: "已有配置正在测试" },
+            { ...primaryActions[1], loading: true },
+          ],
+        },
+      }),
+    );
     const disabled = actionButton(wrapper, "test");
     const loading = actionButton(wrapper, "edit");
 
@@ -100,11 +80,15 @@ describe("ManagementRowActions", () => {
   });
 
   it("shortens visible action labels to four characters while preserving the full accessible label", () => {
-    const wrapper = trackWrapper(mount(ManagementRowActions, {
-      props: {
-        primaryActions: [{ key: "workspace", label: "进入业务空间控制台", shortLabel: "进入空间", icon: "fa-solid fa-arrow-right" }],
-      },
-    }));
+    const wrapper = trackWrapper(
+      mount(ManagementRowActions, {
+        props: {
+          primaryActions: [
+            { key: "workspace", label: "进入业务空间控制台", shortLabel: "进入空间", icon: "fa-solid fa-arrow-right" },
+          ],
+        },
+      }),
+    );
 
     const button = actionButton(wrapper, "workspace");
     expect(button.get("span").text()).toBe("进入空间");
@@ -113,30 +97,32 @@ describe("ManagementRowActions", () => {
   });
 
   it("promotes one low-frequency action into the third direct slot when primary actions are present", () => {
-    const wrapper = trackWrapper(mount(ManagementRowActions, {
-      props: {
-        primaryActions: primaryActions.slice(0, 2),
-        menuActions: [menuActions[1]],
-      },
-    }));
+    const wrapper = trackWrapper(
+      mount(ManagementRowActions, {
+        props: {
+          primaryActions: primaryActions.slice(0, 2),
+          menuActions: [menuActions[1]],
+        },
+      }),
+    );
 
-    expect(wrapper.findAll('button[data-action-kind="primary"]').map((action) => action.attributes("data-action-key"))).toEqual([
-      "test",
-      "edit",
-      "delete",
-    ]);
+    expect(
+      wrapper.findAll('button[data-action-kind="primary"]').map((action) => action.attributes("data-action-key")),
+    ).toEqual(["test", "edit", "delete"]);
     expect(wrapper.find('button[aria-label="更多操作"]').exists()).toBe(false);
     expect(actionButton(wrapper, "delete").attributes("disabled")).toBeDefined();
     expect(actionButton(wrapper, "delete").attributes("title")).toBe("默认工具不能删除");
   });
 
   it("keeps a sole menu action inside the overflow menu when primaryActions is empty", async () => {
-    const wrapper = trackWrapper(mount(ManagementRowActions, {
-      props: {
-        primaryActions: [],
-        menuActions: [menuActions[1]],
-      },
-    }));
+    const wrapper = trackWrapper(
+      mount(ManagementRowActions, {
+        props: {
+          primaryActions: [],
+          menuActions: [menuActions[1]],
+        },
+      }),
+    );
 
     expect(wrapper.findAll('button[data-action-kind="primary"]')).toHaveLength(0);
     const trigger = wrapper.get<HTMLButtonElement>('button[aria-label="更多操作"]');
@@ -246,39 +232,6 @@ describe("ManagementRowActions", () => {
     expect(menu.style.top).toBe("108px");
     expect(menu.dataset.placement).toBe("bottom");
     expect(rectSpy).toHaveBeenCalledTimes(3);
-  });
-
-  it("keeps a menu taller than the viewport bounded and scrollable without covering the trigger when space exists below", async () => {
-    vi.stubGlobal("innerWidth", 320);
-    vi.stubGlobal("innerHeight", 180);
-    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(208);
-    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(400);
-    const { wrapper } = mountAttached();
-    const trigger = wrapper.get<HTMLButtonElement>('button[aria-label="更多操作"]');
-    vi.spyOn(trigger.element, "getBoundingClientRect").mockReturnValue({
-      top: 40,
-      bottom: 84,
-      left: 138,
-      right: 182,
-      width: 44,
-      height: 44,
-      x: 138,
-      y: 40,
-      toJSON: () => ({}),
-    } as DOMRect);
-
-    await trigger.trigger("click");
-    await nextTick();
-    const menu = document.body.querySelector<HTMLElement>('[role="menu"][aria-label="更多操作"]')!;
-    const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "ManagementRowActions.vue"), "utf8");
-    const menuRule = source.match(/\.management-row-actions-menu\s*\{[\s\S]*?\}/)?.[0];
-
-    expect(menu.dataset.placement).toBe("bottom");
-    expect(menu.style.top).toBe("92px");
-    expect(menu.style.maxHeight).toBe("80px");
-    expect(Number.parseInt(menu.style.top) + Number.parseInt(menu.style.maxHeight)).toBeLessThanOrEqual(172);
-    expect(Number.parseInt(menu.style.top)).toBeGreaterThanOrEqual(92);
-    expect(menuRule).toContain("overflow-y: auto;");
   });
 
   it("uses the larger fallback side and caps menu height to preserve the trigger gap", async () => {

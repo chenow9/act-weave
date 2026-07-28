@@ -19,7 +19,9 @@ describe("v1 model config store", () => {
   });
 
   it("loads and locally filters the workspace model catalog", async () => {
-    vi.mocked(apiClient.get).mockResolvedValueOnce({ data: { items: [modelFixture(), modelFixture({ id: "model-2", name: "Backup", status: "ERROR" })] } });
+    vi.mocked(apiClient.get).mockResolvedValueOnce({
+      data: { items: [modelFixture(), modelFixture({ id: "model-2", name: "Backup", status: "ERROR" })] },
+    });
     const store = useModelConfigStore();
     await store.loadModelConfigs({ status: "VERIFIED", page: 1, pageSize: 10 });
     expect(apiClient.get).toHaveBeenCalledWith("/workspaces/workspace-1/model-configs");
@@ -34,7 +36,10 @@ describe("v1 model config store", () => {
     const created = await store.createModelConfig(draft);
     await store.updateModelConfig(created.id, { ...created, name: "Primary 2", credentialSecretId: "" });
 
-    expect(apiClient.post).toHaveBeenCalledWith("/workspaces/workspace-1/model-configs", expect.objectContaining({ credentialSecretId: "secret-1" }));
+    expect(apiClient.post).toHaveBeenCalledWith(
+      "/workspaces/workspace-1/model-configs",
+      expect.objectContaining({ credentialSecretId: "secret-1" }),
+    );
     const updatePayload = vi.mocked(apiClient.patch).mock.calls[0][1] as Record<string, unknown>;
     expect(updatePayload).not.toHaveProperty("credentialSecretId");
     expect(JSON.stringify(updatePayload)).not.toMatch(/masked|apiKey/i);
@@ -47,9 +52,13 @@ describe("v1 model config store", () => {
     const secret = await store.createCredentialSecret("Primary", "api-key-value");
 
     expect(secret).toEqual({ id: "secret-1", configured: true });
-    expect(apiClient.post).toHaveBeenCalledWith("/workspaces/workspace-1/secrets", expect.objectContaining({
-      kind: "API_KEY", plaintext: "api-key-value",
-    }));
+    expect(apiClient.post).toHaveBeenCalledWith(
+      "/workspaces/workspace-1/secrets",
+      expect.objectContaining({
+        kind: "API_KEY",
+        plaintext: "api-key-value",
+      }),
+    );
   });
 
   it("uses verify command and lockVersion delete paths", async () => {

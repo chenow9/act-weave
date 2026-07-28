@@ -26,9 +26,7 @@ describe("agent-access management store", () => {
     const store = useAgentAccessStore();
     await store.load("workspace-1");
     expect(apiClient.get).toHaveBeenNthCalledWith(1, "/workspaces/workspace-1/agent-access/clients");
-    expect(apiClient.get).toHaveBeenCalledWith(
-      "/workspaces/workspace-1/agent-access/clients/client-1/credentials",
-    );
+    expect(apiClient.get).toHaveBeenCalledWith("/workspaces/workspace-1/agent-access/clients/client-1/credentials");
     expect(store.credentials[0]).toMatchObject({ publicHint: "…safe", lastUsedAt: "2026-07-20T01:00:00Z" });
   });
 
@@ -39,7 +37,9 @@ describe("agent-access management store", () => {
     const store = useAgentAccessStore();
     store.workspaceId = "workspace-1";
     const result = await store.createClient({
-      name: "Business", authMethod: "client_secret_basic", allowedCorsOrigins: [],
+      name: "Business",
+      authMethod: "client_secret_basic",
+      allowedCorsOrigins: [],
     });
     expect(result.secret).toBe("awsk_live_once");
     expect(JSON.stringify(store.$state)).not.toContain("awsk_live_once");
@@ -68,17 +68,29 @@ describe("agent-access management store", () => {
 
 function client(): AgentAccessClient {
   return {
-    id: "client-1", workspaceId: "workspace-1", servicePrincipalId: "principal-1",
-    clientId: "awcl_public", name: "Business", status: "ACTIVE",
-    authMethod: "client_secret_basic", allowedCorsOrigins: [], tokenTtlSeconds: 600,
-    createdAt: "2026-07-20T00:00:00Z", updatedAt: "2026-07-20T00:00:00Z", lockVersion: 1,
+    id: "client-1",
+    workspaceId: "workspace-1",
+    servicePrincipalId: "principal-1",
+    clientId: "awcl_public",
+    name: "Business",
+    status: "ACTIVE",
+    authMethod: "client_secret_basic",
+    allowedCorsOrigins: [],
+    tokenTtlSeconds: 600,
+    createdAt: "2026-07-20T00:00:00Z",
+    updatedAt: "2026-07-20T00:00:00Z",
+    lockVersion: 1,
   };
 }
 
 function credential(): AgentAccessCredential {
   return {
-    id: "credential-1", type: "client_secret", publicHint: "…safe",
-    validFrom: "2026-07-20T00:00:00Z", lastUsedAt: "2026-07-20T01:00:00Z",
-    createdAt: "2026-07-20T00:00:00Z", lockVersion: 2,
+    id: "credential-1",
+    type: "client_secret",
+    publicHint: "…safe",
+    validFrom: "2026-07-20T00:00:00Z",
+    lastUsedAt: "2026-07-20T01:00:00Z",
+    createdAt: "2026-07-20T00:00:00Z",
+    lockVersion: 2,
   };
 }

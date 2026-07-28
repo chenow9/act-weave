@@ -78,11 +78,9 @@ export const apiClient = axios.create({
 });
 
 const rawAPIGet = apiClient.get.bind(apiClient);
-const sharedGetWindowMs = 1_000;
+/** ZKL-64 D5-A / MEDIUM-02: only coalesce in-flight identical GETs; never cache settled responses. */
 interface SharedGetEntry {
   request: ReturnType<typeof rawAPIGet>;
-  response?: AxiosResponse;
-  expiresAt?: number;
 }
 const sharedGetEntries = new Map<string, SharedGetEntry>();
 let sharedGetGeneration = 0;
@@ -94,26 +92,20 @@ apiClient.get = ((url: string, config?: Parameters<typeof rawAPIGet>[1]) => {
 
   const key = sharedGetKey(url, config);
   const existing = sharedGetEntries.get(key);
-  if (existing?.response && (existing.expiresAt || 0) > Date.now()) {
-    return Promise.resolve(existing.response);
-  }
-  if (existing && !existing.response) return existing.request;
-  if (existing) sharedGetEntries.delete(key);
+  if (existing) return existing.request;
 
   const generation = sharedGetGeneration;
-  const request = rawAPIGet(url, config).then((response) => {
-    if (generation === sharedGetGeneration) {
-      sharedGetEntries.set(key, {
-        request: Promise.resolve(response),
-        response,
-        expiresAt: Date.now() + sharedGetWindowMs,
-      });
-    }
-    return response;
-  }).catch((error) => {
-    sharedGetEntries.delete(key);
-    throw error;
-  });
+  const request = rawAPIGet(url, config)
+    .then((response) => {
+      if (generation === sharedGetGeneration) {
+        sharedGetEntries.delete(key);
+      }
+      return response;
+    })
+    .catch((error) => {
+      sharedGetEntries.delete(key);
+      throw error;
+    });
   sharedGetEntries.set(key, { request });
   return request;
 }) as typeof apiClient.get;
@@ -191,6 +183,15 @@ export function apiErrorMessage(error: unknown, fallback: string) {
   return value.requestId ? `${fallback}（请求 ID：${value.requestId}）` : fallback;
 }
 
+// D5-A: invalidate in-flight GET coalesce table when any write is issued (not after settle only).
+apiClient.interceptors.request.use((config) => {
+  const method = config.method?.toLocaleLowerCase() || "get";
+  if (method !== "get" && method !== "head" && method !== "options") {
+    clearSharedGetEntries();
+  }
+  return config;
+});
+
 apiClient.interceptors.response.use(
   (response) => {
     if (response.config.method?.toLocaleLowerCase() !== "get") {
@@ -200,7 +201,12 @@ apiClient.interceptors.response.use(
   },
   async (error: AxiosError<APIErrorBody>) => {
     const config = error.config as RetriableRequestConfig | undefined;
-    if (error.response?.status !== 401 || !config || config._actweaveAuthRetried || isAuthLifecycleRequest(config.url)) {
+    if (
+      error.response?.status !== 401 ||
+      !config ||
+      config._actweaveAuthRetried ||
+      isAuthLifecycleRequest(config.url)
+    ) {
       throw toAPIError(error);
     }
 
@@ -241,9 +247,13 @@ function isAuthLifecycleRequest(url?: string) {
   // trigger automatic refresh/retry (ZKL-63 HIGH-03).
   return Boolean(
     url &&
-      ["/auth/login", "/auth/refresh", "/auth/logout", "/users/me:change-password", "/users/me/__command/change-password"].some(
-        (path) => url.endsWith(path) || url.includes(path),
-      ),
+    [
+      "/auth/login",
+      "/auth/refresh",
+      "/auth/logout",
+      "/users/me:change-password",
+      "/users/me/__command/change-password",
+    ].some((path) => url.endsWith(path) || url.includes(path)),
   );
 }
 

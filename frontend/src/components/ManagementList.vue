@@ -198,7 +198,9 @@ function setColumnVisible(key: string, visible: boolean) {
   props.columns.forEach((column) => {
     if (!column.hidable) nextKeys.add(column.key);
   });
-  storedVisibleColumnKeys.value = props.columns.filter((column) => nextKeys.has(column.key)).map((column) => column.key);
+  storedVisibleColumnKeys.value = props.columns
+    .filter((column) => nextKeys.has(column.key))
+    .map((column) => column.key);
   writeStoredVisibleColumnKeys(storedVisibleColumnKeys.value);
 }
 
@@ -300,7 +302,8 @@ function movePageSizeOption(offset: number) {
     openPageSizeMenu(offset > 0 ? currentPageSizeIndex.value : pageSizeOptions.value.length - 1);
     return;
   }
-  const nextIndex = (pageSizeMenuActiveIndex.value + offset + pageSizeOptions.value.length) % pageSizeOptions.value.length;
+  const nextIndex =
+    (pageSizeMenuActiveIndex.value + offset + pageSizeOptions.value.length) % pageSizeOptions.value.length;
   focusPageSizeOption(nextIndex);
 }
 
@@ -383,7 +386,13 @@ onBeforeUnmount(() => {
           :placeholder="searchPlaceholder"
           @input="updateSearch"
         />
-        <button v-if="search" type="button" :title="clearSearchAriaLabel" :aria-label="clearSearchAriaLabel" @click="emit('update:search', '')">
+        <button
+          v-if="search"
+          type="button"
+          :title="clearSearchAriaLabel"
+          :aria-label="clearSearchAriaLabel"
+          @click="emit('update:search', '')"
+        >
           <i class="fa-solid fa-circle-xmark" aria-hidden="true" />
         </button>
       </label>
@@ -391,7 +400,13 @@ onBeforeUnmount(() => {
         <div v-if="$slots.filters" class="management-list-filters">
           <slot name="filters" />
         </div>
-        <button v-if="!resetDisabled" class="management-list-reset" type="button" :aria-label="resetAriaLabel" @click="emit('reset')">
+        <button
+          v-if="!resetDisabled"
+          class="management-list-reset"
+          type="button"
+          :aria-label="resetAriaLabel"
+          @click="emit('reset')"
+        >
           <i class="fa-solid fa-rotate-left" aria-hidden="true" />
           {{ resetLabel }}
         </button>
@@ -422,7 +437,12 @@ onBeforeUnmount(() => {
                 :style="columnSettingsMenuStyle"
               >
                 <div class="data-table-column-menu-title">设置显示列</div>
-                <label v-for="column in columns" :key="column.key" class="data-table-column-option" :class="{ locked: !column.hidable }">
+                <label
+                  v-for="column in columns"
+                  :key="column.key"
+                  class="data-table-column-option"
+                  :class="{ locked: !column.hidable }"
+                >
                   <input
                     type="checkbox"
                     :value="column.key"
@@ -431,9 +451,18 @@ onBeforeUnmount(() => {
                     @change="setColumnVisible(column.key, ($event.target as HTMLInputElement).checked)"
                   />
                   <span>{{ column.label }}</span>
-                  <i v-if="!column.hidable" class="fa-solid fa-lock data-table-column-option-lock" aria-label="固定列" />
+                  <i
+                    v-if="!column.hidable"
+                    class="fa-solid fa-lock data-table-column-option-lock"
+                    aria-label="固定列"
+                  />
                 </label>
-                <button class="data-table-column-reset" type="button" aria-label="恢复默认列" @click="restoreDefaultColumns">
+                <button
+                  class="data-table-column-reset"
+                  type="button"
+                  aria-label="恢复默认列"
+                  @click="restoreDefaultColumns"
+                >
                   恢复默认列
                 </button>
               </div>
@@ -493,7 +522,12 @@ onBeforeUnmount(() => {
         </DataTable>
 
         <div v-if="hasCardSlot" class="management-list-card-list">
-          <slot v-for="row in rows" name="card" :key="typeof rowKey === 'function' ? rowKey(row) : String(row[rowKey])" :row="row" />
+          <slot
+            v-for="row in rows"
+            name="card"
+            :key="typeof rowKey === 'function' ? rowKey(row) : String(row[rowKey])"
+            :row="row"
+          />
         </div>
       </template>
     </div>
@@ -501,7 +535,12 @@ onBeforeUnmount(() => {
     <nav v-if="pagination && (showList || hasLoaded)" class="management-list-pagination" aria-label="列表分页">
       <span>共 {{ pagination.total }} 项 · 第 {{ pagination.page }} / {{ pageCount }} 页</span>
       <div v-if="showPaginationControls" class="management-list-pagination-controls">
-        <div v-if="showPageSizeControl" ref="pageSizeMenuRef" class="management-list-page-size" @focusout="handlePageSizeFocusout">
+        <div
+          v-if="showPageSizeControl"
+          ref="pageSizeMenuRef"
+          class="management-list-page-size"
+          @focusout="handlePageSizeFocusout"
+        >
           <button
             ref="pageSizeTriggerRef"
             class="management-list-page-size-trigger"
@@ -518,7 +557,14 @@ onBeforeUnmount(() => {
             <span>每页 {{ pagination.pageSize }} 条</span>
             <i class="fa-solid fa-chevron-down" :class="{ open: pageSizeMenuOpen }" aria-hidden="true" />
           </button>
-          <div v-if="pageSizeMenuOpen" :id="pageSizeMenuId" class="management-list-page-size-menu" role="listbox" aria-label="选择每页数量" @keydown="handlePageSizeMenuKeydown">
+          <div
+            v-if="pageSizeMenuOpen"
+            :id="pageSizeMenuId"
+            class="management-list-page-size-menu"
+            role="listbox"
+            aria-label="选择每页数量"
+            @keydown="handlePageSizeMenuKeydown"
+          >
             <button
               v-for="(option, index) in pageSizeOptions"
               :key="option"
@@ -771,7 +817,11 @@ onBeforeUnmount(() => {
   background: #f9fafb;
   color: #4b5563;
   cursor: pointer;
-  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
 }
 
 .data-table-column-button:hover,

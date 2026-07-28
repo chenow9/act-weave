@@ -45,7 +45,10 @@ export function defaultPortsForNodeType(type: WorkflowGraphNodeType | string): W
  * Branching is modeled by multiple edges sharing the same output port
  * (distinguished by edge.data.branch), not by multiple exit handles.
  */
-export function collapseNodePorts(ports: WorkflowGraphPort[] | null | undefined, nodeType?: string): WorkflowGraphPort[] {
+export function collapseNodePorts(
+  ports: WorkflowGraphPort[] | null | undefined,
+  nodeType?: string,
+): WorkflowGraphPort[] {
   const list = Array.isArray(ports) ? ports : [];
   if (!list.length) {
     return defaultPortsForNodeType(nodeType || "Tool");
@@ -79,10 +82,7 @@ export function collapseNodePorts(ports: WorkflowGraphPort[] | null | undefined,
   return collapsed;
 }
 
-export function primaryPortKey(
-  ports: WorkflowGraphPort[] | null | undefined,
-  direction: "input" | "output",
-): string {
+export function primaryPortKey(ports: WorkflowGraphPort[] | null | undefined, direction: "input" | "output"): string {
   const list = Array.isArray(ports) ? ports : [];
   const match = list.find((port) => port.direction === direction);
   if (match?.key) return match.key;
@@ -112,9 +112,10 @@ export function normalizeWorkflowGraphDraft(graph: WorkflowGraphDraft | null | u
       id: node.id,
       type: node.type,
       label: node.label || node.type || node.id,
-      position: node.position && typeof node.position.x === "number" && typeof node.position.y === "number"
-        ? node.position
-        : { x: 120, y: 220 },
+      position:
+        node.position && typeof node.position.x === "number" && typeof node.position.y === "number"
+          ? node.position
+          : { x: 120, y: 220 },
       ports: collapseNodePorts(rawPorts, node.type),
       data: node.data && typeof node.data === "object" ? node.data : {},
       ui: node.ui && typeof node.ui === "object" ? node.ui : {},
@@ -197,7 +198,10 @@ export function listWorkflowVariableReferences(graph: WorkflowGraphDraft): Workf
   return sortVariableReferences([...listInputVariableReferences(graph), ...listNodeOutputVariableReferences(graph)]);
 }
 
-export function listWorkflowVariableReferencesForNode(graph: WorkflowGraphDraft, nodeId: string): WorkflowVariableReference[] {
+export function listWorkflowVariableReferencesForNode(
+  graph: WorkflowGraphDraft,
+  nodeId: string,
+): WorkflowVariableReference[] {
   const upstreamNodeIds = findUpstreamNodeIds(graph, nodeId);
   return sortVariableReferences([
     ...listInputVariableReferences(graph),
@@ -256,7 +260,9 @@ export function parseWorkflowObjectSchema(schema: unknown): WorkflowSchemaFieldD
           description: typeof field.description === "string" ? field.description : "",
           enumValues: Array.isArray(field.enum)
             ? field.enum
-                .filter((value): value is string | number | boolean => ["string", "number", "boolean"].includes(typeof value))
+                .filter((value): value is string | number | boolean =>
+                  ["string", "number", "boolean"].includes(typeof value),
+                )
                 .map((value) => String(value))
             : [],
           example: field.example == null ? "" : String(field.example),
@@ -368,7 +374,9 @@ function toSchemaProperties(schema: unknown): Array<[string, SchemaDefinition]> 
     return Object.entries(properties as Record<string, SchemaDefinition>).filter(([key]) => key.trim() !== "");
   }
 
-  return Object.entries(schema as Record<string, SchemaDefinition>).filter(([key, definition]) => isCompactSchemaField(key, definition));
+  return Object.entries(schema as Record<string, SchemaDefinition>).filter(([key, definition]) =>
+    isCompactSchemaField(key, definition),
+  );
 }
 
 function isCompactSchemaField(key: string, definition: unknown): definition is SchemaDefinition {
@@ -376,7 +384,10 @@ function isCompactSchemaField(key: string, definition: unknown): definition is S
   if (!normalized || ["required", "type", "description", "additionalProperties"].includes(normalized)) {
     return false;
   }
-  return typeof definition === "string" || Boolean(definition && typeof definition === "object" && !Array.isArray(definition));
+  return (
+    typeof definition === "string" ||
+    Boolean(definition && typeof definition === "object" && !Array.isArray(definition))
+  );
 }
 
 function readSchemaType(definition: SchemaDefinition): string {

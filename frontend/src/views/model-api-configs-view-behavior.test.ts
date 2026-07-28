@@ -22,8 +22,18 @@ function createStore() {
     listQuery: { query: "", page: 1, pageSize: 10 },
     loadModelConfigs: vi.fn(async () => store.items),
     createCredentialSecret: vi.fn(async () => ({ id: secretID, configured: true })),
-    createModelConfig: vi.fn(async (draft: ModelApiConfig) => ({ ...draft, id: "model-created", credentialConfigured: true, credentialSecretId: undefined, lockVersion: 1 })),
-    updateModelConfig: vi.fn(async (_id: string, draft: ModelApiConfig) => ({ ...draft, credentialSecretId: undefined, lockVersion: draft.lockVersion + 1 })),
+    createModelConfig: vi.fn(async (draft: ModelApiConfig) => ({
+      ...draft,
+      id: "model-created",
+      credentialConfigured: true,
+      credentialSecretId: undefined,
+      lockVersion: 1,
+    })),
+    updateModelConfig: vi.fn(async (_id: string, draft: ModelApiConfig) => ({
+      ...draft,
+      credentialSecretId: undefined,
+      lockVersion: draft.lockVersion + 1,
+    })),
     verifyModelConfig: vi.fn(async () => ({ ...model, status: "VERIFIED", lastLatencyMs: 24, lockVersion: 2 })),
     deleteModelConfig: vi.fn(async () => undefined),
   });
@@ -113,7 +123,12 @@ describe("model config v1 behavior", () => {
     const statusButton = wrapper.findAll(".model-status-filter button").find((item) => item.text().includes("未验证"));
     await statusButton!.trigger("click");
     await flushPromises();
-    expect(fixture.store.loadModelConfigs).toHaveBeenLastCalledWith({ query: "", status: "UNVERIFIED", page: 1, pageSize: 10 });
+    expect(fixture.store.loadModelConfigs).toHaveBeenLastCalledWith({
+      query: "",
+      status: "UNVERIFIED",
+      page: 1,
+      pageSize: 10,
+    });
   });
 });
 

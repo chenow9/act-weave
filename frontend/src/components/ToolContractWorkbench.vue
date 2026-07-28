@@ -44,7 +44,13 @@ function updateVisible(nextValue: boolean) {
     :class="props.embedded ? 'tool-contract-workbench-embedded' : 'modal-backdrop tool-contract-workbench-modal'"
     @click.self="!props.embedded && updateVisible(false)"
   >
-    <section ref="workbenchRef" class="tool-contract-workbench" :role="props.embedded ? 'region' : 'dialog'" :aria-modal="props.embedded ? undefined : 'true'" :aria-label="title">
+    <section
+      ref="workbenchRef"
+      class="tool-contract-workbench"
+      :role="props.embedded ? 'region' : 'dialog'"
+      :aria-modal="props.embedded ? undefined : 'true'"
+      :aria-label="title"
+    >
       <div class="tool-contract-workbench-head">
         <div class="tool-contract-workbench-head-copy">
           <div class="tool-contract-workbench-head-title-line">
@@ -53,7 +59,13 @@ function updateVisible(nextValue: boolean) {
           </div>
         </div>
         <div class="tool-contract-workbench-actions">
-          <button class="tool-contract-workbench-close" type="button" aria-label="关闭工作台" data-modal-initial-focus @click="updateVisible(false)">
+          <button
+            class="tool-contract-workbench-close"
+            type="button"
+            aria-label="关闭工作台"
+            data-modal-initial-focus
+            @click="updateVisible(false)"
+          >
             <i class="fa-solid fa-xmark" />
           </button>
         </div>

@@ -31,21 +31,66 @@ export const navItems: NavItem[] = [
   { id: "agents", section: "构建", icon: "fa-solid fa-user-gear", label: "Agent 管理", route: "/agents" },
   { id: "tools", section: "构建", icon: "fa-solid fa-screwdriver-wrench", label: "工具管理", route: "/tools" },
   { id: "workflow", section: "构建", icon: "fa-solid fa-network-wired", label: "编排", route: "/workflow" },
-  { id: "smart-dag", section: "构建", icon: "fa-solid fa-wand-magic-sparkles", label: "智能编排", route: "/smart-dag", badge: "AI" },
+  {
+    id: "smart-dag",
+    section: "构建",
+    icon: "fa-solid fa-wand-magic-sparkles",
+    label: "智能编排",
+    route: "/smart-dag",
+    badge: "AI",
+  },
 
   // 接入
-  { id: "providers", section: "接入", icon: "fa-solid fa-cloud-arrow-down", label: "服务 Provider", route: "/providers" },
-  { id: "connections", section: "接入", icon: "fa-solid fa-plug-circle-bolt", label: "服务连接", route: "/connections" },
-  { id: "openapi-imports", section: "接入", icon: "fa-solid fa-file-import", label: "OpenAPI 导入", route: "/openapi-imports" },
+  {
+    id: "providers",
+    section: "接入",
+    icon: "fa-solid fa-cloud-arrow-down",
+    label: "服务 Provider",
+    route: "/providers",
+  },
+  {
+    id: "connections",
+    section: "接入",
+    icon: "fa-solid fa-plug-circle-bolt",
+    label: "服务连接",
+    route: "/connections",
+  },
+  {
+    id: "openapi-imports",
+    section: "接入",
+    icon: "fa-solid fa-file-import",
+    label: "OpenAPI 导入",
+    route: "/openapi-imports",
+  },
   { id: "model-apis", section: "接入", icon: "fa-solid fa-key", label: "模型 API 配置", route: "/model-apis" },
-  { id: "agent-access", section: "接入", icon: "fa-solid fa-shield-halved", label: "Agent Access", route: "/agent-access" },
+  {
+    id: "agent-access",
+    section: "接入",
+    icon: "fa-solid fa-shield-halved",
+    label: "Agent Access",
+    route: "/agent-access",
+  },
 
   // 运行
   { id: "chat", section: "运行", icon: "fa-regular fa-comment-dots", label: "运行调试台", route: "/chat" },
 
   // 治理（平台管理员）
-  { id: "logs", section: "治理", icon: "fa-solid fa-terminal", label: "全链路审计日志", route: "/logs", platformAdminOnly: true },
-  { id: "users", section: "治理", icon: "fa-solid fa-users-gear", label: "用户与权限", route: "/users", platformAdminOnly: true },
+  {
+    id: "logs",
+    section: "治理",
+    icon: "fa-solid fa-terminal",
+    label: "全链路审计日志",
+    route: "/logs",
+    platformAdminOnly: true,
+  },
+  {
+    id: "users",
+    section: "治理",
+    icon: "fa-solid fa-users-gear",
+    label: "用户与权限",
+    route: "/users",
+    platformAdminOnly: true,
+  },
 ];
 
 /** Group items by section, preserving navSectionOrder (empty sections omitted). */

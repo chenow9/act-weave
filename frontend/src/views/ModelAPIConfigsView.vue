@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import "./model-api-page.css";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from "vue";
 
 import ManagementList, { type ManagementListColumn } from "../components/ManagementList.vue";
@@ -18,6 +19,9 @@ type ModelDraftField = "name" | "credentialSecretId" | "apiBase" | "modelName";
 
 const modelConfigs = useModelConfigStore();
 const workspaces = useWorkspaceStore();
+const canEditWorkspace = computed(() =>
+  workspaces.can(workspaces.activeWorkspaceId || workspaces.items[0]?.id || "", "EDIT"),
+);
 const hasWorkspaceContext = computed(() => Boolean(workspaces.activeWorkspaceId || workspaces.items[0]?.id));
 const query = ref("");
 const modelStatusFilter = ref<ModelStatusFilter>("ALL");
@@ -62,21 +66,59 @@ const modelStatusOptions: Array<{ label: string; value: ModelStatusFilter }> = [
 ];
 
 const modelModalTitle = computed(() => (modelModalMode.value === "create" ? "新增模型配置" : "编辑模型配置"));
-const activeModelDraft = computed(() => (modelModalMode.value === "create" ? draftModelConfig.value : editingModelDraft.value));
+const activeModelDraft = computed(() =>
+  modelModalMode.value === "create" ? draftModelConfig.value : editingModelDraft.value,
+);
 const isModelDraftDirty = computed(() => {
   const draft = activeModelDraft.value;
-  return Boolean(draft && modelDraftInitialFingerprint.value && modelDraftFingerprint(draft) !== modelDraftInitialFingerprint.value);
+  return Boolean(
+    draft && modelDraftInitialFingerprint.value && modelDraftFingerprint(draft) !== modelDraftInitialFingerprint.value,
+  );
 });
-const modelKeyboardNavigationActive = computed(() => modelModalVisible.value || discardModelDraftVisible.value || Boolean(pendingModelDeletion.value));
-const activeStatusFilterLabel = computed(() => modelStatusOptions.find((option) => option.value === modelStatusFilter.value)?.label || "");
+const modelKeyboardNavigationActive = computed(
+  () => modelModalVisible.value || discardModelDraftVisible.value || Boolean(pendingModelDeletion.value),
+);
+const activeStatusFilterLabel = computed(
+  () => modelStatusOptions.find((option) => option.value === modelStatusFilter.value)?.label || "",
+);
 const hasSearchQuery = computed(() => query.value.trim().length > 0);
 const hasActiveModelFilters = computed(() => hasSearchQuery.value || modelStatusFilter.value !== "ALL");
 const modelConfigColumns = computed<ManagementListColumn<ModelApiConfig>[]>(() => [
   { key: "config", label: "配置名称", width: 244, sortable: true, sortKey: "name", getValue: (item) => item.name },
-  { key: "provider", label: "Provider", width: 164, hidable: true, sortable: true, sortKey: "provider", getValue: () => OPENAI_COMPATIBLE_PROVIDER },
-  { key: "credential", label: "凭据", width: 140, hidable: true, getValue: (item) => (item.credentialConfigured ? "已配置" : "未配置") },
-  { key: "apiBase", label: "API 请求地址", width: 244, hidable: true, sortable: true, sortKey: "apiBase", getValue: (item) => item.apiBase },
-  { key: "modelName", label: "模型名称", width: 190, hidable: true, sortable: true, sortKey: "modelName", getValue: (item) => item.modelName },
+  {
+    key: "provider",
+    label: "Provider",
+    width: 164,
+    hidable: true,
+    sortable: true,
+    sortKey: "provider",
+    getValue: () => OPENAI_COMPATIBLE_PROVIDER,
+  },
+  {
+    key: "credential",
+    label: "凭据",
+    width: 140,
+    hidable: true,
+    getValue: (item) => (item.credentialConfigured ? "已配置" : "未配置"),
+  },
+  {
+    key: "apiBase",
+    label: "API 请求地址",
+    width: 244,
+    hidable: true,
+    sortable: true,
+    sortKey: "apiBase",
+    getValue: (item) => item.apiBase,
+  },
+  {
+    key: "modelName",
+    label: "模型名称",
+    width: 190,
+    hidable: true,
+    sortable: true,
+    sortKey: "modelName",
+    getValue: (item) => item.modelName,
+  },
   {
     key: "latency",
     label: "延迟",
@@ -84,7 +126,8 @@ const modelConfigColumns = computed<ManagementListColumn<ModelApiConfig>[]>(() =
     align: "right",
     headerAlign: "center",
     hidable: true,
-    sortable: true, sortKey: "latency",
+    sortable: true,
+    sortKey: "latency",
     defaultHiddenWhenEmpty: true,
     placeholderValues: ["-", "未测试"],
     getValue: (item) => (displayedLatency(item) ? `${displayedLatency(item)}ms` : "-"),
@@ -191,7 +234,9 @@ async function testConnection(item: ModelApiConfig) {
     }
     await loadModelConfigPage();
     const note =
-      verified.status === "VERIFIED" ? `${item.name} 验证通过。` : `${item.name} 验证未通过，请检查凭据、地址和模型名称。`;
+      verified.status === "VERIFIED"
+        ? `${item.name} 验证通过。`
+        : `${item.name} 验证未通过，请检查凭据、地址和模型名称。`;
     showActionNote(note);
   } finally {
     verifyingModelId.value = null;
@@ -534,7 +579,8 @@ function dialogFocusableElements(dialog: HTMLElement | null) {
 }
 
 function focusInitialDialogElement(dialog: HTMLElement | null) {
-  const initialTarget = dialog?.querySelector<HTMLElement>("[data-modal-initial-focus]") || dialogFocusableElements(dialog)[0];
+  const initialTarget =
+    dialog?.querySelector<HTMLElement>("[data-modal-initial-focus]") || dialogFocusableElements(dialog)[0];
   initialTarget?.focus();
 }
 
@@ -687,24 +733,36 @@ function handleModelModalKeydown(event: KeyboardEvent) {
           </template>
           <template #cell-credential="{ row: item }">
             <span class="model-credential-state aw-table-pill" :class="{ configured: item.credentialConfigured }">
-              <i :class="item.credentialConfigured ? 'fa-solid fa-shield-halved' : 'fa-solid fa-triangle-exclamation'" />
+              <i
+                :class="item.credentialConfigured ? 'fa-solid fa-shield-halved' : 'fa-solid fa-triangle-exclamation'"
+              />
               {{ item.credentialConfigured ? "已配置" : "未配置" }}
             </span>
           </template>
           <template #cell-apiBase="{ row: item }">
             <div class="model-api-base-cell">
               <span class="model-api-base aw-table-mono" :title="item.apiBase">{{ item.apiBase }}</span>
-              <button type="button" class="model-copy-button" aria-label="复制 API 请求地址" title="复制 API 请求地址" @click.stop="copyApiBase(item)">
+              <button
+                type="button"
+                class="model-copy-button"
+                aria-label="复制 API 请求地址"
+                title="复制 API 请求地址"
+                @click.stop="copyApiBase(item)"
+              >
                 <i class="fa-regular fa-copy" />
               </button>
             </div>
           </template>
           <template #cell-modelName="{ row: item }">
-            <span class="model-mono-text model-name-text aw-table-mono" :title="item.modelName">{{ item.modelName }}</span>
+            <span class="model-mono-text model-name-text aw-table-mono" :title="item.modelName">{{
+              item.modelName
+            }}</span>
           </template>
           <template #cell-latency="{ row: item }">
             <span class="model-latency-badge aw-table-pill" :class="latencyTone(displayedLatency(item))">
-              <span class="model-latency-value">{{ displayedLatency(item) ? `${displayedLatency(item)}ms` : "-" }}</span>
+              <span class="model-latency-value">{{
+                displayedLatency(item) ? `${displayedLatency(item)}ms` : "-"
+              }}</span>
               <span class="model-latency-label aw-table-meta">{{ latencyLabel(displayedLatency(item)) }}</span>
             </span>
           </template>
@@ -732,12 +790,31 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 </button>
               </div>
               <dl>
-                <div><dt>Provider</dt><dd>{{ OPENAI_COMPATIBLE_PROVIDER }}</dd></div>
-                <div><dt>模型</dt><dd class="model-mono-text">{{ item.modelName }}</dd></div>
-                <div><dt>延迟</dt><dd>{{ displayedLatency(item) ? `${displayedLatency(item)}ms` : "未测试" }}</dd></div>
+                <div>
+                  <dt>Provider</dt>
+                  <dd>{{ OPENAI_COMPATIBLE_PROVIDER }}</dd>
+                </div>
+                <div>
+                  <dt>模型</dt>
+                  <dd class="model-mono-text">{{ item.modelName }}</dd>
+                </div>
+                <div>
+                  <dt>延迟</dt>
+                  <dd>{{ displayedLatency(item) ? `${displayedLatency(item)}ms` : "未测试" }}</dd>
+                </div>
               </dl>
-              <div v-if="mobileModelActionMenuId === item.id" class="model-mobile-actions-menu" role="menu" aria-label="模型配置操作">
-                <button type="button" role="menuitem" :disabled="Boolean(verifyingModelId)" @click="testConnection(item)">
+              <div
+                v-if="mobileModelActionMenuId === item.id"
+                class="model-mobile-actions-menu"
+                role="menu"
+                aria-label="模型配置操作"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  :disabled="Boolean(verifyingModelId)"
+                  @click="testConnection(item)"
+                >
                   <i class="fa-solid fa-plug-circle-bolt" /> 测试连接
                 </button>
                 <button type="button" role="menuitem" @click="openMobileModelEditor(item)">
@@ -755,8 +832,14 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               <span>模型配置加载失败：{{ error }}</span>
               <button type="button" @click="retryLoadModelConfigs">重试</button>
             </div>
-            <div v-else class="empty-state registry-empty-state management-registry-empty-state model-load-error-state" role="alert">
-              <div class="model-empty-state-icon management-empty-state-icon error"><i class="fa-solid fa-triangle-exclamation" /></div>
+            <div
+              v-else
+              class="empty-state registry-empty-state management-registry-empty-state model-load-error-state"
+              role="alert"
+            >
+              <div class="model-empty-state-icon management-empty-state-icon error">
+                <i class="fa-solid fa-triangle-exclamation" />
+              </div>
               <h2>模型配置加载失败</h2>
               <p>{{ error }}</p>
               <button class="primary-button" type="button" @click="retryLoadModelConfigs">重试</button>
@@ -767,10 +850,14 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               <div class="model-empty-state-icon management-empty-state-icon"><i class="fa-solid fa-microchip" /></div>
               <h2>暂无模型配置</h2>
               <p>新增模型 API 配置后，业务空间和 Agent 才能选择模型网关。</p>
-              <button class="primary-button" type="button" @click="openCreateModel">新增模型配置</button>
+              <button v-if="canEditWorkspace" class="primary-button" type="button" @click="openCreateModel">
+                新增模型配置
+              </button>
             </div>
             <div v-else class="empty-state registry-empty-state management-registry-empty-state">
-              <div class="model-empty-state-icon management-empty-state-icon"><i :class="hasSearchQuery ? 'fa-solid fa-magnifying-glass' : 'fa-solid fa-filter-circle-xmark'" /></div>
+              <div class="model-empty-state-icon management-empty-state-icon">
+                <i :class="hasSearchQuery ? 'fa-solid fa-magnifying-glass' : 'fa-solid fa-filter-circle-xmark'" />
+              </div>
               <template v-if="hasSearchQuery">
                 <h2>没有匹配的模型配置</h2>
                 <p>调整搜索词后再试</p>
@@ -788,7 +875,11 @@ function handleModelModalKeydown(event: KeyboardEvent) {
     </section>
 
     <Transition name="modal-fade">
-      <div v-if="modelModalVisible && activeModelDraft" class="model-modal-backdrop" @click.self="requestModelModalClose">
+      <div
+        v-if="modelModalVisible && activeModelDraft"
+        class="model-modal-backdrop"
+        @click.self="requestModelModalClose"
+      >
         <section
           ref="modelModalRef"
           class="modal-card model-modal-card"
@@ -805,14 +896,22 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               <h3>{{ modelModalTitle }}</h3>
               <p>配置统一的模型 API 网关接入参数</p>
             </div>
-            <button class="model-modal-close" type="button" aria-label="关闭模型配置弹窗" :disabled="savingModelConfig" @click="requestModelModalClose">
+            <button
+              class="model-modal-close"
+              type="button"
+              aria-label="关闭模型配置弹窗"
+              :disabled="savingModelConfig"
+              @click="requestModelModalClose"
+            >
               <i class="fa-solid fa-xmark" />
             </button>
           </header>
 
           <div class="model-modal-form">
             <label class="model-modal-field">
-              <span class="model-modal-field-label">配置名称 <span class="model-field-required" aria-hidden="true">*</span></span>
+              <span class="model-modal-field-label"
+                >配置名称 <span class="model-field-required" aria-hidden="true">*</span></span
+              >
               <input
                 v-model="activeModelDraft.name"
                 data-modal-initial-focus
@@ -823,8 +922,13 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 placeholder="例如: 生产网关 / Claude Sonnet"
                 @blur="touchModelDraftField('name')"
               />
-              <span id="model-field-error-name" class="model-field-error" :class="{ visible: visibleModelDraftValidationError('name') }" aria-live="polite">
-                {{ visibleModelDraftValidationError('name') }}
+              <span
+                id="model-field-error-name"
+                class="model-field-error"
+                :class="{ visible: visibleModelDraftValidationError('name') }"
+                aria-live="polite"
+              >
+                {{ visibleModelDraftValidationError("name") }}
               </span>
             </label>
             <label class="model-modal-field locked">
@@ -839,7 +943,10 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               <input :value="OPENAI_COMPATIBLE_PROVIDER" disabled readonly />
             </label>
             <label class="model-modal-field">
-              <span class="model-modal-field-label">{{ modelModalMode === 'create' ? 'API Key' : 'Credential Secret ID' }} <span v-if="modelModalMode === 'create'" class="model-field-required" aria-hidden="true">*</span></span>
+              <span class="model-modal-field-label"
+                >{{ modelModalMode === "create" ? "API Key" : "Credential Secret ID" }}
+                <span v-if="modelModalMode === 'create'" class="model-field-required" aria-hidden="true">*</span></span
+              >
               <input
                 v-if="modelModalMode === 'create'"
                 ref="credentialPlaintextInput"
@@ -863,13 +970,24 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 :placeholder="activeModelDraft.credentialConfigured ? '留空以保留现有凭据' : 'Secret UUID'"
                 @blur="touchModelDraftField('credentialSecretId')"
               />
-              <small id="model-credential-help">{{ modelModalMode === 'create' ? '密钥仅在提交时发送给服务端加密保存，页面不会回显或保留明文。' : '只提交 Secret 引用；服务端不会返回或回填密钥明文。' }}</small>
-              <span id="model-field-error-credentialSecretId" class="model-field-error" :class="{ visible: visibleModelDraftValidationError('credentialSecretId') }" aria-live="polite">
-                {{ visibleModelDraftValidationError('credentialSecretId') }}
+              <small id="model-credential-help">{{
+                modelModalMode === "create"
+                  ? "密钥仅在提交时发送给服务端加密保存，页面不会回显或保留明文。"
+                  : "只提交 Secret 引用；服务端不会返回或回填密钥明文。"
+              }}</small>
+              <span
+                id="model-field-error-credentialSecretId"
+                class="model-field-error"
+                :class="{ visible: visibleModelDraftValidationError('credentialSecretId') }"
+                aria-live="polite"
+              >
+                {{ visibleModelDraftValidationError("credentialSecretId") }}
               </span>
             </label>
             <label class="model-modal-field">
-              <span class="model-modal-field-label">API 请求地址 <span class="model-field-required" aria-hidden="true">*</span></span>
+              <span class="model-modal-field-label"
+                >API 请求地址 <span class="model-field-required" aria-hidden="true">*</span></span
+              >
               <input
                 v-model="activeModelDraft.apiBase"
                 class="mono"
@@ -882,12 +1000,19 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 placeholder="https://llm-gateway.actweave.local/v1"
                 @blur="touchModelDraftField('apiBase')"
               />
-              <span id="model-field-error-apiBase" class="model-field-error" :class="{ visible: visibleModelDraftValidationError('apiBase') }" aria-live="polite">
-                {{ visibleModelDraftValidationError('apiBase') }}
+              <span
+                id="model-field-error-apiBase"
+                class="model-field-error"
+                :class="{ visible: visibleModelDraftValidationError('apiBase') }"
+                aria-live="polite"
+              >
+                {{ visibleModelDraftValidationError("apiBase") }}
               </span>
             </label>
             <label class="model-modal-field">
-              <span class="model-modal-field-label">模型名称 <span class="model-field-required" aria-hidden="true">*</span></span>
+              <span class="model-modal-field-label"
+                >模型名称 <span class="model-field-required" aria-hidden="true">*</span></span
+              >
               <input
                 v-model="activeModelDraft.modelName"
                 class="mono"
@@ -898,8 +1023,13 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 placeholder="claude-sonnet-4"
                 @blur="touchModelDraftField('modelName')"
               />
-              <span id="model-field-error-modelName" class="model-field-error" :class="{ visible: visibleModelDraftValidationError('modelName') }" aria-live="polite">
-                {{ visibleModelDraftValidationError('modelName') }}
+              <span
+                id="model-field-error-modelName"
+                class="model-field-error"
+                :class="{ visible: visibleModelDraftValidationError('modelName') }"
+                aria-live="polite"
+              >
+                {{ visibleModelDraftValidationError("modelName") }}
               </span>
             </label>
             <label class="model-modal-field locked">
@@ -918,7 +1048,13 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               <i class="fa-solid fa-circle-info" />
               <div>
                 <strong>智能联动提醒：</strong>
-                <p>{{ modelModalMode === "create" ? "新增后业务空间和 Agent 只选择该配置，Secret 明文不会进入页面状态。" : "留空 Secret ID 会保留现有凭据；保存后再从列表执行持久化验证。" }}</p>
+                <p>
+                  {{
+                    modelModalMode === "create"
+                      ? "新增后业务空间和 Agent 只选择该配置，Secret 明文不会进入页面状态。"
+                      : "留空 Secret ID 会保留现有凭据；保存后再从列表执行持久化验证。"
+                  }}
+                </p>
               </div>
             </div>
             <div
@@ -928,7 +1064,11 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               :role="modelModalFeedback.tone === 'success' ? 'status' : 'alert'"
               :aria-live="modelModalFeedback.tone === 'success' ? 'polite' : 'assertive'"
             >
-              <i :class="modelModalFeedback.tone === 'success' ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-exclamation'" />
+              <i
+                :class="
+                  modelModalFeedback.tone === 'success' ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-exclamation'
+                "
+              />
               <span>{{ modelModalFeedback.message }}</span>
             </div>
           </div>
@@ -936,7 +1076,14 @@ function handleModelModalKeydown(event: KeyboardEvent) {
           <div class="model-modal-actions">
             <span>变更会立即同步到模型配置列表</span>
             <div>
-              <button class="model-modal-cancel" type="button" :disabled="savingModelConfig" @click="requestModelModalClose">取消</button>
+              <button
+                class="model-modal-cancel"
+                type="button"
+                :disabled="savingModelConfig"
+                @click="requestModelModalClose"
+              >
+                取消
+              </button>
               <button
                 v-if="modelModalMode === 'create'"
                 class="model-modal-submit"
@@ -948,7 +1095,14 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 <i v-if="savingModelConfig" class="fa-solid fa-spinner fa-spin" />
                 创建配置
               </button>
-              <button v-else class="model-modal-submit" type="button" data-action="save-model-config" :disabled="savingModelConfig" @click="saveEditedModelConfig">
+              <button
+                v-else
+                class="model-modal-submit"
+                type="button"
+                data-action="save-model-config"
+                :disabled="savingModelConfig"
+                @click="saveEditedModelConfig"
+              >
                 <i v-if="savingModelConfig" class="fa-solid fa-spinner fa-spin" />
                 保存修改
               </button>
@@ -960,14 +1114,22 @@ function handleModelModalKeydown(event: KeyboardEvent) {
 
     <Transition name="modal-fade">
       <div v-if="discardModelDraftVisible" class="model-confirmation-backdrop" @click.self="keepEditingModelDraft">
-        <section ref="discardModelDraftRef" class="modal-card model-confirmation-card" role="dialog" aria-modal="true" aria-label="放弃未保存更改">
+        <section
+          ref="discardModelDraftRef"
+          class="modal-card model-confirmation-card"
+          role="dialog"
+          aria-modal="true"
+          aria-label="放弃未保存更改"
+        >
           <header>
             <span>Unsaved Changes</span>
             <h3>放弃未保存更改？</h3>
             <p>当前模型配置草稿已有修改。放弃后，这些内容不会保存。</p>
           </header>
           <footer>
-            <button class="model-modal-cancel" type="button" data-modal-initial-focus @click="keepEditingModelDraft">继续编辑</button>
+            <button class="model-modal-cancel" type="button" data-modal-initial-focus @click="keepEditingModelDraft">
+              继续编辑
+            </button>
             <button class="model-confirmation-danger" type="button" @click="confirmDiscardModelDraft">放弃修改</button>
           </footer>
         </section>
@@ -976,7 +1138,13 @@ function handleModelModalKeydown(event: KeyboardEvent) {
 
     <Transition name="modal-fade">
       <div v-if="pendingModelDeletion" class="model-confirmation-backdrop" @click.self="closeModelDeletionConfirm">
-        <section ref="modelDeletionConfirmRef" class="modal-card model-confirmation-card delete" role="dialog" aria-modal="true" aria-label="删除模型配置">
+        <section
+          ref="modelDeletionConfirmRef"
+          class="modal-card model-confirmation-card delete"
+          role="dialog"
+          aria-modal="true"
+          aria-label="删除模型配置"
+        >
           <header>
             <span>Danger Zone</span>
             <h3>删除模型配置？</h3>
@@ -984,7 +1152,15 @@ function handleModelModalKeydown(event: KeyboardEvent) {
           </header>
           <p v-if="modelDeleteError" class="model-confirmation-error" role="alert">{{ modelDeleteError }}</p>
           <footer>
-            <button class="model-modal-cancel" type="button" data-modal-initial-focus :disabled="deletingModelConfig" @click="closeModelDeletionConfirm">取消</button>
+            <button
+              class="model-modal-cancel"
+              type="button"
+              data-modal-initial-focus
+              :disabled="deletingModelConfig"
+              @click="closeModelDeletionConfirm"
+            >
+              取消
+            </button>
             <button
               class="model-confirmation-danger"
               type="button"
@@ -1175,7 +1351,9 @@ function handleModelModalKeydown(event: KeyboardEvent) {
   background: transparent;
   color: #64748b;
   font-size: 12px;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
 .model-secret-toggle:hover,
@@ -1258,7 +1436,9 @@ function handleModelModalKeydown(event: KeyboardEvent) {
   color: #64748b;
   font-size: 12px;
   cursor: pointer;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
 .model-copy-button:hover,
@@ -1623,7 +1803,9 @@ function handleModelModalKeydown(event: KeyboardEvent) {
   border-radius: 8px;
   background: transparent;
   color: #64748b;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
 .model-modal-close:hover,
@@ -1701,7 +1883,10 @@ function handleModelModalKeydown(event: KeyboardEvent) {
   font-size: 12px;
   font-weight: 400;
   line-height: 16px;
-  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .model-modal-field input.mono {
@@ -1728,7 +1913,9 @@ function handleModelModalKeydown(event: KeyboardEvent) {
   border-radius: 0 8px 8px 0;
   background: transparent;
   color: #64748b;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
 .model-modal-secret-input button:hover,
@@ -1892,7 +2079,9 @@ function handleModelModalKeydown(event: KeyboardEvent) {
   font-size: 12px;
   font-weight: 600;
   line-height: 16px;
-  transition: background-color 0.2s ease, border-color 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease;
 }
 
 .model-modal-submit:hover:not(:disabled) {

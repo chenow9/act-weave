@@ -32,7 +32,8 @@ interface AgentState {
   items: Agent[];
   pageItems: Agent[];
   pagination: ListPagination;
-  listQuery: Required<Pick<AgentListQuery, "query" | "page" | "pageSize">> & Pick<AgentListQuery, "status" | "workspaceId" | "sortBy" | "sortOrder">;
+  listQuery: Required<Pick<AgentListQuery, "query" | "page" | "pageSize">> &
+    Pick<AgentListQuery, "status" | "workspaceId" | "sortBy" | "sortOrder">;
   selectedAgentId: string;
   capabilitiesByWorkspace: Record<string, CapabilityCatalogItem[]>;
   bindingsByAgent: Record<string, AgentCapabilityBinding[]>;
@@ -144,11 +145,7 @@ export const useAgentStore = defineStore("agents", {
       this.upsertAgent(updated);
       return updated;
     },
-    async enhanceAgentPrompt(
-      agent: Agent,
-      input: string,
-      options: { preview: boolean; lockVersion?: number },
-    ) {
+    async enhanceAgentPrompt(agent: Agent, input: string, options: { preview: boolean; lockVersion?: number }) {
       const response = await apiClient.post<PromptEnhancement>(
         `/workspaces/${agent.workspaceId}/agents/${agent.id}:enhance-prompt`,
         {
@@ -161,7 +158,8 @@ export const useAgentStore = defineStore("agents", {
       return response.data;
     },
     async deleteAgent(agentId: string) {
-      const agent = this.items.find((item) => item.id === agentId) || this.pageItems.find((item) => item.id === agentId);
+      const agent =
+        this.items.find((item) => item.id === agentId) || this.pageItems.find((item) => item.id === agentId);
       if (!agent) throw new Error(`Agent ${agentId} is not loaded.`);
       await apiClient.delete(`/workspaces/${agent.workspaceId}/agents/${agentId}?lockVersion=${agent.lockVersion}`);
       this.items = this.items.filter((item) => item.id !== agentId);
@@ -173,7 +171,9 @@ export const useAgentStore = defineStore("agents", {
       }
     },
     async loadCapabilities(workspaceId: string) {
-      const response = await apiClient.get<{ items: CapabilityCatalogItem[] }>(`/workspaces/${workspaceId}/capabilities`);
+      const response = await apiClient.get<{ items: CapabilityCatalogItem[] }>(
+        `/workspaces/${workspaceId}/capabilities`,
+      );
       this.capabilitiesByWorkspace[workspaceId] = response.data.items;
       return response.data.items;
     },
@@ -226,14 +226,11 @@ export const useAgentStore = defineStore("agents", {
 async function fetchAgentCatalog(workspaceId?: string) {
   const workspaces = useWorkspaceStore();
   if (!workspaceId && !workspaces.items.length) await workspaces.load();
-  const workspaceIds = workspaceId ? [workspaceId] : workspaces.items.map((workspace) => workspace.id);
-  const responses = await Promise.all(
-    workspaceIds.map(async (id) => {
-      const response = await apiClient.get<{ items: AgentDTO[] }>(`/workspaces/${id}/agents`);
-      return response.data.items.map((agent) => agentFromDTO(agent, id));
-    }),
-  );
-  return responses.flat();
+  // ZKL-64: single active-workspace catalog read; no multi-workspace fan-out.
+  const id = workspaceId || workspaces.activeWorkspaceId || workspaces.items[0]?.id || "";
+  if (!id) return [];
+  const response = await apiClient.get<{ items: AgentDTO[] }>(`/workspaces/${id}/agents`);
+  return response.data.items.map((agent) => agentFromDTO(agent, id));
 }
 
 function agentFromDTO(agent: AgentDTO, workspaceId: string): Agent {

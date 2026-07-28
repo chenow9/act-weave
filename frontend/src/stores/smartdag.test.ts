@@ -14,10 +14,36 @@ vi.mock("../services/api", () => ({
 const graphV1: WorkflowGraphDraft = {
   schemaVersion: "workflow.graph.v1",
   nodes: [
-    { id: "start", type: "Start", label: "接收请求", position: { x: 0, y: 0 }, ports: [], data: {}, ui: { generated: true } },
-    { id: "end", type: "End", label: "返回结果", position: { x: 300, y: 0 }, ports: [], data: {}, ui: { generated: true } },
+    {
+      id: "start",
+      type: "Start",
+      label: "接收请求",
+      position: { x: 0, y: 0 },
+      ports: [],
+      data: {},
+      ui: { generated: true },
+    },
+    {
+      id: "end",
+      type: "End",
+      label: "返回结果",
+      position: { x: 300, y: 0 },
+      ports: [],
+      data: {},
+      ui: { generated: true },
+    },
   ],
-  edges: [{ id: "start-end", sourceNodeId: "start", sourcePort: "output", targetNodeId: "end", targetPort: "input", data: {}, ui: {} }],
+  edges: [
+    {
+      id: "start-end",
+      sourceNodeId: "start",
+      sourcePort: "output",
+      targetNodeId: "end",
+      targetPort: "input",
+      data: {},
+      ui: {},
+    },
+  ],
   viewport: { x: 0, y: 0, zoom: 1 },
   ui: { generatedBy: "smart-dag.v1", businessGoal: "处理供应商准入", confidence: 82 },
 };
@@ -51,7 +77,9 @@ function legacyResponse() {
         lockVersion: 1,
       },
       reasoningSteps: [{ id: "goal", label: "解析目标", status: "COMPLETED", detail: "供应商准入" }],
-      missingCapabilities: [{ id: "gap", name: "供应商能力", reason: "未匹配 Tool", suggestedProtocol: "HTTP_OPENAPI" }],
+      missingCapabilities: [
+        { id: "gap", name: "供应商能力", reason: "未匹配 Tool", suggestedProtocol: "HTTP_OPENAPI" },
+      ],
       nodeExplanations: [{ nodeId: "start", title: "接收请求", reason: "统一入口" }],
       availableToolIds: ["tool-1"],
       selectedToolIds: [],
@@ -64,7 +92,15 @@ function legacyResponse() {
 
 function turnGraph(version: number, extraNode = false): WorkflowGraphDraft {
   const nodes = [
-    { id: "start", type: "Start" as const, label: "Start", position: { x: 0, y: 0 }, ports: [], data: {}, ui: { generated: true } },
+    {
+      id: "start",
+      type: "Start" as const,
+      label: "Start",
+      position: { x: 0, y: 0 },
+      ports: [],
+      data: {},
+      ui: { generated: true },
+    },
     {
       id: "tool-1",
       type: "Tool" as const,
@@ -74,7 +110,15 @@ function turnGraph(version: number, extraNode = false): WorkflowGraphDraft {
       data: { toolId: "tool-1" },
       ui: { generated: true },
     },
-    { id: "end", type: "End" as const, label: "End", position: { x: 400, y: 0 }, ports: [], data: {}, ui: { generated: true } },
+    {
+      id: "end",
+      type: "End" as const,
+      label: "End",
+      position: { x: 400, y: 0 },
+      ports: [],
+      data: {},
+      ui: { generated: true },
+    },
   ];
   if (extraNode) {
     nodes.splice(2, 0, {
@@ -154,7 +198,9 @@ describe("smart dag v1 store", () => {
     const smart = useSmartDagStore();
     const result = await smart.generateDraft({ workspaceId: "workspace-1", goal: " 处理供应商准入 " });
 
-    expect(apiClient.post).toHaveBeenCalledWith("/workspaces/workspace-1/workflows:generate", { goal: "处理供应商准入" });
+    expect(apiClient.post).toHaveBeenCalledWith("/workspaces/workspace-1/workflows:generate", {
+      goal: "处理供应商准入",
+    });
     // adoptCreatedWorkflowResponse normalizes missing/empty ports for editor safety
     expect(result.draft?.graph).toEqual(normalizeWorkflowGraphDraft(graphV1));
     expect(smart.generatedWorkflow?.id).toBe("workflow-ai-1");
@@ -224,10 +270,9 @@ describe("smart dag multi-turn session store (P1.5)", () => {
     expect(smart.generatedDraft?.draftVersion).toBe(1);
     expect(smart.generatedDraft?.graph.nodes.some((n) => n.id === "approval-1")).toBe(false);
     expect(smart.turns).toHaveLength(1);
-    expect(apiClient.post).toHaveBeenCalledWith(
-      "/workspaces/workspace-1/workflow-generate-sessions",
-      { agentId: "agent-1" },
-    );
+    expect(apiClient.post).toHaveBeenCalledWith("/workspaces/workspace-1/workflow-generate-sessions", {
+      agentId: "agent-1",
+    });
 
     const graphRefAfterTurn1 = smart.generatedDraft?.graph;
     const t2 = await smart.sendTurn({
@@ -258,7 +303,13 @@ describe("smart dag multi-turn session store (P1.5)", () => {
     vi.mocked(apiClient.post).mockImplementation(async (url: string) => {
       if (url.endsWith("/workflow-generate-sessions")) {
         return {
-          data: { sessionId: "session-1", agentId: "agent-1", modelConfigId: "model-1", status: "OPEN", workflowId: "wf-1" },
+          data: {
+            sessionId: "session-1",
+            agentId: "agent-1",
+            modelConfigId: "model-1",
+            status: "OPEN",
+            workflowId: "wf-1",
+          },
         };
       }
       if (url.includes("/turns")) {
@@ -297,9 +348,9 @@ describe("smart dag multi-turn session store (P1.5)", () => {
   it("does not create session when agent has no model config", async () => {
     const smart = useSmartDagStore();
     smart.setContext("workspace-1", "agent-1", "");
-    await expect(
-      smart.sendTurn({ workspaceId: "workspace-1", agentId: "agent-1", message: "hi" }),
-    ).rejects.toThrow(/未配置可用模型/);
+    await expect(smart.sendTurn({ workspaceId: "workspace-1", agentId: "agent-1", message: "hi" })).rejects.toThrow(
+      /未配置可用模型/,
+    );
     expect(apiClient.post).not.toHaveBeenCalled();
     expect(smart.generatedDraft).toBeUndefined();
   });
@@ -318,7 +369,12 @@ describe("smart dag multi-turn session store (P1.5)", () => {
         turnCount += 1;
         if (turnCount === 1) return turnResponse(1);
         const err = new Error("guard") as Error & {
-          response?: { data?: { error?: { code?: string }; guardReport?: { ok: boolean; violations: { code: string; message: string }[] } } };
+          response?: {
+            data?: {
+              error?: { code?: string };
+              guardReport?: { ok: boolean; violations: { code: string; message: string }[] };
+            };
+          };
         };
         err.response = {
           data: {
@@ -335,9 +391,7 @@ describe("smart dag multi-turn session store (P1.5)", () => {
     const priorVersion = smart.generatedDraft?.draftVersion;
     const priorEpoch = smart.canvasEpoch;
 
-    await expect(
-      smart.sendTurn({ workspaceId: "workspace-1", agentId: "agent-1", message: "bad" }),
-    ).rejects.toThrow();
+    await expect(smart.sendTurn({ workspaceId: "workspace-1", agentId: "agent-1", message: "bad" })).rejects.toThrow();
     expect(smart.generatedDraft?.draftVersion).toBe(priorVersion);
     expect(smart.canvasEpoch).toBe(priorEpoch);
     expect(smart.lastErrorCode).toBe("GUARD_REJECTED");

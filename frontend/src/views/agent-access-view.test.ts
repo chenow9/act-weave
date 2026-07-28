@@ -6,32 +6,61 @@ import AgentAccessView from "./AgentAccessView.vue";
 
 const fixture = reactive({ canManage: true });
 const client = {
-  id: "client-1", workspaceId: "workspace-1", servicePrincipalId: "principal-1",
-  clientId: "awcl_public", name: "Business App", status: "ACTIVE",
-  authMethod: "client_secret_basic", allowedCorsOrigins: ["https://app.example.com"],
-  tokenTtlSeconds: 600, createdAt: "2026-07-20T00:00:00Z",
-  updatedAt: "2026-07-20T00:00:00Z", lockVersion: 1,
+  id: "client-1",
+  workspaceId: "workspace-1",
+  servicePrincipalId: "principal-1",
+  clientId: "awcl_public",
+  name: "Business App",
+  status: "ACTIVE",
+  authMethod: "client_secret_basic",
+  allowedCorsOrigins: ["https://app.example.com"],
+  tokenTtlSeconds: 600,
+  createdAt: "2026-07-20T00:00:00Z",
+  updatedAt: "2026-07-20T00:00:00Z",
+  lockVersion: 1,
 } as const;
 const credential = {
-  id: "credential-1", type: "client_secret", publicHint: "…safe",
-  validFrom: "2026-07-20T00:00:00Z", createdAt: "2026-07-20T00:00:00Z", lockVersion: 1,
+  id: "credential-1",
+  type: "client_secret",
+  publicHint: "…safe",
+  validFrom: "2026-07-20T00:00:00Z",
+  createdAt: "2026-07-20T00:00:00Z",
+  lockVersion: 1,
 } as const;
 const access = reactive({
-  clients: [client], selectedClientId: "client-1", credentials: [credential], grants: [],
-  loading: false, detailLoading: false, mutating: false, error: "", hasLoaded: true,
+  clients: [client],
+  selectedClientId: "client-1",
+  credentials: [credential],
+  grants: [],
+  loading: false,
+  detailLoading: false,
+  mutating: false,
+  error: "",
+  hasLoaded: true,
   selectedClient: computed(() => client),
-  activeCredentials: computed(() => [credential]), activeGrants: computed(() => []),
-  load: vi.fn(async () => [client]), loadClientDetail: vi.fn(async () => undefined),
+  activeCredentials: computed(() => [credential]),
+  activeGrants: computed(() => []),
+  load: vi.fn(async () => [client]),
+  loadClientDetail: vi.fn(async () => undefined),
   createClient: vi.fn(async () => ({ client, credential, secret: "awsk_live_once" })),
-  setClientStatus: vi.fn(async () => client), rotateCredential: vi.fn(),
-  createGrant: vi.fn(), revokeCredential: vi.fn(async () => credential), revokeGrant: vi.fn(),
+  setClientStatus: vi.fn(async () => client),
+  rotateCredential: vi.fn(),
+  createGrant: vi.fn(),
+  revokeCredential: vi.fn(async () => credential),
+  revokeGrant: vi.fn(),
 });
 const workspaces = reactive({
-  activeWorkspaceId: "workspace-1", items: [{ id: "workspace-1", displayName: "Core" }],
-  load: vi.fn(), loadMemberRoles: vi.fn(), requireWorkspace: vi.fn(() => ({ id: "workspace-1" })),
+  activeWorkspaceId: "workspace-1",
+  items: [{ id: "workspace-1", displayName: "Core" }],
+  load: vi.fn(),
+  loadMemberRoles: vi.fn(),
+  requireWorkspace: vi.fn(() => ({ id: "workspace-1" })),
   can: vi.fn(() => fixture.canManage),
 });
-const agents = reactive({ items: [{ id: "agent-1", workspaceId: "workspace-1", name: "Ops", status: "ACTIVE" }], loadAgents: vi.fn() });
+const agents = reactive({
+  items: [{ id: "agent-1", workspaceId: "workspace-1", name: "Ops", status: "ACTIVE" }],
+  loadAgents: vi.fn(),
+});
 
 vi.mock("../stores/agentAccess", () => ({ useAgentAccessStore: () => access }));
 vi.mock("../stores/workspaces", () => ({ useWorkspaceStore: () => workspaces }));
@@ -48,12 +77,12 @@ describe("Agent Access management view", () => {
     fixture.canManage = false;
     const wrapper = mountView();
     await flushPromises();
-		expect(wrapper.get('[data-testid="readonly-notice"]').exists()).toBe(true);
-		expect(wrapper.find('[data-testid="create-client"]').exists()).toBe(false);
-		const actions = wrapper.findAll("button").map((button) => button.text());
-		expect(actions).not.toContain("轮换凭证");
-		expect(actions).not.toContain("撤销");
-		expect(actions).not.toContain("禁用 Client");
+    expect(wrapper.get('[data-testid="readonly-notice"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="create-client"]').exists()).toBe(false);
+    const actions = wrapper.findAll("button").map((button) => button.text());
+    expect(actions).not.toContain("轮换凭证");
+    expect(actions).not.toContain("撤销");
+    expect(actions).not.toContain("禁用 Client");
   });
 
   it("shows a creation Secret once and clears it when the modal closes", async () => {
@@ -93,7 +122,7 @@ function mountView() {
       stubs: {
         ManagementSummaryStrip: { template: "<div><slot /></div>" },
         ManagementPageHeader: {
-          template: "<div><slot name=\"actions\" /></div>",
+          template: '<div><slot name="actions" /></div>',
         },
         WorkspaceContextState: { template: "<div />" },
         AppSelect: {

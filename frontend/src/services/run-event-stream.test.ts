@@ -78,7 +78,14 @@ describe("run-event-stream pure projection", () => {
     const frames: StreamFrame[] = [
       parseSSEBlock(
         sseBlock("run.started", 2, {
-          run: { id: runId, conversationId, agentId, status: "running", trigger: "message", startedAt: "2026-07-20T01:00:00Z" },
+          run: {
+            id: runId,
+            conversationId,
+            agentId,
+            status: "running",
+            trigger: "message",
+            startedAt: "2026-07-20T01:00:00Z",
+          },
         }),
         runId,
       )!,
@@ -183,7 +190,7 @@ describe("run-event-stream pure projection", () => {
   });
 
   it("creates assistant bubble on item.delta even if item.started was missed", () => {
-    let state = createProjectionState();
+    const state = createProjectionState();
     const delta = parseSSEBlock(
       sseBlock("item.delta", 4, { itemId, delta: { type: "text_delta", index: 0, text: "late" } }),
       runId,

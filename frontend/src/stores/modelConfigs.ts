@@ -42,7 +42,9 @@ export const useModelConfigStore = defineStore("modelConfigs", {
       return workspaceID;
     },
     async fetchCatalog() {
-      const response = await apiClient.get<{ items: ModelApiConfig[] }>(`/workspaces/${this.workspaceID()}/model-configs`);
+      const response = await apiClient.get<{ items: ModelApiConfig[] }>(
+        `/workspaces/${this.workspaceID()}/model-configs`,
+      );
       return response.data.items.map(normalizeModelConfig);
     },
     async loadModelConfigs(query: ModelApiConfigListQuery = {}) {
@@ -114,21 +116,26 @@ export const useModelConfigStore = defineStore("modelConfigs", {
       return response.data;
     },
     async updateModelConfig(configId: string, config: ModelApiConfig) {
-      const response = await apiClient.patch<ModelApiConfig>(`/workspaces/${this.workspaceID()}/model-configs/${configId}`, {
-        name: config.name,
-        provider: config.provider,
-        apiBase: config.apiBase,
-        modelName: config.modelName,
-        ...(config.credentialSecretId?.trim() ? { credentialSecretId: config.credentialSecretId.trim() } : {}),
-        options: config.options || {},
-        lockVersion: config.lockVersion,
-      });
+      const response = await apiClient.patch<ModelApiConfig>(
+        `/workspaces/${this.workspaceID()}/model-configs/${configId}`,
+        {
+          name: config.name,
+          provider: config.provider,
+          apiBase: config.apiBase,
+          modelName: config.modelName,
+          ...(config.credentialSecretId?.trim() ? { credentialSecretId: config.credentialSecretId.trim() } : {}),
+          options: config.options || {},
+          lockVersion: config.lockVersion,
+        },
+      );
       const updated = normalizeModelConfig(response.data);
       this.upsertConfig(updated);
       return updated;
     },
     async verifyModelConfig(configId: string) {
-      const response = await apiClient.post<ModelApiConfig>(`/workspaces/${this.workspaceID()}/model-configs/${configId}:verify`);
+      const response = await apiClient.post<ModelApiConfig>(
+        `/workspaces/${this.workspaceID()}/model-configs/${configId}:verify`,
+      );
       const verified = normalizeModelConfig(response.data);
       this.upsertConfig(verified);
       return verified;
@@ -136,7 +143,9 @@ export const useModelConfigStore = defineStore("modelConfigs", {
     async deleteModelConfig(configId: string) {
       const config = this.items.find((item) => item.id === configId);
       if (!config) throw new Error(`Model configuration ${configId} is not loaded.`);
-      await apiClient.delete(`/workspaces/${this.workspaceID()}/model-configs/${configId}?lockVersion=${config.lockVersion}`);
+      await apiClient.delete(
+        `/workspaces/${this.workspaceID()}/model-configs/${configId}?lockVersion=${config.lockVersion}`,
+      );
       this.items = this.items.filter((item) => item.id !== configId);
       this.pagination = { ...this.pagination, total: Math.max(0, this.pagination.total - 1) };
       if (this.selectedConfigId === configId) this.selectedConfigId = this.items[0]?.id || "";
@@ -172,7 +181,16 @@ function filterModelConfigs(items: ModelApiConfig[], query: string, status?: Mod
 
 function sortModelConfigs(items: ModelApiConfig[], sortBy?: string, order?: "asc" | "desc") {
   if (!sortBy || !order) return items;
-  const allowed = new Set(["name", "provider", "apiBase", "modelName", "status", "lastLatencyMs", "createdBy", "updatedBy"]);
+  const allowed = new Set([
+    "name",
+    "provider",
+    "apiBase",
+    "modelName",
+    "status",
+    "lastLatencyMs",
+    "createdBy",
+    "updatedBy",
+  ]);
   if (!allowed.has(sortBy)) return items;
   return [...items].sort((left, right) => {
     const comparison = String(left[sortBy as keyof ModelApiConfig] ?? "").localeCompare(

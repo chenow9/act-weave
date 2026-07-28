@@ -141,7 +141,10 @@ function updateOutputPath(path: string) {
         <strong>运行语义</strong>
         <small>foreach controller</small>
       </div>
-      <p>当前运行时会解析 collection、itemAlias、concurrency，并让下游节点在循环作用域中使用 `foreach.item` / `foreach.alias` 路径，同时支持 loop output mapping。</p>
+      <p>
+        当前运行时会解析 collection、itemAlias、concurrency，并让下游节点在循环作用域中使用 `foreach.item` /
+        `foreach.alias` 路径，同时支持 loop output mapping。
+      </p>
     </section>
   </section>
 </template>

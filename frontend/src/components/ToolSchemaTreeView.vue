@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, getCurrentInstance } from "vue";
 
+import { ensureVxe } from "../plugins/register-vxe";
 import type { ToolSchemaNode } from "../types/domain";
+
+const app = getCurrentInstance()?.appContext.app;
+if (app) ensureVxe(app);
 
 type SchemaRowKind = "node" | "array-item";
 
@@ -24,7 +28,9 @@ const props = defineProps<{
 }>();
 
 const tableRows = computed(() => props.nodes.map((node) => toTableRow(node)));
-const showLocationColumn = computed(() => variantMode.value === "spec" || containsLocation(props.nodes) || Boolean(props.defaultLocation));
+const showLocationColumn = computed(
+  () => variantMode.value === "spec" || containsLocation(props.nodes) || Boolean(props.defaultLocation),
+);
 const variantMode = computed(() => props.variant || "default");
 const summaryText = computed(() => {
   const total = countNodes(props.nodes);
@@ -55,7 +61,12 @@ function toTableRow(node: ToolSchemaNode, kind: SchemaRowKind = "node"): SchemaT
 const tableRowsWithDepth = computed(() => annotateDepth(tableRows.value, 0, "", props.defaultLocation || ""));
 
 function containsLocation(nodes: ToolSchemaNode[]): boolean {
-  return nodes.some((node) => Boolean(node.location) || containsLocation(node.children || []) || (node.item ? containsLocation([node.item]) : false));
+  return nodes.some(
+    (node) =>
+      Boolean(node.location) ||
+      containsLocation(node.children || []) ||
+      (node.item ? containsLocation([node.item]) : false),
+  );
 }
 
 function typeLabel(type: string, variant: "default" | "spec") {
@@ -129,12 +140,7 @@ function annotateDepth(rows: SchemaTableRow[], depth = 0, parentPath = "", inher
     __path: buildPath(row, parentPath),
     __locationLabel: row.location || inheritedLocation || "",
     children: row.children
-      ? annotateDepth(
-          row.children,
-          depth + 1,
-          buildPath(row, parentPath),
-          row.location || inheritedLocation || "",
-        )
+      ? annotateDepth(row.children, depth + 1, buildPath(row, parentPath), row.location || inheritedLocation || "")
       : [],
   }));
 }
@@ -144,7 +150,10 @@ function countActiveFields(nodes: ToolSchemaNode[]): number {
 }
 
 function countNodes(nodes: ToolSchemaNode[]): number {
-  return nodes.reduce((total, node) => total + 1 + countNodes(node.children || []) + (node.item ? countNodes([node.item]) : 0), 0);
+  return nodes.reduce(
+    (total, node) => total + 1 + countNodes(node.children || []) + (node.item ? countNodes([node.item]) : 0),
+    0,
+  );
 }
 
 function countRequiredNodes(nodes: ToolSchemaNode[]): number {
@@ -177,7 +186,9 @@ function maxDepth(nodes: ToolSchemaNode[], depth = 1): number {
         <strong>{{ summaryTitle || title }}</strong>
         <span v-if="summaryDescription">{{ summaryDescription }}</span>
       </div>
-      <span class="tool-schema-view-summary">{{ variantMode === "spec" ? `${countActiveFields(nodes)} 个活跃字段` : summaryText }}</span>
+      <span class="tool-schema-view-summary">{{
+        variantMode === "spec" ? `${countActiveFields(nodes)} 个活跃字段` : summaryText
+      }}</span>
     </div>
     <div v-if="tableRows.length" class="tool-schema-tree" :class="{ 'tool-schema-tree-spec': variantMode === 'spec' }">
       <vxe-table
@@ -192,12 +203,7 @@ function maxDepth(nodes: ToolSchemaNode[], depth = 1): number {
         :tree-config="{ childrenField: 'children', expandAll: true, showLine: true }"
         show-overflow="title"
       >
-        <vxe-column
-          v-if="showLocationColumn && variantMode !== 'spec'"
-          field="location"
-          title="参数位置"
-          width="140"
-        >
+        <vxe-column v-if="showLocationColumn && variantMode !== 'spec'" field="location" title="参数位置" width="140">
           <template #default="{ row }">
             <span class="tool-schema-cell-text">
               {{ locationLabel(row.__locationLabel, variantMode) }}
@@ -219,40 +225,49 @@ function maxDepth(nodes: ToolSchemaNode[], depth = 1): number {
                 <div class="tool-schema-view-keyline tool-schema-view-keyline-spec" :title="row.__path">
                   <span class="tool-schema-view-spec-indent" :style="{ width: `${row.__depth * 22}px` }" />
                   <span v-if="row.__depth > 0" class="tool-schema-view-branch-spec">└</span>
-                  <span class="tool-schema-view-name" :class="{ 'is-root': row.__depth === 0 }">{{ nameLabel(row) }}</span>
+                  <span class="tool-schema-view-name" :class="{ 'is-root': row.__depth === 0 }">{{
+                    nameLabel(row)
+                  }}</span>
                 </div>
               </template>
               <template v-else>
                 <div class="tool-schema-view-keyline">
                   <span v-if="depthOf(row) > 0" class="tool-schema-view-branch">└─</span>
                   <span class="tool-schema-view-node-tag">{{ nodeTag(row) }}</span>
-                  <span class="tool-schema-view-name" :class="{ 'is-root': depthOf(row) === 0 }">{{ nameLabel(row) }}</span>
+                  <span class="tool-schema-view-name" :class="{ 'is-root': depthOf(row) === 0 }">{{
+                    nameLabel(row)
+                  }}</span>
                 </div>
                 <span class="tool-schema-view-path">{{ row.__path }}</span>
               </template>
             </div>
           </template>
         </vxe-column>
-        <vxe-column
-          v-if="showLocationColumn && variantMode === 'spec'"
-          field="location"
-          title="位置"
-          width="92"
-        >
+        <vxe-column v-if="showLocationColumn && variantMode === 'spec'" field="location" title="位置" width="92">
           <template #default="{ row }">
             <span class="tool-schema-cell-text tool-schema-cell-text-spec">
               {{ locationLabel(row.__locationLabel, variantMode) }}
             </span>
           </template>
         </vxe-column>
-        <vxe-column field="type" :title="variantMode === 'spec' ? '数据类型' : '字段类型'" :width="variantMode === 'spec' ? 108 : 140">
+        <vxe-column
+          field="type"
+          :title="variantMode === 'spec' ? '数据类型' : '字段类型'"
+          :width="variantMode === 'spec' ? 108 : 140"
+        >
           <template #default="{ row }">
             <span class="tool-schema-view-type">{{ typeLabel(row.type, variantMode) }}</span>
           </template>
         </vxe-column>
-        <vxe-column field="required" :title="variantMode === 'spec' ? '必填状态' : '是否必填'" :width="variantMode === 'spec' ? 96 : 120">
+        <vxe-column
+          field="required"
+          :title="variantMode === 'spec' ? '必填状态' : '是否必填'"
+          :width="variantMode === 'spec' ? 96 : 120"
+        >
           <template #default="{ row }">
-            <span class="tool-schema-view-required" :class="{ optional: !row.required }">{{ row.required ? "YES" : "Optional" }}</span>
+            <span class="tool-schema-view-required" :class="{ optional: !row.required }">{{
+              row.required ? "YES" : "Optional"
+            }}</span>
           </template>
         </vxe-column>
         <vxe-column
@@ -261,7 +276,9 @@ function maxDepth(nodes: ToolSchemaNode[], depth = 1): number {
           :min-width="variantMode === 'spec' ? 220 : 300"
         >
           <template #default="{ row }">
-            <span v-if="variantMode === 'spec'" class="tool-schema-view-description">{{ row.description || "暂无说明" }}</span>
+            <span v-if="variantMode === 'spec'" class="tool-schema-view-description">{{
+              row.description || "暂无说明"
+            }}</span>
             <div v-else class="tool-schema-view-description-card">
               <span class="tool-schema-view-description">{{ row.description || "暂无说明" }}</span>
             </div>

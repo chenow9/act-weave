@@ -33,14 +33,19 @@ function updatePath(path: string) {
 
 <template>
   <section class="workflow-end-node-editor">
-    <WorkflowVariablePicker class="workflow-end-node-variable-picker" :model-value="currentPath()" :variable-refs="variableRefs" @update:model-value="updatePath" />
+    <WorkflowVariablePicker
+      class="workflow-end-node-variable-picker"
+      :model-value="currentPath()"
+      :variable-refs="variableRefs"
+      @update:model-value="updatePath"
+    />
 
     <section class="workflow-inspector-vars workflow-schema-preview">
       <div class="workflow-section-caption">
         <strong>输出映射</strong>
         <small>结构化 ref</small>
       </div>
-      <pre>{{ JSON.stringify(node.data.output || { kind: 'ref', path: '' }, null, 2) }}</pre>
+      <pre>{{ JSON.stringify(node.data.output || { kind: "ref", path: "" }, null, 2) }}</pre>
     </section>
   </section>
 </template>

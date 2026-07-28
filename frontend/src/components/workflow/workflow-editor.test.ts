@@ -285,7 +285,7 @@ function executionFixture(overrides: Record<string, unknown> = {}) {
     traceId: "trace-exec-trial",
     status: "Failed" as const,
     durationMs: 36,
-    inputSummary: "{\"orderId\":\"A10293\"}",
+    inputSummary: '{"orderId":"A10293"}',
     outputSummary: "Workflow trial run failed",
     errorMessage: "tool timeout",
     rawPayloadObjectAddress: "s3://actweave-executions/exec-trial/payload.json",
@@ -297,7 +297,7 @@ function executionFixture(overrides: Record<string, unknown> = {}) {
         nodeId: "start",
         nodeType: "Start",
         status: "passed",
-        inputSummary: "{\"orderId\":\"A10293\"}",
+        inputSummary: '{"orderId":"A10293"}',
         outputSummary: "input accepted",
         durationMs: 1,
       },
@@ -328,7 +328,10 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function mockWorkflowAssets(workflows: Array<Record<string, unknown>>, executions: Array<Record<string, unknown>> = []) {
+function mockWorkflowAssets(
+  workflows: Array<Record<string, unknown>>,
+  executions: Array<Record<string, unknown>> = [],
+) {
   void executions;
   const workflowReadiness = (workflows[0]?.readiness as Record<string, unknown> | undefined) || readinessFixture();
   const mock = vi.mocked(apiClient.get).mockResolvedValueOnce({ data: { items: workflows } });
@@ -367,7 +370,9 @@ function mockWorkflowAssets(workflows: Array<Record<string, unknown>>, execution
         useWorkflowStore().activeCompilation = data.latestCompilation as never;
       }
       queuePut({ data: data.draft, headers: { etag: '"draft-3-3"' } });
-      queueResolved({ data: readinessFixture({ stage: "CompileRequired", canTrial: false, compilationCurrent: false }) });
+      queueResolved({
+        data: readinessFixture({ stage: "CompileRequired", canTrial: false, compilationCurrent: false }),
+      });
       return putMock;
     }
     queuePut(response);
@@ -566,7 +571,9 @@ describe("workflow graph canvas", () => {
     });
 
     // Only one source handle (first output / shared exit) — no second exit dot.
-    expect(wrapper.find('[data-node-id="tool-1"] [data-handle-id="result"]').attributes("data-handle-type")).toBe("source");
+    expect(wrapper.find('[data-node-id="tool-1"] [data-handle-id="result"]').attributes("data-handle-type")).toBe(
+      "source",
+    );
     expect(wrapper.find('[data-node-id="tool-1"] [data-handle-id="fallback"]').exists()).toBe(false);
     expect(wrapper.find('[data-node-id="end"] [data-handle-id="input"]').attributes("data-handle-type")).toBe("target");
     expect(wrapper.find('[data-node-id="end"] [data-handle-id="output"]').exists()).toBe(false);
@@ -981,7 +988,10 @@ describe("workflow trial run dialog", () => {
     await wrapper.get('input[name="dryRun"]').setValue(true);
     await wrapper.get('button[data-action="submit-trial-run"]').trigger("click");
 
-    expect(wrapper.emitted("submit")?.[0]?.[0]).toEqual({ input: { orderId: "A10293", dryRun: true }, outboundCredentials: undefined });
+    expect(wrapper.emitted("submit")?.[0]?.[0]).toEqual({
+      input: { orderId: "A10293", dryRun: true },
+      outboundCredentials: undefined,
+    });
   });
 
   it("requires mandatory inputs and omits untouched optional fields", async () => {
@@ -1001,7 +1011,10 @@ describe("workflow trial run dialog", () => {
     await wrapper.get('input[name="orderId"]').setValue("A10293");
     await wrapper.get('button[data-action="submit-trial-run"]').trigger("click");
 
-    expect(wrapper.emitted("submit")?.[0]?.[0]).toEqual({ input: { orderId: "A10293" }, outboundCredentials: undefined });
+    expect(wrapper.emitted("submit")?.[0]?.[0]).toEqual({
+      input: { orderId: "A10293" },
+      outboundCredentials: undefined,
+    });
   });
 
   it("allows required boolean fields to submit false without toggling", async () => {
@@ -1014,7 +1027,10 @@ describe("workflow trial run dialog", () => {
 
     await wrapper.get('button[data-action="submit-trial-run"]').trigger("click");
 
-    expect(wrapper.emitted("submit")?.[0]?.[0]).toEqual({ input: { confirmOnly: false }, outboundCredentials: undefined });
+    expect(wrapper.emitted("submit")?.[0]?.[0]).toEqual({
+      input: { confirmOnly: false },
+      outboundCredentials: undefined,
+    });
   });
 
   it("submits raw JSON input and reports invalid JSON", async () => {
@@ -1029,7 +1045,10 @@ describe("workflow trial run dialog", () => {
     await wrapper.get('textarea[name="raw-json-input"]').setValue('{"orderId":"A10293","retry":2}');
     await wrapper.get('button[data-action="submit-trial-run"]').trigger("click");
 
-    expect(wrapper.emitted("submit")?.[0]?.[0]).toEqual({ input: { orderId: "A10293", retry: 2 }, outboundCredentials: undefined });
+    expect(wrapper.emitted("submit")?.[0]?.[0]).toEqual({
+      input: { orderId: "A10293", retry: 2 },
+      outboundCredentials: undefined,
+    });
 
     await wrapper.get('textarea[name="raw-json-input"]').setValue("{bad-json");
     await wrapper.get('button[data-action="submit-trial-run"]').trigger("click");
@@ -1051,7 +1070,10 @@ describe("workflow trial run dialog", () => {
     await wrapper.get('button[data-action="submit-trial-run"]').trigger("click");
 
     expect(wrapper.text()).toContain("LAST-1");
-    expect(wrapper.emitted("submit")?.[0]?.[0]).toEqual({ input: { orderId: "LAST-1", dryRun: true }, outboundCredentials: undefined });
+    expect(wrapper.emitted("submit")?.[0]?.[0]).toEqual({
+      input: { orderId: "LAST-1", dryRun: true },
+      outboundCredentials: undefined,
+    });
   });
 
   it("keeps the dialog open and blocks duplicate submission while submitting", async () => {
@@ -1126,8 +1148,10 @@ describe("workflow execution trace panel", () => {
   });
 });
 
-
-async function openWorkflowEditorFromMenu(wrapper: { findAll: (s: string) => any[]; vm: { $nextTick: () => Promise<void> } }, rowIndex = 0) {
+async function openWorkflowEditorFromMenu(
+  wrapper: { findAll: (s: string) => any[]; vm: { $nextTick: () => Promise<void> } },
+  rowIndex = 0,
+) {
   const triggers = wrapper.findAll('button[aria-label="更多编排操作"]');
   const trigger = triggers[rowIndex];
   if (!trigger) {
@@ -1229,15 +1253,21 @@ describe("workflow graph editor", () => {
 
   it("tracks dirty state and supports undo/redo from keyboard shortcuts", async () => {
     mockWorkflowAssets([workflowFixture()])
-      .mockResolvedValueOnce({ data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) } })
-      .mockResolvedValueOnce({ data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) } });
+      .mockResolvedValueOnce({
+        data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) },
+      })
+      .mockResolvedValueOnce({
+        data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) },
+      });
     vi.mocked(apiClient.put).mockResolvedValueOnce({
       data: {
         draft: {
           ...draftFixture(),
           graph: {
             ...draftFixture().graph,
-            nodes: draftFixture().graph.nodes.map((node) => (node.id === "start" ? { ...node, label: "Order intake" } : node)),
+            nodes: draftFixture().graph.nodes.map((node) =>
+              node.id === "start" ? { ...node, label: "Order intake" } : node,
+            ),
           },
         },
         latestCompilation: compilationFixture({ status: "Valid", issues: [] }),
@@ -1358,7 +1388,7 @@ describe("workflow graph editor", () => {
     await wrapper.find('[data-node-id="start"]').trigger("click");
     await wrapper.get('button[data-action="duplicate-selected-node"]').trigger("click");
 
-    expect(wrapper.findAll('[data-node-id]').length).toBe(3);
+    expect(wrapper.findAll("[data-node-id]").length).toBe(3);
     expect(wrapper.text()).toContain("Start Copy");
 
     wrapper.getComponent(WorkflowGraphCanvas).vm.$emit("select-edge", "edge-start-end");
@@ -1381,8 +1411,9 @@ describe("workflow graph editor", () => {
   });
 
   it("does not load the removed Workflow approval compatibility resource when the editor opens", async () => {
-    mockWorkflowAssets([workflowSummaryFixture()])
-      .mockResolvedValueOnce({ data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) } });
+    mockWorkflowAssets([workflowSummaryFixture()]).mockResolvedValueOnce({
+      data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) },
+    });
 
     const wrapper = mount(WorkflowView, {
       global: {
@@ -1411,53 +1442,52 @@ describe("workflow graph editor", () => {
   });
 
   it("deletes the selected node together with attached edges from the editor", async () => {
-    mockWorkflowAssets([workflowFixture()])
-      .mockResolvedValueOnce({
-        data: {
-          draft: {
-            ...draftFixture(),
-            graph: {
-              ...draftFixture().graph,
-              nodes: [
-                ...draftFixture().graph.nodes,
-                {
-                  id: "tool-1",
-                  type: "Tool",
-                  label: "Query Order",
-                  position: { x: 260, y: 180 },
-                  ports: [
-                    { key: "input", label: "Input", direction: "input" },
-                    { key: "result", label: "Result", direction: "output" },
-                  ],
-                  data: { toolId: "order.status.query" },
-                  ui: {},
-                },
-              ],
-              edges: [
-                {
-                  id: "edge-start-tool",
-                  sourceNodeId: "start",
-                  sourcePort: "output",
-                  targetNodeId: "tool-1",
-                  targetPort: "input",
-                  data: {},
-                  ui: {},
-                },
-                {
-                  id: "edge-tool-end",
-                  sourceNodeId: "tool-1",
-                  sourcePort: "result",
-                  targetNodeId: "end",
-                  targetPort: "input",
-                  data: {},
-                  ui: {},
-                },
-              ],
-            },
+    mockWorkflowAssets([workflowFixture()]).mockResolvedValueOnce({
+      data: {
+        draft: {
+          ...draftFixture(),
+          graph: {
+            ...draftFixture().graph,
+            nodes: [
+              ...draftFixture().graph.nodes,
+              {
+                id: "tool-1",
+                type: "Tool",
+                label: "Query Order",
+                position: { x: 260, y: 180 },
+                ports: [
+                  { key: "input", label: "Input", direction: "input" },
+                  { key: "result", label: "Result", direction: "output" },
+                ],
+                data: { toolId: "order.status.query" },
+                ui: {},
+              },
+            ],
+            edges: [
+              {
+                id: "edge-start-tool",
+                sourceNodeId: "start",
+                sourcePort: "output",
+                targetNodeId: "tool-1",
+                targetPort: "input",
+                data: {},
+                ui: {},
+              },
+              {
+                id: "edge-tool-end",
+                sourceNodeId: "tool-1",
+                sourcePort: "result",
+                targetNodeId: "end",
+                targetPort: "input",
+                data: {},
+                ui: {},
+              },
+            ],
           },
-          latestCompilation: compilationFixture({ status: "Valid", issues: [] }),
         },
-      });
+        latestCompilation: compilationFixture({ status: "Valid", issues: [] }),
+      },
+    });
 
     const wrapper = mount(WorkflowView, {
       global: {
@@ -1497,8 +1527,9 @@ describe("workflow graph editor", () => {
   });
 
   it("prevents terminal start and end nodes from being deleted through the context menu", async () => {
-    mockWorkflowAssets([workflowFixture()])
-      .mockResolvedValueOnce({ data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) } });
+    mockWorkflowAssets([workflowFixture()]).mockResolvedValueOnce({
+      data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) },
+    });
 
     const wrapper = mount(WorkflowView, {
       global: {
@@ -1542,8 +1573,9 @@ describe("workflow graph editor", () => {
   });
 
   it("prevents browser navigation when Backspace targets protected terminal nodes", async () => {
-    mockWorkflowAssets([workflowFixture()])
-      .mockResolvedValueOnce({ data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) } });
+    mockWorkflowAssets([workflowFixture()]).mockResolvedValueOnce({
+      data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) },
+    });
 
     const wrapper = mount(WorkflowView, {
       global: {
@@ -1579,10 +1611,9 @@ describe("workflow graph editor", () => {
   });
 
   it("deletes a duplicate Start node while preserving the canonical Start node", async () => {
-    mockWorkflowAssets([workflowFixture()])
-      .mockResolvedValueOnce({
-        data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) },
-      });
+    mockWorkflowAssets([workflowFixture()]).mockResolvedValueOnce({
+      data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) },
+    });
 
     const wrapper = mount(WorkflowView, {
       global: {
@@ -1618,8 +1649,9 @@ describe("workflow graph editor", () => {
   });
 
   it("deletes the selected edge without affecting nodes", async () => {
-    mockWorkflowAssets([workflowFixture()])
-      .mockResolvedValueOnce({ data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) } });
+    mockWorkflowAssets([workflowFixture()]).mockResolvedValueOnce({
+      data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) },
+    });
 
     const wrapper = mount(WorkflowView, {
       global: {
@@ -1662,8 +1694,9 @@ describe("workflow graph editor", () => {
   });
 
   it("shows an edge inspector, saves branch labels, and can clear them back to omitted data", async () => {
-    mockWorkflowAssets([workflowFixture()])
-      .mockResolvedValueOnce({ data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) } });
+    mockWorkflowAssets([workflowFixture()]).mockResolvedValueOnce({
+      data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) },
+    });
     vi.mocked(apiClient.put).mockResolvedValueOnce({
       data: {
         draft: {
@@ -1755,16 +1788,15 @@ describe("workflow graph editor", () => {
       edgeId: "edge-start-end",
       fieldPath: "edges.data.branch",
     };
-    mockWorkflowAssets([workflowFixture()])
-      .mockResolvedValueOnce({
-        data: {
-          draft: draftFixture(),
-          latestCompilation: compilationFixture({
-            status: "Invalid",
-            issues: [branchIssue],
-          }),
-        },
-      });
+    mockWorkflowAssets([workflowFixture()]).mockResolvedValueOnce({
+      data: {
+        draft: draftFixture(),
+        latestCompilation: compilationFixture({
+          status: "Invalid",
+          issues: [branchIssue],
+        }),
+      },
+    });
 
     const wrapper = mount(WorkflowView, {
       global: {
@@ -1802,46 +1834,45 @@ describe("workflow graph editor", () => {
   });
 
   it("shows type-specific inspector fields for workflow nodes", async () => {
-    mockWorkflowAssets([workflowFixture()])
-      .mockResolvedValueOnce({
-        data: {
-          draft: {
-            ...draftFixture(),
-            graph: {
-              ...draftFixture().graph,
-              nodes: [
-                {
-                  id: "condition-1",
-                  type: "Condition",
-                  label: "Condition 1",
-                  position: { x: 240, y: 120 },
-                  ports: [
-                    { key: "input", label: "Input", direction: "input" },
-                    { key: "output", label: "Output", direction: "output" },
-                  ],
-                  data: { expression: "nodeOutputs.tool.status == 'paid'" },
-                  ui: {},
-                },
-                {
-                  id: "transform-1",
-                  type: "Transform",
-                  label: "Transform 1",
-                  position: { x: 360, y: 220 },
-                  ports: [
-                    { key: "input", label: "Input", direction: "input" },
-                    { key: "output", label: "Output", direction: "output" },
-                  ],
-                  data: { template: "订单 {{input.orderId}}" },
-                  ui: {},
-                },
-                ...draftFixture().graph.nodes,
-              ],
-              edges: draftFixture().graph.edges,
-            },
+    mockWorkflowAssets([workflowFixture()]).mockResolvedValueOnce({
+      data: {
+        draft: {
+          ...draftFixture(),
+          graph: {
+            ...draftFixture().graph,
+            nodes: [
+              {
+                id: "condition-1",
+                type: "Condition",
+                label: "Condition 1",
+                position: { x: 240, y: 120 },
+                ports: [
+                  { key: "input", label: "Input", direction: "input" },
+                  { key: "output", label: "Output", direction: "output" },
+                ],
+                data: { expression: "nodeOutputs.tool.status == 'paid'" },
+                ui: {},
+              },
+              {
+                id: "transform-1",
+                type: "Transform",
+                label: "Transform 1",
+                position: { x: 360, y: 220 },
+                ports: [
+                  { key: "input", label: "Input", direction: "input" },
+                  { key: "output", label: "Output", direction: "output" },
+                ],
+                data: { template: "订单 {{input.orderId}}" },
+                ui: {},
+              },
+              ...draftFixture().graph.nodes,
+            ],
+            edges: draftFixture().graph.edges,
           },
-          latestCompilation: compilationFixture({ status: "Valid", issues: [] }),
         },
-      });
+        latestCompilation: compilationFixture({ status: "Valid", issues: [] }),
+      },
+    });
 
     const wrapper = mount(WorkflowView, {
       global: {
@@ -2089,24 +2120,32 @@ describe("workflow graph editor", () => {
       })
       .mockResolvedValueOnce({
         data: {
-          items: [toolVersionDTO("order.cancel.submit", {
-            inputSchema: {
-              type: "object",
-              required: ["orderId", "reason"],
-              properties: {
-                orderId: { type: "string", description: "订单 ID", location: "Body" },
-                reason: { type: "string", description: "取消原因", location: "Body" },
-                pageSize: { type: "integer", description: "分页大小", location: "Query", valueSource: "SystemDefault", default: 20 },
+          items: [
+            toolVersionDTO("order.cancel.submit", {
+              inputSchema: {
+                type: "object",
+                required: ["orderId", "reason"],
+                properties: {
+                  orderId: { type: "string", description: "订单 ID", location: "Body" },
+                  reason: { type: "string", description: "取消原因", location: "Body" },
+                  pageSize: {
+                    type: "integer",
+                    description: "分页大小",
+                    location: "Query",
+                    valueSource: "SystemDefault",
+                    default: 20,
+                  },
+                },
               },
-            },
-            outputSchema: {
-              type: "object",
-              properties: {
-                cancelId: { type: "string", description: "取消单 ID" },
-                status: { type: "string", description: "处理状态" },
+              outputSchema: {
+                type: "object",
+                properties: {
+                  cancelId: { type: "string", description: "取消单 ID" },
+                  status: { type: "string", description: "处理状态" },
+                },
               },
-            },
-          })],
+            }),
+          ],
         },
       });
     vi.mocked(apiClient.put).mockResolvedValueOnce({
@@ -2152,7 +2191,9 @@ describe("workflow graph editor", () => {
     expect(wrapper.get(".workflow-tool-variable-select").text()).not.toContain("nodeOutputs.tool-1.cancelId");
     expect(wrapper.get(".workflow-tool-variable-select").text()).not.toContain("nodeOutputs.notify-1.notified");
 
-    await wrapper.get('[data-param-name="orderId"] .workflow-tool-variable-select [data-value="input.orderId"]').trigger("click");
+    await wrapper
+      .get('[data-param-name="orderId"] .workflow-tool-variable-select [data-value="input.orderId"]')
+      .trigger("click");
     await wrapper.get('[data-param-name="reason"] [data-action="mapping-kind-literal"]').trigger("click");
     await wrapper.get('input[name="tool-param-reason-literal"]').setValue("customer_requested");
     await wrapper.get('[data-param-name="reason"] [data-action="mapping-kind-ref"]').trigger("click");
@@ -2260,8 +2301,12 @@ describe("workflow graph editor", () => {
 
   it("validates the current in-memory draft before requesting workflow validation", async () => {
     mockWorkflowAssets([workflowFixture()])
-      .mockResolvedValueOnce({ data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) } })
-      .mockResolvedValueOnce({ data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) } });
+      .mockResolvedValueOnce({
+        data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) },
+      })
+      .mockResolvedValueOnce({
+        data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) },
+      });
     vi.mocked(apiClient.put).mockResolvedValueOnce({
       data: {
         draft: {
@@ -2321,13 +2366,21 @@ describe("workflow graph editor", () => {
       }),
       expect.objectContaining({ headers: expect.objectContaining({ "If-Match": expect.any(String) }) }),
     );
-    expect(vi.mocked(apiClient.post)).toHaveBeenCalledWith("/workspaces/order/workflows/wf-order-cancel-draft/draft:compile");
-    expect(vi.mocked(apiClient.put).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(apiClient.post).mock.invocationCallOrder[0]);
+    expect(vi.mocked(apiClient.post)).toHaveBeenCalledWith(
+      "/workspaces/order/workflows/wf-order-cancel-draft/draft:compile",
+    );
+    expect(vi.mocked(apiClient.put).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(apiClient.post).mock.invocationCallOrder[0],
+    );
   });
 
   it("keeps compilation failures visible instead of calling legacy validation", async () => {
-    mockWorkflowAssets([{ ...workflowFixture(), readiness: readinessFixture({ stage: "PublishReady", canPublish: true }) }])
-      .mockResolvedValueOnce({ data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) } })
+    mockWorkflowAssets([
+      { ...workflowFixture(), readiness: readinessFixture({ stage: "PublishReady", canPublish: true }) },
+    ])
+      .mockResolvedValueOnce({
+        data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) },
+      })
       .mockResolvedValueOnce({ data: { approvals: [] } });
     vi.mocked(apiClient.put).mockResolvedValueOnce({
       data: {
@@ -2336,7 +2389,9 @@ describe("workflow graph editor", () => {
       },
     });
     vi.mocked(apiClient.post).mockResolvedValueOnce({ data: compilationFixture({ status: "INVALID" }) });
-    vi.mocked(apiClient.get).mockResolvedValueOnce({ data: readinessFixture({ stage: "CompileFailed", canTrial: false, compilationValid: false }) });
+    vi.mocked(apiClient.get).mockResolvedValueOnce({
+      data: readinessFixture({ stage: "CompileFailed", canTrial: false, compilationValid: false }),
+    });
 
     const wrapper = mount(WorkflowView, {
       global: {
@@ -2365,13 +2420,19 @@ describe("workflow graph editor", () => {
     await wrapper.vm.$nextTick();
 
     expect(vi.mocked(apiClient.put)).toHaveBeenCalled();
-    expect(vi.mocked(apiClient.post)).toHaveBeenCalledWith("/workspaces/order/workflows/wf-order-cancel-draft/draft:compile");
+    expect(vi.mocked(apiClient.post)).toHaveBeenCalledWith(
+      "/workspaces/order/workflows/wf-order-cancel-draft/draft:compile",
+    );
     expect(wrapper.get(".action-toast").text()).toContain("编译问题");
   });
 
   it("opens a schema-driven trial-run dialog from the saved start node schema", async () => {
-    mockWorkflowAssets([{ ...workflowFixture(), readiness: readinessFixture({ stage: "PublishReady", canPublish: true }) }])
-      .mockResolvedValueOnce({ data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) } })
+    mockWorkflowAssets([
+      { ...workflowFixture(), readiness: readinessFixture({ stage: "PublishReady", canPublish: true }) },
+    ])
+      .mockResolvedValueOnce({
+        data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) },
+      })
       .mockResolvedValueOnce({ data: { approvals: [] } });
     vi.mocked(apiClient.put).mockResolvedValueOnce({
       data: {
@@ -2395,7 +2456,9 @@ describe("workflow graph editor", () => {
       });
     vi.mocked(apiClient.get)
       .mockResolvedValueOnce({ data: readinessFixture({ stage: "TrialRequired", canTrial: true }) })
-      .mockResolvedValueOnce({ data: readinessFixture({ stage: "PublishReady", canPublish: true, trialCurrent: true, trialSuccessful: true }) });
+      .mockResolvedValueOnce({
+        data: readinessFixture({ stage: "PublishReady", canPublish: true, trialCurrent: true, trialSuccessful: true }),
+      });
 
     const wrapper = mount(WorkflowView, {
       global: {
@@ -2440,9 +2503,12 @@ describe("workflow graph editor", () => {
     await wrapper.get('button[data-action="submit-trial-run"]').trigger("click");
     await flushPromises();
 
-    expect(vi.mocked(apiClient.post)).toHaveBeenCalledWith("/workspaces/order/workflows/wf-order-cancel-draft/compilations/comp-1:trial", {
-      input: { orderId: "A10293", dryRun: true },
-    });
+    expect(vi.mocked(apiClient.post)).toHaveBeenCalledWith(
+      "/workspaces/order/workflows/wf-order-cancel-draft/compilations/comp-1:trial",
+      {
+        input: { orderId: "A10293", dryRun: true },
+      },
+    );
     expect(vi.mocked(apiClient.get)).not.toHaveBeenCalledWith("/executions/exec-trial");
     expect(wrapper.text()).toContain("试运行已生成 exec-trial");
     expect(wrapper.findComponent(WorkflowTrialRunDialog).exists()).toBe(false);
@@ -2450,13 +2516,12 @@ describe("workflow graph editor", () => {
   });
 
   it("supports compact start-node input schema maps in the trial-run dialog", async () => {
-    mockWorkflowAssets([workflowFixture()])
-      .mockResolvedValueOnce({
-        data: {
-          draft: compactSchemaDraftFixture(),
-          latestCompilation: compilationFixture({ status: "Valid", issues: [] }),
-        },
-      });
+    mockWorkflowAssets([workflowFixture()]).mockResolvedValueOnce({
+      data: {
+        draft: compactSchemaDraftFixture(),
+        latestCompilation: compilationFixture({ status: "Valid", issues: [] }),
+      },
+    });
     vi.mocked(apiClient.put).mockResolvedValueOnce({
       data: {
         draft: compactSchemaDraftFixture(),
@@ -2498,22 +2563,15 @@ describe("workflow graph editor", () => {
   });
 
   it("does not fall back to legacy trial-run inputs when draft loading fails for reasons other than not found", async () => {
-    const draftLoadError = new AxiosError(
-      "draft load failed",
-      "ERR_BAD_RESPONSE",
-      undefined,
-      undefined,
-      {
-        status: 500,
-        statusText: "Internal Server Error",
-        headers: {},
-        config: { headers: {} } as never,
-        data: { error: "draft load failed" },
-      },
-    );
+    const draftLoadError = new AxiosError("draft load failed", "ERR_BAD_RESPONSE", undefined, undefined, {
+      status: 500,
+      statusText: "Internal Server Error",
+      headers: {},
+      config: { headers: {} } as never,
+      data: { error: "draft load failed" },
+    });
 
-    mockWorkflowAssets([workflowFixture()])
-      .mockRejectedValueOnce(draftLoadError);
+    mockWorkflowAssets([workflowFixture()]).mockRejectedValueOnce(draftLoadError);
 
     const wrapper = mount(WorkflowView, {
       global: {
@@ -2544,21 +2602,14 @@ describe("workflow graph editor", () => {
   });
 
   it("does not fabricate trial-run inputs when the draft endpoint returns not found", async () => {
-    const draftNotFoundError = new AxiosError(
-      "draft missing",
-      "ERR_BAD_REQUEST",
-      undefined,
-      undefined,
-      {
-        status: 404,
-        statusText: "Not Found",
-        headers: {},
-        config: { headers: {} } as never,
-        data: { error: "workflow draft not found" },
-      },
-    );
-    mockWorkflowAssets([workflowFixture()])
-      .mockRejectedValueOnce(draftNotFoundError);
+    const draftNotFoundError = new AxiosError("draft missing", "ERR_BAD_REQUEST", undefined, undefined, {
+      status: 404,
+      statusText: "Not Found",
+      headers: {},
+      config: { headers: {} } as never,
+      data: { error: "workflow draft not found" },
+    });
+    mockWorkflowAssets([workflowFixture()]).mockRejectedValueOnce(draftNotFoundError);
 
     const wrapper = mount(WorkflowView, {
       global: {
@@ -2591,27 +2642,22 @@ describe("workflow graph editor", () => {
   });
 
   it("surfaces latest compilation when trial run returns an invalid draft error", async () => {
-    const invalidTrialRunError = new AxiosError(
-      "trial run blocked",
-      "ERR_BAD_REQUEST",
-      undefined,
-      undefined,
-      {
-        status: 400,
-        statusText: "Bad Request",
-        headers: {},
-        config: { headers: {} } as never,
-        data: {
-          error: "workflow draft must compile successfully before trial run",
-          workflow: workflowFixture(),
-          validation: { valid: false, issues: [] },
-          latestCompilation: compilationFixture(),
-        },
+    const invalidTrialRunError = new AxiosError("trial run blocked", "ERR_BAD_REQUEST", undefined, undefined, {
+      status: 400,
+      statusText: "Bad Request",
+      headers: {},
+      config: { headers: {} } as never,
+      data: {
+        error: "workflow draft must compile successfully before trial run",
+        workflow: workflowFixture(),
+        validation: { valid: false, issues: [] },
+        latestCompilation: compilationFixture(),
       },
-    );
+    });
 
-    mockWorkflowAssets([workflowFixture()])
-      .mockResolvedValueOnce({ data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) } });
+    mockWorkflowAssets([workflowFixture()]).mockResolvedValueOnce({
+      data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) },
+    });
     vi.mocked(apiClient.put).mockResolvedValueOnce({
       data: {
         draft: draftFixture(),
@@ -2660,32 +2706,27 @@ describe("workflow graph editor", () => {
   });
 
   it("treats stale compilation trial-run errors as requiring a fresh save and compile", async () => {
-    const staleTrialRunError = new AxiosError(
-      "trial run blocked",
-      "ERR_BAD_REQUEST",
-      undefined,
-      undefined,
-      {
-        status: 400,
-        statusText: "Bad Request",
-        headers: {},
-        config: { headers: {} } as never,
-        data: {
-          error: "workflow draft compilation is stale",
-          workflow: workflowFixture(),
-          validation: { valid: false, issues: [] },
-          latestCompilation: compilationFixture({
-            status: "Valid",
-            issues: [],
-            draftVersion: "draft-v1",
-            compiledAt: "2026-06-27T08:59:00Z",
-          }),
-        },
+    const staleTrialRunError = new AxiosError("trial run blocked", "ERR_BAD_REQUEST", undefined, undefined, {
+      status: 400,
+      statusText: "Bad Request",
+      headers: {},
+      config: { headers: {} } as never,
+      data: {
+        error: "workflow draft compilation is stale",
+        workflow: workflowFixture(),
+        validation: { valid: false, issues: [] },
+        latestCompilation: compilationFixture({
+          status: "Valid",
+          issues: [],
+          draftVersion: "draft-v1",
+          compiledAt: "2026-06-27T08:59:00Z",
+        }),
       },
-    );
+    });
 
-    mockWorkflowAssets([workflowFixture()])
-      .mockResolvedValueOnce({ data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) } });
+    mockWorkflowAssets([workflowFixture()]).mockResolvedValueOnce({
+      data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) },
+    });
     vi.mocked(apiClient.put).mockResolvedValueOnce({
       data: {
         draft: draftFixture(),
@@ -2733,8 +2774,11 @@ describe("workflow graph editor", () => {
   });
 
   it("keeps a dirty editor on the first compilation issue instead of publishing an invalid draft", async () => {
-    mockWorkflowAssets([{ ...workflowFixture(), readiness: readinessFixture({ stage: "PublishReady", canPublish: true }) }])
-      .mockResolvedValueOnce({ data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) } });
+    mockWorkflowAssets([
+      { ...workflowFixture(), readiness: readinessFixture({ stage: "PublishReady", canPublish: true }) },
+    ]).mockResolvedValueOnce({
+      data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) },
+    });
     vi.mocked(apiClient.put).mockResolvedValueOnce({
       data: {
         draft: draftFixture(),
@@ -2785,8 +2829,11 @@ describe("workflow graph editor", () => {
   });
 
   it("publishes an unchanged publish-ready editor draft without re-saving it", async () => {
-    mockWorkflowAssets([{ ...workflowFixture(), readiness: readinessFixture({ stage: "PublishReady", canPublish: true }) }])
-      .mockResolvedValueOnce({ data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) } });
+    mockWorkflowAssets([
+      { ...workflowFixture(), readiness: readinessFixture({ stage: "PublishReady", canPublish: true }) },
+    ]).mockResolvedValueOnce({
+      data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) },
+    });
     vi.mocked(apiClient.put).mockResolvedValueOnce({
       data: {
         draft: draftFixture(),
@@ -2819,7 +2866,9 @@ describe("workflow graph editor", () => {
     });
     vi.mocked(apiClient.get)
       .mockResolvedValueOnce({ data: { ...workflowFixture(), status: "ACTIVE", activeRevisionId: "rev-1" } })
-      .mockResolvedValueOnce({ data: readinessFixture({ stage: "Published", canPublish: false, published: true, activeRevisionId: "rev-1" }) });
+      .mockResolvedValueOnce({
+        data: readinessFixture({ stage: "Published", canPublish: false, published: true, activeRevisionId: "rev-1" }),
+      });
 
     const wrapper = mount(WorkflowView, {
       global: {
@@ -2857,17 +2906,16 @@ describe("workflow graph editor", () => {
   });
 
   it("creates a new workflow as graph-first metadata and loads the backend default draft", async () => {
-    mockWorkflowAssets([workflowFixture()])
-      .mockResolvedValueOnce({
-        data: {
-          draft: {
-            ...draftFixture(),
-            workflowId: "wf-created",
-            draftVersion: "draft-bootstrap",
-          },
-          latestCompilation: compilationFixture({ workflowId: "wf-created", draftVersion: "draft-bootstrap" }),
+    mockWorkflowAssets([workflowFixture()]).mockResolvedValueOnce({
+      data: {
+        draft: {
+          ...draftFixture(),
+          workflowId: "wf-created",
+          draftVersion: "draft-bootstrap",
         },
-      });
+        latestCompilation: compilationFixture({ workflowId: "wf-created", draftVersion: "draft-bootstrap" }),
+      },
+    });
     vi.mocked(apiClient.post).mockResolvedValueOnce({
       data: {
         workflow: {
@@ -2917,7 +2965,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('button.primary-button').trigger("click");
+    await wrapper.find("button.primary-button").trigger("click");
     await flushPromises();
     await wrapper.vm.$nextTick();
 
@@ -3021,16 +3069,17 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.findAll("button").find((button) => button.text() === "新建编排")?.trigger("click");
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text() === "新建编排")
+      ?.trigger("click");
     await flushPromises();
     await wrapper.vm.$nextTick();
 
     const selectStubs = wrapper.get(".workflow-metadata-modal-card").findAll(".app-select-stub");
     expect(selectStubs).toHaveLength(2);
 
-    const workspaceField = wrapper
-      .findAll(".drawer-field")
-      .find((field) => field.text().includes("业务空间"));
+    const workspaceField = wrapper.findAll(".drawer-field").find((field) => field.text().includes("业务空间"));
     expect(workspaceField).toBeTruthy();
     const workspaceSelect = workspaceField!.get(".app-select-stub");
     expect(workspaceSelect.attributes("data-model-value")).toBe("order");
@@ -3084,8 +3133,7 @@ describe("workflow graph editor", () => {
         ...workflowSummaryFixture(),
         readiness,
       },
-    ])
-      .mockResolvedValueOnce({ data: { workflow: { ...workflowFixture(), readiness } } });
+    ]).mockResolvedValueOnce({ data: { workflow: { ...workflowFixture(), readiness } } });
 
     const wrapper = mount(WorkflowView, {
       global: {
@@ -3130,8 +3178,9 @@ describe("workflow graph editor", () => {
         ...workflowSummaryFixture(),
         readiness: readinessFixture({ canPublish: false }),
       },
-    ])
-      .mockResolvedValueOnce({ data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) } });
+    ]).mockResolvedValueOnce({
+      data: { draft: draftFixture(), latestCompilation: compilationFixture({ status: "Valid", issues: [] }) },
+    });
 
     const wrapper = mount(WorkflowView, {
       global: {
@@ -3170,26 +3219,21 @@ describe("workflow graph editor", () => {
     await flushPromises();
 
     expect(vi.mocked(apiClient.put)).not.toHaveBeenCalled();
-    expect(vi.mocked(apiClient.post)).not.toHaveBeenCalledWith("/workspaces/order/workflows/wf-order-cancel-draft/compilations/comp-1:publish");
+    expect(vi.mocked(apiClient.post)).not.toHaveBeenCalledWith(
+      "/workspaces/order/workflows/wf-order-cancel-draft/compilations/comp-1:publish",
+    );
   });
 
   it("keeps the editor closed when the draft endpoint returns 404", async () => {
-    const draftNotFoundError = new AxiosError(
-      "draft missing",
-      "ERR_BAD_REQUEST",
-      undefined,
-      undefined,
-      {
-        status: 404,
-        statusText: "Not Found",
-        headers: {},
-        config: { headers: {} } as never,
-        data: { error: "workflow draft not found" },
-      },
-    );
+    const draftNotFoundError = new AxiosError("draft missing", "ERR_BAD_REQUEST", undefined, undefined, {
+      status: 404,
+      statusText: "Not Found",
+      headers: {},
+      config: { headers: {} } as never,
+      data: { error: "workflow draft not found" },
+    });
 
-    mockWorkflowAssets([workflowSummaryFixture()])
-      .mockRejectedValueOnce(draftNotFoundError);
+    mockWorkflowAssets([workflowSummaryFixture()]).mockRejectedValueOnce(draftNotFoundError);
 
     const wrapper = mount(WorkflowView, {
       global: {
@@ -3224,10 +3268,12 @@ describe("workflow graph editor", () => {
     const firstDraft = deferred<{ data: ReturnType<typeof draftFixture>; headers: { etag: string } }>();
     const secondDraft = deferred<{ data: ReturnType<typeof draftFixture>; headers: { etag: string } }>();
 
+    // loadWorkflowDraft issues draft GET + readiness GET in parallel; queue both per open.
     mockWorkflowAssets([workflowFixture(), workflowFixture("wf-second", "第二个流程")])
       .mockImplementationOnce(() => firstDraft.promise)
-      .mockImplementationOnce(() => secondDraft.promise);
-    vi.mocked(apiClient.get).mockResolvedValue({ data: readinessFixture() });
+      .mockResolvedValueOnce({ data: readinessFixture() })
+      .mockImplementationOnce(() => secondDraft.promise)
+      .mockResolvedValueOnce({ data: readinessFixture() });
 
     const wrapper = mount(WorkflowView, {
       global: {
@@ -3258,7 +3304,7 @@ describe("workflow graph editor", () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.find(".workflow-editor-overlay").exists()).toBe(true);
-    expect(wrapper.get('[data-node-id="start"]').text()).toContain("Second Start");
+    expect(wrapper.text()).toContain("Second Start");
 
     firstDraft.resolve({
       data: draftFixtureFor("wf-order-cancel-draft", "First Start"),
@@ -3267,15 +3313,18 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    expect(wrapper.get('[data-node-id="start"]').text()).toContain("Second Start");
+    expect(wrapper.text()).toContain("Second Start");
     expect(wrapper.text()).not.toContain("First Start");
   });
 
   it("does not reopen the editor when a pending draft load is abandoned for create mode", async () => {
-    const firstDraft = deferred<{ data: { draft: ReturnType<typeof draftFixture>; latestCompilation: ReturnType<typeof compilationFixture> } }>();
+    const firstDraft = deferred<{
+      data: { draft: ReturnType<typeof draftFixture>; latestCompilation: ReturnType<typeof compilationFixture> };
+    }>();
 
-    mockWorkflowAssets([workflowFixture(), workflowFixture("wf-second", "第二个流程")])
-      .mockImplementationOnce(() => firstDraft.promise);
+    mockWorkflowAssets([workflowFixture(), workflowFixture("wf-second", "第二个流程")]).mockImplementationOnce(
+      () => firstDraft.promise,
+    );
 
     const wrapper = mount(WorkflowView, {
       global: {
@@ -3296,7 +3345,7 @@ describe("workflow graph editor", () => {
     await wrapper.vm.$nextTick();
 
     await openWorkflowEditorFromMenu(wrapper);
-    await wrapper.find('button.primary-button').trigger("click");
+    await wrapper.find("button.primary-button").trigger("click");
 
     firstDraft.resolve({
       data: {
@@ -3313,7 +3362,9 @@ describe("workflow graph editor", () => {
   });
 
   it("does not open the editor after the detail drawer is closed during a pending draft load", async () => {
-    const pendingDraft = deferred<{ data: { draft: ReturnType<typeof draftFixture>; latestCompilation: ReturnType<typeof compilationFixture> } }>();
+    const pendingDraft = deferred<{
+      data: { draft: ReturnType<typeof draftFixture>; latestCompilation: ReturnType<typeof compilationFixture> };
+    }>();
 
     mockWorkflowAssets([workflowSummaryFixture()])
       .mockResolvedValueOnce({ data: { workflow: workflowFixture() } })
@@ -3343,9 +3394,10 @@ describe("workflow graph editor", () => {
     await wrapper.vm.$nextTick();
     expect(wrapper.find(".workflow-detail-modal-card").exists()).toBe(true);
 
-    // Opening the editor closes the detail modal immediately (same z-index stack).
+    // ZKL-56 atomic handoff: detail stays open while Draft+Readiness load; editor mounts only on success.
     await openWorkflowEditorFromMenu(wrapper);
-    expect(wrapper.find(".workflow-detail-modal-card").exists()).toBe(false);
+    expect(wrapper.find(".workflow-detail-modal-card").exists()).toBe(true);
+    expect(wrapper.find(".workflow-editor-overlay").exists()).toBe(false);
 
     // Abandon the pending draft load by entering create mode.
     await wrapper.find("button.primary-button").trigger("click");

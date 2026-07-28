@@ -13,7 +13,7 @@ const emit = defineEmits<{
   (event: "update-node-data", payload: { key: string; value: unknown }): void;
 }>();
 
-const inputModeOptions = [
+const _inputModeOptions = [
   { label: "变量映射", value: "mapping" },
   { label: "JSON 输入", value: "json" },
 ];
@@ -29,7 +29,11 @@ watch(
   () => [props.node.data.input, props.node.data.inputMapping] as const,
   ([rawInput, rawMapping]) => {
     inputMode.value = rawInput && typeof rawInput === "object" && !Array.isArray(rawInput) ? "json" : "mapping";
-    rawInputText.value = JSON.stringify(rawInput && typeof rawInput === "object" && !Array.isArray(rawInput) ? rawInput : {}, null, 2);
+    rawInputText.value = JSON.stringify(
+      rawInput && typeof rawInput === "object" && !Array.isArray(rawInput) ? rawInput : {},
+      null,
+      2,
+    );
     mappingDraft.value = normalizeMappingDraft(rawMapping);
     if (!mappingDraft.value.length) {
       mappingDraft.value = [{ key: "value", path: "" }];
@@ -56,7 +60,9 @@ function renameMappingKey(index: number, nextKey: string) {
   if (!previousKey || !nextKey || previousKey === nextKey) {
     return;
   }
-  mappingDraft.value = mappingDraft.value.map((entry, currentIndex) => (currentIndex === index ? { ...entry, key: nextKey } : entry));
+  mappingDraft.value = mappingDraft.value.map((entry, currentIndex) =>
+    currentIndex === index ? { ...entry, key: nextKey } : entry,
+  );
   emitInputMapping();
 }
 
@@ -131,7 +137,9 @@ function updateRawInput(value: string) {
         inputMapping: undefined,
       },
     });
-  } catch {}
+  } catch {
+    // Ignore invalid JSON drafts while typing.
+  }
 }
 
 function normalizeMappingDraft(rawMapping: unknown) {
@@ -166,8 +174,12 @@ function normalizeMappingDraft(rawMapping: unknown) {
         <small>支持 `input` 或 `inputMapping`</small>
       </div>
       <div class="workflow-tool-mapping-mode" role="group" aria-label="SubWorkflow 输入模式">
-        <button type="button" :class="{ active: inputMode === 'mapping' }" @click="updateInputMode('mapping')">变量映射</button>
-        <button type="button" :class="{ active: inputMode === 'json' }" @click="updateInputMode('json')">JSON 输入</button>
+        <button type="button" :class="{ active: inputMode === 'mapping' }" @click="updateInputMode('mapping')">
+          变量映射
+        </button>
+        <button type="button" :class="{ active: inputMode === 'json' }" @click="updateInputMode('json')">
+          JSON 输入
+        </button>
       </div>
 
       <div v-if="inputMode === 'mapping'" class="workflow-tool-param-list workflow-advanced-input-list">

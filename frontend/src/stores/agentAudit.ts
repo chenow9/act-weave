@@ -73,10 +73,7 @@ export const useAgentAuditStore = defineStore("agentAudit", {
   },
   actions: {
     async loadTraces(workspaceId: string, params: AgentAuditListParams | string = {}): Promise<void> {
-      const normalized =
-        typeof params === "string"
-          ? { q: params }
-          : params;
+      const normalized = typeof params === "string" ? { q: params } : params;
 
       this.loading = true;
       this.workspaceId = workspaceId;
@@ -132,8 +129,7 @@ export const useAgentAuditStore = defineStore("agentAudit", {
         };
         this.debugMode = Boolean(response.data.debugMode);
         this.detailHasMore = Boolean(response.data.hasMore);
-        this.detailStepOffset =
-          (response.data.stepOffset ?? 0) + (response.data.steps?.length ?? 0);
+        this.detailStepOffset = (response.data.stepOffset ?? 0) + (response.data.steps?.length ?? 0);
         if (typeof response.data.stepLimit === "number" && response.data.stepLimit > 0) {
           this.detailStepLimit = response.data.stepLimit;
         }
@@ -165,8 +161,7 @@ export const useAgentAuditStore = defineStore("agentAudit", {
           steps: [...(this.selected.steps || []), ...nextSteps],
         };
         this.detailHasMore = Boolean(response.data.hasMore);
-        this.detailStepOffset =
-          (response.data.stepOffset ?? this.detailStepOffset) + nextSteps.length;
+        this.detailStepOffset = (response.data.stepOffset ?? this.detailStepOffset) + nextSteps.length;
         return response.data;
       } finally {
         this.detailLoadingMore = false;

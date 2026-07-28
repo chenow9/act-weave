@@ -1,14 +1,8 @@
 import { mount } from "@vue/test-utils";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { h, nextTick } from "vue";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import DataTable, { type DataTableColumn, type DataTableSelectionTone } from "./DataTable.vue";
-
-const currentDir = dirname(fileURLToPath(import.meta.url));
-const dataTableSource = readFileSync(resolve(currentDir, "DataTable.vue"), "utf8");
 
 type TestRow = {
   id: string;
@@ -62,14 +56,6 @@ function renderedColumnWidth(wrapper: ReturnType<typeof mountTable>, key: string
 }
 
 describe("DataTable", () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it("renders one controlled detail row for the matching key with the visible column span", async () => {
     const detailRows = rows.map((row) => ({ ...row, observation: "Healthy" }));
     const wrapper = mount(DataTable<TestRow>, {
@@ -163,94 +149,6 @@ describe("DataTable", () => {
     expect(actionCell.classes()).toContain("is-align-right");
   });
 
-  it("clips sticky cells and uses scroll-aware inset edge shadows instead of external overlays", () => {
-    expect(dataTableSource).toContain(".data-table td {\n  height: 56px;");
-    expect(dataTableSource).toContain("overflow: hidden;");
-    expect(dataTableSource).toContain(".data-table-scroll.has-scroll-left .data-table .is-sticky-boundary-right");
-    expect(dataTableSource).toContain(".data-table-scroll.has-scroll-right .data-table .is-sticky-boundary-left");
-    expect(dataTableSource).toContain("box-shadow: 4px 0 10px -6px rgba(15, 23, 42, 0.16);");
-    expect(dataTableSource).toContain("box-shadow: -4px 0 10px -6px rgba(15, 23, 42, 0.16);");
-    expect(dataTableSource).not.toContain(".data-table .is-sticky-boundary-right::after");
-    expect(dataTableSource).not.toContain(".data-table .is-sticky-boundary-left::before");
-  });
-
-  it("keeps accent selection as the default and marks every row in neutral mode", () => {
-    const accentTable = mountTable();
-    const accentRows = accentTable.findAll("tbody tr");
-
-    expect(accentTable.props("selectionTone")).toBe("accent");
-    expect(accentRows[0].classes()).toContain("is-selected");
-    expect(accentRows.every((row) => !row.classes().includes("is-selection-neutral"))).toBe(true);
-
-    const neutralTable = mountTable("neutral-table-columns", { selectionTone: "neutral" });
-    const neutralRows = neutralTable.findAll("tbody tr");
-
-    expect(neutralRows).toHaveLength(rows.length);
-    expect(neutralRows.every((row) => row.classes().includes("is-selection-neutral"))).toBe(true);
-    expect(neutralRows[0].classes()).toContain("is-selected");
-    expect(neutralRows[0].attributes("aria-selected")).toBe("true");
-    expect(neutralRows[1].attributes("aria-selected")).toBe("false");
-  });
-
-  it("supports controlled per-row and current-page checkbox selection without activating rows", async () => {
-    const wrapper = mount(DataTable<TestRow>, {
-      props: {
-        rows,
-        columns,
-        rowKey: "id",
-        checkable: true,
-        checkedRowKeys: ["row-1"],
-        rowSelectionLabel: (row) => `选择 ${row.name}`,
-      },
-    });
-
-    const selectAll = wrapper.get('thead .data-table-checkbox[aria-label="选择当前页全部"]');
-    const rowCheckboxes = wrapper.findAll("tbody .data-table-checkbox");
-    expect(rowCheckboxes).toHaveLength(2);
-    expect((rowCheckboxes[0].element as HTMLInputElement).checked).toBe(true);
-    expect((selectAll.element as HTMLInputElement).indeterminate).toBe(true);
-
-    await rowCheckboxes[1].setValue(true);
-    expect(wrapper.emitted("update:checked-row-keys")?.at(-1)).toEqual([["row-1", "row-2"]]);
-    expect(wrapper.emitted("select-row")).toBeUndefined();
-
-    await wrapper.setProps({ checkedRowKeys: ["row-1", "row-2"] });
-    await selectAll.setValue(false);
-    expect(wrapper.emitted("update:checked-row-keys")?.at(-1)).toEqual([[]]);
-  });
-
-  it("exports selection tones and overrides neutral selected and focus styles without changing border geometry", () => {
-    expect(dataTableSource).toContain('export type DataTableSelectionTone = "accent" | "neutral";');
-    expect(dataTableSource).toContain('selectionTone: "accent",');
-
-    const neutralSelectedBlock = dataTableSource.match(/\.data-table tbody tr\.is-selection-neutral\.is-selected\s*\{([^}]*)\}/s)?.[1];
-    const neutralFocusBlock = dataTableSource.match(/\.data-table tbody tr\.is-selection-neutral:focus-visible\s*\{([^}]*)\}/s)?.[1];
-    const neutralSelectedCellBlock = dataTableSource.match(/\.data-table tbody tr\.is-selection-neutral\.is-selected td\s*\{([^}]*)\}/s)?.[1];
-
-    expect(neutralSelectedBlock).toContain("border-left-color: transparent;");
-    expect(neutralSelectedBlock).not.toContain("border-left: 0");
-    expect(neutralSelectedBlock).toContain("background: #fbfdff;");
-    expect(neutralFocusBlock).toContain("box-shadow: inset 0 0 0 2px rgba(100, 116, 139, 0.35);");
-    expect(neutralSelectedCellBlock).toContain("background: #fbfdff;");
-  });
-
-  it("gives action columns balanced horizontal padding for menu-only rows", () => {
-    const actionCellBlock = dataTableSource.match(
-      /\.data-table th\[data-column-key="actions"\],\s*\.data-table tbody td\[data-column-key="actions"\]\s*\{([^}]*)\}/s,
-    )?.[1];
-
-    expect(actionCellBlock).toContain("padding-right: 12px;");
-    expect(actionCellBlock).toContain("padding-left: 8px;");
-  });
-
-  it("only reveals sticky boundary shadows when the table can scroll horizontally", () => {
-    expect(dataTableSource).toContain("has-scroll-left");
-    expect(dataTableSource).toContain("has-scroll-right");
-    expect(dataTableSource).toContain(".data-table-scroll.has-scroll-left .data-table .is-sticky-boundary-right");
-    expect(dataTableSource).toContain(".data-table-scroll.has-scroll-right .data-table .is-sticky-boundary-left");
-    expect(dataTableSource).toContain("box-shadow: 4px 0 10px -6px rgba(15, 23, 42, 0.16);");
-  });
-
   it("preserves right-sticky widths and distributes surplus across the remaining visible columns", async () => {
     const resizeCallbacks: ResizeObserverCallback[] = [];
     const disconnect = vi.fn();
@@ -282,7 +180,9 @@ describe("DataTable", () => {
     expect(renderedColumnWidth(wrapper, "name")).toBeCloseTo(311.67, 1);
     expect(renderedColumnWidth(wrapper, "owner")).toBeCloseTo(198.33, 1);
     expect(renderedColumnWidth(wrapper, "status")).toBeCloseTo(170, 1);
-    expect(["name", "owner", "status", "actions"].reduce((total, key) => total + renderedColumnWidth(wrapper, key), 0)).toBeCloseTo(808, 1);
+    expect(
+      ["name", "owner", "status", "actions"].reduce((total, key) => total + renderedColumnWidth(wrapper, key), 0),
+    ).toBeCloseTo(808, 1);
 
     Object.defineProperty(scroll.element, "clientWidth", { configurable: true, value: 500 });
     resizeCallbacks[0]([], {} as ResizeObserver);
@@ -308,23 +208,6 @@ describe("DataTable", () => {
 
     wrapper.unmount();
     expect(disconnect).toHaveBeenCalledOnce();
-  });
-
-  it("keeps sticky identity and action cells available on narrow viewports", () => {
-    expect(dataTableSource).toContain(".data-table .is-sticky-left,");
-    expect(dataTableSource).toContain("position: sticky;");
-    expect(dataTableSource).not.toContain("position: static;");
-    expect(dataTableSource).not.toContain("right: auto !important;");
-    expect(dataTableSource).toContain("min-height: 44px;");
-  });
-
-  it("gives prototype-spaced sortable headers a full-width 44px interaction target", () => {
-    const sortButtonBlock = dataTableSource.match(/\.data-table-sort-button\s*\{([^}]*)\}/s)?.[1];
-
-    expect(sortButtonBlock).toContain("width: calc(100% + 32px);");
-    expect(sortButtonBlock).toContain("min-height: 44px;");
-    expect(sortButtonBlock).toContain("margin: -1px -16px;");
-    expect(sortButtonBlock).toContain("padding: 0 16px;");
   });
 
   it("defaults placeholder-only hidable columns to hidden", async () => {

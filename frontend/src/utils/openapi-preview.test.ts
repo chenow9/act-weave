@@ -30,7 +30,12 @@ describe("parseOpenAPIPreview", () => {
     expect(preview.rows).toEqual([
       { method: "GET", path: "/api/inspection-area/region/page", suggestedTool: "区域分页查询", statusText: "可生成" },
       { method: "GET", path: "/api/inspection-area/route/{routeId}", suggestedTool: "航线详情", statusText: "可生成" },
-      { method: "PUT", path: "/api/inspection-area/route/{routeId}", suggestedTool: "updateRoute", statusText: "可生成" },
+      {
+        method: "PUT",
+        path: "/api/inspection-area/route/{routeId}",
+        suggestedTool: "updateRoute",
+        statusText: "可生成",
+      },
     ]);
   });
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ElOption, ElSelect } from "element-plus";
 import { nextTick, onMounted, ref, watch } from "vue";
 
 type AppSelectValue = string | number | boolean;
@@ -9,27 +10,30 @@ export interface AppSelectOption {
   disabled?: boolean;
 }
 
-const props = withDefaults(defineProps<{
-  modelValue: AppSelectValue;
-  options: AppSelectOption[];
-  placeholder?: string;
-  disabled?: boolean;
-  compact?: boolean;
-  filterable?: boolean;
-  ariaLabel?: string;
-  ariaRequired?: boolean;
-  ariaInvalid?: boolean;
-  ariaDescribedby?: string;
-}>(), {
-  placeholder: "请选择",
-  disabled: false,
-  compact: false,
-  filterable: false,
-  ariaLabel: undefined,
-  ariaRequired: false,
-  ariaInvalid: false,
-  ariaDescribedby: undefined,
-});
+const props = withDefaults(
+  defineProps<{
+    modelValue: AppSelectValue;
+    options: AppSelectOption[];
+    placeholder?: string;
+    disabled?: boolean;
+    compact?: boolean;
+    filterable?: boolean;
+    ariaLabel?: string;
+    ariaRequired?: boolean;
+    ariaInvalid?: boolean;
+    ariaDescribedby?: string;
+  }>(),
+  {
+    placeholder: "请选择",
+    disabled: false,
+    compact: false,
+    filterable: false,
+    ariaLabel: undefined,
+    ariaRequired: false,
+    ariaInvalid: false,
+    ariaDescribedby: undefined,
+  },
+);
 
 const emit = defineEmits<{
   "update:modelValue": [value: AppSelectValue];
@@ -94,7 +98,7 @@ watch(
     >
       <el-option
         v-for="option in options"
-        :key="option.value"
+        :key="String(option.value)"
         :label="option.label"
         :value="option.value"
         :disabled="option.disabled"

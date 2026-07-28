@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  groupNavItemsBySection,
-  navItems,
-  navSectionOrder,
-  primaryNavigationIds,
-} from "./navigation";
+import { groupNavItemsBySection, navItems, navSectionOrder, primaryNavigationIds } from "./navigation";
 
 describe("navigation information architecture", () => {
   it("uses the 空间 → 构建 → 接入 → 运行 → 治理 section order", () => {

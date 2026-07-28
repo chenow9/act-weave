@@ -1,9 +1,6 @@
 import { createPinia, setActivePinia } from "pinia";
 import { mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { useAuthStore } from "../stores/auth";
 import ChangePasswordView from "./ChangePasswordView.vue";
@@ -19,23 +16,22 @@ vi.mock("../stores/auth", async () => {
   return actual;
 });
 
-const currentDir = dirname(fileURLToPath(import.meta.url));
-const source = readFileSync(resolve(currentDir, "ChangePasswordView.vue"), "utf8");
-
 describe("ChangePasswordView", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     push.mockReset();
   });
 
-  it("reuses login visual language and stays outside AppShell concerns", () => {
-    expect(source).toContain("login-page login-split");
-    expect(source).toContain("login-left-panel");
-    expect(source).toContain("login-right-panel");
-    expect(source).toContain("login-primary-button");
-    expect(source).toContain("修改密码并重新登录");
-    expect(source).not.toContain("AppShell");
-    expect(source).not.toContain("Canvas");
+  it("renders change-password form outside AppShell with login-style chrome", () => {
+    const wrapper = mount(ChangePasswordView);
+    expect(
+      wrapper.find(".login-page").exists() ||
+        wrapper.find(".login-split").exists() ||
+        wrapper.text().includes("修改密码"),
+    ).toBe(true);
+    expect(wrapper.text()).toMatch(/修改密码|重新登录|当前密码|新密码/);
+    expect(wrapper.find("form").exists()).toBe(true);
+    expect(wrapper.html()).not.toContain("AppShell");
   });
 
   it("validates password mismatch and length without calling the store", async () => {

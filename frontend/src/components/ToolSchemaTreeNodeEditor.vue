@@ -107,7 +107,12 @@ function updateItemNode(itemNode: ToolSchemaNode) {
     <div class="editable-schema-row tool-schema-node-grid">
       <label v-if="locationEnabled">
         <span>参数位置</span>
-        <AppSelect :model-value="node.location || 'Body'" :options="locationOptions" compact @update:model-value="updateField('location', asLocation($event))" />
+        <AppSelect
+          :model-value="node.location || 'Body'"
+          :options="locationOptions"
+          compact
+          @update:model-value="updateField('location', asLocation($event))"
+        />
       </label>
       <label>
         <span>字段名称</span>
@@ -115,17 +120,35 @@ function updateItemNode(itemNode: ToolSchemaNode) {
       </label>
       <label>
         <span>字段类型</span>
-        <AppSelect :model-value="node.type" :options="typeOptions" compact @update:model-value="updateField('type', $event as ToolSchemaNodeType)" />
+        <AppSelect
+          :model-value="node.type"
+          :options="typeOptions"
+          compact
+          @update:model-value="updateField('type', $event as ToolSchemaNodeType)"
+        />
       </label>
       <label>
         <span>是否必填</span>
-        <AppSelect :model-value="node.required ? 'true' : 'false'" :options="yesNoOptions" compact @update:model-value="updateField('required', $event === 'true')" />
+        <AppSelect
+          :model-value="node.required ? 'true' : 'false'"
+          :options="yesNoOptions"
+          compact
+          @update:model-value="updateField('required', $event === 'true')"
+        />
       </label>
       <label class="tool-schema-node-description">
         <span>字段说明</span>
-        <input :value="node.description" @input="updateField('description', ($event.target as HTMLInputElement).value)" />
+        <input
+          :value="node.description"
+          @input="updateField('description', ($event.target as HTMLInputElement).value)"
+        />
       </label>
-      <button class="icon-action-button danger inline-delete-button" type="button" title="删除字段" @click="emit('remove')">
+      <button
+        class="icon-action-button danger inline-delete-button"
+        type="button"
+        title="删除字段"
+        @click="emit('remove')"
+      >
         <i class="fa-solid fa-trash" />
       </button>
     </div>

@@ -6,9 +6,16 @@ import type { Tool, ToolVersion } from "../types/domain";
 
 const testToolMock = vi.fn();
 
-vi.mock("../stores/integration", () => ({
-  useIntegrationStore: () => ({
+vi.mock("../stores/tools", () => ({
+  useToolsStore: () => ({
     testTool: testToolMock,
+    testToolWithOutbound: vi.fn(),
+  }),
+}));
+
+vi.mock("../stores/connections", () => ({
+  useConnectionsStore: () => ({
+    serviceConnections: [],
   }),
 }));
 

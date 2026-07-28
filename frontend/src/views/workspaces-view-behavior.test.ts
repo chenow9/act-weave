@@ -10,8 +10,28 @@ const fixtures = vi.hoisted(() => ({
   agentStore: { items: [], loadAgents: vi.fn(async () => []) },
   modelStore: {
     items: [
-      { id: "model-1", name: "Gateway", provider: "OpenAI", apiKeyMasked: "***", apiBase: "https://example.com", modelName: "gpt-test", owner: "AI", lastLatencyMs: 1, status: "Connected" },
-      { id: "model-2", name: "Fallback", provider: "OpenAI", apiKeyMasked: "***", apiBase: "https://example.com", modelName: "gpt-fallback", owner: "AI", lastLatencyMs: 1, status: "Connected" },
+      {
+        id: "model-1",
+        name: "Gateway",
+        provider: "OpenAI",
+        apiKeyMasked: "***",
+        apiBase: "https://example.com",
+        modelName: "gpt-test",
+        owner: "AI",
+        lastLatencyMs: 1,
+        status: "Connected",
+      },
+      {
+        id: "model-2",
+        name: "Fallback",
+        provider: "OpenAI",
+        apiKeyMasked: "***",
+        apiBase: "https://example.com",
+        modelName: "gpt-fallback",
+        owner: "AI",
+        lastLatencyMs: 1,
+        status: "Connected",
+      },
     ],
     loadModelConfigs: vi.fn(async () => []),
   },
@@ -50,15 +70,23 @@ function createWorkspaceStore() {
     items: [pageWorkspace, secondPageWorkspace, offPageWorkspace],
     pageItems: [pageWorkspace, secondPageWorkspace],
     pagination: { page: 1, pageSize: 10, total: 3, pageSizeOptions: [10, 20, 50] },
-    listQuery: { query: "", page: 1, pageSize: 10, sortBy: undefined as string | undefined, sortOrder: undefined as "asc" | "desc" | undefined },
+    listQuery: {
+      query: "",
+      page: 1,
+      pageSize: 10,
+      sortBy: undefined as string | undefined,
+      sortOrder: undefined as "asc" | "desc" | undefined,
+    },
     pageLoading: false,
     pageError: null as string | null,
     pageHasLoaded: true,
     activeWorkspaceId: "",
-    membersByWorkspace: { [pageWorkspace.id]: [{ userId: "user-owner", role: "OWNER", joinedAt: "2026-07-15T03:00:00Z" }] } as Record<string, any[]>,
+    summary: { total: 3, active: 2, production: 3, boundAgents: 3 },
+    membersByWorkspace: {
+      [pageWorkspace.id]: [{ userId: "user-owner", role: "OWNER", joinedAt: "2026-07-15T03:00:00Z" }],
+    } as Record<string, any[]>,
     load: vi.fn(async () => store.items),
     loadWorkspacePage: vi.fn(async () => store.pageItems),
-    loadMemberRoles: vi.fn(async () => undefined),
     loadMembers: vi.fn(async (workspaceId: string) => store.membersByWorkspace[workspaceId] || []),
     searchMemberCandidates: vi.fn(async () => [
       {
@@ -226,13 +254,19 @@ describe("WorkspacesView management behavior", () => {
     vi.mocked(fixtures.workspaceStore.loadWorkspacePage).mockClear();
 
     await wrapper.get('[data-test="search"]').trigger("click");
-    expect(fixtures.workspaceStore.loadWorkspacePage).toHaveBeenLastCalledWith(expect.objectContaining({ query: "order", page: 1 }));
+    expect(fixtures.workspaceStore.loadWorkspacePage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: "order", page: 1 }),
+    );
 
     await wrapper.get('[data-label="业务空间环境筛选"]').trigger("click");
-    expect(fixtures.workspaceStore.loadWorkspacePage).toHaveBeenLastCalledWith(expect.objectContaining({ mode: "Production", page: 1 }));
+    expect(fixtures.workspaceStore.loadWorkspacePage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ mode: "Production", page: 1 }),
+    );
 
     await wrapper.get('[data-label="业务空间状态筛选"]').trigger("click");
-    expect(fixtures.workspaceStore.loadWorkspacePage).toHaveBeenLastCalledWith(expect.objectContaining({ status: "Active", page: 1 }));
+    expect(fixtures.workspaceStore.loadWorkspacePage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: "Active", page: 1 }),
+    );
 
     await wrapper.get('[data-test="sort"]').trigger("click");
     expect(fixtures.workspaceStore.loadWorkspacePage).toHaveBeenLastCalledWith(
@@ -240,7 +274,9 @@ describe("WorkspacesView management behavior", () => {
     );
 
     await wrapper.get('[data-test="page"]').trigger("click");
-    expect(fixtures.workspaceStore.loadWorkspacePage).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, pageSize: 20 }));
+    expect(fixtures.workspaceStore.loadWorkspacePage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 2, pageSize: 20 }),
+    );
   });
 
   it("preserves the empty sort sentinel emitted by the third sort click so the store clears sorting", async () => {
@@ -254,16 +290,19 @@ describe("WorkspacesView management behavior", () => {
     const wrapper = mountView();
     await flushPromises();
     vi.mocked(fixtures.workspaceStore.loadWorkspacePage).mockClear();
-    vi.mocked(fixtures.workspaceStore.loadWorkspacePage).mockImplementationOnce(async (request: Record<string, unknown>) => {
-      const sortBy = request.sortBy !== undefined ? String(request.sortBy) || undefined : fixtures.workspaceStore.listQuery.sortBy;
-      fixtures.workspaceStore.listQuery = {
-        ...fixtures.workspaceStore.listQuery,
-        ...request,
-        sortBy,
-        sortOrder: sortBy ? request.sortOrder : undefined,
-      };
-      return fixtures.workspaceStore.pageItems;
-    });
+    vi.mocked(fixtures.workspaceStore.loadWorkspacePage).mockImplementationOnce(
+      async (request: Record<string, unknown>) => {
+        const sortBy =
+          request.sortBy !== undefined ? String(request.sortBy) || undefined : fixtures.workspaceStore.listQuery.sortBy;
+        fixtures.workspaceStore.listQuery = {
+          ...fixtures.workspaceStore.listQuery,
+          ...request,
+          sortBy,
+          sortOrder: sortBy ? request.sortOrder : undefined,
+        };
+        return fixtures.workspaceStore.pageItems;
+      },
+    );
 
     await wrapper.get('[data-test="clear-sort"]').trigger("click");
     await flushPromises();
@@ -319,7 +358,10 @@ describe("WorkspacesView management behavior", () => {
       expect.objectContaining({ status: "Active", page: 2, pageSize: 10, sortBy: "owner", sortOrder: "desc" }),
       expect.objectContaining({ status: "Active", page: 1, pageSize: 10, sortBy: "owner", sortOrder: "desc" }),
     ]);
-    expect(wrapper.get('[data-test="management-list"]').attributes()).toMatchObject({ "data-page": "1", "data-total": "10" });
+    expect(wrapper.get('[data-test="management-list"]').attributes()).toMatchObject({
+      "data-page": "1",
+      "data-total": "10",
+    });
   });
 
   it("clamps a bulk-status mutation from an empty second page back to page one", async () => {
@@ -339,7 +381,10 @@ describe("WorkspacesView management behavior", () => {
       expect.objectContaining({ status: "Active", page: 2, pageSize: 10, sortBy: "healthScore", sortOrder: "asc" }),
       expect.objectContaining({ status: "Active", page: 1, pageSize: 10, sortBy: "healthScore", sortOrder: "asc" }),
     ]);
-    expect(wrapper.get('[data-test="management-list"]').attributes()).toMatchObject({ "data-page": "1", "data-total": "10" });
+    expect(wrapper.get('[data-test="management-list"]').attributes()).toMatchObject({
+      "data-page": "1",
+      "data-total": "10",
+    });
   });
 
   it("clamps an edit that removes the last matching row from page two back to page one", async () => {
@@ -361,7 +406,10 @@ describe("WorkspacesView management behavior", () => {
       expect.objectContaining({ query: "order", page: 2, pageSize: 10, sortBy: "name", sortOrder: "asc" }),
       expect.objectContaining({ query: "order", page: 1, pageSize: 10, sortBy: "name", sortOrder: "asc" }),
     ]);
-    expect(wrapper.get('[data-test="management-list"]').attributes()).toMatchObject({ "data-page": "1", "data-total": "10" });
+    expect(wrapper.get('[data-test="management-list"]').attributes()).toMatchObject({
+      "data-page": "1",
+      "data-total": "10",
+    });
   });
 
   it("bulk-enables only explicitly selected current-page rows", async () => {
@@ -443,8 +491,8 @@ describe("WorkspacesView management behavior", () => {
     expect(modal.find('[role="radiogroup"][aria-label="状态"]').exists()).toBe(false);
 
     const modeGroup = modal.get('[role="radiogroup"][aria-label="环境模式"]');
-    const production = modeGroup.get('button.tone-production');
-    const sandbox = modeGroup.get('button.tone-sandbox');
+    const production = modeGroup.get("button.tone-production");
+    const sandbox = modeGroup.get("button.tone-sandbox");
     expect(production.classes()).not.toContain("selected");
     expect(sandbox.classes()).toContain("selected");
     expect(sandbox.attributes("aria-checked")).toBe("true");

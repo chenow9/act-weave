@@ -115,7 +115,9 @@ function formatNum(n: number) {
       :style="{ left: `${tip.x}px`, top: `${tip.y}px` }"
     >
       <strong>{{ tip.label }}</strong>
-      <p><b>{{ tip.value }}</b></p>
+      <p>
+        <b>{{ tip.value }}</b>
+      </p>
     </div>
   </div>
 </template>

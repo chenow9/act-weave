@@ -57,7 +57,9 @@ describe("agentAudit store", () => {
         model: "gpt-4o-mini",
         userLabel: "USER:u1",
         debugMode: false,
-        steps: [{ type: "reasoning", title: "大模型推理", timeOffsetMs: 0, content: "无推理数据", contentState: "missing" }],
+        steps: [
+          { type: "reasoning", title: "大模型推理", timeOffsetMs: 0, content: "无推理数据", contentState: "missing" },
+        ],
         runIds: ["r1"],
         stepTotal: 1,
         stepOffset: 0,
@@ -123,9 +125,7 @@ describe("agentAudit store", () => {
     expect(store.detailHasMore).toBe(true);
     expect(store.detailStepOffset).toBe(2);
     await store.loadMoreTraceSteps("ws-1");
-    expect(apiClient.get).toHaveBeenLastCalledWith(
-      "/workspaces/ws-1/agent-audit/traces/trace-2?limit=2&offset=2",
-    );
+    expect(apiClient.get).toHaveBeenLastCalledWith("/workspaces/ws-1/agent-audit/traces/trace-2?limit=2&offset=2");
     expect(store.selected?.steps).toHaveLength(4);
     expect(store.selected?.steps[2]?.type).toBe("tool");
     expect(store.detailHasMore).toBe(false);

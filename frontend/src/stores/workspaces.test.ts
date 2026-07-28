@@ -2,8 +2,8 @@ import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { apiClient } from "../services/api";
-import type { Workspace, WorkspaceMember } from "../types/domain";
-import { useWorkspaceStore } from "./workspaces";
+import type { Workspace, WorkspaceMember, WorkspaceRole } from "../types/domain";
+import { useWorkspaceStore, type WorkspaceAction } from "./workspaces";
 
 vi.mock("../services/api", async () => {
   const actual = await vi.importActual<typeof import("../services/api")>("../services/api");
@@ -20,55 +20,71 @@ describe("v1 workspace and member store", () => {
     localStorage.clear();
   });
 
-  it("loads the accessible v1 catalog and locally pages supported filters", async () => {
-    const catalog = [
-      workspaceDTO(1),
-      workspaceDTO(2, { status: "DISABLED", mode: "SANDBOX", createdByUsername: "alpha.creator" }),
-    ];
-    vi.mocked(apiClient.get).mockResolvedValue({ data: { items: catalog } });
+  it("loads a bounded server page for bootstrap and management lists", async () => {
+    const pageResponse = {
+      items: [
+        workspaceDTO(1, { currentUserRole: "OWNER" }),
+        workspaceDTO(2, {
+          status: "DISABLED",
+          mode: "SANDBOX",
+          createdByUsername: "alpha.creator",
+          currentUserRole: "EDITOR",
+        }),
+      ],
+      pagination: { page: 1, pageSize: 50, total: 2 },
+      summary: { total: 2, active: 1, production: 1, boundAgents: 0 },
+    };
+    vi.mocked(apiClient.get).mockResolvedValue({ data: pageResponse });
     const store = useWorkspaceStore();
 
     await store.load();
-    await store.loadWorkspacePage({ query: "业务空间 2", status: "Disabled", mode: "Sandbox", page: 1, pageSize: 10 });
-
-    expect(apiClient.get).toHaveBeenCalledWith("/workspaces?limit=500");
+    expect(apiClient.get).toHaveBeenCalledWith("/workspaces", {
+      params: expect.objectContaining({ page: 1, pageSize: 50 }),
+    });
     expect(store.activeWorkspaceId).toBe("workspace-1");
+    expect(store.items).toHaveLength(2);
+    expect(store.summary.total).toBe(2);
+
+    vi.mocked(apiClient.get).mockResolvedValueOnce({
+      data: {
+        items: [workspaceDTO(2, { currentUserRole: "EDITOR" })],
+        pagination: { page: 1, pageSize: 10, total: 1 },
+        summary: { total: 2, active: 1, production: 1, boundAgents: 0 },
+      },
+    });
+    await store.loadWorkspacePage({
+      query: "业务空间 2",
+      status: "Disabled",
+      mode: "Sandbox",
+      page: 1,
+      pageSize: 10,
+    });
+    expect(apiClient.get).toHaveBeenLastCalledWith("/workspaces", {
+      params: expect.objectContaining({
+        page: 1,
+        pageSize: 10,
+        query: "业务空间 2",
+        status: "DISABLED",
+        mode: "SANDBOX",
+      }),
+    });
     expect(store.pageItems.map((workspace) => workspace.id)).toEqual(["workspace-2"]);
     expect(store.pagination).toEqual({ page: 1, pageSize: 10, total: 1, pageSizeOptions: [10, 20, 50] });
-    expect(store.items[0]).toMatchObject({
-      createdBy: "user-owner",
-      createdByUsername: "workspace.creator",
-      updatedBy: "user-owner",
-      updatedByUsername: "workspace.editor",
-    });
-
-    await store.loadWorkspacePage({
-      query: "workspace.editor",
-      status: undefined,
-      mode: undefined,
-      page: 1,
-      pageSize: 10,
-    });
-    expect(store.pageItems).toHaveLength(2);
-
-    await store.loadWorkspacePage({
-      query: "",
-      status: undefined,
-      mode: undefined,
-      page: 1,
-      pageSize: 10,
-      sortBy: "createdBy",
-      sortOrder: "asc",
-    });
-    expect(store.pageItems.map((workspace) => workspace.createdByUsername)).toEqual([
-      "alpha.creator",
-      "workspace.creator",
-    ]);
+    expect(store.summary.total).toBe(2);
   });
 
   it("submits only the v1 create/update allowlists", async () => {
-    vi.mocked(apiClient.post).mockResolvedValueOnce({ data: workspaceDTO(1) });
-    vi.mocked(apiClient.patch).mockResolvedValueOnce({ data: workspaceDTO(1, { displayName: "更新后的空间", lockVersion: 2 }) });
+    vi.mocked(apiClient.post).mockResolvedValueOnce({ data: workspaceDTO(1, { currentUserRole: "OWNER" }) });
+    vi.mocked(apiClient.patch).mockResolvedValueOnce({
+      data: workspaceDTO(1, { displayName: "更新后的空间", lockVersion: 2, currentUserRole: "OWNER" }),
+    });
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: {
+        items: [workspaceDTO(1, { currentUserRole: "OWNER" })],
+        pagination: { page: 1, pageSize: 10, total: 1 },
+        summary: { total: 1, active: 1, production: 1, boundAgents: 0 },
+      },
+    });
     const store = useWorkspaceStore();
     const draft = workspaceValue({
       id: "",
@@ -100,8 +116,12 @@ describe("v1 workspace and member store", () => {
   });
 
   it("persists and restores the active Workspace selection", async () => {
-    const catalog = [workspaceDTO(1), workspaceDTO(2)];
-    vi.mocked(apiClient.get).mockResolvedValue({ data: { items: catalog } });
+    const pageResponse = {
+      items: [workspaceDTO(1, { currentUserRole: "OWNER" }), workspaceDTO(2, { currentUserRole: "OWNER" })],
+      pagination: { page: 1, pageSize: 50, total: 2 },
+      summary: { total: 2, active: 2, production: 2, boundAgents: 0 },
+    };
+    vi.mocked(apiClient.get).mockResolvedValue({ data: pageResponse });
     const firstStore = useWorkspaceStore();
     await firstStore.load();
     firstStore.selectWorkspace("workspace-2");
@@ -115,22 +135,32 @@ describe("v1 workspace and member store", () => {
 
   it("uses colon lifecycle commands and lockVersion delete preconditions", async () => {
     const store = useWorkspaceStore();
-    store.items = [workspaceValue()];
+    store.items = [workspaceValue({ currentUserRole: "OWNER" })];
     store.pageItems = [...store.items];
+    store.listQuery = { query: "", page: 1, pageSize: 10 };
     vi.mocked(apiClient.post)
-      .mockResolvedValueOnce({ data: workspaceDTO(1, { status: "DISABLED", lockVersion: 2 }) })
-      .mockResolvedValueOnce({ data: workspaceDTO(1, { status: "ACTIVE", lockVersion: 3 }) });
+      .mockResolvedValueOnce({
+        data: workspaceDTO(1, { status: "DISABLED", lockVersion: 2, currentUserRole: "OWNER" }),
+      })
+      .mockResolvedValueOnce({ data: workspaceDTO(1, { status: "ACTIVE", lockVersion: 3, currentUserRole: "OWNER" }) });
     vi.mocked(apiClient.delete).mockResolvedValueOnce({ data: undefined });
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: {
+        items: [],
+        pagination: { page: 1, pageSize: 10, total: 0 },
+        summary: { total: 0, active: 0, production: 0, boundAgents: 0 },
+      },
+    });
 
     await store.disableWorkspace("workspace-1");
     expect(apiClient.post).toHaveBeenNthCalledWith(1, "/workspaces/workspace-1:disable", { lockVersion: 1 });
     await store.enableWorkspace("workspace-1");
     expect(apiClient.post).toHaveBeenNthCalledWith(2, "/workspaces/workspace-1:enable", { lockVersion: 2 });
     await store.deleteWorkspace("workspace-1");
-    expect(apiClient.delete).toHaveBeenCalledWith("/workspaces/workspace-1?lockVersion=3");
+    expect(apiClient.delete).toHaveBeenCalledWith("/workspaces/workspace-1", { params: { lockVersion: 3 } });
   });
 
-  it("loads and mutates members while applying the backend RBAC matrix", async () => {
+  it("loads and mutates members without using them for authorization", async () => {
     const owner = member("user-owner", "OWNER");
     const editor = member("user-editor", "EDITOR");
     vi.mocked(apiClient.get).mockResolvedValueOnce({ data: { items: [owner, editor] } });
@@ -138,18 +168,16 @@ describe("v1 workspace and member store", () => {
     vi.mocked(apiClient.patch).mockResolvedValueOnce({ data: member("user-viewer", "OPERATOR") });
     vi.mocked(apiClient.delete).mockResolvedValueOnce({ data: undefined });
     const store = useWorkspaceStore();
-    store.items = [workspaceValue()];
+    store.items = [workspaceValue({ currentUserRole: "OWNER" })];
 
     await store.loadMembers("workspace-1");
-    expect(apiClient.get).toHaveBeenCalledWith("/workspaces/workspace-1/members");
-    expect(store.can("workspace-1", "user-owner", "DELETE")).toBe(true);
-    expect(store.can("workspace-1", "user-editor", "EDIT")).toBe(true);
-    expect(store.can("workspace-1", "user-editor", "MANAGE")).toBe(false);
-    // Full matrix (backend workspace_policy.go)
-    expect(store.can("workspace-1", "user-editor", "TEST")).toBe(true);
-    expect(store.can("workspace-1", "user-editor", "PUBLISH")).toBe(true);
-    expect(store.can("workspace-1", "user-editor", "EXECUTE")).toBe(true);
-    expect(store.can("workspace-1", "user-owner", "EXECUTE")).toBe(true);
+    expect(apiClient.get).toHaveBeenCalledWith("/workspaces/workspace-1/members", { params: undefined });
+    expect(store.can("workspace-1", "DELETE")).toBe(true);
+    expect(store.can("workspace-1", "user-ignored", "DELETE")).toBe(true);
+
+    store.items = [workspaceValue({ currentUserRole: "EDITOR" })];
+    expect(store.can("workspace-1", "EDIT")).toBe(true);
+    expect(store.can("workspace-1", "MANAGE")).toBe(false);
 
     await store.addMember("workspace-1", "user-viewer", "VIEWER");
     expect(apiClient.post).toHaveBeenCalledWith("/workspaces/workspace-1/members", {
@@ -163,40 +191,25 @@ describe("v1 workspace and member store", () => {
     expect(store.membersByWorkspace["workspace-1"].some((value) => value.userId === "user-viewer")).toBe(false);
   });
 
-  it("applies the full backend role×action matrix and fails closed while members load", async () => {
+  it("applies the backend role×action matrix from currentUserRole only", async () => {
     const store = useWorkspaceStore();
-    store.items = [workspaceValue({ ownerUserId: "user-owner" })];
-    store.membersByWorkspace["workspace-1"] = [
-      member("user-admin", "ADMIN"),
-      member("user-editor", "EDITOR"),
-      member("user-operator", "OPERATOR"),
-      member("user-viewer", "VIEWER"),
+    const matrix: Array<{ role: WorkspaceRole; action: WorkspaceAction; want: boolean }> = [
+      { role: "OWNER", action: "DELETE", want: true },
+      { role: "ADMIN", action: "MANAGE", want: true },
+      { role: "ADMIN", action: "DELETE", want: false },
+      { role: "EDITOR", action: "PUBLISH", want: true },
+      { role: "EDITOR", action: "MANAGE", want: false },
+      { role: "OPERATOR", action: "TEST", want: true },
+      { role: "OPERATOR", action: "EDIT", want: false },
+      { role: "VIEWER", action: "VIEW", want: true },
+      { role: "VIEWER", action: "EXECUTE", want: false },
     ];
-    store.membersLoadStatusByWorkspace["workspace-1"] = "LOADED";
-
-    const cases: Array<{ user: string; action: import("./workspaces").WorkspaceAction; want: boolean }> = [
-      { user: "user-owner", action: "DELETE", want: true },
-      { user: "user-admin", action: "MANAGE", want: true },
-      { user: "user-admin", action: "DELETE", want: false },
-      { user: "user-editor", action: "PUBLISH", want: true },
-      { user: "user-editor", action: "MANAGE", want: false },
-      { user: "user-operator", action: "TEST", want: true },
-      { user: "user-operator", action: "EDIT", want: false },
-      { user: "user-viewer", action: "VIEW", want: true },
-      { user: "user-viewer", action: "EXECUTE", want: false },
-      { user: "user-unknown", action: "VIEW", want: false },
-    ];
-    for (const tc of cases) {
-      expect(store.can("workspace-1", tc.user, tc.action), `${tc.user}/${tc.action}`).toBe(tc.want);
+    for (const tc of matrix) {
+      store.items = [workspaceValue({ currentUserRole: tc.role })];
+      expect(store.can("workspace-1", tc.action), `${tc.role}/${tc.action}`).toBe(tc.want);
     }
-
-    // Fail closed for non-owner mutations while members are loading and empty.
-    store.membersByWorkspace["workspace-2"] = [];
-    store.membersLoadStatusByWorkspace["workspace-2"] = "LOADING";
-    store.items.push(workspaceValue({ id: "workspace-2", ownerUserId: "user-owner" }));
-    expect(store.can("workspace-2", "user-someone", "EDIT")).toBe(false);
-    // Owner still known from DTO.
-    expect(store.can("workspace-2", "user-owner", "EDIT")).toBe(true);
+    store.items = [workspaceValue({ id: "workspace-2", currentUserRole: undefined })]; // no role
+    expect(store.can("workspace-2", "VIEW")).toBe(false);
   });
 
   it("searches the Workspace-scoped active user directory for member candidates", async () => {
@@ -218,7 +231,7 @@ describe("v1 workspace and member store", () => {
   });
 });
 
-function workspaceDTO(index: number, overrides: Record<string, unknown> = {}) {
+function workspaceDTO(index: number, overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: `workspace-${index}`,
     slug: `workspace-${index}`,
@@ -226,15 +239,15 @@ function workspaceDTO(index: number, overrides: Record<string, unknown> = {}) {
     mode: "PRODUCTION",
     status: "ACTIVE",
     ownerUserId: "user-owner",
-    defaultAgentId: `agent-${index}`,
     settings: {},
     createdBy: "user-owner",
     createdByUsername: "workspace.creator",
     updatedBy: "user-owner",
     updatedByUsername: "workspace.editor",
     createdAt: "2026-07-15T03:00:00Z",
-    updatedAt: "2026-07-15T03:00:00Z",
+    updatedAt: "2026-07-15T04:00:00Z",
     lockVersion: 1,
+    currentUserRole: "OWNER",
     ...overrides,
   };
 }
@@ -243,24 +256,22 @@ function workspaceValue(overrides: Partial<Workspace> = {}): Workspace {
   return {
     id: "workspace-1",
     name: "workspace-1",
-    slug: "workspace-1",
     displayName: "业务空间 1",
     mode: "Production",
     status: "Active",
     ownerUserId: "user-owner",
-    defaultAgentId: "agent-1",
+    defaultAgentId: "",
     modelConfigId: "",
     settings: {},
     createdBy: "user-owner",
-    createdByUsername: "workspace.creator",
     updatedBy: "user-owner",
-    updatedByUsername: "workspace.editor",
     lockVersion: 1,
     healthScore: 0,
+    currentUserRole: "OWNER",
     ...overrides,
   };
 }
 
-function member(userId: string, role: WorkspaceMember["role"]): WorkspaceMember {
+function member(userId: string, role: WorkspaceRole): WorkspaceMember {
   return { userId, role, joinedAt: "2026-07-15T03:00:00Z" };
 }

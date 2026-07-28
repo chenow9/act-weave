@@ -6,9 +6,9 @@ import AppSelect from "../components/AppSelect.vue";
 import type { CapabilityProvider, ProviderAsset } from "../types/domain";
 import ProvidersView from "./ProvidersView.vue";
 
-const fixture = vi.hoisted(() => ({ integration: null as any, workspaces: null as any }));
+const fixture = vi.hoisted(() => ({ providers: null as any, workspaces: null as any }));
 
-vi.mock("../stores/integration", () => ({ useIntegrationStore: () => fixture.integration }));
+vi.mock("../stores/providers", () => ({ useProvidersStore: () => fixture.providers }));
 vi.mock("../stores/workspaces", () => ({ useWorkspaceStore: () => fixture.workspaces }));
 
 function createIntegrationStore() {
@@ -25,7 +25,7 @@ function createIntegrationStore() {
     }),
     updateProvider: vi.fn(async (draft: CapabilityProvider) => {
       const updated = { ...draft, lockVersion: draft.lockVersion + 1 };
-      store.providers = store.providers.map((item) => item.id === updated.id ? updated : item);
+      store.providers = store.providers.map((item) => (item.id === updated.id ? updated : item));
       return updated;
     }),
     deleteProvider: vi.fn(async (providerId: string) => {
@@ -54,13 +54,33 @@ function mountView() {
       stubs: {
         RouterLink: { template: "<a><slot /></a>" },
         teleport: true,
+        // Avoid Element Plus ElSelect recursive update loops under jsdom (ZKL-64 item 10).
+        AppSelect: {
+          name: "AppSelect",
+          props: ["modelValue", "options", "placeholder", "disabled", "ariaLabel"],
+          emits: ["update:modelValue"],
+          template: `
+            <select
+              :value="modelValue"
+              :disabled="disabled"
+              :aria-label="ariaLabel"
+              @change="$emit('update:modelValue', ($event.target).value)"
+            >
+              <option v-for="opt in options || []" :key="String(opt.value)" :value="opt.value" :disabled="opt.disabled">
+                {{ opt.label }}
+              </option>
+            </select>
+          `,
+        },
       },
     },
   });
 }
 
 async function setAppSelect(wrapper: ReturnType<typeof mountView>, testId: string, value: string) {
-  const select = wrapper.findAllComponents(AppSelect).find((component) => component.attributes("data-testid") === testId);
+  const select = wrapper
+    .findAllComponents(AppSelect)
+    .find((component) => component.attributes("data-testid") === testId);
   if (!select) throw new Error(`Unable to find AppSelect ${testId}`);
   select.vm.$emit("update:modelValue", value);
   await flushPromises();
@@ -70,11 +90,13 @@ describe("providers management view", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     localStorage.clear();
-    fixture.integration = createIntegrationStore();
+    fixture.providers = createIntegrationStore();
     fixture.workspaces = reactive({
       activeWorkspaceId: "workspace-1",
       items: [{ id: "workspace-1", name: "Workspace 1" }],
       load: vi.fn(async () => undefined),
+      can: vi.fn(() => true),
+      roleFor: vi.fn(() => "EDITOR"),
     });
     vi.clearAllMocks();
   });
@@ -83,7 +105,7 @@ describe("providers management view", () => {
     const wrapper = mountView();
     await flushPromises();
 
-    expect(fixture.integration.loadProviders).toHaveBeenCalledTimes(1);
+    expect(fixture.providers.loadProviders).toHaveBeenCalledTimes(1);
     expect(wrapper.text()).toContain("Orders Platform");
     expect(wrapper.text()).toContain("运行中");
     expect(wrapper.text()).toContain("https://api.example.com/v1");
@@ -99,7 +121,9 @@ describe("providers management view", () => {
     await wrapper.get('[data-testid="provider-create"]').trigger("click");
     await wrapper.get('[data-testid="provider-name"]').setValue("Billing Platform");
     await wrapper.get('[data-testid="provider-service-base-url"]').setValue("https://billing.example.com/v2/");
-    await wrapper.get('[data-testid="provider-document-url"]').setValue("https://docs.billing.example.com/openapi.json");
+    await wrapper
+      .get('[data-testid="provider-document-url"]')
+      .setValue("https://docs.billing.example.com/openapi.json");
     await setAppSelect(wrapper, "provider-verification-method", "HEAD");
     await wrapper.get('[data-testid="provider-verification-path"]').setValue("health");
     await wrapper.get('[data-testid="provider-expected-statuses"]').setValue("200, 204");
@@ -107,7 +131,9 @@ describe("providers management view", () => {
     // Default create draft enables REQUEST_PASSTHROUGH; also enable Broker/OBO fields.
     await wrapper.get('[data-testid="provider-mode-broker"]').setValue(true);
     await flushPromises();
-    await wrapper.get('[data-testid="provider-broker-token-endpoint"]').setValue("https://broker.billing.example.com/oauth/token");
+    await wrapper
+      .get('[data-testid="provider-broker-token-endpoint"]')
+      .setValue("https://broker.billing.example.com/oauth/token");
     await wrapper.get('[data-testid="provider-broker-audience"]').setValue("api://billing");
     await wrapper.get('[data-testid="provider-broker-scopes"]').setValue("orders.read inventory.read");
     await wrapper.get('[data-testid="provider-injection-header"]').setValue("X-Platform-Token");
@@ -115,8 +141,8 @@ describe("providers management view", () => {
     await wrapper.get('[data-testid="provider-save"]').trigger("submit");
     await flushPromises();
 
-    expect(fixture.integration.createProvider).toHaveBeenCalledTimes(1);
-    const submitted = fixture.integration.createProvider.mock.calls[0][0] as CapabilityProvider;
+    expect(fixture.providers.createProvider).toHaveBeenCalledTimes(1);
+    const submitted = fixture.providers.createProvider.mock.calls[0][0] as CapabilityProvider;
     expect(submitted.endpointConfig).toEqual({
       schemaVersion: 2,
       serviceBaseUrl: "https://billing.example.com/v2",
@@ -149,15 +175,20 @@ describe("providers management view", () => {
     await wrapper.get('[data-testid="provider-create"]').trigger("click");
     expect(wrapper.text()).toContain("第三方未提供在线文档时可留空");
     expect(wrapper.get('[data-testid="provider-document-url"]').attributes("required")).toBeUndefined();
-    expect(wrapper.findAllComponents(AppSelect).find((component) => component.attributes("data-testid") === "provider-discovery-mode")?.props("modelValue")).toBe("MANUAL");
+    expect(
+      wrapper
+        .findAllComponents(AppSelect)
+        .find((component) => component.attributes("data-testid") === "provider-discovery-mode")
+        ?.props("modelValue"),
+    ).toBe("MANUAL");
 
     await wrapper.get('[data-testid="provider-name"]').setValue("Private Runtime");
     await wrapper.get('[data-testid="provider-service-base-url"]').setValue("https://private.example.com/api/");
     await wrapper.get('[data-testid="provider-save"]').trigger("submit");
     await flushPromises();
 
-    expect(fixture.integration.createProvider).toHaveBeenCalledTimes(1);
-    const submitted = fixture.integration.createProvider.mock.calls[0][0] as CapabilityProvider;
+    expect(fixture.providers.createProvider).toHaveBeenCalledTimes(1);
+    const submitted = fixture.providers.createProvider.mock.calls[0][0] as CapabilityProvider;
     expect(submitted.discoveryMode).toBe("MANUAL");
     expect(submitted.endpointConfig).toEqual({
       schemaVersion: 2,
@@ -180,7 +211,7 @@ describe("providers management view", () => {
       serviceBaseUrl: "https://private.example.com/api",
       verification: { method: "GET", path: "/health", expectedStatuses: [200] },
     };
-    fixture.integration.providers = [provider];
+    fixture.providers.providers = [provider];
 
     const wrapper = mountView();
     await flushPromises();
@@ -191,43 +222,57 @@ describe("providers management view", () => {
     expect(syncButton.attributes("disabled")).toBeDefined();
     expect(syncButton.attributes("title")).toContain("不影响 Connection 和运行调用");
     await syncButton.trigger("click");
-    expect(fixture.integration.syncProvider).not.toHaveBeenCalled();
+    expect(fixture.providers.syncProvider).not.toHaveBeenCalled();
   });
 
   it("hydrates and updates an existing Provider without losing its identity", async () => {
-    fixture.integration.providers[0].endpointConfig.headers = { "X-Platform-Version": "2026-07" };
-    fixture.integration.providers[0].endpointConfig.egress = {
-      allowedHosts: ["api.example.com"], allowedPorts: [443], allowedCIDRs: ["10.20.0.0/16"], maxRedirects: 1,
+    fixture.providers.providers[0].endpointConfig.headers = { "X-Platform-Version": "2026-07" };
+    fixture.providers.providers[0].endpointConfig.egress = {
+      allowedHosts: ["api.example.com"],
+      allowedPorts: [443],
+      allowedCIDRs: ["10.20.0.0/16"],
+      maxRedirects: 1,
     };
     const wrapper = mountView();
     await flushPromises();
 
     await wrapper.get('[aria-label="Orders Platform 更多操作"]').trigger("click");
     await wrapper.get('[data-action-key="edit"]').trigger("click");
-    expect((wrapper.get('[data-testid="provider-service-base-url"]').element as HTMLInputElement).value).toBe("https://api.example.com/v1");
-    expect((wrapper.get('[data-testid="provider-broker-token-endpoint"]').element as HTMLInputElement).value).toBe("https://broker.example.com/oauth/token");
-    expect((wrapper.get('[data-testid="provider-broker-audience"]').element as HTMLInputElement).value).toBe("api://orders");
+    expect((wrapper.get('[data-testid="provider-service-base-url"]').element as HTMLInputElement).value).toBe(
+      "https://api.example.com/v1",
+    );
+    expect((wrapper.get('[data-testid="provider-broker-token-endpoint"]').element as HTMLInputElement).value).toBe(
+      "https://broker.example.com/oauth/token",
+    );
+    expect((wrapper.get('[data-testid="provider-broker-audience"]').element as HTMLInputElement).value).toBe(
+      "api://orders",
+    );
     await wrapper.get('[data-testid="provider-name"]').setValue("Orders Platform v2");
     await wrapper.get('[data-testid="provider-save"]').trigger("submit");
     await flushPromises();
 
-    expect(fixture.integration.updateProvider).toHaveBeenCalledWith(expect.objectContaining({
-      id: "provider-1",
-      name: "Orders Platform v2",
-      lockVersion: 3,
-      endpointConfig: expect.objectContaining({
-        headers: { "X-Platform-Version": "2026-07" },
-        egress: {
-          allowedHosts: ["api.example.com"], allowedPorts: [443], allowedCIDRs: ["10.20.0.0/16"], maxRedirects: 1,
-        },
-      }),
-      driverConfig: expect.objectContaining({
-        outboundIdentity: expect.objectContaining({
-          schemaVersion: "outbound-identity.v1",
-          supportedModes: expect.arrayContaining(["BROKER_OBO", "REQUEST_PASSTHROUGH"]),
+    expect(fixture.providers.updateProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "provider-1",
+        name: "Orders Platform v2",
+        lockVersion: 3,
+        endpointConfig: expect.objectContaining({
+          headers: { "X-Platform-Version": "2026-07" },
+          egress: {
+            allowedHosts: ["api.example.com"],
+            allowedPorts: [443],
+            allowedCIDRs: ["10.20.0.0/16"],
+            maxRedirects: 1,
+          },
+        }),
+        driverConfig: expect.objectContaining({
+          outboundIdentity: expect.objectContaining({
+            schemaVersion: "outbound-identity.v1",
+            supportedModes: expect.arrayContaining(["BROKER_OBO", "REQUEST_PASSTHROUGH"]),
+          }),
         }),
       }),
-    }));
+    );
   });
 
   it("requires an explicit CIDR grant for a private literal runtime address", async () => {
@@ -239,14 +284,14 @@ describe("providers management view", () => {
     await wrapper.get('[data-testid="provider-service-base-url"]').setValue("http://192.168.10.62:8000");
     await wrapper.get('[data-testid="provider-save"]').trigger("submit");
     await flushPromises();
-    expect(fixture.integration.createProvider).not.toHaveBeenCalled();
+    expect(fixture.providers.createProvider).not.toHaveBeenCalled();
     expect(wrapper.text()).toContain("192.168.10.62/32");
 
     await wrapper.get('[data-testid="provider-allowed-cidrs"]').setValue("192.168.10.0/24");
     await wrapper.get('[data-testid="provider-save"]').trigger("submit");
     await flushPromises();
-    expect(fixture.integration.createProvider).toHaveBeenCalledTimes(1);
-    expect(fixture.integration.createProvider.mock.calls[0][0].endpointConfig).toMatchObject({
+    expect(fixture.providers.createProvider).toHaveBeenCalledTimes(1);
+    expect(fixture.providers.createProvider.mock.calls[0][0].endpointConfig).toMatchObject({
       egress: { allowedCIDRs: ["192.168.10.0/24"] },
     });
   });
@@ -255,8 +300,11 @@ describe("providers management view", () => {
     const legacy = providerFixture();
     legacy.id = "legacy-provider";
     legacy.name = "Legacy API";
-    legacy.driverConfig = { adapterOption: "preserve-me", authentication: { version: "service-auth.v1", defaultSchemeKey: "oauth2-client", schemes: [] } };
-    fixture.integration.providers = [legacy];
+    legacy.driverConfig = {
+      adapterOption: "preserve-me",
+      authentication: { version: "service-auth.v1", defaultSchemeKey: "oauth2-client", schemes: [] },
+    };
+    fixture.providers.providers = [legacy];
     const wrapper = mountView();
     await flushPromises();
 
@@ -267,7 +315,7 @@ describe("providers management view", () => {
     await wrapper.get('[data-testid="provider-save"]').trigger("submit");
     await flushPromises();
 
-    const updated = fixture.integration.updateProvider.mock.calls[0][0] as CapabilityProvider;
+    const updated = fixture.providers.updateProvider.mock.calls[0][0] as CapabilityProvider;
     expect(updated.name).toBe("Legacy API renamed");
     expect(updated.driverConfig.adapterOption).toBe("preserve-me");
     expect(updated.driverConfig.authentication).toBeUndefined();
@@ -300,24 +348,24 @@ describe("providers management view", () => {
     await wrapper.get('[aria-label="Orders Platform 更多操作"]').trigger("click");
     await wrapper.get('[data-action-key="assets"]').trigger("click");
     await flushPromises();
-    expect(fixture.integration.loadProviderAssets).toHaveBeenCalledWith("provider-1");
+    expect(fixture.providers.loadProviderAssets).toHaveBeenCalledWith("provider-1");
     expect(wrapper.text()).toContain("Get order");
     await wrapper.get('[data-testid="provider-materialize-asset-1"]').trigger("click");
     await flushPromises();
-    expect(fixture.integration.materializeProviderAsset).toHaveBeenCalledWith("provider-1", "asset-1");
+    expect(fixture.providers.materializeProviderAsset).toHaveBeenCalledWith("provider-1", "asset-1");
 
     await wrapper.get('[aria-label="Orders Platform 更多操作"]').trigger("click");
     await wrapper.get('[data-action-key="delete"]').trigger("click");
     await wrapper.get('[data-testid="provider-delete-confirm-input"]').setValue("Orders Platform");
     await wrapper.get('[data-testid="provider-delete-confirm"]').trigger("click");
     await flushPromises();
-    expect(fixture.integration.deleteProvider).toHaveBeenCalledWith("provider-1");
+    expect(fixture.providers.deleteProvider).toHaveBeenCalledWith("provider-1");
     expect(wrapper.find('[data-testid="provider-delete-confirm-input"]').exists()).toBe(false);
   });
 
   it("shows fixed short menu labels for long Provider names while aria keeps full names and row identity", async () => {
     const longName = "超长中文服务提供者名称加EnglishSuffix-ABCDEFGHIJKLMNOP";
-    fixture.integration.providers = [
+    fixture.providers.providers = [
       { ...providerFixture(), id: "provider-long-a", name: longName },
       { ...providerFixture(), id: "provider-long-b", name: longName },
     ];
@@ -353,11 +401,10 @@ describe("providers management view", () => {
     // Saving should call update with the second provider id.
     await wrapper.get('[data-testid="provider-save"]').trigger("submit");
     await flushPromises();
-    expect(fixture.integration.updateProvider).toHaveBeenCalledWith(
+    expect(fixture.providers.updateProvider).toHaveBeenCalledWith(
       expect.objectContaining({ id: "provider-long-b", name: longName }),
     );
   });
-
 
   it("shows dual-support badges and layered identity copy without Connection multi-strategy wording", async () => {
     const wrapper = mountView();
@@ -407,11 +454,9 @@ describe("providers management view", () => {
 
     expect(wrapper.get('[data-testid="provider-identity-mode-error"]').text()).toBe("至少选择一种");
     expect(wrapper.get('[data-testid="provider-identity-mode-error"]').attributes("role")).toBe("alert");
-    expect(fixture.integration.createProvider).not.toHaveBeenCalled();
-    expect(fixture.integration.updateProvider).not.toHaveBeenCalled();
+    expect(fixture.providers.createProvider).not.toHaveBeenCalled();
+    expect(fixture.providers.updateProvider).not.toHaveBeenCalled();
   });
-
-
 });
 
 function outboundIdentityFixture(): Record<string, unknown> {

@@ -4,9 +4,7 @@ import { computed } from "vue";
 import AppSelect from "../../AppSelect.vue";
 import type { Tool, ToolRequestParam, ToolResponseField, WorkflowGraphNode } from "../../../types/domain";
 
-type MappingValue =
-  | { kind: "ref"; path: string }
-  | { kind: "literal"; value: unknown };
+type MappingValue = { kind: "ref"; path: string } | { kind: "literal"; value: unknown };
 
 const props = defineProps<{
   node: WorkflowGraphNode;
@@ -44,7 +42,9 @@ const outputSchema = computed(() => responseFieldsToOutputSchema(selectedTool.va
 
 function currentInputMapping() {
   const mapping = props.node.data.inputMapping;
-  return mapping && typeof mapping === "object" && !Array.isArray(mapping) ? ({ ...(mapping as Record<string, unknown>) }) : {};
+  return mapping && typeof mapping === "object" && !Array.isArray(mapping)
+    ? { ...(mapping as Record<string, unknown>) }
+    : {};
 }
 
 function mappingFor(paramName: string): MappingValue | undefined {
@@ -175,7 +175,12 @@ function paramSummary(param: ToolRequestParam) {
       </div>
 
       <div v-if="requiredUserParams.length" class="workflow-tool-param-list">
-        <article v-for="param in requiredUserParams" :key="param.name" class="workflow-tool-param-row" :data-param-name="param.name">
+        <article
+          v-for="param in requiredUserParams"
+          :key="param.name"
+          class="workflow-tool-param-row"
+          :data-param-name="param.name"
+        >
           <div class="workflow-tool-param-head">
             <strong>{{ param.name }}</strong>
             <small>{{ paramSummary(param) }}</small>

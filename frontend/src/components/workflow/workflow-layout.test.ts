@@ -1,15 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import type { WorkflowGraphDraft } from "../../types/domain";
-import {
-  autoLayoutWorkflowGraph,
-  layoutWorkflowGraphIfNeeded,
-  workflowGraphNeedsLayout,
-} from "./workflow-layout";
+import { autoLayoutWorkflowGraph, layoutWorkflowGraphIfNeeded, workflowGraphNeedsLayout } from "./workflow-layout";
 
 function graph(
-  nodes: Array<Omit<WorkflowGraphDraft["nodes"][number], "ui" | "ports" | "data"> & Partial<WorkflowGraphDraft["nodes"][number]>>,
-  edges: Array<Partial<WorkflowGraphDraft["edges"][number]> & Pick<WorkflowGraphDraft["edges"][number], "id" | "sourceNodeId" | "targetNodeId">> = [],
+  nodes: Array<
+    Omit<WorkflowGraphDraft["nodes"][number], "ui" | "ports" | "data"> & Partial<WorkflowGraphDraft["nodes"][number]>
+  >,
+  edges: Array<
+    Partial<WorkflowGraphDraft["edges"][number]> &
+      Pick<WorkflowGraphDraft["edges"][number], "id" | "sourceNodeId" | "targetNodeId">
+  > = [],
 ): WorkflowGraphDraft {
   return {
     schemaVersion: "workflow-graph.v1",

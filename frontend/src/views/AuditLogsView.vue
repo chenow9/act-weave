@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import "./audit-logs-page.css";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import AppSelect, { type AppSelectOption } from "../components/AppSelect.vue";
@@ -223,10 +224,7 @@ function maskSensitiveText(text: string) {
   if (!text) return text;
   // UUID-like segments and long hex/base tokens
   return text
-    .replace(
-      /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
-      "********",
-    )
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "********")
     .replace(/\b(?:sk|pk|key|token)[-_]?[A-Za-z0-9]{12,}\b/gi, "********");
 }
 
@@ -238,7 +236,10 @@ function stepIcon(type: string) {
 }
 
 function stepText(step: AgentAuditStep) {
-  if (step.type === "reasoning" && (!step.content || step.contentState === "missing" || step.contentState === "redacted")) {
+  if (
+    step.type === "reasoning" &&
+    (!step.content || step.contentState === "missing" || step.contentState === "redacted")
+  ) {
     const fallback = step.content || "无推理数据";
     return agentAudit.isMasked ? maskSensitiveText(fallback) : fallback;
   }
@@ -345,7 +346,9 @@ async function runAction(action: () => Promise<void>, fallback: string) {
             >
               <td class="mono aw-table-mono">{{ item.traceId }}</td>
               <td class="aw-table-meta">{{ formatTime(item.startedAt) }}</td>
-              <td><span class="pill aw-table-pill">{{ item.model || "—" }}</span></td>
+              <td>
+                <span class="pill aw-table-pill">{{ item.model || "—" }}</span>
+              </td>
               <td class="aw-table-meta">{{ displayUserLabel(item.userLabel) }}</td>
               <td>
                 <span class="status aw-table-pill" :class="item.status">{{ statusLabel(item.status) }}</span>
@@ -420,18 +423,16 @@ async function runAction(action: () => Promise<void>, fallback: string) {
             <span><i class="fa-solid fa-clock"></i> {{ formatTime(agentAudit.selected.startedAt) }}</span>
             <span><i class="fa-solid fa-microchip"></i> {{ agentAudit.selected.model }}</span>
             <span><i class="fa-solid fa-user"></i> {{ displayUserLabel(agentAudit.selected.userLabel) }}</span>
-            <span>总耗时: <strong>{{ formatLatency(agentAudit.selected.latencyMs) }}</strong></span>
+            <span
+              >总耗时: <strong>{{ formatLatency(agentAudit.selected.latencyMs) }}</strong></span
+            >
           </div>
         </div>
       </div>
 
       <div v-if="agentAudit.detailLoading" class="empty">加载详情中…</div>
       <div v-else class="timeline">
-        <div
-          v-for="(step, index) in agentAudit.selected.steps"
-          :key="stepKey(step, index)"
-          class="timeline-item"
-        >
+        <div v-for="(step, index) in agentAudit.selected.steps" :key="stepKey(step, index)" class="timeline-item">
           <div class="timeline-rail">
             <div class="timeline-icon" :class="step.type">
               <i :class="stepIcon(step.type)"></i>

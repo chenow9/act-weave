@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import "./change-password-page.css";
 import { computed, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 

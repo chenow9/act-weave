@@ -51,7 +51,8 @@ export function parseOpenAPIPreview(source: string): OpenAPIPreviewResult {
         continue;
       }
 
-      const suggestedTool = readPreferredString(operation.summary, operation.operationId) || fallbackToolId(method, path);
+      const suggestedTool =
+        readPreferredString(operation.summary, operation.operationId) || fallbackToolId(method, path);
       rows.push({
         method: method.toUpperCase(),
         path,

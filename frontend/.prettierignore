@@ -1,0 +1,16 @@
+# Dependencies and build outputs
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+*.tsbuildinfo
+
+# Lockfiles and generated package artifacts
+package-lock.json
+
+# E2E ad-hoc scripts, snapshots, and acceptance artifacts (not production source)
+e2e/**/*.mjs
+e2e/**/*.json
+e2e/**/*-snapshots/**
+scripts/

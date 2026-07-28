@@ -31,11 +31,13 @@ describe("buildOutboundIdentityContract T3 fail-closed", () => {
       supportedSubjectTypes: ["USER"],
       requestPassthrough: { credentialTypes: ["ACCESS_TOKEN"] },
     });
-    expect(buildOutboundIdentityContract({
-      ...base,
-      supportBrokerObo: true,
-      supportRequestPassthrough: true,
-    })).toMatchObject({
+    expect(
+      buildOutboundIdentityContract({
+        ...base,
+        supportBrokerObo: true,
+        supportRequestPassthrough: true,
+      }),
+    ).toMatchObject({
       supportedModes: ["BROKER_OBO", "REQUEST_PASSTHROUGH"],
       brokerObo: expect.objectContaining({
         machineAuthMethod: "private_key_jwt",

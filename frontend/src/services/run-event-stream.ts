@@ -216,9 +216,8 @@ export function parseSSEBlock(block: string, fallbackRunId: string): StreamFrame
     const data = isRecord(parsed.data) ? parsed.data : {};
     return {
       type: envelopeType || type,
-      sequenceNo: typeof parsed.sequence === "number" && Number.isSafeInteger(parsed.sequence)
-        ? parsed.sequence
-        : sequenceNo,
+      sequenceNo:
+        typeof parsed.sequence === "number" && Number.isSafeInteger(parsed.sequence) ? parsed.sequence : sequenceNo,
       runId,
       kind: isKnownProtocolType(envelopeType) ? "protocol" : "unknown",
       data,
@@ -301,11 +300,7 @@ export function applyStreamFrame(
   return { state: next, effects };
 }
 
-function applyProtocolFrame(
-  state: ConsoleRunProjectionState,
-  frame: StreamFrame,
-  effects: ConsoleStreamEffects,
-): void {
+function applyProtocolFrame(state: ConsoleRunProjectionState, frame: StreamFrame, effects: ConsoleStreamEffects): void {
   const { type, data, runId } = frame;
 
   if (type.startsWith("run.")) {
@@ -410,11 +405,7 @@ function applyProtocolFrame(
 }
 
 /** Secondary thin-compat projection for residual RUN_* frames (not production SoT). */
-function applyLegacyFrame(
-  state: ConsoleRunProjectionState,
-  frame: StreamFrame,
-  effects: ConsoleStreamEffects,
-): void {
+function applyLegacyFrame(state: ConsoleRunProjectionState, frame: StreamFrame, effects: ConsoleStreamEffects): void {
   const payload = frame.data;
   if (isRecord(payload.run)) effects.legacyRun = payload.run as unknown as AgentRun;
   if (isRecord(payload.step)) effects.legacyStep = payload.step as unknown as AgentRunStep;
@@ -473,12 +464,7 @@ function mapRunEventType(type: string): AgentRunStatus | undefined {
   }
 }
 
-function ensureAssistant(
-  state: ConsoleRunProjectionState,
-  itemId: string,
-  content: string,
-  finalized: boolean,
-): void {
+function ensureAssistant(state: ConsoleRunProjectionState, itemId: string, content: string, finalized: boolean): void {
   if (!state.assistantByItemId[itemId]) {
     state.assistantOrder.push(itemId);
   }
@@ -541,9 +527,7 @@ function abortError(): DOMException {
 }
 
 /** Build a ChatMessage projection for an assistant stream bubble. */
-export function toAssistantChatMessage(
-  patch: ConsoleStreamEffects["assistantMessages"][number],
-): ChatMessage {
+export function toAssistantChatMessage(patch: ConsoleStreamEffects["assistantMessages"][number]): ChatMessage {
   return {
     id: patch.id,
     role: "ASSISTANT",

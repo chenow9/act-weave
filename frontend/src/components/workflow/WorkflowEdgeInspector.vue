@@ -33,13 +33,19 @@ function edgeDataValue(key: string) {
     <div class="workflow-panel-heading">
       <span>连线面板</span>
       <h3>{{ props.edge?.id || "选择一条连线" }}</h3>
-      <p>{{ props.edge ? "配置连线分支后，画布标签和运行时路由会使用同一个值。" : "点击画布中的连线后在这里编辑。" }}</p>
+      <p>
+        {{ props.edge ? "配置连线分支后，画布标签和运行时路由会使用同一个值。" : "点击画布中的连线后在这里编辑。" }}
+      </p>
     </div>
 
     <div v-if="props.edge" class="workflow-inspector-form">
       <div class="workflow-inspector-meta">
         <span>连线 ID {{ props.edge.id }}</span>
-        <span>{{ props.edge.sourceNodeId }}:{{ props.edge.sourcePort }} -> {{ props.edge.targetNodeId }}:{{ props.edge.targetPort }}</span>
+        <span
+          >{{ props.edge.sourceNodeId }}:{{ props.edge.sourcePort }} -> {{ props.edge.targetNodeId }}:{{
+            props.edge.targetPort
+          }}</span
+        >
       </div>
 
       <section class="workflow-inspector-vars">

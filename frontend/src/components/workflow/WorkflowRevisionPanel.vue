@@ -24,7 +24,9 @@ const sortedRevisions = computed(() =>
 );
 
 const activeRevisionId = computed(() => props.readiness?.activeRevisionId || "");
-const latestRevisionId = computed(() => props.readiness?.latestRevisionId || sortedRevisions.value[0]?.revisionId || "");
+const latestRevisionId = computed(
+  () => props.readiness?.latestRevisionId || sortedRevisions.value[0]?.revisionId || "",
+);
 const isDisabled = computed(() => props.workflowStatus === "Disabled");
 
 function formatDate(value?: string) {
@@ -81,17 +83,15 @@ function statusTone(revisionId: string) {
       <div class="workflow-revision-meta">
         <div class="workflow-revision-meta-card" data-testid="workflow-revision-active-meta">
           <span class="workflow-revision-meta-label">Active</span>
-          <strong
-            class="workflow-revision-meta-id"
-            :title="activeRevisionId || undefined"
-          >{{ activeRevisionId ? displayRevisionId(activeRevisionId) : "未设置" }}</strong>
+          <strong class="workflow-revision-meta-id" :title="activeRevisionId || undefined">{{
+            activeRevisionId ? displayRevisionId(activeRevisionId) : "未设置"
+          }}</strong>
         </div>
         <div class="workflow-revision-meta-card" data-testid="workflow-revision-latest-meta">
           <span class="workflow-revision-meta-label">Latest</span>
-          <strong
-            class="workflow-revision-meta-id"
-            :title="latestRevisionId || undefined"
-          >{{ latestRevisionId ? displayRevisionId(latestRevisionId) : "暂无" }}</strong>
+          <strong class="workflow-revision-meta-id" :title="latestRevisionId || undefined">{{
+            latestRevisionId ? displayRevisionId(latestRevisionId) : "暂无"
+          }}</strong>
         </div>
       </div>
     </div>
@@ -105,18 +105,16 @@ function statusTone(revisionId: string) {
         :data-revision-id="revision.revisionId"
       >
         <div class="workflow-revision-info">
-          <strong
-            class="workflow-revision-id"
-            :title="revision.revisionId"
-          >{{ displayRevisionId(revision.revisionId) }}</strong>
+          <strong class="workflow-revision-id" :title="revision.revisionId">{{
+            displayRevisionId(revision.revisionId)
+          }}</strong>
           <small class="workflow-revision-meta-line">
             {{ formatDate(revision.createdAt) }} · {{ shortHash(revision.planHash) }}
           </small>
         </div>
-        <span
-          class="status-pill workflow-revision-status"
-          :class="statusTone(revision.revisionId)"
-        >{{ statusLabel(revision.revisionId) }}</span>
+        <span class="status-pill workflow-revision-status" :class="statusTone(revision.revisionId)">{{
+          statusLabel(revision.revisionId)
+        }}</span>
         <div class="workflow-revision-actions">
           <button
             class="ghost-button"
@@ -147,6 +145,8 @@ function statusTone(revisionId: string) {
         </div>
       </article>
     </div>
-    <p v-else class="workflow-revision-empty">{{ props.emptyText || "还没有发布版本。完成试运行并发布后，版本会显示在这里。" }}</p>
+    <p v-else class="workflow-revision-empty">
+      {{ props.emptyText || "还没有发布版本。完成试运行并发布后，版本会显示在这里。" }}
+    </p>
   </section>
 </template>

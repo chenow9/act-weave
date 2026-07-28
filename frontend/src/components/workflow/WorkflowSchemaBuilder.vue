@@ -12,7 +12,10 @@ const emit = defineEmits<{
   (event: "update:fields", value: WorkflowSchemaFieldDraft[]): void;
 }>();
 
-const fieldTypeOptions = ["string", "integer", "number", "boolean", "object", "array"].map((type) => ({ label: type, value: type }));
+const fieldTypeOptions = ["string", "integer", "number", "boolean", "object", "array"].map((type) => ({
+  label: type,
+  value: type,
+}));
 
 const nextIndex = computed(() => props.fields.length);
 

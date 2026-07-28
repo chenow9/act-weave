@@ -237,7 +237,8 @@ function mountWorkflowView(options: Parameters<typeof mount>[1] = {}) {
         AppSelect: {
           props: ["modelValue", "options"],
           emits: ["update:modelValue"],
-          template: "<select class='app-select-stub' :value='modelValue' @change=\"$emit('update:modelValue', $event.target.value)\"><option value=''>请选择</option><option v-for='option in options' :key='option.value' :value='option.value'>{{ option.label }}</option></select>",
+          template:
+            "<select class='app-select-stub' :value='modelValue' @change=\"$emit('update:modelValue', $event.target.value)\"><option value=''>请选择</option><option v-for='option in options' :key='option.value' :value='option.value'>{{ option.label }}</option></select>",
         },
         ElDrawer: {
           props: ["modelValue"],
@@ -253,20 +254,22 @@ describe("workflow view P1.4", () => {
     document.body.innerHTML = "";
     setActivePinia(createPinia());
     vi.resetAllMocks();
-    useWorkspaceStore().items = [{
-      id: "order",
-      name: "order",
-      displayName: "订单中心",
-      owner: "Commerce Ops",
-      mode: "Production",
-      status: "Active",
-      defaultAgentId: "",
-      modelConfigId: "",
-      healthScore: 100,
-      toolCount: 0,
-      workflowCount: 1,
-      agentCount: 0,
-    }];
+    useWorkspaceStore().items = [
+      {
+        id: "order",
+        name: "order",
+        displayName: "订单中心",
+        owner: "Commerce Ops",
+        mode: "Production",
+        status: "Active",
+        defaultAgentId: "",
+        modelConfigId: "",
+        healthScore: 100,
+        toolCount: 0,
+        workflowCount: 1,
+        agentCount: 0,
+      },
+    ];
     vi.stubGlobal(
       "ResizeObserver",
       class {
@@ -484,22 +487,15 @@ describe("workflow view P1.4", () => {
 
   it("shows a deterministic loading and error state while opening the workflow editor draft", async () => {
     const pendingDraft = deferred<{ data: ReturnType<typeof draftFixture>; headers: { etag: string } }>();
-    const draftLoadError = new AxiosError(
-      "draft failed",
-      "ERR_BAD_REQUEST",
-      undefined,
-      undefined,
-      {
-        status: 500,
-        statusText: "Server Error",
-        headers: {},
-        config: { headers: {} } as never,
-        data: { error: "draft load failed" },
-      },
-    );
+    const draftLoadError = new AxiosError("draft failed", "ERR_BAD_REQUEST", undefined, undefined, {
+      status: 500,
+      statusText: "Server Error",
+      headers: {},
+      config: { headers: {} } as never,
+      data: { error: "draft load failed" },
+    });
 
-    mockWorkflowAssets([workflowSummaryFixture()])
-      .mockImplementationOnce(() => pendingDraft.promise);
+    mockWorkflowAssets([workflowSummaryFixture()]).mockImplementationOnce(() => pendingDraft.promise);
     vi.mocked(apiClient.get).mockResolvedValueOnce({ data: readinessFixture() });
 
     const wrapper = mountWorkflowView();
@@ -672,7 +668,9 @@ describe("workflow view P1.4", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    expect(apiClient.get).toHaveBeenCalledWith("/workspaces/order/workflows/wf-order-cancel-draft/revisions:diff?from=rev-2&to=rev-3");
+    expect(apiClient.get).toHaveBeenCalledWith(
+      "/workspaces/order/workflows/wf-order-cancel-draft/revisions:diff?from=rev-2&to=rev-3",
+    );
     expect(wrapper.text()).toContain("版本差异");
     expect(wrapper.text()).toContain("Plan Hash");
 

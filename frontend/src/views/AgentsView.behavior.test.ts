@@ -29,6 +29,8 @@ const agentStoreState = {
 const workspaceStoreState = {
   items: [] as Array<Record<string, unknown>>,
   activeWorkspaceId: "",
+  can: vi.fn(() => true),
+  roleFor: vi.fn(() => "EDITOR"),
 };
 
 const modelConfigStoreState = {
@@ -45,7 +47,11 @@ vi.mock("../stores/agents", () => ({
       agentStoreState.selectedAgentId = value;
     },
     get selectedAgent() {
-      return agentStoreState.items.find((agent) => agent.id === agentStoreState.selectedAgentId) || agentStoreState.items[0] || null;
+      return (
+        agentStoreState.items.find((agent) => agent.id === agentStoreState.selectedAgentId) ||
+        agentStoreState.items[0] ||
+        null
+      );
     },
     loading: false,
     pageLoading: false,
@@ -68,7 +74,11 @@ vi.mock("../stores/workspaces", () => ({
   useWorkspaceStore: () => ({
     ...workspaceStoreState,
     get activeWorkspace() {
-      return workspaceStoreState.items.find((workspace) => workspace.id === workspaceStoreState.activeWorkspaceId) || workspaceStoreState.items[0] || null;
+      return (
+        workspaceStoreState.items.find((workspace) => workspace.id === workspaceStoreState.activeWorkspaceId) ||
+        workspaceStoreState.items[0] ||
+        null
+      );
     },
     loading: false,
     load: loadWorkspacesMock,
@@ -143,7 +153,7 @@ function seedStores(agentCount: number) {
   agentStoreState.items = Array.from({ length: agentCount }, (_, index) => makeAgent(index + 1));
   agentStoreState.pageItems = [...agentStoreState.items];
   agentStoreState.pagination = { page: 1, pageSize: 10, total: agentCount, pageSizeOptions: [10, 20, 50] };
-  agentStoreState.selectedAgentId = agentStoreState.items[0]?.id as string || "";
+  agentStoreState.selectedAgentId = (agentStoreState.items[0]?.id as string) || "";
   workspaceStoreState.items = [makeWorkspace("workspace-1", "Workspace One")];
   workspaceStoreState.activeWorkspaceId = "workspace-1";
   modelConfigStoreState.items = [makeModelConfig()];
@@ -219,23 +229,40 @@ describe("agents view behavior", () => {
     loadModelConfigsMock.mockResolvedValue(modelConfigStoreState.items);
     createAgentMock.mockResolvedValue(makeAgent(99));
     updateAgentMock.mockImplementation((_agentId, agent) => Promise.resolve({ ...agent }));
-    enhanceAgentPromptMock.mockImplementation((_agent, input, options) => Promise.resolve({
-      runId: options.preview ? "run-preview" : "run-accepted",
-      status: "SUCCEEDED",
-      preview: options.preview,
-      output: `${input}\n\n增强预览`,
-      inputObjectId: "input-object",
-      outputObjectId: "output-object",
-      ...(options.preview ? {} : { acceptedRevisionId: "revision-next", revisionNo: 2 }),
-    }));
+    enhanceAgentPromptMock.mockImplementation((_agent, input, options) =>
+      Promise.resolve({
+        runId: options.preview ? "run-preview" : "run-accepted",
+        status: "SUCCEEDED",
+        preview: options.preview,
+        output: `${input}\n\n增强预览`,
+        inputObjectId: "input-object",
+        outputObjectId: "output-object",
+        ...(options.preview ? {} : { acceptedRevisionId: "revision-next", revisionNo: 2 }),
+      }),
+    );
     deleteAgentMock.mockResolvedValue(undefined);
     loadCapabilitiesMock.mockImplementation(async () => {
-      const items = [{
-        id: "capability-1", kind: "TOOL", name: "查询订单", slug: "lookup-order", description: "查询订单",
-        status: "ACTIVE", activeReleaseId: "release-1", boundAgentCount: 0,
-        activeRelease: { releaseId: "release-1", capabilityId: "capability-1", kind: "TOOL", callableName: "lookup_order" },
-        createdBy: "user-1", updatedBy: "user-1", lockVersion: 1,
-      }];
+      const items = [
+        {
+          id: "capability-1",
+          kind: "TOOL",
+          name: "查询订单",
+          slug: "lookup-order",
+          description: "查询订单",
+          status: "ACTIVE",
+          activeReleaseId: "release-1",
+          boundAgentCount: 0,
+          activeRelease: {
+            releaseId: "release-1",
+            capabilityId: "capability-1",
+            kind: "TOOL",
+            callableName: "lookup_order",
+          },
+          createdBy: "user-1",
+          updatedBy: "user-1",
+          lockVersion: 1,
+        },
+      ];
       agentStoreState.capabilitiesByWorkspace["workspace-1"] = items;
       return items;
     });
@@ -323,13 +350,13 @@ describe("agents view behavior", () => {
     await flushPromises();
     const menu = document.body.querySelector<HTMLElement>('[role="menu"][aria-label="更多操作"]');
     expect(menu).not.toBeNull();
-    expect(Array.from(menu!.querySelectorAll("[data-action-key]")).map((button) => button.getAttribute("data-action-key"))).toEqual([
-      "debug",
-      "capabilities",
-      "delete",
-    ]);
+    expect(
+      Array.from(menu!.querySelectorAll("[data-action-key]")).map((button) => button.getAttribute("data-action-key")),
+    ).toEqual(["debug", "capabilities", "delete"]);
     expect(menu!.querySelector<HTMLButtonElement>('button[data-action-key="delete"]')?.disabled).toBe(true);
-    expect(menu!.querySelector<HTMLButtonElement>('button[data-action-key="delete"]')?.title).toBe("默认 Agent 不能删除");
+    expect(menu!.querySelector<HTMLButtonElement>('button[data-action-key="delete"]')?.title).toBe(
+      "默认 Agent 不能删除",
+    );
     wrapper.unmount();
   });
 
@@ -513,7 +540,12 @@ describe("agents view behavior", () => {
     expect(bindCapabilityMock).toHaveBeenCalledWith(
       expect.objectContaining({ id: "agent-1" }),
       "capability-1",
-      expect.objectContaining({ versionPolicy: "PINNED", pinnedReleaseId: "release-1", connectionId: "connection-1", lockVersion: 0 }),
+      expect.objectContaining({
+        versionPolicy: "PINNED",
+        pinnedReleaseId: "release-1",
+        connectionId: "connection-1",
+        lockVersion: 0,
+      }),
     );
     wrapper.unmount();
   });
@@ -528,7 +560,9 @@ describe("agents view behavior", () => {
     await wrapper.get(".agent-weave-button").trigger("click");
     await flushPromises();
 
-    expect(enhanceAgentPromptMock).toHaveBeenCalledWith(expect.objectContaining({ id: "agent-1" }), "强化执行边界", { preview: true });
+    expect(enhanceAgentPromptMock).toHaveBeenCalledWith(expect.objectContaining({ id: "agent-1" }), "强化执行边界", {
+      preview: true,
+    });
     expect(wrapper.find(".agent-weave-preview-dialog").exists()).toBe(true);
     expect(wrapper.find(".agent-weave-preview-dialog .agent-prompt-diff-viewer").exists()).toBe(true);
     expect(wrapper.find(".agent-weave-preview-dialog .agent-prompt-markdown").exists()).toBe(false);

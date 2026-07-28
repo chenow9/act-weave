@@ -102,11 +102,7 @@ defineExpose({ clearSecrets, clearAttachment, attachmentId });
 </script>
 
 <template>
-  <section
-    v-if="requiresPassthrough !== false"
-    class="debug-outbound-panel"
-    aria-label="出站透传凭据（一次性）"
-  >
+  <section v-if="requiresPassthrough !== false" class="debug-outbound-panel" aria-label="出站透传凭据（一次性）">
     <header class="debug-outbound-header">
       <strong>出站请求透传</strong>
       <span class="debug-outbound-hint">Token 不会写入会话、日志或本地存储；发送后仅使用一次性 attachment ID。</span>
@@ -147,9 +143,7 @@ defineExpose({ clearSecrets, clearAttachment, attachmentId });
         清除绑定
       </button>
     </div>
-    <p v-if="attachmentId" class="debug-outbound-ok">
-      已绑定（将随下一条消息消费）· 过期 {{ expiresAt }}
-    </p>
+    <p v-if="attachmentId" class="debug-outbound-ok">已绑定（将随下一条消息消费）· 过期 {{ expiresAt }}</p>
     <p v-if="errorText" class="debug-outbound-error">{{ errorText }}</p>
   </section>
   <section v-else class="debug-outbound-panel broker-only" aria-label="Broker 出站说明">
@@ -202,7 +196,11 @@ defineExpose({ clearSecrets, clearAttachment, attachmentId });
   color: #0f172a;
   font-size: 12px;
   font-weight: 500;
-  transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease, opacity 0.16s ease;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    background-color 0.16s ease,
+    opacity 0.16s ease;
 }
 .debug-outbound-fields input[type="password"]:hover:not(:disabled),
 .debug-outbound-fields input[type="datetime-local"]:hover:not(:disabled) {
@@ -233,7 +231,12 @@ defineExpose({ clearSecrets, clearAttachment, attachmentId });
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  transition: color 0.16s ease, background-color 0.16s ease, border-color 0.16s ease, transform 0.16s ease, opacity 0.16s ease;
+  transition:
+    color 0.16s ease,
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    transform 0.16s ease,
+    opacity 0.16s ease;
 }
 .debug-outbound-attach:hover:not(:disabled),
 .debug-outbound-clear:hover:not(:disabled) {

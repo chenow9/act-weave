@@ -14,21 +14,27 @@ vi.mock("../services/api", async () => {
 describe("v1 Agent, Capability, and Binding store", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
-    useWorkspaceStore().items = [{ id: "workspace-1" }, { id: "workspace-2" }] as Workspace[];
+    const workspaces = useWorkspaceStore();
+    workspaces.items = [{ id: "workspace-1" }, { id: "workspace-2" }] as Workspace[];
+    workspaces.activeWorkspaceId = "workspace-1";
     vi.resetAllMocks();
   });
 
-  it("aggregates workspace-scoped Agent reads and locally pages derived fields", async () => {
-    vi.mocked(apiClient.get)
-      .mockResolvedValueOnce({ data: { items: [agentDTO("agent-1", { name: "Orders" })] } })
-      .mockResolvedValueOnce({ data: { items: [agentDTO("agent-2", { name: "Finance", status: "DISABLED" })] } });
+  it("loads agents for the active workspace only and pages derived fields", async () => {
+    vi.mocked(apiClient.get).mockResolvedValueOnce({
+      data: {
+        items: [agentDTO("agent-1", { name: "Orders" }), agentDTO("agent-2", { name: "Finance", status: "DISABLED" })],
+      },
+    });
     const store = useAgentStore();
 
     await store.loadAgentPage({ query: "finance", status: "DISABLED", page: 1, pageSize: 10 });
 
-    expect(apiClient.get).toHaveBeenNthCalledWith(1, "/workspaces/workspace-1/agents");
-    expect(apiClient.get).toHaveBeenNthCalledWith(2, "/workspaces/workspace-2/agents");
-    expect(store.pageItems).toMatchObject([{ id: "agent-2", workspaceId: "workspace-2", toolsCount: 2, workflowsCount: 1 }]);
+    expect(apiClient.get).toHaveBeenCalledTimes(1);
+    expect(apiClient.get).toHaveBeenCalledWith("/workspaces/workspace-1/agents");
+    expect(store.pageItems).toMatchObject([
+      { id: "agent-2", workspaceId: "workspace-1", toolsCount: 2, workflowsCount: 1 },
+    ]);
     expect(store.pageItems[0].systemPrompt).toBe("");
   });
 
@@ -47,7 +53,9 @@ describe("v1 Agent, Capability, and Binding store", () => {
 
   it("uses exact create and update DTO allowlists without writing derived facts or prompt plaintext on PATCH", async () => {
     vi.mocked(apiClient.post).mockResolvedValueOnce({ data: agentDTO("agent-1") });
-    vi.mocked(apiClient.patch).mockResolvedValueOnce({ data: agentDTO("agent-1", { name: "Updated", lockVersion: 2 }) });
+    vi.mocked(apiClient.patch).mockResolvedValueOnce({
+      data: agentDTO("agent-1", { name: "Updated", lockVersion: 2 }),
+    });
     const store = useAgentStore();
     const draft = agentValue({ id: "", systemPrompt: "Initial prompt", toolsCount: 99, workflowsCount: 88 });
 
@@ -60,7 +68,12 @@ describe("v1 Agent, Capability, and Binding store", () => {
       systemPrompt: "Initial prompt",
     });
 
-    await store.updateAgent(created.id, { ...created, name: "Updated", systemPrompt: "must-not-patch", toolsCount: 77 });
+    await store.updateAgent(created.id, {
+      ...created,
+      name: "Updated",
+      systemPrompt: "must-not-patch",
+      toolsCount: 77,
+    });
     expect(apiClient.patch).toHaveBeenCalledWith("/workspaces/workspace-1/agents/agent-1", {
       name: "Updated",
       roleDescription: "Assistant",
@@ -103,7 +116,15 @@ describe("v1 Agent, Capability, and Binding store", () => {
     vi.mocked(apiClient.get)
       .mockResolvedValueOnce({ data: { items: [capabilityDTO()] } })
       .mockResolvedValueOnce({ data: { items: [binding] } });
-    vi.mocked(apiClient.put).mockResolvedValueOnce({ data: { ...binding, versionPolicy: "PINNED", pinnedReleaseId: "release-1", connectionId: "connection-1", lockVersion: 2 } });
+    vi.mocked(apiClient.put).mockResolvedValueOnce({
+      data: {
+        ...binding,
+        versionPolicy: "PINNED",
+        pinnedReleaseId: "release-1",
+        connectionId: "connection-1",
+        lockVersion: 2,
+      },
+    });
     vi.mocked(apiClient.delete).mockResolvedValueOnce({ data: undefined });
     const store = useAgentStore();
     const agent = agentValue();
@@ -120,18 +141,15 @@ describe("v1 Agent, Capability, and Binding store", () => {
 
     expect(apiClient.get).toHaveBeenNthCalledWith(1, "/workspaces/workspace-1/capabilities");
     expect(apiClient.get).toHaveBeenNthCalledWith(2, "/workspaces/workspace-1/agents/agent-1/capabilities");
-    expect(apiClient.put).toHaveBeenCalledWith(
-      "/workspaces/workspace-1/agents/agent-1/capabilities/capability-1",
-      {
-        versionPolicy: "PINNED",
-        pinnedReleaseId: "release-1",
-        connectionId: "connection-1",
-        executionPolicyId: undefined,
-        enabled: true,
-        configOverrides: {},
-        lockVersion: 1,
-      },
-    );
+    expect(apiClient.put).toHaveBeenCalledWith("/workspaces/workspace-1/agents/agent-1/capabilities/capability-1", {
+      versionPolicy: "PINNED",
+      pinnedReleaseId: "release-1",
+      connectionId: "connection-1",
+      executionPolicyId: undefined,
+      enabled: true,
+      configOverrides: {},
+      lockVersion: 1,
+    });
     expect(apiClient.delete).toHaveBeenCalledWith(
       "/workspaces/workspace-1/agents/agent-1/capabilities/capability-1?lockVersion=2",
     );

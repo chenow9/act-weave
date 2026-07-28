@@ -1,0 +1,126 @@
+/* model-api page styles extracted from app.css (ZKL-64 item 18). */
+.m2-table {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-x: auto;
+}
+
+.m2-table-head,
+.m2-row {
+  min-width: 960px;
+  display: grid;
+  gap: 12px;
+  align-items: center;
+}
+
+.m2-table-head {
+  padding: 0 12px 6px;
+  color: var(--aw-muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.m2-row {
+  min-height: 64px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid var(--aw-border);
+  border-radius: 7px;
+}
+
+.m2-row strong,
+.m2-row small,
+.m2-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m2-row strong {
+  display: block;
+  font-size: 12px;
+}
+
+.m2-row small {
+  display: block;
+  margin-top: 4px;
+  color: var(--aw-muted);
+  font-size: 10px;
+}
+
+.m2-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.m2-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.m2-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.m2-form-grid .el-input,
+.m2-form-grid .el-select,
+.m2-form-grid .el-input-number {
+  width: 100%;
+}
+
+.m2-full {
+  grid-column: 1 / -1;
+}
+
+.m2-step-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.model-api-table-head,
+.model-api-row {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1.08fr) minmax(0, 0.9fr) minmax(0, 0.82fr) minmax(0, 1.22fr) minmax(0, 0.76fr)
+    76px 112px;
+  gap: 12px;
+  align-items: center;
+}
+
+.model-api-list {
+  max-height: 372px;
+}
+
+.model-api-row {
+  min-height: 68px;
+}
+
+.model-api-row .latency-value {
+  min-width: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 0 7px;
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px solid var(--aw-border);
+  border-radius: 999px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.model-api-row .latency-value.tested {
+  color: var(--aw-cyan);
+  background: var(--aw-cyan-soft);
+  border-color: rgba(13, 148, 136, 0.2);
+}

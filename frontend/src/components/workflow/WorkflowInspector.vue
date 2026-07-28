@@ -25,17 +25,6 @@ function nodeDataValue(key: string) {
   const value = props.node?.data?.[key];
   return typeof value === "string" ? value : "";
 }
-
-function nodeStructuredValue(key: string) {
-  const value = props.node?.data?.[key];
-  if (typeof value === "string") {
-    return value;
-  }
-  if (value == null) {
-    return "";
-  }
-  return JSON.stringify(value, null, 2);
-}
 </script>
 
 <template>
@@ -108,7 +97,9 @@ function nodeStructuredValue(key: string) {
             rows="4"
             :value="nodeDataValue('expression')"
             placeholder="例如 nodeOutputs.tool.status == 'paid'"
-            @input="emit('update-node-data', { key: 'expression', value: ($event.target as HTMLTextAreaElement).value })"
+            @input="
+              emit('update-node-data', { key: 'expression', value: ($event.target as HTMLTextAreaElement).value })
+            "
           />
         </label>
 

@@ -4,12 +4,15 @@ import { useRouter } from "vue-router";
 
 import { useWorkspaceStore } from "../stores/workspaces";
 
-withDefaults(defineProps<{
-  feature: string;
-  icon?: string;
-}>(), {
-  icon: "fa-solid fa-layer-group",
-});
+withDefaults(
+  defineProps<{
+    feature: string;
+    icon?: string;
+  }>(),
+  {
+    icon: "fa-solid fa-layer-group",
+  },
+);
 
 const emit = defineEmits<{ retry: [] }>();
 const router = useRouter();

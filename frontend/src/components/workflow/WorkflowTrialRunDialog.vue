@@ -42,7 +42,9 @@ const passthroughToken = ref("");
 const passthroughExpiresAt = ref("");
 
 const hasFields = computed(() => props.inputSchema.length > 0);
-const hasLastSuccessfulInput = computed(() => Boolean(props.lastSuccessfulInput && Object.keys(props.lastSuccessfulInput).length > 0));
+const hasLastSuccessfulInput = computed(() =>
+  Boolean(props.lastSuccessfulInput && Object.keys(props.lastSuccessfulInput).length > 0),
+);
 
 watch(
   [() => props.visible, () => props.inputSchema],
@@ -95,7 +97,9 @@ function emitSubmit(input: Record<string, unknown>) {
 
 function focusInitialControl() {
   const root = dialogRef.value;
-  const target = root?.querySelector<HTMLElement>('button[data-mode="form"], input:not(:disabled), textarea:not(:disabled), button:not(:disabled)');
+  const target = root?.querySelector<HTMLElement>(
+    'button[data-mode="form"], input:not(:disabled), textarea:not(:disabled), button:not(:disabled)',
+  );
   (target || root)?.focus();
 }
 
@@ -262,8 +266,12 @@ function submitRawJson() {
       </header>
 
       <div class="workflow-trial-run-mode-tabs">
-        <button type="button" :class="{ active: inputMode === 'form' }" data-mode="form" @click="inputMode = 'form'">表单</button>
-        <button type="button" :class="{ active: inputMode === 'raw' }" data-mode="raw" @click="inputMode = 'raw'">JSON</button>
+        <button type="button" :class="{ active: inputMode === 'form' }" data-mode="form" @click="inputMode = 'form'">
+          表单
+        </button>
+        <button type="button" :class="{ active: inputMode === 'raw' }" data-mode="raw" @click="inputMode = 'raw'">
+          JSON
+        </button>
         <button
           type="button"
           :class="{ active: inputMode === 'reuse' }"
@@ -287,7 +295,13 @@ function submitRawJson() {
             :type="inputType(field.type)"
             @input="markFieldTouched(field.key)"
           />
-          <input v-else v-model="form[field.key]" :name="field.key" type="checkbox" @change="markFieldTouched(field.key)" />
+          <input
+            v-else
+            v-model="form[field.key]"
+            :name="field.key"
+            type="checkbox"
+            @change="markFieldTouched(field.key)"
+          />
           <small v-if="fieldErrors[field.key]" class="workflow-trial-run-error">{{ fieldErrors[field.key] }}</small>
         </label>
       </div>
@@ -330,13 +344,24 @@ function submitRawJson() {
         </label>
         <label>
           过期时间
-          <input v-model="passthroughExpiresAt" type="datetime-local" data-testid="workflow-trial-passthrough-expires" :disabled="submitting" />
+          <input
+            v-model="passthroughExpiresAt"
+            type="datetime-local"
+            data-testid="workflow-trial-passthrough-expires"
+            :disabled="submitting"
+          />
         </label>
       </section>
 
       <footer class="workflow-trial-run-actions">
         <button class="ghost-button" type="button" :disabled="submitting" @click="closeIfIdle">取消</button>
-        <button data-action="submit-trial-run" class="primary-button" type="button" :disabled="submitting" @click="submit">
+        <button
+          data-action="submit-trial-run"
+          class="primary-button"
+          type="button"
+          :disabled="submitting"
+          @click="submit"
+        >
           {{ submitting ? "正在模拟试运行…" : "模拟试运行" }}
         </button>
       </footer>
@@ -525,9 +550,22 @@ function submitRawJson() {
   flex-direction: column;
   gap: 8px;
 }
-.workflow-trial-outbound header { display: flex; flex-direction: column; gap: 2px; }
-.workflow-trial-outbound header span { font-size: 12px; color: #64748b; }
-.workflow-trial-outbound label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
-.workflow-trial-outbound input { padding: 6px 8px; }
-
+.workflow-trial-outbound header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.workflow-trial-outbound header span {
+  font-size: 12px;
+  color: #64748b;
+}
+.workflow-trial-outbound label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+.workflow-trial-outbound input {
+  padding: 6px 8px;
+}
 </style>

@@ -1,13 +1,15 @@
-import "@vue-flow/core/dist/style.css";
-import "@fortawesome/fontawesome-free/css/all.min.css";
-import "element-plus/dist/index.css";
-import "vxe-table/lib/style.css";
+import "element-plus/es/components/loading/style/css";
+import "element-plus/es/components/select/style/css";
+import "element-plus/es/components/option/style/css";
+import "@fortawesome/fontawesome-free/css/fontawesome.min.css";
+import "@fortawesome/fontawesome-free/css/solid.min.css";
+import "@fortawesome/fontawesome-free/css/regular.min.css";
 import "./styles/app.css";
+import "./styles/page-misc.css";
 
-import ElementPlus from "element-plus";
+import { ElLoading } from "element-plus";
 import { createPinia } from "pinia";
 import { createApp } from "vue";
-import VxeUITable from "vxe-table";
 
 import App from "./App.vue";
 import { router } from "./router";
@@ -17,7 +19,6 @@ const pinia = createPinia();
 
 app.use(pinia);
 app.use(router);
-app.use(ElementPlus);
-app.use(VxeUITable);
+app.use(ElLoading);
 
 app.mount("#app");

@@ -207,11 +207,7 @@ export const useAgentAccessStore = defineStore("agentAccess", {
           credential: AgentAccessCredential;
           replacedCredentialExpiresAt?: string;
           secret?: string;
-        }>(
-          `/workspaces/${this.workspaceId}/agent-access/clients/${clientId}/credentials`,
-          input,
-          commandConfig(),
-        );
+        }>(`/workspaces/${this.workspaceId}/agent-access/clients/${clientId}/credentials`, input, commandConfig());
         await this.loadClientDetail(clientId);
         return { ...response.data };
       });
@@ -287,6 +283,6 @@ function commandConfig() {
 function newCommandID() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
   return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (value) =>
-    (Number(value) ^ (Math.random() * 16 >> Number(value) / 4)).toString(16),
+    (Number(value) ^ ((Math.random() * 16) >> (Number(value) / 4))).toString(16),
   );
 }

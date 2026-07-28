@@ -34,7 +34,9 @@ describe("DebugOutboundCredentialPanel FE-02 styles and busy semantics", () => {
     const { wrapper } = mountPanel();
     const style = wrapper.find("style")?.exists()
       ? ""
-      : (wrapper.html().includes("debug-outbound-attach") ? "mounted" : "");
+      : wrapper.html().includes("debug-outbound-attach")
+        ? "mounted"
+        : "";
     expect(style || "mounted").toBeTruthy();
 
     const password = wrapper.get('input[type="password"]');

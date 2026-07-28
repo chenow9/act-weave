@@ -84,11 +84,12 @@ docker compose up --build
 
 ### 方式二：前后端分开运行
 
-前端：
+前端（固定 Node `22.22.3` / npm `10.9.8`，仅使用 `package-lock.json`）：
 
 ```bash
 cd frontend
-npm install
+# 推荐：fnm / nvm / asdf 读取 .node-version
+npm ci
 npm run dev
 ```
 
@@ -137,7 +138,9 @@ AAP 普通数据面请求会把 Token 的 `ver` 与数据库当前 Service Princ
 - Workspace 角色由 `workspace_members` 保存，并由 Workspace OWNER/ADMIN 在业务空间成员管理中分配。它与 `PLATFORM_ADMIN` / `USER` 平台角色是两个独立授权层级。
 - 系统始终保留至少一个 `ACTIVE + PLATFORM_ADMIN`；最后一个有效平台管理员不能被降级、停用或锁定。用户管理命令会写入关联 requestId/traceId 的审计事件，密码和 Secret 不进入审计载荷。
 
-健康检查使用 `GET http://127.0.0.1:8082/api/v1/health`。前端和 Dockerfile 统一使用 `npm`/`package-lock.json` 安装与构建。
+健康检查使用 `GET http://127.0.0.1:8082/api/v1/health`。前端与 Dockerfile builder 统一使用 **npm** + `package-lock.json`（`npm ci`）；不要使用 pnpm/yarn。Node / npm 版本见 `frontend/package.json` 的 `engines` / `packageManager` 与 `frontend/.node-version`。
+
+前端容器镜像（`frontend/Dockerfile`）固定 **Node `22.22.3-alpine` + digest** 与 **Nginx `1.28.0-alpine` + digest**（禁止 `latest`）。Nginx 配置见 `frontend/nginx.conf` 与 `frontend/nginx-security-headers.conf`：统一安全响应头（含 enforced CSP）、`/assets/*` immutable 长缓存、`index.html`/SPA fallback `no-cache`、缺失 asset 404、SSE 非缓冲代理。本地可用 `nginx -t`（需解析 compose 服务名 `backend`）与对运行中 frontend 容器 `curl -sI` 核对头与缓存策略；HSTS 仅对 HTTPS 生产入口有浏览器效力（不带 `includeSubDomains`）。
 
 ### AAP SSE 代理要求
 
@@ -149,9 +152,13 @@ AAP Run Event Stream 每 15 秒发送一次无 `id` 的 `: ping <timestamp>` 注
 
 ```bash
 cd frontend
+npm ci
+npm run lint
+npm run format:check
 npm run dev
 npm run build
-npm test
+npm test -- --run
+npm run type-check
 npm run e2e:workflow
 ```
 
@@ -222,7 +229,8 @@ go test ./...
 
 ## 已知限制
 
-- 暂无统一跨前后端 `lint`/`format` 脚本；`npm run build` 已包含 `vue-tsc --noEmit`。
+- 前端：`npm run lint`（ESLint 零 warning）、`npm run format` / `npm run format:check`（Prettier）；`npm run build` 已包含 `vue-tsc --noEmit`。
+- 后端暂无统一 `lint`/`format` 脚本；以 `go test` / `go vet` 为主。
 - 暂无 CI 工作流。
 - UI 目前明显以桌面端为主，`body` 与壳层存在 `min-width: 1180px` 约束。
 - 高级 Workflow 节点类型（如 `HTTP`、`SubWorkflow`、`Parallel`、`ForEach`）后端已支持编译/运行时接口，但前端编辑器未完整暴露对应配置能力。

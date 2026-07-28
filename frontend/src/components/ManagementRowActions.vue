@@ -68,7 +68,10 @@ const actionContainerStyle = computed(() => {
   return { width: `${width}px`, flexBasis: `${width}px` };
 });
 const enabledMenuIndexes = computed(() =>
-  props.menuActions.map((action, index) => ({ action, index })).filter(({ action }) => !isUnavailable(action)).map(({ index }) => index),
+  props.menuActions
+    .map((action, index) => ({ action, index }))
+    .filter(({ action }) => !isUnavailable(action))
+    .map(({ index }) => index),
 );
 
 function isUnavailable(action: ManagementRowAction) {
@@ -204,7 +207,12 @@ function moveMenuFocus(offset: number) {
   const enabledIndexes = enabledMenuIndexes.value;
   if (!enabledIndexes.length) return;
   const currentPosition = enabledIndexes.indexOf(activeMenuIndex.value);
-  const nextPosition = currentPosition < 0 ? (offset > 0 ? 0 : enabledIndexes.length - 1) : (currentPosition + offset + enabledIndexes.length) % enabledIndexes.length;
+  const nextPosition =
+    currentPosition < 0
+      ? offset > 0
+        ? 0
+        : enabledIndexes.length - 1
+      : (currentPosition + offset + enabledIndexes.length) % enabledIndexes.length;
   focusMenuIndex(enabledIndexes[nextPosition]);
 }
 
@@ -363,7 +371,9 @@ onBeforeUnmount(() => {
   font: inherit;
   font-size: 0.75rem;
   cursor: pointer;
-  transition: background-color 0.2s ease, color 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
 .management-row-actions.is-menu-only {

@@ -2,7 +2,8 @@
 import { computed, ref, watch } from "vue";
 
 import { useModalFocus } from "../composables/useModalFocus";
-import { useIntegrationStore } from "../stores/integration";
+import { useConnectionsStore } from "../stores/connections";
+import { useToolsStore } from "../stores/tools";
 import type { OutboundCredentialsEnvelope, Tool, ToolTestExecutionResult } from "../types/domain";
 import { buildDefaultToolTestInput } from "../utils/tool-test-inputs";
 
@@ -15,7 +16,8 @@ const emit = defineEmits<{
   (event: "update:modelValue", value: boolean): void;
 }>();
 
-const integration = useIntegrationStore();
+const toolsStore = useToolsStore();
+const connectionsStore = useConnectionsStore();
 const inputDraft = ref<Record<string, unknown>>({});
 const running = ref(false);
 const result = ref<ToolTestExecutionResult | null>(null);
@@ -47,7 +49,7 @@ const testBlockedReason = computed(() => {
 const toolConnection = computed(() => {
   const connectionId = props.tool?.connectionId;
   if (!connectionId) return undefined;
-  const connections = integration.serviceConnections || [];
+  const connections = connectionsStore.serviceConnections || [];
   return connections.find((c) => c.id === connectionId);
 });
 const requiresPassthrough = computed(() => toolConnection.value?.outboundMode === "REQUEST_PASSTHROUGH");
@@ -119,13 +121,13 @@ async function runTest() {
         running.value = false;
         return;
       }
-      result.value = (await integration.testToolWithOutbound(
+      result.value = (await toolsStore.testToolWithOutbound(
         props.tool.id,
         inputDraft.value,
         envelope,
       )) as ToolTestExecutionResult;
     } else {
-      result.value = await integration.testTool(props.tool.id, inputDraft.value);
+      result.value = await toolsStore.testTool(props.tool.id, inputDraft.value);
     }
     errorMessage.value = formatToolTestError(result.value) || result.value.errorMessage || "";
   } catch (error) {
@@ -143,7 +145,8 @@ async function runTest() {
 }
 
 function toolTestActionError(error: unknown) {
-  const responseError = (error as { response?: { data?: { error?: string | { message?: string } } } }).response?.data?.error;
+  const responseError = (error as { response?: { data?: { error?: string | { message?: string } } } }).response?.data
+    ?.error;
   if (typeof responseError === "string") return responseError;
   if (responseError?.message) return responseError.message;
   return error instanceof Error && error.message ? error.message : "执行测试失败";
@@ -195,121 +198,140 @@ function updateComplexInput(paramName: string, event: Event) {
 
 <template>
   <div v-if="modelValue" class="modal-backdrop tool-test-modal" @click.self="closeDialog">
-    <section ref="modalRef" class="modal-card tool-test-modal-card" role="dialog" aria-modal="true" aria-label="测试工具">
+    <section
+      ref="modalRef"
+      class="modal-card tool-test-modal-card"
+      role="dialog"
+      aria-modal="true"
+      aria-label="测试工具"
+    >
       <header class="modal-card-head">
         <div>
           <span>Tool Runtime Test</span>
           <h3>测试工具</h3>
         </div>
-        <button class="icon-action-button" type="button" aria-label="关闭测试工具" data-modal-initial-focus @click="closeDialog">
+        <button
+          class="icon-action-button"
+          type="button"
+          aria-label="关闭测试工具"
+          data-modal-initial-focus
+          @click="closeDialog"
+        >
           <i class="fa-solid fa-xmark" aria-hidden="true" />
         </button>
       </header>
 
       <div class="tool-test-dialog-grid">
-      <section class="tool-test-form-card">
-        <header class="tool-test-section-header">
-          <strong>{{ tool?.name || "未选择工具" }}</strong>
-          <span>按参数契约生成默认测试入参，可直接修改后执行。</span>
-        </header>
-
-        <div v-for="group in groupedParams" :key="group.location" class="tool-test-param-group">
-          <h4>{{ group.location }}</h4>
-          <div v-for="param in group.params" :key="`${group.location}-${param.name}`" class="tool-test-param-row">
-            <label>{{ param.name }}</label>
-            <label
-              v-if="param.type === 'boolean'"
-              class="tool-test-checkbox"
-            >
-              <input
-                type="checkbox"
-                :checked="Boolean(inputDraft[param.name])"
-                @change="updateBooleanInput(param.name, $event)"
-              >
-              <span>{{ Boolean(inputDraft[param.name]) ? "true" : "false" }}</span>
-            </label>
-            <input
-              v-else-if="param.type === 'integer' || param.type === 'number'"
-              class="tool-test-input"
-              type="number"
-              :step="param.type === 'integer' ? '1' : 'any'"
-              :value="Number(inputDraft[param.name] ?? 0)"
-              @input="updateNumberInput(param.name, $event)"
-            >
-            <input
-              v-else-if="param.type === 'string'"
-              class="tool-test-input"
-              type="text"
-              :value="String(inputDraft[param.name] ?? '')"
-              @input="updateStringInput(param.name, $event)"
-            >
-            <textarea
-              v-else
-              class="tool-test-input tool-test-textarea"
-              rows="4"
-              :value="formatInputField(inputDraft[param.name])"
-              @input="updateComplexInput(param.name, $event)"
-            ></textarea>
-          </div>
-        </div>
-
-        <section
-          v-if="requiresPassthrough"
-          class="tool-test-outbound-envelope"
-          data-testid="tool-test-outbound-envelope"
-          aria-label="出站透传凭据（一次性）"
-        >
-          <header>
-            <strong>出站请求透传</strong>
-            <span>Token 为 write-only，不会写入测试结果、历史或本地存储。</span>
+        <section class="tool-test-form-card">
+          <header class="tool-test-section-header">
+            <strong>{{ tool?.name || "未选择工具" }}</strong>
+            <span>按参数契约生成默认测试入参，可直接修改后执行。</span>
           </header>
-          <label>
-            业务 Token
-            <input
-              v-model="passthroughToken"
-              type="password"
-              autocomplete="new-password"
-              data-testid="tool-test-passthrough-token"
-              placeholder="一次性业务 Token"
-              :disabled="running"
-            />
-          </label>
-          <label>
-            过期时间
-            <input v-model="passthroughExpiresAt" type="datetime-local" data-testid="tool-test-passthrough-expires" :disabled="running" />
-          </label>
+
+          <div v-for="group in groupedParams" :key="group.location" class="tool-test-param-group">
+            <h4>{{ group.location }}</h4>
+            <div v-for="param in group.params" :key="`${group.location}-${param.name}`" class="tool-test-param-row">
+              <label>{{ param.name }}</label>
+              <label v-if="param.type === 'boolean'" class="tool-test-checkbox">
+                <input
+                  type="checkbox"
+                  :checked="Boolean(inputDraft[param.name])"
+                  @change="updateBooleanInput(param.name, $event)"
+                />
+                <span>{{ Boolean(inputDraft[param.name]) ? "true" : "false" }}</span>
+              </label>
+              <input
+                v-else-if="param.type === 'integer' || param.type === 'number'"
+                class="tool-test-input"
+                type="number"
+                :step="param.type === 'integer' ? '1' : 'any'"
+                :value="Number(inputDraft[param.name] ?? 0)"
+                @input="updateNumberInput(param.name, $event)"
+              />
+              <input
+                v-else-if="param.type === 'string'"
+                class="tool-test-input"
+                type="text"
+                :value="String(inputDraft[param.name] ?? '')"
+                @input="updateStringInput(param.name, $event)"
+              />
+              <textarea
+                v-else
+                class="tool-test-input tool-test-textarea"
+                rows="4"
+                :value="formatInputField(inputDraft[param.name])"
+                @input="updateComplexInput(param.name, $event)"
+              ></textarea>
+            </div>
+          </div>
+
+          <section
+            v-if="requiresPassthrough"
+            class="tool-test-outbound-envelope"
+            data-testid="tool-test-outbound-envelope"
+            aria-label="出站透传凭据（一次性）"
+          >
+            <header>
+              <strong>出站请求透传</strong>
+              <span>Token 为 write-only，不会写入测试结果、历史或本地存储。</span>
+            </header>
+            <label>
+              业务 Token
+              <input
+                v-model="passthroughToken"
+                type="password"
+                autocomplete="new-password"
+                data-testid="tool-test-passthrough-token"
+                placeholder="一次性业务 Token"
+                :disabled="running"
+              />
+            </label>
+            <label>
+              过期时间
+              <input
+                v-model="passthroughExpiresAt"
+                type="datetime-local"
+                data-testid="tool-test-passthrough-expires"
+                :disabled="running"
+              />
+            </label>
+          </section>
+
+          <div class="tool-test-dialog-actions">
+            <p v-if="testBlockedReason" class="tool-test-error" role="alert">{{ testBlockedReason }}</p>
+            <button class="ghost-button" type="button" @click="closeDialog">取消</button>
+            <button
+              class="primary-button"
+              type="button"
+              :disabled="running || Boolean(testBlockedReason)"
+              @click="runTest"
+            >
+              <i class="fa-solid fa-vial" aria-hidden="true" />
+              {{ running ? "执行中..." : "执行测试" }}
+            </button>
+          </div>
         </section>
 
-        <div class="tool-test-dialog-actions">
-          <p v-if="testBlockedReason" class="tool-test-error" role="alert">{{ testBlockedReason }}</p>
-          <button class="ghost-button" type="button" @click="closeDialog">取消</button>
-          <button class="primary-button" type="button" :disabled="running || Boolean(testBlockedReason)" @click="runTest">
-            <i class="fa-solid fa-vial" aria-hidden="true" />
-            {{ running ? "执行中..." : "执行测试" }}
-          </button>
-        </div>
-      </section>
+        <section class="tool-test-result-card">
+          <header class="tool-test-result-summary">
+            <strong>{{ result ? (result.passed ? "测试通过" : "测试失败") : "等待执行" }}</strong>
+            <span v-if="result">HTTP {{ result.responseStatus }}</span>
+            <span v-if="result">{{ result.latencyMs }}ms</span>
+          </header>
 
-      <section class="tool-test-result-card">
-        <header class="tool-test-result-summary">
-          <strong>{{ result ? (result.passed ? "测试通过" : "测试失败") : "等待执行" }}</strong>
-          <span v-if="result">HTTP {{ result.responseStatus }}</span>
-          <span v-if="result">{{ result.latencyMs }}ms</span>
-        </header>
+          <p v-if="errorMessage" class="tool-test-error">{{ errorMessage }}</p>
 
-        <p v-if="errorMessage" class="tool-test-error">{{ errorMessage }}</p>
-
-        <div v-if="result" class="tool-test-result-panels">
-          <div>
-            <h4>请求入参</h4>
-            <pre class="tool-test-json-block">{{ JSON.stringify(result.requestInput, null, 2) }}</pre>
+          <div v-if="result" class="tool-test-result-panels">
+            <div>
+              <h4>请求入参</h4>
+              <pre class="tool-test-json-block">{{ JSON.stringify(result.requestInput, null, 2) }}</pre>
+            </div>
+            <div>
+              <h4>响应体</h4>
+              <pre class="tool-test-json-block">{{ JSON.stringify(result.responseBody, null, 2) }}</pre>
+            </div>
           </div>
-          <div>
-            <h4>响应体</h4>
-            <pre class="tool-test-json-block">{{ JSON.stringify(result.responseBody, null, 2) }}</pre>
-          </div>
-        </div>
-      </section>
+        </section>
       </div>
     </section>
   </div>
@@ -326,8 +348,22 @@ function updateComplexInput(paramName: string, event: Event) {
   flex-direction: column;
   gap: 8px;
 }
-.tool-test-outbound-envelope header { display: flex; flex-direction: column; gap: 2px; }
-.tool-test-outbound-envelope header span { font-size: 12px; color: #64748b; }
-.tool-test-outbound-envelope label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
-.tool-test-outbound-envelope input { padding: 6px 8px; }
+.tool-test-outbound-envelope header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tool-test-outbound-envelope header span {
+  font-size: 12px;
+  color: #64748b;
+}
+.tool-test-outbound-envelope label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+.tool-test-outbound-envelope input {
+  padding: 6px 8px;
+}
 </style>

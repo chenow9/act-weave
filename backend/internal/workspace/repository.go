@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -177,33 +178,219 @@ func (r *Repository) ListAccessible(
 	userID string,
 	limit int,
 ) ([]Workspace, error) {
-	userID = strings.TrimSpace(userID)
-	if !validUUID(userID) || limit < 1 || limit > 500 {
-		return nil, ErrInvalid
+	page, err := r.ListAccessiblePage(ctx, userID, WorkspaceListQuery{LegacyLimit: limit})
+	if err != nil {
+		return nil, err
 	}
+	values := make([]Workspace, 0, len(page.Items))
+	for _, item := range page.Items {
+		values = append(values, item.Workspace)
+	}
+	return values, nil
+}
+
+// ListAccessiblePage returns a paged accessible-workspace read model with the
+// caller's role projected from valid membership (not ownerUserId) and a
+// full-set summary for D9-A statistics.
+func (r *Repository) ListAccessiblePage(
+	ctx context.Context,
+	userID string,
+	query WorkspaceListQuery,
+) (WorkspacePage, error) {
+	userID = strings.TrimSpace(userID)
+	if !validUUID(userID) {
+		return WorkspacePage{}, ErrInvalid
+	}
+	legacy := query.LegacyLimit > 0 && query.Page == 0 && query.PageSize == 0
+	if legacy {
+		if query.LegacyLimit < 1 || query.LegacyLimit > 500 {
+			return WorkspacePage{}, ErrInvalid
+		}
+	} else {
+		if query.Page < 1 {
+			query.Page = 1
+		}
+		if query.PageSize == 0 {
+			query.PageSize = 20
+		}
+		if query.PageSize != 10 && query.PageSize != 20 && query.PageSize != 50 {
+			return WorkspacePage{}, ErrInvalid
+		}
+		if query.Status != nil && !validStatus(*query.Status) {
+			return WorkspacePage{}, ErrInvalid
+		}
+		if query.Mode != nil && !validMode(*query.Mode) {
+			return WorkspacePage{}, ErrInvalid
+		}
+		if query.SortBy == "" {
+			query.SortBy = "updatedAt"
+		}
+		if query.SortOrder == "" {
+			query.SortOrder = "desc"
+		}
+		if _, ok := workspaceSortColumns[query.SortBy]; !ok {
+			return WorkspacePage{}, ErrInvalid
+		}
+		if query.SortOrder != "asc" && query.SortOrder != "desc" {
+			return WorkspacePage{}, ErrInvalid
+		}
+	}
+
+	summary, err := r.accessibleSummary(ctx, userID)
+	if err != nil {
+		return WorkspacePage{}, err
+	}
+
+	args := []any{userID}
+	filters := strings.Builder{}
+	filters.WriteString(`
+		FROM workspaces w
+		JOIN workspace_members m ON m.workspace_id = w.id AND m.user_id = $1 AND m.disabled_at IS NULL
+		JOIN users u ON u.id = m.user_id AND u.status = 'ACTIVE'
+		LEFT JOIN users created_user ON created_user.id = w.created_by
+		LEFT JOIN users updated_user ON updated_user.id = w.updated_by
+		WHERE w.deleted_at IS NULL
+	`)
+	if !legacy {
+		if query.Status != nil {
+			args = append(args, string(*query.Status))
+			filters.WriteString(fmt.Sprintf(" AND w.status = $%d", len(args)))
+		}
+		if query.Mode != nil {
+			args = append(args, string(*query.Mode))
+			filters.WriteString(fmt.Sprintf(" AND w.mode = $%d", len(args)))
+		}
+		if q := strings.TrimSpace(query.Query); q != "" {
+			args = append(args, "%"+strings.ToLower(q)+"%")
+			n := len(args)
+			filters.WriteString(fmt.Sprintf(` AND (
+				LOWER(w.slug::TEXT) LIKE $%d OR
+				LOWER(w.display_name) LIKE $%d OR
+				LOWER(COALESCE(created_user.display_name, '')) LIKE $%d OR
+				LOWER(COALESCE(created_user.username, '')) LIKE $%d OR
+				LOWER(COALESCE(updated_user.display_name, '')) LIKE $%d OR
+				LOWER(COALESCE(updated_user.username, '')) LIKE $%d
+			)`, n, n, n, n, n, n))
+		}
+	}
+
+	fromWhere := filters.String()
+	var total int
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) `+fromWhere, args...).Scan(&total); err != nil {
+		return WorkspacePage{}, fmt.Errorf("count accessible workspaces: %w", err)
+	}
+
+	orderBy := "w.updated_at DESC, w.id ASC"
+	limit := query.LegacyLimit
+	offset := 0
+	page := 1
+	pageSize := limit
+	if !legacy {
+		orderExpr := workspaceSortColumns[query.SortBy]
+		direction := "DESC"
+		if query.SortOrder == "asc" {
+			direction = "ASC"
+		}
+		// sort column comes only from allowlist map — never from raw query text.
+		orderBy = fmt.Sprintf("%s %s, w.id ASC", orderExpr, direction)
+		limit = query.PageSize
+		page = query.Page
+		pageSize = query.PageSize
+		offset = (query.Page - 1) * query.PageSize
+	}
+	args = append(args, limit, offset)
+	limitArg := len(args) - 1
+	offsetArg := len(args)
+
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT w.id,w.slug::TEXT,w.display_name,w.mode,w.status,w.owner_user_id,
 			w.default_agent_id,w.default_model_config_id,w.settings,w.created_by,w.updated_by,
-			w.created_at,w.updated_at,w.lock_version,w.deleted_at
-		FROM workspaces w
-		JOIN workspace_members m ON m.workspace_id=w.id AND m.user_id=$1 AND m.disabled_at IS NULL
-		JOIN users u ON u.id=m.user_id AND u.status='ACTIVE'
-		WHERE w.deleted_at IS NULL
-		ORDER BY w.updated_at DESC,w.id LIMIT $2
-	`, userID, limit)
+			w.created_at,w.updated_at,w.lock_version,w.deleted_at,m.role::TEXT
+		`+fromWhere+`
+		ORDER BY `+orderBy+`
+		LIMIT $`+strconv.Itoa(limitArg)+` OFFSET $`+strconv.Itoa(offsetArg), args...)
 	if err != nil {
-		return nil, fmt.Errorf("list accessible workspaces: %w", err)
+		return WorkspacePage{}, fmt.Errorf("list accessible workspaces page: %w", err)
 	}
 	defer rows.Close()
-	values := make([]Workspace, 0)
+
+	items := make([]AccessibleWorkspace, 0)
 	for rows.Next() {
-		value, err := scanWorkspace(rows)
+		item, err := scanAccessibleWorkspace(rows)
 		if err != nil {
-			return nil, fmt.Errorf("scan accessible workspace: %w", err)
+			return WorkspacePage{}, fmt.Errorf("scan accessible workspace page: %w", err)
 		}
-		values = append(values, value)
+		items = append(items, item)
 	}
-	return values, rows.Err()
+	if err := rows.Err(); err != nil {
+		return WorkspacePage{}, err
+	}
+
+	return WorkspacePage{
+		Items:    items,
+		Page:     page,
+		PageSize: pageSize,
+		Total:    total,
+		Summary:  summary,
+		Legacy:   legacy,
+	}, nil
+}
+
+// GetAccessible returns one workspace the user can access with their role.
+// Disabled memberships and non-members yield ErrNotFound (caller maps to 404/403).
+func (r *Repository) GetAccessible(ctx context.Context, userID, workspaceID string) (AccessibleWorkspace, error) {
+	userID, workspaceID = strings.TrimSpace(userID), strings.TrimSpace(workspaceID)
+	if !validUUID(userID) || !validUUID(workspaceID) {
+		return AccessibleWorkspace{}, ErrInvalid
+	}
+	row := r.db.QueryRowContext(ctx, `
+		SELECT w.id,w.slug::TEXT,w.display_name,w.mode,w.status,w.owner_user_id,
+			w.default_agent_id,w.default_model_config_id,w.settings,w.created_by,w.updated_by,
+			w.created_at,w.updated_at,w.lock_version,w.deleted_at,m.role::TEXT
+		FROM workspaces w
+		JOIN workspace_members m ON m.workspace_id = w.id AND m.user_id = $1 AND m.disabled_at IS NULL
+		JOIN users u ON u.id = m.user_id AND u.status = 'ACTIVE'
+		WHERE w.id = $2 AND w.deleted_at IS NULL
+	`, userID, workspaceID)
+	item, err := scanAccessibleWorkspace(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return AccessibleWorkspace{}, ErrNotFound
+	}
+	if err != nil {
+		return AccessibleWorkspace{}, fmt.Errorf("get accessible workspace: %w", err)
+	}
+	return item, nil
+}
+
+func (r *Repository) accessibleSummary(ctx context.Context, userID string) (WorkspaceAccessibleSummary, error) {
+	var summary WorkspaceAccessibleSummary
+	err := r.db.QueryRowContext(ctx, `
+		SELECT
+			COUNT(*)::INT,
+			COUNT(*) FILTER (WHERE w.status = 'ACTIVE')::INT,
+			COUNT(*) FILTER (WHERE w.mode = 'PRODUCTION')::INT,
+			COUNT(*) FILTER (WHERE w.default_agent_id IS NOT NULL)::INT
+		FROM workspaces w
+		JOIN workspace_members m ON m.workspace_id = w.id AND m.user_id = $1 AND m.disabled_at IS NULL
+		JOIN users u ON u.id = m.user_id AND u.status = 'ACTIVE'
+		WHERE w.deleted_at IS NULL
+	`, userID).Scan(&summary.Total, &summary.Active, &summary.Production, &summary.BoundAgents)
+	if err != nil {
+		return WorkspaceAccessibleSummary{}, fmt.Errorf("accessible workspace summary: %w", err)
+	}
+	return summary, nil
+}
+
+// workspaceSortColumns is the only allowlist for ORDER BY expressions.
+var workspaceSortColumns = map[string]string{
+	"slug":        "w.slug",
+	"displayName": "w.display_name",
+	"status":      "w.status",
+	"mode":        "w.mode",
+	"createdBy":   "w.created_by",
+	"updatedBy":   "w.updated_by",
+	"createdAt":   "w.created_at",
+	"updatedAt":   "w.updated_at",
 }
 
 func (r *Repository) Update(
@@ -782,6 +969,36 @@ func scanWorkspace(row rowScanner) (Workspace, error) {
 	return workspace, err
 }
 
+func scanAccessibleWorkspace(row rowScanner) (AccessibleWorkspace, error) {
+	var item AccessibleWorkspace
+	var settings []byte
+	var role string
+	err := row.Scan(
+		&item.ID,
+		&item.Slug,
+		&item.DisplayName,
+		&item.Mode,
+		&item.Status,
+		&item.OwnerUserID,
+		&item.DefaultAgentID,
+		&item.DefaultModelConfigID,
+		&settings,
+		&item.CreatedBy,
+		&item.UpdatedBy,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+		&item.LockVersion,
+		&item.DeletedAt,
+		&role,
+	)
+	item.Settings = append(json.RawMessage(nil), settings...)
+	item.CurrentUserRole = Role(role)
+	if err == nil && !validRole(item.CurrentUserRole) {
+		return AccessibleWorkspace{}, fmt.Errorf("invalid membership role %q", role)
+	}
+	return item, err
+}
+
 func scanMember(row rowScanner) (Member, error) {
 	var member Member
 	err := row.Scan(
@@ -841,6 +1058,10 @@ func validUUID(value string) bool {
 
 func validMode(mode Mode) bool {
 	return mode == ModeProduction || mode == ModeSandbox
+}
+
+func validStatus(status Status) bool {
+	return status == StatusActive || status == StatusDisabled
 }
 
 func validRole(role Role) bool {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import "./user-access-page.css";
 import { computed, onMounted, reactive, ref } from "vue";
 
 import AppSelect, { type AppSelectOption } from "../components/AppSelect.vue";
@@ -39,10 +40,20 @@ const createDraft = reactive<CreateUserInput>({
   locale: "zh-CN",
   timezone: "Asia/Singapore",
 });
-const profileDraft = reactive<UpdateUserProfileInput>({ displayName: "", email: "", locale: "zh-CN", timezone: "Asia/Singapore" });
+const profileDraft = reactive<UpdateUserProfileInput>({
+  displayName: "",
+  email: "",
+  locale: "zh-CN",
+  timezone: "Asia/Singapore",
+});
 
 const userColumns: ManagementListColumn<User>[] = [
-  { key: "identity", label: "用户", width: 250, getValue: (user) => `${user.displayName} ${user.username} ${user.email || ""}` },
+  {
+    key: "identity",
+    label: "用户",
+    width: 250,
+    getValue: (user) => `${user.displayName} ${user.username} ${user.email || ""}`,
+  },
   { key: "status", label: "状态", width: 116, getValue: (user) => user.status },
   { key: "platformRole", label: "平台角色", width: 150, getValue: (user) => user.platformRole },
   { key: "locale", label: "语言 / 时区", width: 170, getValue: (user) => `${user.locale} ${user.timezone}` },
@@ -70,7 +81,10 @@ const localeOptions: AppSelectOption[] = [
   { label: "日本語（ja-JP）", value: "ja-JP" },
   { label: "한국어（ko-KR）", value: "ko-KR" },
 ];
-const timezoneOptions: AppSelectOption[] = supportedTimezoneValues().map((timezone) => ({ label: timezone, value: timezone }));
+const timezoneOptions: AppSelectOption[] = supportedTimezoneValues().map((timezone) => ({
+  label: timezone,
+  value: timezone,
+}));
 const createLocaleOptions = computed(() => optionsWithCurrent(localeOptions, createDraft.locale));
 const createTimezoneOptions = computed(() => optionsWithCurrent(timezoneOptions, createDraft.timezone));
 const profileLocaleOptions = computed(() => optionsWithCurrent(localeOptions, profileDraft.locale));
@@ -95,7 +109,14 @@ const createDisabledReason = computed(() => {
   if (users.actionLoading) return "正在创建用户，请稍候。";
   return createValidationIssues.value[0] || "";
 });
-const canSaveProfile = computed(() => Boolean(profileUser.value && profileDraft.displayName?.trim() && profileDraft.locale?.trim() && profileDraft.timezone?.trim()));
+const canSaveProfile = computed(() =>
+  Boolean(
+    profileUser.value &&
+    profileDraft.displayName?.trim() &&
+    profileDraft.locale?.trim() &&
+    profileDraft.timezone?.trim(),
+  ),
+);
 const pendingActionUsesDangerTone = computed(() => {
   const action = pendingAction.value;
   return Boolean(action && (action.kind === "role" || (action.kind === "status" && action.value === "DISABLED")));
@@ -103,8 +124,16 @@ const pendingActionUsesDangerTone = computed(() => {
 
 function supportedTimezoneValues() {
   const fallback = [
-    "Asia/Singapore", "Asia/Shanghai", "Asia/Hong_Kong", "Asia/Tokyo", "Asia/Seoul",
-    "Europe/London", "Europe/Paris", "America/New_York", "America/Los_Angeles", "Australia/Sydney",
+    "Asia/Singapore",
+    "Asia/Shanghai",
+    "Asia/Hong_Kong",
+    "Asia/Tokyo",
+    "Asia/Seoul",
+    "Europe/London",
+    "Europe/Paris",
+    "America/New_York",
+    "America/Los_Angeles",
+    "Australia/Sydney",
   ];
   const supported = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : fallback;
   return Array.from(new Set(["UTC", ...supported]));
@@ -186,8 +215,13 @@ function changeUserPage(pagination: { page: number; pageSize: number }) {
 
 function openCreate() {
   Object.assign(createDraft, {
-    username: "", email: "", displayName: "", password: "",
-    platformRole: "USER", locale: "zh-CN", timezone: "Asia/Singapore",
+    username: "",
+    email: "",
+    displayName: "",
+    password: "",
+    platformRole: "USER",
+    locale: "zh-CN",
+    timezone: "Asia/Singapore",
   });
   createVisible.value = true;
   clearFeedback();
@@ -240,9 +274,10 @@ function requestRoleChange(user: User) {
 }
 
 function requestStatusChange(user: User) {
-  pendingAction.value = user.status === "LOCKED"
-    ? { kind: "unlock", user }
-    : { kind: "status", user, value: user.status === "ACTIVE" ? "DISABLED" : "ACTIVE" };
+  pendingAction.value =
+    user.status === "LOCKED"
+      ? { kind: "unlock", user }
+      : { kind: "status", user, value: user.status === "ACTIVE" ? "DISABLED" : "ACTIVE" };
   clearFeedback();
 }
 
@@ -296,7 +331,9 @@ async function openWorkspaces(user: User) {
 
 function showStoreError(fallback: string) {
   const error = users.error;
-  feedback.value = error ? `${error.message || fallback}${error.requestId ? `（请求 ID：${error.requestId}）` : ""}` : fallback;
+  feedback.value = error
+    ? `${error.message || fallback}${error.requestId ? `（请求 ID：${error.requestId}）` : ""}`
+    : fallback;
   feedbackTone.value = "error";
 }
 
@@ -318,7 +355,14 @@ function roleLabel(role: PlatformRole) {
 }
 
 function workspaceRoleLabel(role: string) {
-  return ({ OWNER: "所有者", ADMIN: "管理员", EDITOR: "编辑者", OPERATOR: "操作员", VIEWER: "查看者" } as Record<string, string>)[role] || role;
+  return (
+    (
+      { OWNER: "所有者", ADMIN: "管理员", EDITOR: "编辑者", OPERATOR: "操作员", VIEWER: "查看者" } as Record<
+        string,
+        string
+      >
+    )[role] || role
+  );
 }
 
 function userMenuActions(user: User): ManagementRowAction[] {
@@ -374,7 +418,13 @@ function formatDate(value?: string) {
     <ManagementSummaryStrip class="span-12" :items="userSummaryItems" />
 
     <section class="user-access-panel management-list-card span-12">
-      <div v-if="feedback" :class="['user-access-feedback', feedbackTone]" :role="feedbackTone === 'error' ? 'alert' : 'status'">{{ feedback }}</div>
+      <div
+        v-if="feedback"
+        :class="['user-access-feedback', feedbackTone]"
+        :role="feedbackTone === 'error' ? 'alert' : 'status'"
+      >
+        {{ feedback }}
+      </div>
 
       <ManagementList
         class="user-management-list"
@@ -419,7 +469,9 @@ function formatDate(value?: string) {
         </template>
         <template #cell-identity="{ row: user }">
           <div class="user-identity-cell">
-            <span class="user-identity-avatar" aria-hidden="true">{{ user.displayName.slice(0, 1).toUpperCase() }}</span>
+            <span class="user-identity-avatar" aria-hidden="true">{{
+              user.displayName.slice(0, 1).toUpperCase()
+            }}</span>
             <span>
               <strong class="aw-table-title">{{ user.displayName }}</strong>
               <small class="aw-table-subtitle">@{{ user.username }} · {{ user.email || "未设置邮箱" }}</small>
@@ -427,10 +479,14 @@ function formatDate(value?: string) {
           </div>
         </template>
         <template #cell-status="{ row: user }">
-          <span :class="['user-status-badge', 'aw-table-pill', user.status.toLowerCase()]">{{ statusLabel(user.status) }}</span>
+          <span :class="['user-status-badge', 'aw-table-pill', user.status.toLowerCase()]">{{
+            statusLabel(user.status)
+          }}</span>
         </template>
         <template #cell-platformRole="{ row: user }">
-          <span :class="['user-role-badge', 'aw-table-pill', user.platformRole === 'PLATFORM_ADMIN' && 'admin']">{{ roleLabel(user.platformRole) }}</span>
+          <span :class="['user-role-badge', 'aw-table-pill', user.platformRole === 'PLATFORM_ADMIN' && 'admin']">{{
+            roleLabel(user.platformRole)
+          }}</span>
         </template>
         <template #cell-locale="{ row: user }">
           <span class="user-locale-cell">
@@ -452,9 +508,22 @@ function formatDate(value?: string) {
         <template #empty>
           <div class="empty-state registry-empty-state management-registry-empty-state">
             <div class="management-empty-state-icon"><i class="fa-solid fa-users" aria-hidden="true" /></div>
-            <h2>{{ filters.query || filters.status || filters.platformRole ? '没有匹配的用户' : '暂无平台用户' }}</h2>
-            <p>{{ filters.query || filters.status || filters.platformRole ? '调整搜索词、账号状态或平台角色后再试。' : '创建用户后可在此维护平台权限与业务空间关系。' }}</p>
-            <button v-if="filters.query || filters.status || filters.platformRole" class="ghost-button" type="button" @click="resetFilters">清除筛选</button>
+            <h2>{{ filters.query || filters.status || filters.platformRole ? "没有匹配的用户" : "暂无平台用户" }}</h2>
+            <p>
+              {{
+                filters.query || filters.status || filters.platformRole
+                  ? "调整搜索词、账号状态或平台角色后再试。"
+                  : "创建用户后可在此维护平台权限与业务空间关系。"
+              }}
+            </p>
+            <button
+              v-if="filters.query || filters.status || filters.platformRole"
+              class="ghost-button"
+              type="button"
+              @click="resetFilters"
+            >
+              清除筛选
+            </button>
             <button v-else class="primary-button" type="button" @click="openCreate">新建用户</button>
           </div>
         </template>
@@ -463,15 +532,61 @@ function formatDate(value?: string) {
 
     <div v-if="createVisible" class="modal-backdrop" @click.self="createVisible = false">
       <section class="modal-card user-access-modal" role="dialog" aria-modal="true" aria-label="新建平台用户">
-        <header><div><span>CREATE USER</span><h3>新建平台用户</h3></div><button class="icon-action-button" type="button" aria-label="关闭" @click="createVisible = false"><i class="fa-solid fa-xmark" aria-hidden="true" /></button></header>
+        <header>
+          <div>
+            <span>CREATE USER</span>
+            <h3>新建平台用户</h3>
+          </div>
+          <button class="icon-action-button" type="button" aria-label="关闭" @click="createVisible = false">
+            <i class="fa-solid fa-xmark" aria-hidden="true" />
+          </button>
+        </header>
         <form class="user-access-form" @submit.prevent="submitCreate">
-          <label><span>用户名 <span class="user-field-required" aria-hidden="true">*</span></span><input v-model.trim="createDraft.username" required autocomplete="off" /></label>
-          <label><span>显示名称 <span class="user-field-required" aria-hidden="true">*</span></span><input v-model.trim="createDraft.displayName" required /></label>
+          <label
+            ><span>用户名 <span class="user-field-required" aria-hidden="true">*</span></span
+            ><input v-model.trim="createDraft.username" required autocomplete="off"
+          /></label>
+          <label
+            ><span>显示名称 <span class="user-field-required" aria-hidden="true">*</span></span
+            ><input v-model.trim="createDraft.displayName" required
+          /></label>
           <label><span>邮箱</span><input v-model.trim="createDraft.email" type="email" /></label>
-          <label><span>临时密码 <span class="user-field-required" aria-hidden="true">*</span></span><input v-model="createDraft.password" type="password" minlength="12" required autocomplete="new-password" /><small>至少 12 位；首次登录必须修改。</small></label>
-          <label><span>平台角色 <span class="user-field-required" aria-hidden="true">*</span></span><AppSelect v-model="createDraft.platformRole" :options="platformRoleOptions" aria-label="新用户平台角色" :aria-required="true" /></label>
-          <label><span>语言 <span class="user-field-required" aria-hidden="true">*</span></span><AppSelect v-model="createDraft.locale" :options="createLocaleOptions" aria-label="新用户语言" :aria-required="true" filterable /></label>
-          <label><span>时区 <span class="user-field-required" aria-hidden="true">*</span></span><AppSelect v-model="createDraft.timezone" :options="createTimezoneOptions" aria-label="新用户时区" :aria-required="true" filterable /></label>
+          <label
+            ><span>临时密码 <span class="user-field-required" aria-hidden="true">*</span></span
+            ><input
+              v-model="createDraft.password"
+              type="password"
+              minlength="12"
+              required
+              autocomplete="new-password"
+            /><small>至少 12 位；首次登录必须修改。</small></label
+          >
+          <label
+            ><span>平台角色 <span class="user-field-required" aria-hidden="true">*</span></span
+            ><AppSelect
+              v-model="createDraft.platformRole"
+              :options="platformRoleOptions"
+              aria-label="新用户平台角色"
+              :aria-required="true"
+          /></label>
+          <label
+            ><span>语言 <span class="user-field-required" aria-hidden="true">*</span></span
+            ><AppSelect
+              v-model="createDraft.locale"
+              :options="createLocaleOptions"
+              aria-label="新用户语言"
+              :aria-required="true"
+              filterable
+          /></label>
+          <label
+            ><span>时区 <span class="user-field-required" aria-hidden="true">*</span></span
+            ><AppSelect
+              v-model="createDraft.timezone"
+              :options="createTimezoneOptions"
+              aria-label="新用户时区"
+              :aria-required="true"
+              filterable
+          /></label>
           <footer>
             <p
               v-if="createDisabledReason"
@@ -480,7 +595,9 @@ function formatDate(value?: string) {
               role="status"
               aria-live="polite"
               aria-atomic="true"
-            ><i class="fa-solid fa-circle-info" aria-hidden="true" />{{ createDisabledReason }}</p>
+            >
+              <i class="fa-solid fa-circle-info" aria-hidden="true" />{{ createDisabledReason }}
+            </p>
             <button class="ghost-button" type="button" @click="createVisible = false">取消</button>
             <button
               class="primary-button"
@@ -488,7 +605,9 @@ function formatDate(value?: string) {
               :disabled="!canCreate || users.actionLoading"
               :aria-describedby="createDisabledReason ? 'create-user-disabled-reason' : undefined"
               :aria-busy="users.actionLoading"
-            >{{ users.actionLoading ? '创建中…' : '创建用户' }}</button>
+            >
+              {{ users.actionLoading ? "创建中…" : "创建用户" }}
+            </button>
           </footer>
         </form>
       </section>
@@ -496,40 +615,124 @@ function formatDate(value?: string) {
 
     <div v-if="profileUser" class="modal-backdrop" @click.self="profileUser = null">
       <section class="modal-card user-access-modal" role="dialog" aria-modal="true" aria-label="编辑用户资料">
-        <header><div><span>PROFILE</span><h3>编辑 {{ profileUser.username }}</h3></div><button class="icon-action-button" type="button" aria-label="关闭" @click="profileUser = null"><i class="fa-solid fa-xmark" aria-hidden="true" /></button></header>
+        <header>
+          <div>
+            <span>PROFILE</span>
+            <h3>编辑 {{ profileUser.username }}</h3>
+          </div>
+          <button class="icon-action-button" type="button" aria-label="关闭" @click="profileUser = null">
+            <i class="fa-solid fa-xmark" aria-hidden="true" />
+          </button>
+        </header>
         <form class="user-access-form" @submit.prevent="saveProfile">
-          <label><span>显示名称 <span class="user-field-required" aria-hidden="true">*</span></span><input v-model.trim="profileDraft.displayName" required /></label>
+          <label
+            ><span>显示名称 <span class="user-field-required" aria-hidden="true">*</span></span
+            ><input v-model.trim="profileDraft.displayName" required
+          /></label>
           <label><span>邮箱</span><input v-model.trim="profileDraft.email" type="email" /></label>
-          <label><span>语言 <span class="user-field-required" aria-hidden="true">*</span></span><AppSelect :model-value="profileDraft.locale || ''" :options="profileLocaleOptions" aria-label="用户语言" :aria-required="true" filterable @update:model-value="profileDraft.locale = String($event)" /></label>
-          <label><span>时区 <span class="user-field-required" aria-hidden="true">*</span></span><AppSelect :model-value="profileDraft.timezone || ''" :options="profileTimezoneOptions" aria-label="用户时区" :aria-required="true" filterable @update:model-value="profileDraft.timezone = String($event)" /></label>
-          <footer><button class="ghost-button" type="button" @click="profileUser = null">取消</button><button class="primary-button" type="submit" :disabled="!canSaveProfile || users.actionLoading">保存资料</button></footer>
+          <label
+            ><span>语言 <span class="user-field-required" aria-hidden="true">*</span></span
+            ><AppSelect
+              :model-value="profileDraft.locale || ''"
+              :options="profileLocaleOptions"
+              aria-label="用户语言"
+              :aria-required="true"
+              filterable
+              @update:model-value="profileDraft.locale = String($event)"
+          /></label>
+          <label
+            ><span>时区 <span class="user-field-required" aria-hidden="true">*</span></span
+            ><AppSelect
+              :model-value="profileDraft.timezone || ''"
+              :options="profileTimezoneOptions"
+              aria-label="用户时区"
+              :aria-required="true"
+              filterable
+              @update:model-value="profileDraft.timezone = String($event)"
+          /></label>
+          <footer>
+            <button class="ghost-button" type="button" @click="profileUser = null">取消</button
+            ><button class="primary-button" type="submit" :disabled="!canSaveProfile || users.actionLoading">
+              保存资料
+            </button>
+          </footer>
         </form>
       </section>
     </div>
 
     <div v-if="pendingAction" class="modal-backdrop" @click.self="pendingAction = null">
       <section class="modal-card user-access-confirm" role="dialog" aria-modal="true" :aria-label="pendingActionTitle">
-        <span>SECURITY COMMAND</span><h3>{{ pendingActionTitle }}</h3><p>{{ pendingActionDescription }}</p>
-        <div v-if="feedbackTone === 'error' && feedback" class="user-access-feedback error" role="alert">{{ feedback }}</div>
-        <footer><button class="ghost-button" type="button" @click="pendingAction = null">取消</button><button class="primary-button" :class="{ danger: pendingActionUsesDangerTone }" type="button" :disabled="users.actionLoading" @click="confirmSecurityAction">确认执行</button></footer>
+        <span>SECURITY COMMAND</span>
+        <h3>{{ pendingActionTitle }}</h3>
+        <p>{{ pendingActionDescription }}</p>
+        <div v-if="feedbackTone === 'error' && feedback" class="user-access-feedback error" role="alert">
+          {{ feedback }}
+        </div>
+        <footer>
+          <button class="ghost-button" type="button" @click="pendingAction = null">取消</button
+          ><button
+            class="primary-button"
+            :class="{ danger: pendingActionUsesDangerTone }"
+            type="button"
+            :disabled="users.actionLoading"
+            @click="confirmSecurityAction"
+          >
+            确认执行
+          </button>
+        </footer>
       </section>
     </div>
 
     <div v-if="resetUser" class="modal-backdrop" @click.self="resetUser = null">
       <section class="modal-card user-access-confirm" role="dialog" aria-modal="true" aria-label="重置用户密码">
-        <span>CREDENTIAL RESET</span><h3>重置 {{ resetUser.username }} 的密码</h3><p>提交后会撤销该用户全部登录会话，并要求下次登录修改密码。</p>
-        <label><span>临时密码 <span class="user-field-required" aria-hidden="true">*</span></span><input v-model="temporaryPassword" type="password" minlength="12" required autocomplete="new-password" /></label>
-        <footer><button class="ghost-button" type="button" @click="resetUser = null">取消</button><button class="primary-button danger" type="button" :disabled="temporaryPassword.length < 12 || users.actionLoading" @click="submitResetPassword">重置密码</button></footer>
+        <span>CREDENTIAL RESET</span>
+        <h3>重置 {{ resetUser.username }} 的密码</h3>
+        <p>提交后会撤销该用户全部登录会话，并要求下次登录修改密码。</p>
+        <label
+          ><span>临时密码 <span class="user-field-required" aria-hidden="true">*</span></span
+          ><input v-model="temporaryPassword" type="password" minlength="12" required autocomplete="new-password"
+        /></label>
+        <footer>
+          <button class="ghost-button" type="button" @click="resetUser = null">取消</button
+          ><button
+            class="primary-button danger"
+            type="button"
+            :disabled="temporaryPassword.length < 12 || users.actionLoading"
+            @click="submitResetPassword"
+          >
+            重置密码
+          </button>
+        </footer>
       </section>
     </div>
 
     <div v-if="workspaceUser" class="modal-backdrop" @click.self="workspaceUser = null">
       <section class="modal-card user-access-modal" role="dialog" aria-modal="true" aria-label="用户业务空间">
-        <header><div><span>WORKSPACE MEMBERSHIP</span><h3>{{ workspaceUser.username }} 的业务空间</h3></div><button class="icon-action-button" type="button" aria-label="关闭" @click="workspaceUser = null"><i class="fa-solid fa-xmark" aria-hidden="true" /></button></header>
+        <header>
+          <div>
+            <span>WORKSPACE MEMBERSHIP</span>
+            <h3>{{ workspaceUser.username }} 的业务空间</h3>
+          </div>
+          <button class="icon-action-button" type="button" aria-label="关闭" @click="workspaceUser = null">
+            <i class="fa-solid fa-xmark" aria-hidden="true" />
+          </button>
+        </header>
         <div class="user-workspace-list">
           <article v-for="membership in users.membershipsByUser[workspaceUser.id] || []" :key="membership.workspaceId">
-            <div><strong>{{ membership.workspaceDisplayName }}</strong><small>{{ membership.workspaceSlug }}</small></div>
-            <span class="user-workspace-role">{{ workspaceRoleLabel(membership.role) }}</span><em :class="['user-workspace-status', { disabled: membership.disabledAt || membership.workspaceStatus !== 'ACTIVE' }]">{{ membership.disabledAt ? '成员已停用' : membership.workspaceStatus === 'ACTIVE' ? '空间正常' : '空间停用' }}</em>
+            <div>
+              <strong>{{ membership.workspaceDisplayName }}</strong
+              ><small>{{ membership.workspaceSlug }}</small>
+            </div>
+            <span class="user-workspace-role">{{ workspaceRoleLabel(membership.role) }}</span
+            ><em
+              :class="[
+                'user-workspace-status',
+                { disabled: membership.disabledAt || membership.workspaceStatus !== 'ACTIVE' },
+              ]"
+              >{{
+                membership.disabledAt ? "成员已停用" : membership.workspaceStatus === "ACTIVE" ? "空间正常" : "空间停用"
+              }}</em
+            >
           </article>
           <p v-if="!(users.membershipsByUser[workspaceUser.id] || []).length">该用户尚未加入业务空间。</p>
         </div>

@@ -127,9 +127,7 @@ function collectRisks(metrics: OverviewMetrics): RiskItem[] {
   const kpis = metrics.kpis;
   const spaces = metrics.workspaceCount || inv.workspaceCount || 0;
   const span =
-    metrics.fromDate && metrics.toDate
-      ? `${metrics.fromDate} ~ ${metrics.toDate}`
-      : `近 ${metrics.windowDays} 天`;
+    metrics.fromDate && metrics.toDate ? `${metrics.fromDate} ~ ${metrics.toDate}` : `近 ${metrics.windowDays} 天`;
 
   if (spaces === 0) {
     risks.push({ tone: "amber", title: "尚无可访问业务空间", detail: "请先创建或加入至少一个业务空间。" });

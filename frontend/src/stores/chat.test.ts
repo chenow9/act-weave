@@ -152,7 +152,10 @@ describe("chat v1 store", () => {
     vi.resetAllMocks();
     sessionStorage.clear();
     __resetChatStreamProjectorsForTests();
-    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>(() => undefined)),
+    );
     vi.mocked(getAuthToken).mockReturnValue("");
   });
 
@@ -175,7 +178,11 @@ describe("chat v1 store", () => {
 
   it("submits a permanent message, replaces the optimistic row, and starts v1 SSE", async () => {
     vi.mocked(apiClient.post).mockResolvedValueOnce({
-      data: { session: sessionFixture({ latestRunId: runFixture().id, lockVersion: 2 }), message: messageFixture(), runId: runFixture().id },
+      data: {
+        session: sessionFixture({ latestRunId: runFixture().id, lockVersion: 2 }),
+        message: messageFixture(),
+        runId: runFixture().id,
+      },
     });
     const chat = useChatStore();
     chat.sessions = [scopedSession()];
@@ -199,9 +206,14 @@ describe("chat v1 store", () => {
   });
 
   it("loads Run and Step Timeline in one request and restores a server pending marker", async () => {
-    const pendingSession = sessionFixture({ latestRunId: runFixture().id, pendingConfirmationId: confirmationFixture().id });
+    const pendingSession = sessionFixture({
+      latestRunId: runFixture().id,
+      pendingConfirmationId: confirmationFixture().id,
+    });
     vi.mocked(apiClient.get)
-      .mockResolvedValueOnce({ data: { session: pendingSession, messages: [messageFixture({ confirmationId: confirmationFixture().id })] } })
+      .mockResolvedValueOnce({
+        data: { session: pendingSession, messages: [messageFixture({ confirmationId: confirmationFixture().id })] },
+      })
       .mockResolvedValueOnce({
         data: {
           run: runFixture({ status: "WAITING_CONFIRMATION" }),
@@ -223,10 +235,7 @@ describe("chat v1 store", () => {
 
     await chat.loadSession(sessionFixture().id);
 
-    expect(apiClient.get).toHaveBeenNthCalledWith(
-      1,
-      `/workspaces/${workspaceId}/chat/sessions/${sessionFixture().id}`,
-    );
+    expect(apiClient.get).toHaveBeenNthCalledWith(1, `/workspaces/${workspaceId}/chat/sessions/${sessionFixture().id}`);
     expect(apiClient.get).toHaveBeenNthCalledWith(2, `/workspaces/${workspaceId}/agent-runs/${runFixture().id}`);
     expect(chat.latestRunSteps[0].sequenceNo).toBe(1);
     expect(chat.pendingConfirmation?.id).toBe(confirmationFixture().id);
@@ -237,7 +246,14 @@ describe("chat v1 store", () => {
   it("consumes protocol SSE (item.delta + run.completed) and streams assistant text without refresh", async () => {
     const streamBody =
       protocolSSE("run.started", 2, {
-        run: { id: runFixture().id, conversationId, agentId, status: "running", trigger: "message", startedAt: "2026-07-20T01:00:00Z" },
+        run: {
+          id: runFixture().id,
+          conversationId,
+          agentId,
+          status: "running",
+          trigger: "message",
+          startedAt: "2026-07-20T01:00:00Z",
+        },
       }) +
       protocolSSE("item.started", 3, {
         item: {
@@ -428,10 +444,10 @@ describe("chat v1 store", () => {
 
   it("still accepts thin secondary legacy RUN_WAITING_CONFIRMATION (one-release compat, not sole whitelist)", async () => {
     const payload = JSON.stringify({ confirmation: confirmationFixture(), resumeToken: "r".repeat(40) });
-    vi.mocked(fetch).mockResolvedValueOnce(
-      sseResponse(`id: 3\nevent: RUN_WAITING_CONFIRMATION\ndata: ${payload}\n\n`),
-    );
-    vi.mocked(apiClient.get).mockResolvedValue({ data: { run: runFixture({ status: "WAITING_CONFIRMATION" }), steps: [] } });
+    vi.mocked(fetch).mockResolvedValueOnce(sseResponse(`id: 3\nevent: RUN_WAITING_CONFIRMATION\ndata: ${payload}\n\n`));
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: { run: runFixture({ status: "WAITING_CONFIRMATION" }), steps: [] },
+    });
     const chat = useChatStore();
     chat.sessions = [scopedSession({ latestRunId: runFixture().id })];
     chat.activeSessionId = sessionFixture().id;
@@ -459,7 +475,9 @@ describe("chat v1 store", () => {
     chat.pendingResumeToken = "r".repeat(40);
     chat.refreshActiveRuntime = vi.fn();
     vi.mocked(apiClient.post)
-      .mockResolvedValueOnce({ data: confirmationFixture({ status: "CONFIRMED", confirmedBy: runFixture().triggeredById }) })
+      .mockResolvedValueOnce({
+        data: confirmationFixture({ status: "CONFIRMED", confirmedBy: runFixture().triggeredById }),
+      })
       .mockResolvedValueOnce({ data: confirmationFixture({ id: "confirm-cancel", status: "CANCELLED" }) });
 
     await chat.confirmPending();

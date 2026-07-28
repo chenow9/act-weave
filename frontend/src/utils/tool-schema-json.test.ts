@@ -206,11 +206,9 @@ describe("tool-schema-json", () => {
     const rebuilt = buildRequestParamsFromContracts(split.transportParams, split.bodyNodes);
 
     expect(rebuilt.some((param) => param.location === "Path" && param.name === "shipmentId")).toBe(true);
-    expect(
-      rebuilt.some(
-        (param) => param.location === "Body" && param.schema?.children?.[0]?.name === "reason",
-      ),
-    ).toBe(true);
+    expect(rebuilt.some((param) => param.location === "Body" && param.schema?.children?.[0]?.name === "reason")).toBe(
+      true,
+    );
   });
 
   it("preserves system default metadata when rebuilding request params", () => {
@@ -249,9 +247,7 @@ describe("tool-schema-json", () => {
   });
 
   it("formats editor JSON consistently", () => {
-    expect(formatContractJson('{"payload":{"type":"object"}}')).toBe(
-      '{\n  "payload": {\n    "type": "object"\n  }\n}',
-    );
+    expect(formatContractJson('{"payload":{"type":"object"}}')).toBe('{\n  "payload": {\n    "type": "object"\n  }\n}');
   });
 
   it("formats JSONC input into normalized JSON output", () => {

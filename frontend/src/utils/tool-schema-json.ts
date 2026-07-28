@@ -76,9 +76,7 @@ export function buildBodyContractFromRequestParams(requestParams: ToolRequestPar
   transportParams: ToolRequestParam[];
   bodyNodes: ToolSchemaNode[];
 } {
-  const transportParams = requestParams
-    .filter((param) => param.location !== BODY_LOCATION)
-    .map(cloneRequestParam);
+  const transportParams = requestParams.filter((param) => param.location !== BODY_LOCATION).map(cloneRequestParam);
 
   const bodyNodes = requestParams
     .filter((param) => param.location === BODY_LOCATION)
@@ -170,9 +168,7 @@ function serializeNode(node: ToolSchemaNode): ContractSchema {
     schema.enum = [...node.enumValues];
   }
   if (node.type === "object") {
-    schema.properties = Object.fromEntries(
-      (node.children ?? []).map((child) => [child.name, serializeNode(child)]),
-    );
+    schema.properties = Object.fromEntries((node.children ?? []).map((child) => [child.name, serializeNode(child)]));
     if (node.additionalProperties) {
       schema.additionalProperties = serializeNode(node.additionalProperties);
     }
@@ -208,11 +204,10 @@ function parseNode(name: string, schema: ContractSchema, path: string[]): ToolSc
       parseNode(childName, childSchema, [...path, "properties", `${index}`, childName]),
     );
     if (schema.additionalProperties && typeof schema.additionalProperties === "object") {
-      node.additionalProperties = parseNode(
-        `${name}AdditionalProperties`,
-        schema.additionalProperties,
-        [...path, "additionalProperties"],
-      );
+      node.additionalProperties = parseNode(`${name}AdditionalProperties`, schema.additionalProperties, [
+        ...path,
+        "additionalProperties",
+      ]);
     }
   }
 
@@ -248,10 +243,10 @@ function cloneNode(node: ToolSchemaNode): ToolSchemaNode {
     ...node,
     enumValues: node.enumValues ? [...node.enumValues] : undefined,
     children: node.children ? node.children.map(cloneNode) : undefined,
-    item: node.item ? cloneNode(node.item) : node.item ?? null,
+    item: node.item ? cloneNode(node.item) : (node.item ?? null),
     additionalProperties: node.additionalProperties
       ? cloneNode(node.additionalProperties)
-      : node.additionalProperties ?? null,
+      : (node.additionalProperties ?? null),
   };
 }
 

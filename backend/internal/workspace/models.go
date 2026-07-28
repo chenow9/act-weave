@@ -111,3 +111,45 @@ type CreationDefaults struct {
 	DefaultAgentID       *string
 	DefaultModelConfigID *string
 }
+
+// AccessibleWorkspace is a read model for the current principal: persisted
+// workspace facts plus the caller's effective membership role. It must never
+// be written back as a persistence entity.
+type AccessibleWorkspace struct {
+	Workspace
+	CurrentUserRole Role
+}
+
+// WorkspaceListQuery drives GET /workspaces server-side listing (ZKL-64 D1-A).
+// When Page and PageSize are zero and LegacyLimit > 0, the repository uses the
+// pre-ZKL-64 limit semantics (no filters / client-side catalog style).
+type WorkspaceListQuery struct {
+	Query       string
+	Status      *Status
+	Mode        *Mode
+	Page        int
+	PageSize    int
+	SortBy      string
+	SortOrder   string
+	LegacyLimit int
+}
+
+// WorkspaceAccessibleSummary counts the caller's full accessible set, not the
+// current page or the filtered result (ZKL-64 D9-A).
+type WorkspaceAccessibleSummary struct {
+	Total       int
+	Active      int
+	Production  int
+	BoundAgents int
+}
+
+// WorkspacePage is a paged accessible-workspace result plus full-set summary.
+type WorkspacePage struct {
+	Items    []AccessibleWorkspace
+	Page     int
+	PageSize int
+	Total    int
+	Summary  WorkspaceAccessibleSummary
+	// Legacy is true when the request used the old limit-only contract.
+	Legacy bool
+}

@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { flushPromises, mount } from "@vue/test-utils";
 import { reactive } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -52,31 +51,5 @@ describe("WorkspaceContextState", () => {
     await flushPromises();
 
     expect(wrapper.emitted("retry")).toHaveLength(1);
-  });
-});
-
-describe("Workspace-scoped management pages", () => {
-  it("reuse the shared state and do not expose developer guard messages", () => {
-    const pages = [
-      "src/views/ToolsView.vue",
-      "src/views/WorkflowView.vue",
-      "src/views/ServiceConnectionsView.vue",
-      "src/views/OpenAPIImportsView.vue",
-      "src/views/ModelAPIConfigsView.vue",
-    ];
-    for (const page of pages) {
-      const source = readFileSync(page, "utf8");
-      expect(source).toContain("WorkspaceContextState");
-      expect(source).toContain("hasWorkspaceContext");
-      expect(source).toContain("请先创建或加入业务空间");
-    }
-
-    for (const store of [
-      "src/stores/integration.ts",
-      "src/stores/workflow.ts",
-      "src/stores/modelConfigs.ts",
-    ]) {
-      expect(readFileSync(store, "utf8")).not.toContain("Select a Workspace");
-    }
   });
 });

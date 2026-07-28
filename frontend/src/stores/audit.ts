@@ -1,12 +1,7 @@
 import { defineStore } from "pinia";
 
 import { apiClient } from "../services/api";
-import type {
-  AuditEvent,
-  AuditEventFilter,
-  AuditExport,
-  CreateAuditExportRequest,
-} from "../types/domain";
+import type { AuditEvent, AuditEventFilter, AuditExport, CreateAuditExportRequest } from "../types/domain";
 
 interface AuditState {
   events: AuditEvent[];

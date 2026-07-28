@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import "./login-page.css";
 import { computed, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
@@ -42,7 +43,10 @@ async function submit() {
 
       <div class="login-brand-content">
         <h1>把业务动作收敛到可控、可审计的执行链路</h1>
-        <p>ActWeave 通过 Workspace、Agent、Workflow DAG 与 Tool Runtime，把真实业务操作放进显式编排、风险确认和全链路审计之中。</p>
+        <p>
+          ActWeave 通过 Workspace、Agent、Workflow DAG 与 Tool
+          Runtime，把真实业务操作放进显式编排、风险确认和全链路审计之中。
+        </p>
       </div>
 
       <div class="login-left-footer">AUTH: JWT_LOCAL_SESSION // TRACE: AUDIT_ACTIVE // RUNTIME: TOOL_INVOCATION</div>
@@ -60,7 +64,11 @@ async function submit() {
           <span>{{ loginErrorMessage }}</span>
         </div>
 
-        <div v-if="passwordChangedNotice && !loginErrorMessage && !loginSuccess" class="login-feedback-panel success" role="status">
+        <div
+          v-if="passwordChangedNotice && !loginErrorMessage && !loginSuccess"
+          class="login-feedback-panel success"
+          role="status"
+        >
           <i class="fa-solid fa-circle-check" aria-hidden="true" />
           <span>
             <strong>密码已更新</strong>
@@ -81,7 +89,12 @@ async function submit() {
             <span>Username</span>
             <div class="login-field-shell">
               <i class="login-field-icon fa-regular fa-user" aria-hidden="true" />
-              <input v-model="form.username" autocomplete="username" required :disabled="auth.loading || loginSuccess" />
+              <input
+                v-model="form.username"
+                autocomplete="username"
+                required
+                :disabled="auth.loading || loginSuccess"
+              />
             </div>
           </label>
 
@@ -116,7 +129,6 @@ async function submit() {
           <span aria-hidden="true" />
           JWT 本地会话 · Workspace 权限隔离 · Execution 审计追踪
         </div>
-
       </div>
     </section>
   </main>

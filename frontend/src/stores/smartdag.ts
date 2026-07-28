@@ -444,9 +444,7 @@ export const useSmartDagStore = defineStore("smartdag", {
           undefined,
         );
         this.generatedWorkflow = created;
-        this.generatedDraft = workflows.activeDraft
-          ? cloneDraft(workflows.activeDraft)
-          : undefined;
+        this.generatedDraft = workflows.activeDraft ? cloneDraft(workflows.activeDraft) : undefined;
         this.canvasEpoch += 1;
       }
       return response.data;
@@ -463,7 +461,11 @@ export const useSmartDagStore = defineStore("smartdag", {
           { goal: this.goal },
         );
         const workflows = useWorkflowStore();
-        const created = workflows.adoptCreatedWorkflowResponse(request.workspaceId, response.data, response.headers?.etag);
+        const created = workflows.adoptCreatedWorkflowResponse(
+          request.workspaceId,
+          response.data,
+          response.headers?.etag,
+        );
         this.generatedWorkflow = created;
         this.generatedDraft = workflows.activeDraft ? cloneDraft(workflows.activeDraft) : undefined;
         this.canvasEpoch += 1;

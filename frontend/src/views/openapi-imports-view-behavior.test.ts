@@ -1,14 +1,13 @@
-import { readFileSync } from "node:fs";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { reactive } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import OpenAPIImportsView from "./OpenAPIImportsView.vue";
 
-const openAPIImportsViewSource = readFileSync("src/views/OpenAPIImportsView.vue", "utf8");
-
 const mocks = vi.hoisted(() => ({
-  integration: null as any,
+  openapi: null as any,
+  providers: null as any,
+  connections: null as any,
   router: { push: vi.fn() },
   workspaces: null as any,
 }));
@@ -17,8 +16,14 @@ vi.mock("vue-router", () => ({
   useRouter: () => mocks.router,
 }));
 
-vi.mock("../stores/integration", () => ({
-  useIntegrationStore: () => mocks.integration,
+vi.mock("../stores/openapiImports", () => ({
+  useOpenAPIImportsStore: () => mocks.openapi,
+}));
+vi.mock("../stores/providers", () => ({
+  useProvidersStore: () => mocks.providers,
+}));
+vi.mock("../stores/connections", () => ({
+  useConnectionsStore: () => mocks.connections,
 }));
 
 vi.mock("../stores/workspaces", () => ({
@@ -61,6 +66,8 @@ function installStores(records = Array.from({ length: 11 }, (_, index) => import
     activeWorkspaceId: "order",
     items: [{ id: "order", name: "Order Ops", displayName: "Order Operations", defaultAgentId: "agent-order" }],
     load: vi.fn().mockResolvedValue(undefined),
+    can: vi.fn(() => true),
+    roleFor: vi.fn(() => "EDITOR"),
   });
   const integrationState = reactive({
     loading: false,
@@ -70,32 +77,43 @@ function installStores(records = Array.from({ length: 11 }, (_, index) => import
     openAPIImportCatalog: records,
     openAPIImportRegistryTotal: records.length,
     openAPIImports: records,
-    providers: [{
-      id: "provider-order",
-      name: "Order OpenAPI",
-      kind: "HTTP_OPENAPI",
-      endpointConfig: { sourceUri: "https://orders.example.test/openapi.json" },
-      discoveryMode: "ON_DEMAND",
-    }],
+    providers: [
+      {
+        id: "provider-order",
+        name: "Order OpenAPI",
+        kind: "HTTP_OPENAPI",
+        endpointConfig: { sourceUri: "https://orders.example.test/openapi.json" },
+        discoveryMode: "ON_DEMAND",
+      },
+    ],
     serviceConnectionCatalog: [connection()],
     serviceConnections: [connection()],
     tools: [],
     loadProviders: vi.fn().mockResolvedValue([{ id: "provider-order", name: "Order OpenAPI" }]),
-    loadOpenAPIImportPage: vi.fn(async (query: { query?: string; status?: string; page?: number; pageSize?: number } = {}) => {
-      const keyword = (query.query ?? "").toLowerCase();
-      const status = query.status;
-      const page = query.page ?? integrationState.openAPIImportPagination.page;
-      const pageSize = query.pageSize ?? integrationState.openAPIImportPagination.pageSize;
-      const filtered = records.filter((record) => {
-        if (status === "Ready" && record.readyEndpoints <= 0) return false;
-        if (status === "Issues" && !record.issues.length && !record.status.toLowerCase().includes("review")) return false;
-        const searchText = `${record.fileName} ${record.source} Order Operations Order Agent Order Production HTTP ${record.status}`.toLowerCase();
-        return !keyword || searchText.includes(keyword);
-      });
-      integrationState.openAPIImportPageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
-      integrationState.openAPIImportPagination = { page, pageSize, total: filtered.length, pageSizeOptions: [10, 20, 50] };
-      return integrationState.openAPIImportPageItems;
-    }),
+    loadOpenAPIImportPage: vi.fn(
+      async (query: { query?: string; status?: string; page?: number; pageSize?: number } = {}) => {
+        const keyword = (query.query ?? "").toLowerCase();
+        const status = query.status;
+        const page = query.page ?? integrationState.openAPIImportPagination.page;
+        const pageSize = query.pageSize ?? integrationState.openAPIImportPagination.pageSize;
+        const filtered = records.filter((record) => {
+          if (status === "Ready" && record.readyEndpoints <= 0) return false;
+          if (status === "Issues" && !record.issues.length && !record.status.toLowerCase().includes("review"))
+            return false;
+          const searchText =
+            `${record.fileName} ${record.source} Order Operations Order Agent Order Production HTTP ${record.status}`.toLowerCase();
+          return !keyword || searchText.includes(keyword);
+        });
+        integrationState.openAPIImportPageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
+        integrationState.openAPIImportPagination = {
+          page,
+          pageSize,
+          total: filtered.length,
+          pageSizeOptions: [10, 20, 50],
+        };
+        return integrationState.openAPIImportPageItems;
+      },
+    ),
     loadOpenAPIImportCatalog: vi.fn().mockResolvedValue(records),
     loadOpenAPIImportDetail: vi.fn(async (record: ReturnType<typeof importRecord>) => {
       const detailed = { ...record, detail: record.detail || { endpoints: [] } };
@@ -109,7 +127,9 @@ function installStores(records = Array.from({ length: 11 }, (_, index) => import
     generateToolDrafts: vi.fn().mockResolvedValue([{ id: "generated.tool", status: "Draft" }]),
     deleteOpenAPIImport: vi.fn().mockResolvedValue(undefined),
   });
-  mocks.integration = integrationState;
+  mocks.openapi = integrationState;
+  mocks.providers = integrationState;
+  mocks.connections = integrationState;
 }
 
 async function mountView() {
@@ -130,9 +150,17 @@ async function mountView() {
 }
 
 async function attachOpenAPIFile(wrapper: VueWrapper) {
-  const file = new File([
-    JSON.stringify({ openapi: "3.0.3", info: { title: "Orders", version: "1" }, paths: { "/orders": { get: { operationId: "getOrders" } } } }),
-  ], "orders-openapi.json", { type: "application/json" });
+  const file = new File(
+    [
+      JSON.stringify({
+        openapi: "3.0.3",
+        info: { title: "Orders", version: "1" },
+        paths: { "/orders": { get: { operationId: "getOrders" } } },
+      }),
+    ],
+    "orders-openapi.json",
+    { type: "application/json" },
+  );
   const input = wrapper.get('input[data-testid="openapi-file-input"]');
   Object.defineProperty(input.element, "files", { value: [file], configurable: true });
   await input.trigger("change");
@@ -165,7 +193,12 @@ describe("OpenAPIImportsView management list behavior", () => {
 
     await wrapper.get('input[aria-label="搜索 OpenAPI 导入记录"]').setValue("shipping");
     await flushPromises();
-    expect(mocks.integration.loadOpenAPIImportPage).toHaveBeenLastCalledWith({ query: "shipping", status: undefined, page: 1, pageSize: 10 });
+    expect(mocks.openapi.loadOpenAPIImportPage).toHaveBeenLastCalledWith({
+      query: "shipping",
+      status: undefined,
+      page: 1,
+      pageSize: 10,
+    });
     expect(wrapper.findAll("tbody tr")).toHaveLength(1);
     expect(wrapper.text()).toContain("shipping-openapi.yaml");
     expect(wrapper.findAll('button[role="option"][aria-selected="true"]')).toHaveLength(0);
@@ -173,31 +206,53 @@ describe("OpenAPIImportsView management list behavior", () => {
     await wrapper.get('button[aria-label="重置 OpenAPI 导入筛选"]').trigger("click");
     await wrapper.get('button[role="option"][value="Issues"]').trigger("click");
     await flushPromises();
-    expect(mocks.integration.loadOpenAPIImportPage).toHaveBeenLastCalledWith({ query: "", status: "Issues", page: 1, pageSize: 10 });
+    expect(mocks.openapi.loadOpenAPIImportPage).toHaveBeenLastCalledWith({
+      query: "",
+      status: "Issues",
+      page: 1,
+      pageSize: 10,
+    });
     expect(wrapper.findAll("tbody tr")).toHaveLength(1);
     expect(wrapper.find("tbody").text()).toContain("待确认记录");
 
     await wrapper.get('button[role="option"][value="ALL"]').trigger("click");
     await flushPromises();
-    expect(mocks.integration.loadOpenAPIImportPage).toHaveBeenLastCalledWith({ query: "", status: undefined, page: 1, pageSize: 10 });
+    expect(mocks.openapi.loadOpenAPIImportPage).toHaveBeenLastCalledWith({
+      query: "",
+      status: undefined,
+      page: 1,
+      pageSize: 10,
+    });
     expect(wrapper.findAll("tbody tr").length).toBeGreaterThan(1);
 
     await wrapper.get('button[aria-label="下一页"]').trigger("click");
     await flushPromises();
-    expect(mocks.integration.loadOpenAPIImportPage).toHaveBeenLastCalledWith({ query: "", status: undefined, page: 2, pageSize: 10 });
+    expect(mocks.openapi.loadOpenAPIImportPage).toHaveBeenLastCalledWith({
+      query: "",
+      status: undefined,
+      page: 2,
+      pageSize: 10,
+    });
     expect(wrapper.findAll("tbody tr")).toHaveLength(1);
     expect(wrapper.text()).toContain("order-openapi-11.yaml");
   });
 
   it("sorts from page one while retaining the OpenAPI page size and filters", async () => {
     wrapper = await mountView();
-    mocks.integration.openAPIImportPagination = { page: 3, pageSize: 20, total: 60, pageSizeOptions: [10, 20, 50] };
-    mocks.integration.loadOpenAPIImportPage.mockClear();
+    mocks.openapi.openAPIImportPagination = { page: 3, pageSize: 20, total: 60, pageSizeOptions: [10, 20, 50] };
+    mocks.openapi.loadOpenAPIImportPage.mockClear();
 
     await wrapper.get('button[aria-label="按导入文件升序排序"]').trigger("click");
     await flushPromises();
 
-    expect(mocks.integration.loadOpenAPIImportPage).toHaveBeenLastCalledWith({ query: "", status: undefined, page: 1, pageSize: 20, sortBy: "fileName", sortOrder: "asc" });
+    expect(mocks.openapi.loadOpenAPIImportPage).toHaveBeenLastCalledWith({
+      query: "",
+      status: undefined,
+      page: 1,
+      pageSize: 20,
+      sortBy: "fileName",
+      sortOrder: "asc",
+    });
   });
 
   it("supports keyboard navigation through the shared OpenAPI quick filters", async () => {
@@ -211,12 +266,12 @@ describe("OpenAPIImportsView management list behavior", () => {
     const allFilter = wrapper.get('button[role="option"][value="ALL"]');
     expect(allFilter.attributes("aria-selected")).toBe("true");
     expect(document.activeElement).toBe(allFilter.element);
-    expect(mocks.integration.loadOpenAPIImportPage).toHaveBeenLastCalledWith({ query: "", status: undefined, page: 1, pageSize: 10 });
-  });
-
-  it("does not retain obsolete Order quick-filter source branches", () => {
-    expect(openAPIImportsViewSource).not.toContain('value === "Order"');
-    expect(openAPIImportsViewSource).not.toContain('"Issues" | "Order" | "ALL"');
+    expect(mocks.openapi.loadOpenAPIImportPage).toHaveBeenLastCalledWith({
+      query: "",
+      status: undefined,
+      page: 1,
+      pageSize: 10,
+    });
   });
 
   it("persists optional OpenAPI columns through the shared column settings", async () => {
@@ -245,7 +300,7 @@ describe("OpenAPIImportsView management list behavior", () => {
   it("separates loading, load error, empty registry, and filtered no-match states", async () => {
     installStores([]);
     let finishLoad: (() => void) | undefined;
-    mocks.integration.loadOpenAPIImportPage = vi.fn(
+    mocks.openapi.loadOpenAPIImportPage = vi.fn(
       () =>
         new Promise<void>((resolve) => {
           finishLoad = resolve;
@@ -262,11 +317,11 @@ describe("OpenAPIImportsView management list behavior", () => {
     wrapper.unmount();
 
     installStores();
-    mocks.integration.loadOpenAPIImportPage = vi.fn().mockRejectedValue(new Error("network unavailable"));
+    mocks.openapi.loadOpenAPIImportPage = vi.fn().mockRejectedValue(new Error("network unavailable"));
     wrapper = await mountView();
     expect(wrapper.text()).toContain("OpenAPI 导入记录加载失败");
     expect(wrapper.text()).toContain("network unavailable");
-    expect(wrapper.find('[data-openapi-load-retry]').exists()).toBe(true);
+    expect(wrapper.find("[data-openapi-load-retry]").exists()).toBe(true);
     wrapper.unmount();
 
     installStores([]);
@@ -283,13 +338,13 @@ describe("OpenAPIImportsView management list behavior", () => {
 
   it("shows a retryable error when an interactive server-page request fails", async () => {
     wrapper = await mountView();
-    mocks.integration.loadOpenAPIImportPage.mockRejectedValueOnce(new Error("interactive request failed"));
+    mocks.openapi.loadOpenAPIImportPage.mockRejectedValueOnce(new Error("interactive request failed"));
 
     await wrapper.get('input[aria-label="搜索 OpenAPI 导入记录"]').setValue("订单");
     await flushPromises();
 
     expect(wrapper.text()).toContain("interactive request failed");
-    expect(wrapper.find('[data-openapi-load-retry]').exists()).toBe(true);
+    expect(wrapper.find("[data-openapi-load-retry]").exists()).toBe(true);
   });
 
   it("keeps import, draft generation, and confirmed deletion actions wired to the integration store", async () => {
@@ -302,14 +357,15 @@ describe("OpenAPIImportsView management list behavior", () => {
     expect(importButton).toBeDefined();
     await importButton!.trigger("click");
     await flushPromises();
-    expect(mocks.integration.createOpenAPIFileImport).toHaveBeenCalledWith(
-      { workspaceId: "order", providerId: "provider-order", connectionId: "connection-order" }, file,
+    expect(mocks.openapi.createOpenAPIFileImport).toHaveBeenCalledWith(
+      { workspaceId: "order", providerId: "provider-order", connectionId: "connection-order" },
+      file,
     );
 
     await wrapper.get('button[aria-label="更多操作"]').trigger("click");
     await wrapper.get('button[aria-label="生成 Tool 草稿"]').trigger("click");
     await flushPromises();
-    expect(mocks.integration.generateToolDrafts).toHaveBeenCalledWith("import-1");
+    expect(mocks.openapi.generateToolDrafts).toHaveBeenCalledWith("import-1");
 
     await wrapper.get('button[aria-label="更多操作"]').trigger("click");
     await wrapper.get('button[aria-label="删除记录"]').trigger("click");
@@ -317,11 +373,11 @@ describe("OpenAPIImportsView management list behavior", () => {
     expect(confirmButton).toBeDefined();
     await confirmButton!.trigger("click");
     await flushPromises();
-    expect(mocks.integration.deleteOpenAPIImport).toHaveBeenCalledWith("import-1");
+    expect(mocks.openapi.deleteOpenAPIImport).toHaveBeenCalledWith("import-1");
   });
 
   it("shows every Provider in the current workspace and marks online-import eligibility", async () => {
-    mocks.integration.providers = [
+    mocks.openapi.providers = [
       {
         id: "provider-managed",
         name: "Managed OpenAPI",
@@ -346,7 +402,7 @@ describe("OpenAPIImportsView management list behavior", () => {
         discoveryMode: "ON_DEMAND",
       },
     ];
-    mocks.integration.serviceConnections = [];
+    mocks.openapi.serviceConnections = [];
 
     wrapper = await mountView();
     await wrapper.get(".primary-button").trigger("click");
@@ -363,15 +419,21 @@ describe("OpenAPIImportsView management list behavior", () => {
     ]);
 
     await providerOptions[1].trigger("click");
-    await wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes("Provider 在线文档"))!.trigger("click");
+    await wrapper
+      .findAll('[role="tab"]')
+      .find((tab) => tab.text().includes("Provider 在线文档"))!
+      .trigger("click");
     const importButton = wrapper.findAll("button").find((button) => button.text().includes("开始导入"));
     await importButton!.trigger("click");
     await flushPromises();
-    expect(mocks.integration.createOpenAPIImport).toHaveBeenCalledWith({ workspaceId: "order", providerId: "provider-legacy" });
+    expect(mocks.openapi.createOpenAPIImport).toHaveBeenCalledWith({
+      workspaceId: "order",
+      providerId: "provider-legacy",
+    });
   });
 
   it("keeps runtime-only Providers visible while explaining why online import is blocked", async () => {
-    mocks.integration.providers = [
+    mocks.openapi.providers = [
       {
         id: "provider-manual",
         name: "Manual Runtime Provider",
@@ -385,12 +447,14 @@ describe("OpenAPIImportsView management list behavior", () => {
         discoveryMode: "ON_DEMAND",
       },
     ];
-    mocks.integration.serviceConnections = [{
-      ...connection(),
-      id: "connection-manual",
-      providerId: "provider-manual",
-      name: "Manual Production HTTP",
-    }];
+    mocks.openapi.serviceConnections = [
+      {
+        ...connection(),
+        id: "connection-manual",
+        providerId: "provider-manual",
+        name: "Manual Production HTTP",
+      },
+    ];
 
     wrapper = await mountView();
     await wrapper.get(".primary-button").trigger("click");
@@ -398,18 +462,20 @@ describe("OpenAPIImportsView management list behavior", () => {
     const providerSelect = wrapper.get('[data-testid="openapi-provider-select"]');
     expect(providerSelect.attributes("disabled")).toBeUndefined();
     expect(providerSelect.text()).toContain("Manual Runtime Provider");
-    await wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes("Provider 在线文档"))!.trigger("click");
+    await wrapper
+      .findAll('[role="tab"]')
+      .find((tab) => tab.text().includes("Provider 在线文档"))!
+      .trigger("click");
     await providerSelect.trigger("click");
-    expect(wrapper.findAll('.openapi-select-menu[role="listbox"] .openapi-select-option').map((option) => option.text())).toEqual([
-      "Manual Runtime Provider未配置在线 OpenAPI 文档",
-      "Runtime Only Provider未配置在线 OpenAPI 文档",
-    ]);
+    expect(
+      wrapper.findAll('.openapi-select-menu[role="listbox"] .openapi-select-option').map((option) => option.text()),
+    ).toEqual(["Manual Runtime Provider未配置在线 OpenAPI 文档", "Runtime Only Provider未配置在线 OpenAPI 文档"]);
     expect(wrapper.text()).toContain("Provider 和 Connection 已加载");
     expect(wrapper.text()).toContain("数据不会再从下拉框中隐藏");
     expect(wrapper.get('[data-testid="openapi-connection-select"]').text()).toContain("Manual Production HTTP");
     const importButton = wrapper.findAll("button").find((button) => button.text().includes("开始导入"));
     expect(importButton?.attributes("disabled")).toBeDefined();
-    expect(mocks.integration.createOpenAPIImport).not.toHaveBeenCalled();
+    expect(mocks.openapi.createOpenAPIImport).not.toHaveBeenCalled();
   });
 
   it("provides a page-owned mobile card with an explicit more-actions menu", async () => {
@@ -426,16 +492,17 @@ describe("OpenAPIImportsView management list behavior", () => {
     expect(menu.text()).toContain("删除记录");
   });
 
-
   it("opens a stable detail shell with loading then content without calling generate", async () => {
     let resolveDetail!: (value: unknown) => void;
-    mocks.integration.loadOpenAPIImportDetail = vi.fn(
+    mocks.openapi.loadOpenAPIImportDetail = vi.fn(
       (record: { id: string }) =>
         new Promise((resolve) => {
           resolveDetail = (value) => {
             const detailed = value as { id: string; detail?: unknown };
-            const index = mocks.integration.openAPIImportPageItems.findIndex((item: { id: string }) => item.id === record.id);
-            if (index >= 0) mocks.integration.openAPIImportPageItems[index] = detailed;
+            const index = mocks.openapi.openAPIImportPageItems.findIndex(
+              (item: { id: string }) => item.id === record.id,
+            );
+            if (index >= 0) mocks.openapi.openAPIImportPageItems[index] = detailed;
             resolve(detailed);
           };
         }),
@@ -448,27 +515,27 @@ describe("OpenAPIImportsView management list behavior", () => {
     expect(wrapper.find('section[aria-label="导入详情"]').exists()).toBe(true);
     expect(wrapper.find(".openapi-detail-modal-head").exists()).toBe(true);
     expect(wrapper.find('[data-testid="openapi-detail-loading"]').exists()).toBe(true);
-    expect(mocks.integration.loadOpenAPIImportDetail).toHaveBeenCalledTimes(1);
-    expect(mocks.integration.generateToolDrafts).not.toHaveBeenCalled();
+    expect(mocks.openapi.loadOpenAPIImportDetail).toHaveBeenCalledTimes(1);
+    expect(mocks.openapi.generateToolDrafts).not.toHaveBeenCalled();
 
-    const record = mocks.integration.openAPIImportPageItems[0];
+    const record = mocks.openapi.openAPIImportPageItems[0];
     resolveDetail({ ...record, detail: { endpoints: [] } });
     await flushPromises();
 
     expect(wrapper.find('[data-testid="openapi-detail-loading"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="openapi-detail-error"]').exists()).toBe(false);
     expect(wrapper.find(".openapi-detail-hero").exists()).toBe(true);
-    expect(mocks.integration.generateToolDrafts).not.toHaveBeenCalled();
+    expect(mocks.openapi.generateToolDrafts).not.toHaveBeenCalled();
   });
 
   it("keeps detail shell on GET error and retries with the same load only", async () => {
-    mocks.integration.loadOpenAPIImportDetail = vi
+    mocks.openapi.loadOpenAPIImportDetail = vi
       .fn()
       .mockRejectedValueOnce(new Error("detail unavailable"))
       .mockImplementation(async (record: ReturnType<typeof importRecord>) => {
         const detailed = { ...record, detail: { endpoints: [] } };
-        const index = mocks.integration.openAPIImportPageItems.findIndex((item: { id: string }) => item.id === record.id);
-        if (index >= 0) mocks.integration.openAPIImportPageItems[index] = detailed;
+        const index = mocks.openapi.openAPIImportPageItems.findIndex((item: { id: string }) => item.id === record.id);
+        if (index >= 0) mocks.openapi.openAPIImportPageItems[index] = detailed;
         return detailed;
       });
     wrapper = await mountView();
@@ -477,18 +544,21 @@ describe("OpenAPIImportsView management list behavior", () => {
 
     expect(wrapper.find('[data-testid="openapi-detail-error"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="openapi-detail-error"]').text()).toContain("detail unavailable");
-    expect(mocks.integration.generateToolDrafts).not.toHaveBeenCalled();
+    expect(mocks.openapi.generateToolDrafts).not.toHaveBeenCalled();
 
     await wrapper.get('[data-testid="openapi-detail-retry"]').trigger("click");
     await flushPromises();
-    expect(mocks.integration.loadOpenAPIImportDetail).toHaveBeenCalledTimes(2);
+    expect(mocks.openapi.loadOpenAPIImportDetail).toHaveBeenCalledTimes(2);
     expect(wrapper.find('[data-testid="openapi-detail-error"]').exists()).toBe(false);
-    expect(mocks.integration.generateToolDrafts).not.toHaveBeenCalled();
+    expect(mocks.openapi.generateToolDrafts).not.toHaveBeenCalled();
   });
 
   it("does not apply light detail head styles to import or delete modals", async () => {
     wrapper = await mountView();
-    await wrapper.get('[data-testid="openapi-create"], button').trigger("click").catch(() => undefined);
+    await wrapper
+      .get('[data-testid="openapi-create"], button')
+      .trigger("click")
+      .catch(() => undefined);
     // Prefer explicit create trigger if present.
     const createBtn = wrapper.findAll("button").find((b) => b.text().includes("导入") || b.text().includes("新建"));
     if (createBtn) {

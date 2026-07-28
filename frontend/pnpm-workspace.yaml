@@ -1,6 +1,0 @@
-# pnpm 10+ blocks dependency lifecycle scripts by default.
-# These packages need postinstall builds for local dev (esbuild binary, vue-demi, fontawesome assets).
-allowBuilds:
-  '@fortawesome/fontawesome-free': true
-  esbuild: true
-  vue-demi: true
