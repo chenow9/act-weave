@@ -1392,18 +1392,7 @@
   }
 }
 
-@media (max-width: 1024px) {
-  .login-left-panel {
-    display: none;
-  }
-}
 
-@media (max-width: 1024px) {
-  .login-right-panel {
-    width: 100%;
-    padding: 32px;
-  }
-}
 
 @media (max-width: 1380px) {
   .workspace-detail-page-header {
