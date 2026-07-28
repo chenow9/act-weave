@@ -7,6 +7,6 @@
 // egress hosts, bearer tokens, and raw credentials are forbidden and
 // dropped when extracting from a broader capability-like object.
 //
-// This package is not wired into the production chat path yet; later
-// einoruntime / chatruntimebridge PRs consume BuildModelTools.
+// Production chat uses ToToolInfo(NewCapability(...)) from
+// chatruntimebridge when attaching tools to the model.
 package tooltranslator

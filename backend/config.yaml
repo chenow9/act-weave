@@ -74,7 +74,7 @@ bootstrapAdmin:
 runtime:
   # Agent engine: omitted runtime.agent loads as enabled=true +
   # allowAllWorkspaces=true (ADK / chatruntimebridge). Always eino; emergency
-  # agent rollback = previous binary. See docs/runbooks/eino-agent-runtime-rollout.md.
+  # agent path is eino-only; rollback = previous binary / drain traffic.
   agent:
     enabled: true
     allowAllWorkspaces: true

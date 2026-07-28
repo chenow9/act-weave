@@ -4,5 +4,5 @@
 //   - *Factory → always eino (chatruntimebridge.Bridge)
 //
 // Continue snapshots require nested einoChatResume. Snapshots with only
-// chatLoop are invalid (see docs/runbooks/eino-agent-runtime-rollout.md).
+// chatLoop are invalid and rejected by ContinueDispatcher.
 package agentrun

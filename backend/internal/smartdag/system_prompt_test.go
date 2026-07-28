@@ -51,9 +51,8 @@ func TestAuditMetaFromPrompt(t *testing.T) {
 
 func TestGenerateRequestTypesDoNotAcceptUserSystemPrompt(t *testing.T) {
 	t.Parallel()
-	// Surface check: v2 request and GraphModelInput must not expose a user-editable systemPrompt field.
+	// Surface check: product request types must not expose a user-editable systemPrompt field.
 	for _, typ := range []reflect.Type{
-		reflect.TypeOf(GenerateRequestV2{}),
 		reflect.TypeOf(ApplyTurnRequest{}),
 		reflect.TypeOf(GenerateRequest{}), // legacy rules path also has no system prompt override
 	} {
@@ -63,9 +62,6 @@ func TestGenerateRequestTypesDoNotAcceptUserSystemPrompt(t *testing.T) {
 			case "SystemPrompt", "SystemPromptID", "UserSystemPrompt", "systemPrompt":
 				t.Fatalf("%s must not accept user system prompt field %s", typ.Name(), name)
 			}
-		}
-		if err := RejectsUserSystemPromptOverride(false); err != nil {
-			t.Fatal(err)
 		}
 	}
 }

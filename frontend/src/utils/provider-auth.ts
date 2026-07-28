@@ -162,12 +162,3 @@ export function isProviderReadyForConnections(provider: CapabilityProvider) {
   return hasEndpoint && (providerHasOutboundIdentity(provider) || Boolean(providerAuthContract(provider)));
 }
 
-export function legacySchemeForConnection(connection: ServiceConnection): ProviderAuthScheme {
-  const label = connection.authConfig.label || connection.authMode || "Legacy authentication";
-  return {
-    key: "legacy-readonly",
-    type: connection.authMode === "NONE" ? "NONE" : "OAUTH2_CLIENT",
-    displayName: label,
-    fields: [],
-  };
-}

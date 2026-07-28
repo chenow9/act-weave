@@ -12,10 +12,7 @@ import (
 //
 // Enqueue / EnqueueContinue always route to the eino bridge. Agent.Enabled /
 // allowlist no longer select an alternate engine; they remain for
-// diagnostics/metrics only.
-//
-// Rollback = previous binary / drain traffic. See
-// docs/runbooks/eino-agent-runtime-rollout.md.
+// diagnostics only (AllowsWorkspace).
 //
 // Continue path callers must require nested einoChatResume (application
 // ContinueDispatcher); chatLoop-only snapshots are invalid.

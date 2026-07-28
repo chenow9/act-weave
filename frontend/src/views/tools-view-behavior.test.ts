@@ -202,10 +202,8 @@ function mountToolsView() {
           template:
             "<select class='app-select-stub' :value='modelValue' @change=\"$emit('update:modelValue', $event.target.value)\"><option v-for='option in options' :key='option.value' :value='option.value'>{{ option.label }}</option></select>",
         },
-        ToolSchemaTreeEditor: { template: "<div class='schema-editor-stub' />" },
         ToolSchemaTreeView: { template: "<div class='schema-view-stub' />" },
         ToolTestDialog: { template: "<div class='tool-test-dialog-stub' />" },
-        ToolContractWorkbench: { template: "<div class='contract-workbench-stub' />" },
       },
     },
   });

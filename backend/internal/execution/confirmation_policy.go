@@ -25,7 +25,7 @@ const (
 	//
 	// D15: einoruntime.DefaultCheckpointTTL must stay equal to this duration
 	// (600s). Checkpoint TTL is not a separate business knob — it shares the
-	// confirmation expiry clock. See docs/runbooks/eino-agent-runtime-rollout.md.
+	// confirmation expiry clock.
 	DefaultConfirmationTTLSeconds int64 = 600
 )
 

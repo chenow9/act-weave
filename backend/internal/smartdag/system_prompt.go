@@ -135,25 +135,3 @@ func AuditMetaFromPrompt(prompt SystemPrompt) GenerationAuditMeta {
 	}
 }
 
-// GenerateRequestV2 is the product-path request shape for smart-dag.v2.
-// Intentionally has no SystemPrompt or ModelConfigID fields (D2 / D16).
-type GenerateRequestV2 struct {
-	WorkspaceID string
-	AgentID     string
-	// Message is the natural-language turn intent (not a system prompt override).
-	Message   string
-	CreatedBy string
-	// Optional: continue on existing workflow draft.
-	WorkflowID string
-	// Constraints may carry maxNodes etc.; server still enforces D8.
-	MaxNodes int
-}
-
-// RejectsUserSystemPromptOverride documents / checks that call sites must not
-// accept a user-supplied system prompt. Used in tests for request type surface.
-func RejectsUserSystemPromptOverride(hasSystemPromptField bool) error {
-	if hasSystemPromptField {
-		return errors.New("generate requests must not accept user systemPrompt")
-	}
-	return nil
-}
