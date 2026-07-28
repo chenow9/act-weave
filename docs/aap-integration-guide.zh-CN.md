@@ -1,0 +1,575 @@
+# ActWeave Agent Access Protocol（AAP）— 第三方对接指南
+
+| | |
+| --- | --- |
+| **读者** | 需要对接 ActWeave Agent 的外部平台 / 集成方 |
+| **协议根路径** | `/api/agent-access/v1` |
+| **机器可读契约** | [`openapi/agent-access-v1.yaml`](./openapi/agent-access-v1.yaml) |
+| **TypeScript SDK** | `sdk/typescript` → `@actweave/agent-client` |
+| **英文版（同等内容）** | [`aap-integration-guide.md`](./aap-integration-guide.md) |
+
+本文是第三方对接的**唯一人类可读说明**。字段级 schema、枚举以 OpenAPI / Schema Registry 为准，不要仅凭文字臆造字段。
+
+---
+
+## 1. AAP 是什么
+
+**Agent Access Protocol（AAP）** 是面向服务主体的**对外稳定 API**，用于：
+
+1. 以 **Agent Access Client** 身份完成客户端认证  
+2. 获取绑定 **一个 Workspace + 一个 Agent** 的**短期 Access Token**  
+3. 创建 **Conversation** 与 **Run**  
+4. 通过 SSE 跟随 **Run 事件**（`Last-Event-ID` 断线续传）  
+5. 对 **Interaction** 做 approve / decline / cancel  
+
+AAP **不是** ActWeave 管理控制台 API（`/api/v1`）。控制台用户 Session JWT 在 AAP 路由上会被 **拒绝**。
+
+| 面 | 路径前缀 | 鉴权 | 使用者 |
+| --- | --- | --- | --- |
+| **AAP（本文）** | `/api/agent-access/v1` | AAP Access Token | 你的后端 / BFF / 发 token 服务 |
+| 控制台 / 管理 | `/api/v1` | 平台用户 Session | ActWeave UI 与内部运维 |
+
+---
+
+## 2. 需要向 ActWeave 管理员索取的材料
+
+| 项 | 说明 |
+| --- | --- |
+| **Base URL** | 例如 `https://actweave.example.com/api/agent-access/v1` |
+| **Workspace ID** | UUID |
+| **Agent ID** | 可调用的 Agent UUID |
+| **Client ID** | Agent Access Client 标识 |
+| **Client 凭证** | 一次性 **Client Secret**（仅展示一次），或 `private_key_jwt` 用的私钥 + 已登记 JWKS |
+| **已授权 Scope** | 上限；Token 请求必须是其子集 |
+| **CORS 策略** | 优先 **禁止浏览器直连**（走 BFF）。若必须浏览器直连：仅精确 HTTPS Origin |
+
+Client Secret / 私钥只应保存在**你方**密钥管理系统中。密钥不会出现在 Protocol Event、审计详情或应用日志里。
+
+---
+
+## 3. 核心概念
+
+| 概念 | 含义 |
+| --- | --- |
+| **Agent Access Client** | 在 Workspace 中登记的 OAuth 风格客户端 |
+| **Grant** | Client + Agent(s) + scopes（及可选策略）的授权 |
+| **Access Token** | 短期 JWT（`EdDSA` / `at+jwt`），绑定一个 Workspace、一个 Agent、Client、主体及可选 External Subject |
+| **Conversation** | 针对某一 Agent 的对话容器 |
+| **Run** | Conversation 下的一次执行（v1 输入仅 **text**） |
+| **Protocol Event** | Run 流上的持久事实（`sequence` 为游标） |
+| **Interaction** | Run 因确认而等待 |
+| **External Subject** | 通过 Token Exchange 绑定的终端用户身份（可选） |
+
+每次调用的有效权限：
+
+```text
+Token scope ∩ Grant ∩ Agent 策略 ∩ Workspace 状态 ∩ Subject 归属
+```
+
+---
+
+## 4. 推荐集成拓扑
+
+| 拓扑 | 谁持有长期凭证 | 建议 |
+| --- | --- | --- |
+| **BFF（默认）** | 仅你的后端 | **生产默认**。浏览器只访问你的域名；BFF 持有 Client Secret、签发 Token，必要时代理 SSE / cancel |
+| **纯服务端** | 你的后端 | 自动化场景用 `client_credentials` |
+| **短期 mint + 浏览器** | mint 服务持有密钥；浏览器仅内存持有短期 Access Token | 终端用户用 Token Exchange；禁止把密钥放进 storage / cookie / URL |
+
+**禁止**将 Client Secret、私钥或 Access Token 放入：
+
+- URL / query / fragment  
+- Cookie  
+- `localStorage` / `sessionStorage`  
+
+---
+
+## 5. 版本策略
+
+| 维度 | 含义 |
+| --- | --- |
+| URL `/v1` | 资源 / 命令主版本 |
+| 请求头 `ActWeave-Protocol-Version: YYYY-MM-DD` | 可选冻结快照（服务端回显实际版本） |
+| 事件 `specVersion=1.0` | v1 内信封主版本 |
+
+**客户端兼容规则：** 忽略未知事件类型与未知字段，但只要出现 `id:` 就必须推进 sequence 游标。
+
+v1 内允许加性变更（可选字段、新事件类型）。破坏性变更需要新主版本路径或新事件名。
+
+---
+
+## 6. 认证
+
+### 6.1 Token 端点
+
+```http
+POST /api/agent-access/v1/oauth/token
+Content-Type: application/x-www-form-urlencoded
+```
+
+- 请求体上限：**32 KiB**  
+- 成功响应：`Cache-Control: no-store`  
+- **永不**签发 `refresh_token`  
+- 默认 Access Token TTL：约 **10 分钟**（**5–15 分钟**，并受 Client 配置、服务端签名窗口、Grant 到期约束）
+
+#### grant_type
+
+| `grant_type` | 用途 |
+| --- | --- |
+| `client_credentials` | 服务主体 Token（一个 `agent_id` + `scope`） |
+| `urn:ietf:params:oauth:grant-type:token-exchange` | 通过 `subject_token` JWT 绑定 External Subject（RFC 8693） |
+
+#### 客户端认证（每次请求只能一种）
+
+| 模式 | 方式 |
+| --- | --- |
+| `client_secret_basic` | HTTP Basic `client_id:client_secret` |
+| `private_key_jwt` | `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer` + `client_assertion`（仅 EdDSA 或 PS256） |
+
+不要在同一请求混用 Basic 与 assertion。`client_secret_post` 会被拒绝。
+
+#### 示例：client_credentials
+
+```http
+POST /api/agent-access/v1/oauth/token
+Authorization: Basic base64(<client_id>:<client_secret>)
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+&agent_id=<agent-uuid>
+&scope=agent:read conversation:create conversation:read run:create run:read run:cancel event:read interaction:decide
+```
+
+响应示例：
+
+```json
+{
+  "access_token": "<short-lived-jwt>",
+  "token_type": "Bearer",
+  "expires_in": 600,
+  "scope": "agent:read conversation:create conversation:read run:create run:read run:cancel event:read interaction:decide"
+}
+```
+
+#### 示例：Token Exchange（绑定终端用户）
+
+```http
+POST /api/agent-access/v1/oauth/token
+Authorization: Basic base64(<client_id>:<client_secret>)
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=urn:ietf:params:oauth:grant-type:token-exchange
+&agent_id=<agent-uuid>
+&subject_token=<user-jwt>
+&subject_token_type=urn:ietf:params:oauth:token-type:jwt
+&requested_token_type=urn:ietf:params:oauth:token-type:access_token
+&scope=...
+```
+
+受信任 Subject Issuer（精确 Issuer / Audience、算法白名单、JWKS）由 ActWeave 管理员按 Client 配置，需与你方 IdP 一致。
+
+### 6.2 数据面使用 Access Token
+
+```http
+Authorization: Bearer <access_token>
+```
+
+| 规则 | 说明 |
+| --- | --- |
+| Token 形态 | 非对称 **EdDSA**，`typ=at+jwt`，固定 AAP audience |
+| 公钥 JWKS | `GET /api/agent-access/v1/.well-known/jwks.json`（仅公开 OKP 字段） |
+| 管理端用户 JWT | AAP 上 **不接受**（401） |
+| Token 放在 query / cookie | **禁止** |
+| 实时吊销 | 普通请求会比对 Token `ver` 与当前 security version；撤销 / 禁用后旧 Token 立即失效。活动中的 SSE 在有界窗口内重验（≤ 60s） |
+
+遇到 `TOKEN_EXPIRED` 或撤销断连：签发**新** Token，并用**相同** `Last-Event-ID` 重连。
+
+---
+
+## 7. Scope
+
+Grant 的 scope 是**上限**。每次 Token 请求只能申请**子集**。
+
+| Scope | 能力 |
+| --- | --- |
+| `agent:read` | 读 Agent profile |
+| `conversation:create` | 创建对话 |
+| `conversation:read` | 读对话 |
+| `run:create` | 创建 Run |
+| `run:read` | 读 Run 状态 |
+| `run:cancel` | 取消 Run |
+| `event:read` | SSE / 事件跟随 |
+| `interaction:decide` | 审批 Interaction |
+| `artifact:read` | 制品访问（在授权时） |
+
+最小权限：只申请集成实际需要的 scope。
+
+---
+
+## 8. 端到端快速接入
+
+占位符：`{base}`、`{wid}`、`{aid}`、凭证。
+
+### 步骤 1 — 签发 Access Token
+
+见 [§6](#6-认证)。
+
+### 步骤 2 — 创建 Conversation
+
+```http
+POST {base}/workspaces/{wid}/agents/{aid}/conversations
+Authorization: Bearer <access_token>
+Idempotency-Key: <canonical-uuid>
+Content-Type: application/json
+
+{"title":"Support ticket 42"}
+```
+
+### 步骤 3 — 创建 Run
+
+```http
+POST {base}/workspaces/{wid}/agents/{aid}/runs
+Authorization: Bearer <access_token>
+Idempotency-Key: <canonical-uuid>
+Content-Type: application/json
+
+{
+  "conversationId": "<conversation-uuid>",
+  "input": [{"type":"text","text":"Summarize the ticket"}]
+}
+```
+
+v1 仅接受 **text** 输入。其他类型 → `UNSUPPORTED_CONTENT_TYPE`。
+
+### 步骤 4 — 跟随 Run 事件（SSE）
+
+```http
+GET {base}/workspaces/{wid}/agents/{aid}/runs/{rid}/events
+Authorization: Bearer <access_token>
+Accept: text/event-stream
+Last-Event-ID: 0
+```
+
+断线后用上次已成功应用的 sequence 重连：
+
+```http
+Last-Event-ID: 17
+```
+
+### 步骤 5 — 处理 Interaction（进入 waiting 时）
+
+```http
+POST {base}/workspaces/{wid}/agents/{aid}/runs/{rid}/interactions/{iid}:decide
+Authorization: Bearer <access_token>
+Idempotency-Key: <canonical-uuid>
+If-Match: "<interaction-version>"
+Content-Type: application/json
+
+{"decision":"approve"}
+```
+
+允许的 decision：`approve` | `decline` | `cancel`（受 Interaction 与策略约束）。
+
+---
+
+## 9. HTTP API 索引
+
+Base：`/api/agent-access/v1`  
+鉴权：除 Token 端点与 JWKS 外，均需 `Authorization: Bearer <access_token>`。
+
+### 通用请求头
+
+| Header | 场景 | 用途 |
+| --- | --- | --- |
+| `Authorization: Bearer <access_token>` | 数据面 | 仅短期 AAP Token |
+| `Idempotency-Key: <uuid>` | POST Conversation / Run / Cancel / Decide | 规范 UUID；可安全重试 |
+| `If-Match: "<version>"` | Decide / Cancel（按接口要求） | 强版本 / ETag |
+| `If-None-Match` | GET Conversation / Run | 条件读 |
+| `Last-Event-ID: <sequence>` | GET Run events | 续传游标（整数 ≥ 0） |
+| `Accept: text/event-stream` | GET Run events | SSE |
+| `ActWeave-Protocol-Version` | 可选 | 协议快照日期 |
+
+**幂等：** 每个不同命令使用**新** UUID。同 key + 同 body → 原结果；同 key + 不同 body → **409** `IDEMPOTENCY_CONFLICT`。
+
+### Discovery / Token
+
+| 方法 | 路径 | 鉴权 | 说明 |
+| --- | --- | --- | --- |
+| `GET` | `/.well-known/jwks.json` | 无 | 公钥 |
+| `POST` | `/oauth/token` | Client 认证 | `client_credentials` 或 Token Exchange |
+
+### Profile
+
+| 方法 | 路径 | Scope |
+| --- | --- | --- |
+| `GET` | `/workspaces/{wid}/agents/{aid}/profile` | `agent:read` |
+
+### Conversations
+
+| 方法 | 路径 | Scope | 说明 |
+| --- | --- | --- | --- |
+| `POST` | `/workspaces/{wid}/agents/{aid}/conversations` | `conversation:create` | 需 `Idempotency-Key` |
+| `GET` | `/workspaces/{wid}/agents/{aid}/conversations/{cid}` | `conversation:read` | ETag / `If-None-Match` |
+
+### Runs
+
+| 方法 | 路径 | Scope | 说明 |
+| --- | --- | --- | --- |
+| `POST` | `/workspaces/{wid}/agents/{aid}/runs` | `run:create` | 仅 text；可能 202 |
+| `GET` | `/workspaces/{wid}/agents/{aid}/runs/{rid}` | `run:read` | 状态 / item 快照 |
+| `POST` | `/workspaces/{wid}/agents/{aid}/runs/{rid}:cancel` | `run:cancel` | 幂等取消 + `If-Match` |
+| `GET` | `/workspaces/{wid}/agents/{aid}/runs/{rid}/events` | `event:read` | SSE |
+
+### Interactions
+
+| 方法 | 路径 | Scope | 说明 |
+| --- | --- | --- | --- |
+| `POST` | `.../runs/{rid}/interactions/{iid}:decide` | `interaction:decide` | Body + `If-Match` + `Idempotency-Key` |
+
+请求/响应 schema 以 [`openapi/agent-access-v1.yaml`](./openapi/agent-access-v1.yaml) 为准。
+
+---
+
+## 10. SSE 事件流
+
+### 10.1 帧类型
+
+#### Protocol Event（持久化 — 推进游标）
+
+```text
+id: 12
+event: item.delta
+data: {"specVersion":"1.0","type":"item.delta","eventId":"...","streamId":"run:...","sequence":12,...}
+```
+
+- SSE `id:` = Run 作用域内持久 **sequence**  
+- 只持久化**已成功应用**的最后一个 sequence  
+
+#### 心跳（不持久化 — 不移动游标）
+
+```text
+: ping 2026-07-21T12:00:00Z
+```
+
+约每 **15 秒**一次。仅注释行，**无** `id:`。
+
+#### 传输信号（不持久化 — 不移动游标）
+
+```text
+event: stream.error
+data: {"specVersion":"1.0","type":"stream.error","error":{"code":"TOKEN_EXPIRED","retryable":true,...}}
+```
+
+无 `id:` 行。
+
+### 10.2 追赶 → 实时跟随
+
+1. 服务端读取 `Last-Event-ID` 之后的高水位  
+2. 分页回放 `sequence > cursor` 的历史事件  
+3. 进入 live follow 并发送心跳  
+
+### 10.3 客户端规则
+
+1. 忽略未知事件类型 / 字段；出现 `id:` 时仍要推进 sequence  
+2. `TOKEN_EXPIRED`（`retryable=true`）：新 Token + **相同**游标重连  
+3. 非法游标 → HTTP **422** `REPLAY_CURSOR_INVALID`  
+4. Run 终态通常包括：`completed`、`failed`、`cancelled`  
+
+### 10.4 协议事件族（v1）
+
+以 Schema Registry / OpenAPI 目录为准。常见族：
+
+- `run.accepted` / `run.started` / `run.waiting` / `run.resumed` / `run.completed` / `run.failed` / `run.cancelled`  
+- `item.started` / `item.delta` / `item.completed`  
+- `interaction.requested` / `interaction.resolved`  
+- `usage.updated`（若存在）  
+
+### 10.5 反向代理要求（SSE）
+
+对 `text/event-stream`：
+
+| 要求 | 说明 |
+| --- | --- |
+| 关闭响应缓冲 | 如 Nginx `X-Accel-Buffering: no` |
+| 保留头 | `Cache-Control: no-cache, no-transform` |
+| 不对 SSE 做 gzip | 关闭动态压缩 |
+| 读/空闲超时 | **≥ 60s**（建议 75s） |
+
+---
+
+## 11. Interaction（审批）
+
+当 Run 需要确认时：
+
+1. 流中出现 `interaction.requested` 与 `run.waiting`  
+2. 客户端展示 Interaction UI（标题、风险、允许决策、version）  
+3. 带 `If-Match` 与 `Idempotency-Key` 调用 `:decide`  
+4. 流继续（`interaction.resolved`、`run.resumed` 等）  
+
+| decision | 含义 |
+| --- | --- |
+| `approve` | 继续 |
+| `decline` | 拒绝该步骤 |
+| `cancel` | 按策略取消 |
+
+**风险 / 主体策略（摘要）：**
+
+- 纯服务主体通常仅能在 Grant 允许时决策 **LOW / MEDIUM**  
+- **HIGH / CRITICAL** 通常需要**同一 External Subject**（Token Exchange）或 ActWeave 用户路径  
+- Resume token 不会出现在 Protocol Event 或公开 DTO 中  
+
+---
+
+## 12. 错误
+
+### 12.1 数据面错误包
+
+```json
+{
+  "error": {
+    "code": "REPLAY_CURSOR_INVALID",
+    "message": "Human-readable summary without secrets.",
+    "retryable": false,
+    "requestId": "...",
+    "traceId": "..."
+  }
+}
+```
+
+### 12.2 稳定错误码（节选）
+
+| Code | HTTP / 通道 | 可重试？ | 客户端动作 |
+| --- | --- | --- | --- |
+| `TOKEN_EXPIRED` | 401 / SSE | 是 | 刷新 Token；同一 `Last-Event-ID` |
+| `UNAUTHENTICATED` | 401 | 否* | 修正凭证（临近过期可先刷新） |
+| `AUTHORIZATION_DENIED` | 403 / 404 | 否 | 检查 Grant / scope / 归属（不可见常返回 404） |
+| `AUTHORIZATION_REVOKED` | SSE 断连 | 是 | 新 Token + 同一游标 |
+| `REPLAY_CURSOR_INVALID` | 422 | 否 | 从已知合法 sequence 或 `0` 重置 |
+| `IDEMPOTENCY_CONFLICT` | 409 | 否 | 换新 key 或保证 body 完全一致 |
+| `RATE_LIMITED` | 429 | 是 | 遵守 `Retry-After` / `RateLimit-*` |
+| `UNSUPPORTED_CONTENT_TYPE` | 400 | 否 | 仅用 text 输入 |
+| `SLOW_CONSUMER` | SSE 断连 | 是 | 用上次 `id` 重连 |
+
+OAuth Token 端点错误遵循 RFC 6749 的 `error` / `error_description`，不得回显密钥。
+
+---
+
+## 13. 限流与配额
+
+多维度限流（Workspace / Client / Agent / Subject / IP，视操作而定）。响应可能包含：
+
+- `Retry-After`  
+- `RateLimit-Limit` / `RateLimit-Remaining` / `RateLimit-Reset`（若启用）  
+
+示意默认（每进程实例；生产以运营配置为准）：
+
+- Token 端点：Client × IP × grant  
+- SSE 连接：按 Client / Subject / Run（量级约 16 / 8 / 4）  
+
+---
+
+## 14. TypeScript SDK（`@actweave/agent-client`）
+
+仓库路径：`sdk/typescript`。
+
+```ts
+import {
+  AgentAccessClient,
+  MemoryTokenProvider,
+} from "@actweave/agent-client";
+
+const tokens = new MemoryTokenProvider({
+  // 你的 BFF/mint 返回 { accessToken, expiresAt }
+  refresh: async () => mintShortLivedTokenFromYourBackend(),
+});
+
+const client = new AgentAccessClient({
+  baseUrl: "https://actweave.example.com/api/agent-access/v1",
+  tokenProvider: tokens,
+});
+
+const { conversation } = await client.createConversation(workspaceId, agentId, {
+  title: "Ticket 42",
+});
+
+const run = await client.createRun(workspaceId, agentId, {
+  conversationId: conversation.id,
+  input: [{ type: "text", text: "Hello" }],
+});
+
+for await (const { message, snapshot } of client.followRun(
+  workspaceId,
+  agentId,
+  run.run.id,
+)) {
+  if (snapshot.run?.status === "waiting_interaction") {
+    // 展示 Interaction UI；调用 decideInteraction
+  }
+  if (
+    snapshot.run &&
+    ["completed", "failed", "cancelled"].includes(String(snapshot.run.status))
+  ) {
+    break;
+  }
+}
+```
+
+SDK 保证：
+
+- Access Token 只出现在 `Authorization`  
+- 断线 / 空洞时用 `Last-Event-ID` 自动重连  
+- `TOKEN_EXPIRED` / HTTP 401 时强制刷新后按原游标恢复  
+
+另有导出：`StaticTokenProvider`、`RunReducer`、`AAPSESession`。详见 `sdk/typescript/README.md`。
+
+---
+
+## 15. CORS
+
+| 模式 | 行为 |
+| --- | --- |
+| **BFF（推荐）** | AAP 关闭 CORS；浏览器不直连 AAP 源站 |
+| **精确 CORS** | Client `AllowedCORSOrigins` 仅精确 HTTPS Origin（禁止 `*` 与通配） |
+
+未授权 `Origin` 不会被反射。优先把密钥放在服务端并关闭浏览器直连。
+
+---
+
+## 16. 凭证轮换（集成方）
+
+1. 管理员创建**新** Client 凭证（Secret 或更新 JWKS）  
+2. 将新凭证部署到你方密钥系统  
+3. 切换所有 Token 端点调用方  
+4. 全量切换后吊销旧凭证  
+5. Security version 递增可能导致 SSE 在 ≤ 60s 内要求重鉴权 — 用新 Token + 同一 `Last-Event-ID` 恢复  
+
+---
+
+## 17. 上线前检查清单
+
+- [ ] BFF 或 mint 服务持有 Client 凭证  
+- [ ] 浏览器仅持有短期 Access Token（内存）  
+- [ ] 所有变更类命令带 `Idempotency-Key`  
+- [ ] SSE 续传只用 `Last-Event-ID`（Token 不进 query）  
+- [ ] 代理超时 ≥ 75s；`text/event-stream` 关闭缓冲  
+- [ ] 精确 CORS **或** 关闭 CORS  
+- [ ] Grant 与 Token 请求均最小权限  
+- [ ] 已按目标风险级别测通 Interaction decide  
+- [ ] 错误处理映射稳定错误码  
+- [ ] 若绑定终端用户，已核对 Token Exchange Issuer 配置  
+- [ ] OpenAPI / SDK 版本与部署环境一致  
+
+---
+
+## 18. 仓库内相关产物
+
+| 产物 | 路径 | 作用 |
+| --- | --- | --- |
+| **本文（中文）** | `docs/aap-integration-guide.zh-CN.md` | 人类可读对接说明 |
+| **English guide** | `docs/aap-integration-guide.md` | Same content in English |
+| OpenAPI | `docs/openapi/agent-access-v1.yaml` | HTTP 机器契约 |
+| TypeScript SDK | `sdk/typescript/` | 客户端库 |
+| 产品 README（中） | `README.zh-CN.md` | 产品与本地运行 |
+| 产品 README（英） | `README.md` | Product overview & local run |
+
+ActWeave 控制台内部事件路径（`/api/v1/...`）**不在**第三方对接范围内。对外请只使用 AAP。

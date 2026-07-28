@@ -1,7 +1,12 @@
 # Runbook: Console vs AAP event entry points
 
 Operator-facing map of **internal Console** vs **external AAP** for protocol SSE.
-Design detail: [`docs/design/protocol-event-unification-console-aap.md`](../design/protocol-event-unification-console-aap.md) §5.2.
+
+Third-party integrators should use the public handoff docs only:
+
+- [`../aap-integration-guide.md`](../aap-integration-guide.md)
+- [`../aap-integration-guide.zh-CN.md`](../aap-integration-guide.zh-CN.md)
+- [`../openapi/agent-access-v1.yaml`](../openapi/agent-access-v1.yaml)
 
 ## One-line contract
 
