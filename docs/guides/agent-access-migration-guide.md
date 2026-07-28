@@ -66,7 +66,7 @@ Internal ActWeave frontend may keep temporary compatibility paths during cutover
 ## Compatibility checklist
 
 - [ ] SDK built from current Schema Registry (`npm test` / type-check in `sdk/typescript`)
-- [ ] All examples use **short** Access Tokens (no long-lived browser secrets)
+- [ ] All integrations use **short** Access Tokens (no long-lived browser secrets)
 - [ ] `Idempotency-Key` on Conversation/Run/Decide
 - [ ] SSE resume uses `Last-Event-ID` only
 - [ ] Integrator error handling maps stable 错误码 (`TOKEN_EXPIRED`, `REPLAY_CURSOR_INVALID`, …)
@@ -77,5 +77,5 @@ Internal ActWeave frontend may keep temporary compatibility paths during cutover
 
 - Developer Guide Quickstart: [`agent-access-developer-guide.md`](./agent-access-developer-guide.md)
 - API Reference: [`agent-access-api-reference.md`](./agent-access-api-reference.md)
-- Operator Runbook: [`../runbooks/agent-access-operator-runbook.md`](../runbooks/agent-access-operator-runbook.md)
-- Examples: `examples/agent-access/README.md`
+- Console vs AAP entrypoints: [`../runbooks/protocol-event-console-vs-aap-entrypoints.md`](../runbooks/protocol-event-console-vs-aap-entrypoints.md)
+- OpenAPI: [`../openapi/agent-access-v1.yaml`](../openapi/agent-access-v1.yaml)

@@ -4,7 +4,6 @@
 - Protocol base path: `/api/agent-access/v1`
 - OpenAPI: [`../openapi/agent-access-v1.yaml`](../openapi/agent-access-v1.yaml)
 - TypeScript SDK: `sdk/typescript` (`@actweave/agent-client`)
-- Examples: `examples/agent-access` (BFF default + short-lived mint)
 
 ## Quickstart
 
@@ -25,8 +24,8 @@ The management UI shows the Client Secret **once**. Store it in your secret mana
 
 | Topology | Who holds credentials | Recommendation |
 | --- | --- | --- |
-| **BFF (default)** | Your backend only | Production default — see `examples/agent-access/bff` |
-| **Short-lived mint + browser** | Browser holds only a short Access Token (memory) | Token Exchange / mint endpoint on your server — see `examples/agent-access/direct` |
+| **BFF (default)** | Your backend only | Production default: BFF holds Client Secret, proxies SSE / cancel to AAP |
+| **Short-lived mint + browser** | Browser holds only a short Access Token (memory) | Mint service does Token Exchange; browser must never store secrets in storage/cookies/URL |
 | **Server-to-server** | Your backend | `client_credentials` for pure Service Principal work |
 
 **Never** put Client Secrets, JWTs, or Access Tokens in URLs, query strings, cookies, or `localStorage`.
