@@ -15,9 +15,16 @@ import type {
   Workspace,
 } from "../types/domain";
 import { renderMarkdown } from "../utils/markdown";
+import {
+  buildContextPolicyPayload,
+  DEFAULT_ROLLING_SUMMARY_MAX_RECENT_TURNS,
+  defaultRollingSummary,
+  normalizeContextPolicy,
+} from "../utils/session-context-config";
 import type { ManagementListColumn } from "../components/ManagementList.vue";
 import type { ManagementRowAction } from "../components/ManagementRowActions.vue";
 import type { ManagementSummaryItem } from "../components/ManagementSummaryStrip.vue";
+import type { SessionContextPolicy } from "../types/domain";
 
 export function createAgentsPageModel() {
   type AgentStatusFilter = "ALL" | "ACTIVE" | "DISABLED";
@@ -295,6 +302,12 @@ export function createAgentsPageModel() {
       systemPrompt: "负责处理当前业务空间内的售后问题，必要时调用已授权的 Tool 或 Workflow。",
       isDefault: false,
       status: "ACTIVE",
+      contextPolicy: {
+        schemaVersion: "session-context-policy.v1",
+        mode: "token_window",
+        maxInputTokens: 0,
+        maxRecentTurns: 0,
+      },
       toolsCount: 0,
       workflowsCount: 0,
       createdBy: "",
@@ -314,6 +327,7 @@ export function createAgentsPageModel() {
       ...(agent.id ? {} : { systemPrompt: agent.systemPrompt }),
       isDefault: agent.isDefault,
       status: agent.status,
+      contextPolicy: agent.contextPolicy || {},
     });
   }
 
@@ -426,12 +440,143 @@ export function createAgentsPageModel() {
     draftAgent.value.status = draftAgent.value.status === "ACTIVE" ? "DISABLED" : "ACTIVE";
   }
 
+  function draftContextPolicy(): SessionContextPolicy {
+    return normalizeContextPolicy(draftAgent.value.contextPolicy);
+  }
+
+  const agentContextMode = computed(() => draftContextPolicy().mode || "");
+  const agentContextMaxInputTokens = computed(() => draftContextPolicy().maxInputTokens ?? 0);
+  const agentContextMaxRecentTurns = computed(() => draftContextPolicy().maxRecentTurns ?? 0);
+  const agentContextSummaryMaxTokens = computed(
+    () => draftContextPolicy().summary?.maxTokens ?? defaultRollingSummary().maxTokens ?? 2048,
+  );
+  const agentContextSummaryMinEvictedTurns = computed(
+    () => draftContextPolicy().summary?.minEvictedTurns ?? defaultRollingSummary().minEvictedTurns ?? 4,
+  );
+  const agentContextSummaryMaxPasses = computed(
+    () =>
+      draftContextPolicy().summary?.maxGenerationPasses ??
+      defaultRollingSummary().maxGenerationPasses ??
+      2,
+  );
+  const agentContextAdvancedOpen = ref(false);
+
+  function toggleAgentContextAdvanced() {
+    agentContextAdvancedOpen.value = !agentContextAdvancedOpen.value;
+  }
+
+  function setAgentContextMode(mode: string) {
+    const value = String(mode || "").trim();
+    if (!value || value === "inherit") {
+      draftAgent.value.contextPolicy = { mode: undefined };
+      return;
+    }
+    if (value === "disabled") {
+      draftAgent.value.contextPolicy = {
+        schemaVersion: "session-context-policy.v1",
+        mode: "disabled",
+      };
+      return;
+    }
+    if (value !== "token_window" && value !== "rolling_summary") return;
+    const current = draftContextPolicy();
+    if (value === "token_window") {
+      draftAgent.value.contextPolicy = {
+        schemaVersion: "session-context-policy.v1",
+        mode: "token_window",
+        maxInputTokens: current.maxInputTokens ?? 0,
+        maxRecentTurns: current.maxRecentTurns ?? 0,
+        ...(current.outputReserveTokens != null ? { outputReserveTokens: current.outputReserveTokens } : {}),
+        ...(current.safetyMarginTokens != null ? { safetyMarginTokens: current.safetyMarginTokens } : {}),
+      };
+      return;
+    }
+    // rolling_summary: fill product defaults so create/save always carries summary knobs.
+    const maxRecent =
+      current.maxRecentTurns && current.maxRecentTurns > 0
+        ? current.maxRecentTurns
+        : DEFAULT_ROLLING_SUMMARY_MAX_RECENT_TURNS;
+    draftAgent.value.contextPolicy = {
+      schemaVersion: "session-context-policy.v1",
+      mode: "rolling_summary",
+      maxInputTokens: current.maxInputTokens ?? 0,
+      maxRecentTurns: maxRecent,
+      ...(current.outputReserveTokens != null ? { outputReserveTokens: current.outputReserveTokens } : {}),
+      ...(current.safetyMarginTokens != null ? { safetyMarginTokens: current.safetyMarginTokens } : {}),
+      summary: defaultRollingSummary(current.summary),
+    };
+  }
+
+  function setAgentContextMaxInput(value: number) {
+    const current = draftContextPolicy();
+    if (current.mode !== "token_window" && current.mode !== "rolling_summary") return;
+    draftAgent.value.contextPolicy = {
+      ...current,
+      schemaVersion: "session-context-policy.v1",
+      maxInputTokens: Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0,
+    };
+  }
+
+  function setAgentContextMaxTurns(value: number) {
+    const current = draftContextPolicy();
+    if (current.mode !== "token_window" && current.mode !== "rolling_summary") return;
+    draftAgent.value.contextPolicy = {
+      ...current,
+      schemaVersion: "session-context-policy.v1",
+      maxRecentTurns: Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0,
+    };
+  }
+
+  function setAgentContextSummaryMaxTokens(value: number) {
+    const current = draftContextPolicy();
+    if (current.mode !== "rolling_summary") return;
+    const summary = defaultRollingSummary(current.summary);
+    draftAgent.value.contextPolicy = {
+      ...current,
+      schemaVersion: "session-context-policy.v1",
+      summary: {
+        ...summary,
+        maxTokens: Number.isFinite(value) && value > 0 ? Math.floor(value) : summary.maxTokens,
+      },
+    };
+  }
+
+  function setAgentContextSummaryMinEvictedTurns(value: number) {
+    const current = draftContextPolicy();
+    if (current.mode !== "rolling_summary") return;
+    const summary = defaultRollingSummary(current.summary);
+    draftAgent.value.contextPolicy = {
+      ...current,
+      schemaVersion: "session-context-policy.v1",
+      summary: {
+        ...summary,
+        minEvictedTurns: Number.isFinite(value) && value >= 0 ? Math.floor(value) : summary.minEvictedTurns,
+      },
+    };
+  }
+
+  function setAgentContextSummaryMaxPasses(value: number) {
+    const current = draftContextPolicy();
+    if (current.mode !== "rolling_summary") return;
+    const summary = defaultRollingSummary(current.summary);
+    draftAgent.value.contextPolicy = {
+      ...current,
+      schemaVersion: "session-context-policy.v1",
+      summary: {
+        ...summary,
+        maxGenerationPasses:
+          Number.isFinite(value) && value > 0 ? Math.floor(value) : summary.maxGenerationPasses,
+      },
+    };
+  }
+
   function enterCreateMode() {
     lastFocusBeforeModal.value = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     draftAgent.value = newAgent();
     agentStudioOriginalAgent.value = null;
     agentStudioInitialSnapshot.value = serializeAgentDraft(draftAgent.value);
     agentStudioInlineWarning.value = "";
+    agentContextAdvancedOpen.value = false;
     pendingPromptSaveReview.value = null;
     weavePreviewAgent.value = null;
     sourcePromptPreviewRunId.value = "";
@@ -443,10 +588,32 @@ export function createAgentsPageModel() {
   function enterEditMode(agent: Agent) {
     lastFocusBeforeModal.value = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     selectAgent(agent);
-    draftAgent.value = { ...agent, systemPrompt: "" };
+    const policy = normalizeContextPolicy(agent.contextPolicy);
+    draftAgent.value = {
+      ...agent,
+      systemPrompt: "",
+      contextPolicy: policy,
+    };
     agentStudioOriginalAgent.value = { ...agent };
     agentStudioInitialSnapshot.value = serializeAgentDraft(draftAgent.value);
     agentStudioInlineWarning.value = "";
+    // Only auto-expand advanced when values differ from product defaults.
+    const isNonDefaultTokenWindow =
+      (policy.mode === "token_window" || policy.mode === "rolling_summary") &&
+      ((policy.maxInputTokens != null && policy.maxInputTokens > 0) ||
+        (policy.mode === "token_window" && policy.maxRecentTurns != null && policy.maxRecentTurns > 0) ||
+        (policy.mode === "rolling_summary" &&
+          policy.maxRecentTurns != null &&
+          policy.maxRecentTurns > 0 &&
+          policy.maxRecentTurns !== DEFAULT_ROLLING_SUMMARY_MAX_RECENT_TURNS));
+    const summary = policy.summary;
+    const isNonDefaultSummary =
+      policy.mode === "rolling_summary" &&
+      summary != null &&
+      ((summary.maxTokens != null && summary.maxTokens !== 2048) ||
+        (summary.minEvictedTurns != null && summary.minEvictedTurns !== 4) ||
+        (summary.maxGenerationPasses != null && summary.maxGenerationPasses !== 2));
+    agentContextAdvancedOpen.value = Boolean(isNonDefaultTokenWindow || isNonDefaultSummary);
     pendingPromptSaveReview.value = null;
     weavePreviewAgent.value = null;
     sourcePromptPreviewRunId.value = "";
@@ -682,11 +849,20 @@ export function createAgentsPageModel() {
     const result = await agents.createAgent(agent, {
       sourcePromptPreviewRunId: sourcePromptPreviewRunId.value || undefined,
     });
+    // Create API does not accept contextPolicy; apply via update when set.
+    let saved = result.agent;
+    const policyPayload = buildContextPolicyPayload(agent.contextPolicy);
+    if (Object.keys(policyPayload).length > 0) {
+      saved = await agents.updateAgent(result.agent.id, {
+        ...result.agent,
+        contextPolicy: agent.contextPolicy,
+      });
+    }
     sourcePromptPreviewRunId.value = "";
     await loadAgentRegistry({ page: 1 });
-    agents.selectedAgentId = result.agent.id;
-    showAgentToast(`${result.agent.name} 已创建。`);
-    agentStudioInitialSnapshot.value = serializeAgentDraft(result.agent);
+    agents.selectedAgentId = saved.id;
+    showAgentToast(`${saved.name} 已创建。`);
+    agentStudioInitialSnapshot.value = serializeAgentDraft(saved);
     closeStudio();
   }
 
@@ -1125,6 +1301,20 @@ export function createAgentsPageModel() {
     setAgentStatusFilter,
     activeWorkspaceFilterId,
     toggleDraftStatus,
+    agentContextMode,
+    agentContextMaxInputTokens,
+    agentContextMaxRecentTurns,
+    agentContextSummaryMaxTokens,
+    agentContextSummaryMinEvictedTurns,
+    agentContextSummaryMaxPasses,
+    agentContextAdvancedOpen,
+    toggleAgentContextAdvanced,
+    setAgentContextMode,
+    setAgentContextMaxInput,
+    setAgentContextMaxTurns,
+    setAgentContextSummaryMaxTokens,
+    setAgentContextSummaryMinEvictedTurns,
+    setAgentContextSummaryMaxPasses,
     enterCreateMode,
     enterEditMode,
     closeStudio,

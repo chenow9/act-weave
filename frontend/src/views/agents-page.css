@@ -557,6 +557,8 @@
 }
 
 .agent-studio-panel {
+  display: flex;
+  flex-direction: column;
   width: min(1100px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
   overflow: hidden;
@@ -571,6 +573,7 @@
 
 .agent-studio-shell {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -592,6 +595,7 @@
 
 .agent-studio-inline-warning {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 8px;
   margin: 12px 0 0;
@@ -664,10 +668,13 @@
   display: grid;
   grid-template-columns: 1fr;
   align-content: start;
+  flex: 1 1 auto;
   gap: 12px;
-  min-height: auto;
-  overflow: visible;
-  padding: 12px 0 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 12px 0 4px;
+  overscroll-behavior: contain;
 }
 
 .agent-studio-section {
@@ -762,6 +769,161 @@
 .agent-prompt-editor-box:has(textarea[aria-invalid="true"]) {
   border-color: #fca5a5;
   box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.08);
+}
+
+.agent-context-policy {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.agent-context-policy > header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-context-policy > header strong {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.agent-context-policy > header small {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.agent-context-policy .modal-field > span {
+  color: #64748b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.agent-context-policy .modal-field input {
+  width: 100%;
+  height: var(--agent-studio-control-height);
+  min-height: var(--agent-studio-control-height);
+  padding: 0 12px;
+  color: #1e293b;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.agent-context-policy :deep(.agent-studio-select) {
+  display: block;
+  width: 100%;
+}
+
+.agent-context-policy :deep(.agent-studio-select .el-select__wrapper) {
+  height: var(--agent-studio-control-height);
+  min-height: var(--agent-studio-control-height);
+  padding: 0 12px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px #e2e8f0 inset;
+}
+
+.agent-context-policy-limits {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+
+.agent-context-policy-limits:has(.modal-field:nth-child(3)) {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.agent-context-policy-hint {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.agent-context-advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 8px;
+  margin: 0;
+  min-height: 36px;
+  padding: 0 12px;
+  color: #334155;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.agent-context-advanced-toggle:hover {
+  color: #0f172a;
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.agent-context-advanced-toggle.open {
+  color: #0f766e;
+  background: #f0fdfa;
+  border-color: #99f6e4;
+  box-shadow: 0 0 0 1px rgba(13, 148, 136, 0.12);
+}
+
+.agent-context-advanced-toggle > .fa-sliders {
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.agent-context-advanced-chevron {
+  margin-left: 2px;
+  font-size: 10px;
+  color: #94a3b8;
+  transition: transform 0.15s ease;
+}
+
+.agent-context-advanced-toggle.open .agent-context-advanced-chevron {
+  color: #0f766e;
+  transform: rotate(180deg);
+}
+
+.agent-context-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+@media (max-width: 720px) {
+  .agent-context-policy-limits {
+    grid-template-columns: 1fr;
+  }
+
+  .agent-context-policy-limits:has(.modal-field:nth-child(3)) {
+    grid-template-columns: 1fr;
+  }
 }
 
 .field-error {

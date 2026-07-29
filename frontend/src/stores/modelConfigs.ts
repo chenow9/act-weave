@@ -3,6 +3,7 @@ import { defineStore } from "pinia";
 import { apiClient, toAPIError } from "../services/api";
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, type ListPagination } from "../services/paginated-list";
 import type { ModelApiConfig, ModelApiConfigListQuery } from "../types/domain";
+import { buildRuntimeCapabilitiesPayload } from "../utils/session-context-config";
 import { useWorkspaceStore } from "./workspaces";
 
 interface SecretReference {
@@ -94,6 +95,7 @@ export const useModelConfigStore = defineStore("modelConfigs", {
       }
     },
     async createModelConfig(config: ModelApiConfig) {
+      const runtimeCapabilities = buildRuntimeCapabilitiesPayload(config.runtimeCapabilities);
       const response = await apiClient.post<ModelApiConfig>(`/workspaces/${this.workspaceID()}/model-configs`, {
         name: config.name,
         provider: config.provider,
@@ -101,6 +103,7 @@ export const useModelConfigStore = defineStore("modelConfigs", {
         modelName: config.modelName,
         ...(config.credentialSecretId?.trim() ? { credentialSecretId: config.credentialSecretId.trim() } : {}),
         options: config.options || {},
+        ...(runtimeCapabilities ? { runtimeCapabilities } : { runtimeCapabilities: {} }),
       });
       const created = normalizeModelConfig(response.data);
       this.upsertConfig(created);
@@ -116,6 +119,7 @@ export const useModelConfigStore = defineStore("modelConfigs", {
       return response.data;
     },
     async updateModelConfig(configId: string, config: ModelApiConfig) {
+      const runtimeCapabilities = buildRuntimeCapabilitiesPayload(config.runtimeCapabilities);
       const response = await apiClient.patch<ModelApiConfig>(
         `/workspaces/${this.workspaceID()}/model-configs/${configId}`,
         {
@@ -125,6 +129,7 @@ export const useModelConfigStore = defineStore("modelConfigs", {
           modelName: config.modelName,
           ...(config.credentialSecretId?.trim() ? { credentialSecretId: config.credentialSecretId.trim() } : {}),
           options: config.options || {},
+          runtimeCapabilities: runtimeCapabilities || {},
           lockVersion: config.lockVersion,
         },
       );
@@ -163,6 +168,7 @@ function normalizeModelConfig(config: ModelApiConfig): ModelApiConfig {
     ...config,
     credentialConfigured: Boolean(config.credentialConfigured),
     options: config.options || {},
+    runtimeCapabilities: config.runtimeCapabilities || {},
     lastLatencyMs: config.lastLatencyMs ?? undefined,
     credentialSecretId: undefined,
   };

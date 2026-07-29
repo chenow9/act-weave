@@ -2,6 +2,7 @@
 import "./model-api-page.css";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from "vue";
 
+import AppSelect from "../components/AppSelect.vue";
 import ManagementList, { type ManagementListColumn } from "../components/ManagementList.vue";
 import ManagementPageHeader from "../components/ManagementPageHeader.vue";
 import ManagementRowActions, { type ManagementRowAction } from "../components/ManagementRowActions.vue";
@@ -9,10 +10,33 @@ import ManagementSegmentedFilter from "../components/ManagementSegmentedFilter.v
 import WorkspaceContextState from "../components/WorkspaceContextState.vue";
 import { useModelConfigStore } from "../stores/modelConfigs";
 import { useWorkspaceStore } from "../stores/workspaces";
-import type { ModelApiConfig, ModelApiConfigListQuery } from "../types/domain";
+import type { ModelApiConfig, ModelApiConfigListQuery, ModelRuntimeCapabilities } from "../types/domain";
+import {
+  buildRuntimeCapabilitiesPayload,
+  normalizeRuntimeCapabilities,
+} from "../utils/session-context-config";
 
 const OPENAI_COMPATIBLE_PROVIDER = "OpenAI Compatible";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const tokenizerProfileOptions = [
+  { label: "o200k_base（推荐，多数新模型）", value: "o200k_base" },
+  { label: "cl100k_base（GPT-4 / 3.5 系）", value: "cl100k_base" },
+  { label: "byte_upper_bound（不确定时更保守）", value: "byte_upper_bound" },
+];
+
+const outputTokenLimitModeOptions = [
+  { label: "max_tokens（常见）", value: "max_tokens" },
+  { label: "max_completion_tokens", value: "max_completion_tokens" },
+];
+
+/** One-click window presets so users need not know exact vendor limits. */
+const contextWindowPresets = [
+  { label: "32K", tokens: 32000, hint: "省成本" },
+  { label: "64K", tokens: 64000, hint: "" },
+  { label: "128K", tokens: 128000, hint: "推荐" },
+  { label: "200K", tokens: 200000, hint: "长上下文" },
+] as const;
 type ModelStatusFilter = "ALL" | ModelApiConfig["status"];
 type ModelModalFeedback = { tone: "success" | "error"; message: string } | null;
 type ModelDraftField = "name" | "credentialSecretId" | "apiBase" | "modelName";
@@ -43,6 +67,8 @@ const pendingModelDeletion = ref<ModelApiConfig | null>(null);
 const deletingModelConfig = ref(false);
 const modelDeleteError = ref("");
 const mobileModelActionMenuId = ref<string | null>(null);
+const modelRuntimeSectionOpen = ref(false);
+const modelRuntimeAdvancedOpen = ref(false);
 const modelModalRef = useTemplateRef<HTMLElement>("modelModalRef");
 const credentialPlaintextInput = useTemplateRef<HTMLInputElement>("credentialPlaintextInput");
 const discardModelDraftRef = useTemplateRef<HTMLElement>("discardModelDraftRef");
@@ -189,6 +215,13 @@ function newModelConfig(): ModelApiConfig {
     credentialConfigured: false,
     credentialSecretId: "",
     options: {},
+    runtimeCapabilities: normalizeRuntimeCapabilities({
+      contextWindowTokens: 128000,
+      defaultOutputReserveTokens: 4096,
+      outputTokenLimitMode: "max_tokens",
+      tokenizerProfile: "o200k_base",
+      tokenizerVersion: "2026-01",
+    }),
     status: "UNVERIFIED",
     createdBy: "",
     updatedBy: "",
@@ -205,7 +238,70 @@ function modelDraftFingerprint(config: ModelApiConfig) {
     credentialSecretId: config.credentialSecretId || "",
     apiBase: config.apiBase,
     modelName: config.modelName,
+    runtimeCapabilities: config.runtimeCapabilities || {},
   });
+}
+
+function draftRuntimeCaps(): ModelRuntimeCapabilities {
+  const draft = activeModelDraft.value;
+  if (!draft) return normalizeRuntimeCapabilities(undefined);
+  if (!draft.runtimeCapabilities || typeof draft.runtimeCapabilities !== "object") {
+    draft.runtimeCapabilities = normalizeRuntimeCapabilities(undefined);
+  }
+  return draft.runtimeCapabilities as ModelRuntimeCapabilities;
+}
+
+function setDraftRuntimeCap<K extends keyof ModelRuntimeCapabilities>(
+  key: K,
+  value: ModelRuntimeCapabilities[K],
+) {
+  const draft = activeModelDraft.value;
+  if (!draft) return;
+  draft.runtimeCapabilities = {
+    ...normalizeRuntimeCapabilities(draft.runtimeCapabilities),
+    [key]: value,
+  };
+}
+
+function applyContextWindowPreset(tokens: number) {
+  setDraftRuntimeCap("contextWindowTokens", tokens);
+  // Keep safe product defaults for reserve/tokenizer when applying a preset.
+  const caps = draftRuntimeCaps();
+  if (!caps.defaultOutputReserveTokens || caps.defaultOutputReserveTokens <= 0) {
+    setDraftRuntimeCap("defaultOutputReserveTokens", 4096);
+  }
+  if (!caps.tokenizerProfile) {
+    setDraftRuntimeCap("tokenizerProfile", "o200k_base");
+  }
+  if (!caps.outputTokenLimitMode) {
+    setDraftRuntimeCap("outputTokenLimitMode", "max_tokens");
+  }
+}
+
+function isContextWindowPresetActive(tokens: number) {
+  return Number(draftRuntimeCaps().contextWindowTokens) === tokens;
+}
+
+function formatContextWindowLabel(tokens: number | undefined) {
+  if (!tokens || !Number.isFinite(tokens) || tokens <= 0) return "未设置";
+  if (tokens % 1000 === 0) {
+    const k = tokens / 1000;
+    if (k >= 1) return `${k}K`;
+  }
+  return String(tokens);
+}
+
+const modelRuntimeSectionSummary = computed(() => {
+  const caps = draftRuntimeCaps();
+  const windowLabel = formatContextWindowLabel(
+    caps.contextWindowTokens != null ? Number(caps.contextWindowTokens) : undefined,
+  );
+  const reserve = caps.defaultOutputReserveTokens || 4096;
+  return `${windowLabel} · 预留 ${reserve}`;
+});
+
+function toggleModelRuntimeSection() {
+  modelRuntimeSectionOpen.value = !modelRuntimeSectionOpen.value;
 }
 
 function openCreateModel() {
@@ -213,6 +309,8 @@ function openCreateModel() {
   clearActionNote();
   modelModalFeedback.value = null;
   modelModalMode.value = "create";
+  modelRuntimeSectionOpen.value = false;
+  modelRuntimeAdvancedOpen.value = false;
   modelDraftInitialFingerprint.value = modelDraftFingerprint(draftModelConfig.value);
   resetModelDraftValidation();
   discardModelDraftVisible.value = false;
@@ -249,15 +347,15 @@ function modelMenuActions(item: ModelApiConfig): ManagementRowAction[] {
   return [
     {
       key: "verify",
-      label: "测试模型 API 连接",
+      label: "测试",
       icon: "fa-solid fa-plug-circle-bolt",
       tone: "primary",
       disabled: verificationLocked,
       loading: isVerifying,
       disabledReason: verificationLocked && !isVerifying ? "已有模型配置正在测试" : undefined,
     },
-    { key: "edit", label: "编辑模型配置", icon: "fa-solid fa-pen-to-square" },
-    { key: "delete", label: "删除模型配置", icon: "fa-solid fa-trash-can", tone: "danger" },
+    { key: "edit", label: "编辑", icon: "fa-solid fa-pen-to-square" },
+    { key: "delete", label: "删除", icon: "fa-solid fa-trash-can", tone: "danger" },
   ];
 }
 
@@ -275,10 +373,20 @@ function handleModelRowAction(actionKey: string, item: ModelApiConfig) {
 
 function openModelEditor(item: ModelApiConfig) {
   selectModel(item);
-  editingModelDraft.value = { ...item, provider: OPENAI_COMPATIBLE_PROVIDER, credentialSecretId: "" };
+  editingModelDraft.value = {
+    ...item,
+    provider: OPENAI_COMPATIBLE_PROVIDER,
+    credentialSecretId: "",
+    runtimeCapabilities: normalizeRuntimeCapabilities(item.runtimeCapabilities),
+  };
   clearActionNote();
   modelModalFeedback.value = null;
   modelModalMode.value = "edit";
+  const caps = normalizeRuntimeCapabilities(item.runtimeCapabilities);
+  modelRuntimeSectionOpen.value = false;
+  modelRuntimeAdvancedOpen.value =
+    (Boolean(caps.tokenizerProfile) && caps.tokenizerProfile !== "o200k_base") ||
+    caps.outputTokenLimitMode === "max_completion_tokens";
   modelDraftInitialFingerprint.value = modelDraftFingerprint(editingModelDraft.value);
   resetModelDraftValidation();
   discardModelDraftVisible.value = false;
@@ -677,25 +785,19 @@ function handleModelModalKeydown(event: KeyboardEvent) {
     </ManagementPageHeader>
 
     <section class="model-config-card management-list-card">
-      <WorkspaceContextState
-        v-if="!hasWorkspaceContext"
-        feature="模型 API 配置"
-        icon="fa-solid fa-microchip"
-        @retry="retryLoadModelConfigs"
-      />
-      <div v-else class="model-config-table-wrap">
+      <div class="model-config-table-wrap">
         <ManagementList
           class="model-config-management-list"
-          :rows="modelConfigs.items"
+          :rows="hasWorkspaceContext ? modelConfigs.items : []"
           :columns="modelConfigColumns"
           row-key="id"
           :sticky-left-keys="['config']"
           :sticky-right-keys="['actions']"
           storage-key="actweave:model-api-configs:columns"
           :selectable="false"
-          :loading="modelConfigs.loading"
-          :error="modelConfigs.error"
-          :has-loaded="modelConfigs.hasLoaded"
+          :loading="hasWorkspaceContext && modelConfigs.loading"
+          :error="hasWorkspaceContext ? modelConfigs.error : undefined"
+          :has-loaded="hasWorkspaceContext ? modelConfigs.hasLoaded : true"
           :search="query"
           search-placeholder="搜索模型 / Provider / 创建者"
           search-aria-label="搜索模型、Provider 或创建者"
@@ -846,7 +948,17 @@ function handleModelModalKeydown(event: KeyboardEvent) {
             </div>
           </template>
           <template #empty>
-            <div v-if="!hasActiveModelFilters" class="empty-state registry-empty-state management-registry-empty-state">
+            <WorkspaceContextState
+              v-if="!hasWorkspaceContext"
+              embedded-in-list
+              feature="模型 API 配置"
+              icon="fa-solid fa-microchip"
+              @retry="retryLoadModelConfigs"
+            />
+            <div
+              v-else-if="!hasActiveModelFilters"
+              class="empty-state registry-empty-state management-registry-empty-state"
+            >
               <div class="model-empty-state-icon management-empty-state-icon"><i class="fa-solid fa-microchip" /></div>
               <h2>暂无模型配置</h2>
               <p>新增模型 API 配置后，业务空间和 Agent 才能选择模型网关。</p>
@@ -1044,6 +1156,135 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               <input :value="activeModelDraft.createdBy || '保存后由服务端记录'" disabled readonly />
             </label>
 
+            <section class="model-modal-fieldset model-runtime-section" :class="{ open: modelRuntimeSectionOpen }">
+              <button
+                type="button"
+                class="model-runtime-section-toggle"
+                :aria-expanded="modelRuntimeSectionOpen"
+                aria-controls="model-runtime-section-body"
+                @click="toggleModelRuntimeSection"
+              >
+                <span class="model-runtime-section-title">
+                  <i class="fa-solid fa-window-maximize" aria-hidden="true" />
+                  <span>会话上下文能力</span>
+                </span>
+                <span class="model-runtime-section-meta">
+                  <span class="model-runtime-section-summary">{{ modelRuntimeSectionSummary }}</span>
+                  <i class="fa-solid fa-chevron-down model-runtime-section-chevron" aria-hidden="true" />
+                </span>
+              </button>
+              <div
+                v-show="modelRuntimeSectionOpen"
+                id="model-runtime-section-body"
+                class="model-runtime-section-body"
+              >
+                <p class="model-modal-fieldset-help">
+                  告诉平台「这个模型一次大概能看多少内容」。不知道厂商精确规格时，点下方
+                  <strong>128K（推荐）</strong>即可。仅用于会话裁剪预算，不会改模型本身，也不会写入上游
+                  Options。
+                </p>
+                <div class="model-context-presets" role="group" aria-label="上下文窗口快捷预设">
+                  <button
+                    v-for="preset in contextWindowPresets"
+                    :key="preset.tokens"
+                    type="button"
+                    class="model-context-preset"
+                    :class="{ active: isContextWindowPresetActive(preset.tokens) }"
+                    @click="applyContextWindowPreset(preset.tokens)"
+                  >
+                    <span>{{ preset.label }}</span>
+                    <small v-if="preset.hint">{{ preset.hint }}</small>
+                  </button>
+                </div>
+                <label class="model-modal-field">
+                  <span class="model-modal-field-label">上下文窗口（tokens）</span>
+                  <input
+                    class="mono"
+                    type="number"
+                    min="1"
+                    step="1"
+                    placeholder="不知道就填 128000"
+                    :value="draftRuntimeCaps().contextWindowTokens ?? ''"
+                    @input="
+                      setDraftRuntimeCap(
+                        'contextWindowTokens',
+                        Number(($event.target as HTMLInputElement).value) || undefined,
+                      )
+                    "
+                  />
+                  <small class="model-modal-field-hint">
+                    一次请求里历史+提示的大致上限。常见：Grok / GPT-4o 系可先用 128000；特别长上下文可试
+                    200000。
+                  </small>
+                </label>
+                <label class="model-modal-field">
+                  <span class="model-modal-field-label">输出预留（tokens）</span>
+                  <input
+                    class="mono"
+                    type="number"
+                    min="1"
+                    step="1"
+                    :value="draftRuntimeCaps().defaultOutputReserveTokens ?? 4096"
+                    @input="
+                      setDraftRuntimeCap(
+                        'defaultOutputReserveTokens',
+                        Number(($event.target as HTMLInputElement).value) || 4096,
+                      )
+                    "
+                  />
+                  <small class="model-modal-field-hint">
+                    先留给模型「写回答」的空间，一般 4096 即可；回答特别长再调大。
+                  </small>
+                </label>
+                <button
+                  type="button"
+                  class="model-runtime-advanced-toggle"
+                  :class="{ open: modelRuntimeAdvancedOpen }"
+                  :aria-expanded="modelRuntimeAdvancedOpen"
+                  @click="modelRuntimeAdvancedOpen = !modelRuntimeAdvancedOpen"
+                >
+                  <i class="fa-solid fa-sliders" aria-hidden="true" />
+                  <span>高级选项</span>
+                  <i class="fa-solid fa-chevron-down model-runtime-advanced-chevron" aria-hidden="true" />
+                </button>
+                <div v-if="modelRuntimeAdvancedOpen" class="model-runtime-advanced">
+                  <label class="model-modal-field">
+                    <span class="model-modal-field-label">长度估算方式（Tokenizer）</span>
+                    <AppSelect
+                      class="model-modal-select"
+                      :model-value="draftRuntimeCaps().tokenizerProfile || 'o200k_base'"
+                      :options="tokenizerProfileOptions"
+                      placeholder="选择估算方式"
+                      aria-label="长度估算方式"
+                      @update:model-value="setDraftRuntimeCap('tokenizerProfile', String($event ?? 'o200k_base'))"
+                    />
+                    <small class="model-modal-field-hint">
+                      平台用来估算内容长短，不是切换模型。不确定选推荐项；仍不放心选「保守上界」。
+                    </small>
+                  </label>
+                  <label class="model-modal-field">
+                    <span class="model-modal-field-label">上游输出上限字段名</span>
+                    <AppSelect
+                      class="model-modal-select"
+                      :model-value="draftRuntimeCaps().outputTokenLimitMode || 'max_tokens'"
+                      :options="outputTokenLimitModeOptions"
+                      placeholder="选择字段名"
+                      aria-label="上游输出上限字段名"
+                      @update:model-value="
+                        setDraftRuntimeCap(
+                          'outputTokenLimitMode',
+                          (String($event ?? 'max_tokens') as ModelRuntimeCapabilities['outputTokenLimitMode']),
+                        )
+                      "
+                    />
+                    <small class="model-modal-field-hint">
+                      绝大多数 OpenAI 兼容网关保持 max_tokens；仅当上游文档要求时再改。
+                    </small>
+                  </label>
+                </div>
+              </div>
+            </section>
+
             <div class="model-modal-note">
               <i class="fa-solid fa-circle-info" />
               <div>
@@ -1051,7 +1292,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 <p>
                   {{
                     modelModalMode === "create"
-                      ? "新增后业务空间和 Agent 只选择该配置，Secret 明文不会进入页面状态。"
+                      ? "上下文不知道怎么填就点 128K。创建后在 Agent 里选「Token 窗口」即可；Secret 明文不会进入页面状态。"
                       : "留空 Secret ID 会保留现有凭据；保存后再从列表执行持久化验证。"
                   }}
                 </p>
@@ -1844,6 +2085,253 @@ function handleModelModalKeydown(event: KeyboardEvent) {
   padding: 24px;
 }
 
+.model-modal-fieldset {
+  margin: 0;
+  padding: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.model-runtime-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 14px;
+  color: #0f172a;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s ease;
+}
+
+.model-runtime-section-toggle:hover {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.model-runtime-section.open .model-runtime-section-toggle {
+  border-bottom: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.model-runtime-section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.model-runtime-section-title > i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: #0f766e;
+  background: #f0fdfa;
+  border: 1px solid #ccfbf1;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.model-runtime-section-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.model-runtime-section-summary {
+  max-width: 180px;
+  overflow: hidden;
+  color: #64748b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-runtime-section-chevron {
+  color: #94a3b8;
+  font-size: 11px;
+  transition: transform 0.18s ease, color 0.15s ease;
+}
+
+.model-runtime-section.open .model-runtime-section-chevron {
+  color: #0f766e;
+  transform: rotate(180deg);
+}
+
+.model-runtime-section-body {
+  padding: 14px 16px 16px;
+}
+
+.model-modal-fieldset-help {
+  margin: 0 0 12px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.model-modal-fieldset .model-modal-field {
+  margin-bottom: 12px;
+}
+
+.model-modal-fieldset .model-modal-field:last-child {
+  margin-bottom: 0;
+}
+
+.model-modal-fieldset :deep(.model-modal-select) {
+  display: block;
+  width: 100%;
+}
+
+.model-modal-fieldset :deep(.model-modal-select .el-select),
+.model-modal-fieldset :deep(.model-modal-select .app-select) {
+  width: 100%;
+}
+
+.model-modal-fieldset :deep(.model-modal-select .el-select__wrapper) {
+  min-height: 44px;
+  padding: 0 12px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px #e2e8f0 inset;
+  font-size: 12px;
+}
+
+.model-context-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.model-context-preset {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 44px;
+  padding: 8px 12px;
+  color: #334155;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.model-context-preset small {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.model-context-preset:hover {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.model-context-preset.active {
+  color: #0f766e;
+  background: #f0fdfa;
+  border-color: #5eead4;
+  box-shadow: 0 0 0 1px rgba(13, 148, 136, 0.2);
+}
+
+.model-context-preset.active small {
+  color: #0f766e;
+}
+
+.model-modal-field-hint {
+  display: block;
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.model-runtime-advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  min-height: 36px;
+  padding: 0 12px;
+  color: #334155;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.model-runtime-advanced-toggle:hover {
+  color: #0f172a;
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.model-runtime-advanced-toggle.open {
+  color: #0f766e;
+  background: #f0fdfa;
+  border-color: #99f6e4;
+  box-shadow: 0 0 0 1px rgba(13, 148, 136, 0.12);
+}
+
+.model-runtime-advanced-toggle > .fa-sliders {
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.model-runtime-advanced-chevron {
+  margin-left: 2px;
+  font-size: 10px;
+  color: #94a3b8;
+  transition: transform 0.15s ease;
+}
+
+.model-runtime-advanced-toggle.open .model-runtime-advanced-chevron {
+  color: #0f766e;
+  transform: rotate(180deg);
+}
+
+.model-runtime-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
 .model-modal-field {
   display: block;
 }
@@ -2056,9 +2544,9 @@ function handleModelModalKeydown(event: KeyboardEvent) {
   gap: 8px;
   padding: 6px 16px;
   border-radius: 8px;
-  background: #020617;
+  background: var(--aw-primary, #0d9488);
   color: #fff;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 1px 2px rgba(13, 148, 136, 0.18);
   font-size: 12px;
   font-weight: 600;
   line-height: 16px;
@@ -2085,7 +2573,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
 }
 
 .model-modal-submit:hover:not(:disabled) {
-  background: #0f172a;
+  background: #0f766e;
 }
 
 .model-modal-test:hover:not(:disabled) {

@@ -9,9 +9,23 @@ const scp = useAgentsPageContext();
 /* prettier-ignore */
 const {
   studioMode, draftAgent, savingAgent, agentStudioPanelRef, agentNameInputRef, promptDetailDialogRef, agentStudioInlineWarning, pendingPromptSaveReview, weavePreviewAgent, acceptingPromptRevision, workspaceOptions, modelConfigOptions, studioTitle, agentNameError, agentWorkspaceError,
-  agentModelError, agentRoleError, agentPromptError, promptLineCount, promptPreviewText, canSaveAgent, originalPrompt, promptSaveDiff, pendingPromptText, weavePreviewDiff, agentSaveButtonLabel, canEnhanceDraftPrompt, formatSignedDelta, isEnhancing, toggleDraftStatus, closeStudio,
+  agentModelError, agentRoleError, agentPromptError, promptLineCount, promptPreviewText, canSaveAgent, originalPrompt, promptSaveDiff, pendingPromptText, weavePreviewDiff, agentSaveButtonLabel, canEnhanceDraftPrompt, formatSignedDelta, isEnhancing, toggleDraftStatus,
+  agentContextMode, agentContextMaxInputTokens, agentContextMaxRecentTurns,
+  agentContextSummaryMaxTokens, agentContextSummaryMinEvictedTurns, agentContextSummaryMaxPasses,
+  agentContextAdvancedOpen, toggleAgentContextAdvanced,
+  setAgentContextMode, setAgentContextMaxInput, setAgentContextMaxTurns,
+  setAgentContextSummaryMaxTokens, setAgentContextSummaryMinEvictedTurns, setAgentContextSummaryMaxPasses,
+  closeStudio,
   requestCloseStudio, trapAgentModalFocus, enhancePrompt, applyWeavePreview, cancelWeavePreview, confirmPromptSaveReview, cancelPromptSaveReview, saveDraftAgent
 } = scp;
+
+const agentContextModeOptions = [
+  { label: "Token 窗口（推荐，大多数场景）", value: "token_window" },
+  { label: "滚动摘要（长会话，可选）", value: "rolling_summary" },
+  { label: "继承 / 不启用（全量历史）", value: "" },
+  { label: "关闭窗口管理", value: "disabled" },
+];
+
 void AppSelect;
 void AgentPromptDiffViewer;
 </script>
@@ -140,6 +154,121 @@ void AgentPromptDiffViewer;
                 >
                   <span />
                 </button>
+              </div>
+
+              <div class="agent-context-policy">
+                <header>
+                  <strong>会话上下文策略</strong>
+                  <small>对话太长时，平台如何裁剪历史再送给模型。不知道怎么选就保持「Token 窗口」。</small>
+                </header>
+                <label class="modal-field">
+                  <span>上下文模式</span>
+                  <AppSelect
+                    class="agent-studio-select"
+                    :model-value="agentContextMode"
+                    :options="agentContextModeOptions"
+                    placeholder="选择上下文模式"
+                    aria-label="会话上下文模式"
+                    @update:model-value="setAgentContextMode(String($event ?? ''))"
+                  />
+                </label>
+                <p class="agent-context-policy-hint">
+                  <template v-if="agentContextMode === 'token_window' || !agentContextMode">
+                    推荐默认：按绑定模型的窗口自动裁掉过旧历史；通常无需再改高级项。
+                  </template>
+                  <template v-else-if="agentContextMode === 'rolling_summary'">
+                    已套用推荐默认（最近约 20 轮原文 + 摘要参数）。一般不用展开高级选项。
+                  </template>
+                  <template v-else-if="agentContextMode === 'disabled'">
+                    关闭窗口管理后，会话可能随长度增长而变慢或触发上游超限。
+                  </template>
+                  需先在模型 API 里用预设点好「上下文窗口」（如 128K）。
+                </p>
+                <template v-if="agentContextMode === 'token_window' || agentContextMode === 'rolling_summary'">
+                  <button
+                    type="button"
+                    class="agent-context-advanced-toggle"
+                    :class="{ open: agentContextAdvancedOpen }"
+                    :aria-expanded="agentContextAdvancedOpen"
+                    @click="toggleAgentContextAdvanced"
+                  >
+                    <i class="fa-solid fa-sliders" aria-hidden="true" />
+                    <span>高级选项</span>
+                    <i class="fa-solid fa-chevron-down agent-context-advanced-chevron" aria-hidden="true" />
+                  </button>
+                  <div v-if="agentContextAdvancedOpen" class="agent-context-advanced">
+                    <div class="agent-context-policy-limits">
+                      <label class="modal-field">
+                        <span>输入上限（0=跟模型窗口走）</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          class="mono"
+                          :value="agentContextMaxInputTokens"
+                          @input="setAgentContextMaxInput(Number(($event.target as HTMLInputElement).value))"
+                        />
+                      </label>
+                      <label class="modal-field">
+                        <span>最近原文轮次（0=不限条数）</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          class="mono"
+                          :value="agentContextMaxRecentTurns"
+                          @input="setAgentContextMaxTurns(Number(($event.target as HTMLInputElement).value))"
+                        />
+                      </label>
+                    </div>
+                    <div v-if="agentContextMode === 'rolling_summary'" class="agent-context-policy-limits">
+                      <label class="modal-field">
+                        <span>摘要长度上限</span>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          class="mono"
+                          :value="agentContextSummaryMaxTokens"
+                          @input="
+                            setAgentContextSummaryMaxTokens(Number(($event.target as HTMLInputElement).value))
+                          "
+                        />
+                      </label>
+                      <label class="modal-field">
+                        <span>至少淘汰几轮再摘要</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          class="mono"
+                          :value="agentContextSummaryMinEvictedTurns"
+                          @input="
+                            setAgentContextSummaryMinEvictedTurns(
+                              Number(($event.target as HTMLInputElement).value),
+                            )
+                          "
+                        />
+                      </label>
+                      <label class="modal-field">
+                        <span>摘要最多生成几轮</span>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          class="mono"
+                          :value="agentContextSummaryMaxPasses"
+                          @input="
+                            setAgentContextSummaryMaxPasses(Number(($event.target as HTMLInputElement).value))
+                          "
+                        />
+                      </label>
+                    </div>
+                    <p class="agent-context-policy-hint">
+                      0 表示不额外收紧。滚动摘要默认：摘要 2048、淘汰 4 轮、生成 2 轮、最近 20 轮。
+                    </p>
+                  </div>
+                </template>
               </div>
             </div>
           </section>

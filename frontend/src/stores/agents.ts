@@ -9,6 +9,7 @@ import type {
   CapabilityCatalogItem,
   PromptEnhancement,
 } from "../types/domain";
+import { buildContextPolicyPayload } from "../utils/session-context-config";
 import { useWorkspaceStore } from "./workspaces";
 
 interface AgentDTO {
@@ -19,6 +20,7 @@ interface AgentDTO {
   modelConfigId: string;
   isDefault: boolean;
   status: "ACTIVE" | "DISABLED";
+  contextPolicy?: Agent["contextPolicy"];
   toolsCount: number;
   workflowsCount: number;
   createdBy: string;
@@ -188,11 +190,13 @@ export const useAgentStore = defineStore("agents", {
       return response.data;
     },
     async updateAgent(agentId: string, agent: Agent) {
+      const contextPolicy = buildContextPolicyPayload(agent.contextPolicy);
       const response = await apiClient.patch<AgentDTO>(`/workspaces/${agent.workspaceId}/agents/${agentId}`, {
         name: agent.name,
         roleDescription: agent.roleDescription,
         modelConfigId: agent.modelConfigId,
         status: agent.status,
+        contextPolicy,
         lockVersion: agent.lockVersion,
       });
       const updated = agentFromDTO(response.data, agent.workspaceId);
@@ -292,6 +296,7 @@ function agentFromDTO(agent: AgentDTO, workspaceId: string): Agent {
     ...agent,
     workspaceId,
     currentPromptRevisionId: agent.currentPromptRevisionId,
+    contextPolicy: agent.contextPolicy || {},
     systemPrompt: "",
   };
 }

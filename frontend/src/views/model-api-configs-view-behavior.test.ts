@@ -95,7 +95,7 @@ describe("model config v1 behavior", () => {
     const wrapper = mountView();
     await flushPromises();
     await wrapper.get('button[aria-label="更多操作"]').trigger("click");
-    await wrapper.get('button[aria-label="编辑模型配置"]').trigger("click");
+    await wrapper.get('button[aria-label="编辑"]').trigger("click");
     const secretInput = wrapper.get('input[placeholder="留空以保留现有凭据"]');
     expect((secretInput.element as HTMLInputElement).value).toBe("");
     await wrapper.get('[data-action="save-model-config"]').trigger("click");
@@ -110,7 +110,7 @@ describe("model config v1 behavior", () => {
     const wrapper = mountView();
     await flushPromises();
     await wrapper.get('button[aria-label="更多操作"]').trigger("click");
-    await wrapper.get('button[aria-label="测试模型 API 连接"]').trigger("click");
+    await wrapper.get('button[aria-label="测试"]').trigger("click");
     await flushPromises();
     expect(fixture.store.verifyModelConfig).toHaveBeenCalledWith("model-1");
     expect(fixture.store.loadModelConfigs).toHaveBeenCalledTimes(2);

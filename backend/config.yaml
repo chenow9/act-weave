@@ -88,11 +88,10 @@ runtime:
   eino:
     maxIterations: 8
     maxToolInvocations: 16
-  # ZKL-74 session context window: fail-closed. Do not enable in production
-  # without verified model runtimeCapabilities and allowlist.
+  # ZKL-74 platform kill-switch only. Product knobs: Model API + Agent in Console.
+  # enabled=false → new runs fall back to legacy full history.
+  # Gray: allowAllWorkspaces=false and workspaceIds: [uuid, ...].
+  # Optional: mode (disabled|shadow|enforced), rolloutVersion (default session-context-default).
   sessionContext:
-    enabled: false
-    allowAllWorkspaces: false
-    workspaceIds: []
-    mode: disabled
-    rolloutVersion: session-context-default
+    enabled: true
+    allowAllWorkspaces: true
