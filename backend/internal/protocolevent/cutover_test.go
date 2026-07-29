@@ -35,7 +35,7 @@ func TestRunEventCutover(t *testing.T) {
 	insertLegacyRunEvents(t, db)
 
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 2 || version.Dirty {
+	if !version.Applied || version.Number != 3 || version.Dirty {
 		t.Fatalf("expected clean run event cutover version 40, got %+v", version)
 	}
 	assertRunEventCounts(t, db, protocolRunID, 3, 3)
@@ -74,7 +74,7 @@ func TestRunEventCutover(t *testing.T) {
 	assertRunEventCounts(t, db, protocolOtherRunID, 0, 1)
 
 	version = testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 2 || version.Dirty {
+	if !version.Applied || version.Number != 3 || version.Dirty {
 		t.Fatalf("expected clean cutover rollback version 39, got %+v", version)
 	}
 	assertRunEventCounts(t, db, protocolOtherRunID, 1, 0)
@@ -86,7 +86,7 @@ func TestRunEventCutover(t *testing.T) {
 		t.Fatalf("rollback did not restore compatibility payload: %s", restoredPayload)
 	}
 	version = testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 2 || version.Dirty {
+	if !version.Applied || version.Number != 3 || version.Dirty {
 		t.Fatalf("expected clean cutover migration reapply, got %+v", version)
 	}
 }

@@ -338,7 +338,8 @@ func validKind(value string) bool {
 	case KindOpenAPISource, KindPromptRunInput, KindPromptRunOutput,
 		KindPromptPreviewInput, KindPromptPreviewOutput, KindModelTurn,
 		KindChatMessage, KindToolTestPayload, KindToolInvocationPayload,
-		KindExecutionCheckpoint, KindAuditEventPayload, KindAuditExport:
+		KindExecutionCheckpoint, KindAuditEventPayload, KindAuditExport,
+		KindChatContextSummary:
 		return true
 	default:
 		return false

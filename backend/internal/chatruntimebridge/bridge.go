@@ -963,6 +963,20 @@ func userSafeBridgeError(err error) string {
 	if err == nil {
 		return "未知错误"
 	}
+	var ctxErr *execution.ContextError
+	if errors.As(err, &ctxErr) && ctxErr != nil && strings.TrimSpace(ctxErr.Message) != "" {
+		return ctxErr.Message
+	}
+	// Known context codes may wrap plain errors.New("CONTEXT_*").
+	code := executionErrorCode(err)
+	switch code {
+	case execution.ErrCodeContextSnapshotUnsupported,
+		execution.ErrCodeContextModelLimitUnknown,
+		execution.ErrCodeContextRequiredInputTooLarge,
+		execution.ErrCodeContextAssemblyFailed,
+		execution.ErrCodeContextWindowExceededUpstream:
+		return execution.NewContextError(code).Message
+	}
 	msg := strings.TrimSpace(err.Error())
 	if msg == "" {
 		return "未知错误"
@@ -1286,6 +1300,23 @@ func firstNonEmpty(values ...string) string {
 func executionErrorCode(err error) string {
 	if err == nil {
 		return "INVOCATION_FAILED"
+	}
+	var ctxErr *execution.ContextError
+	if errors.As(err, &ctxErr) && ctxErr != nil && strings.TrimSpace(ctxErr.Code) != "" {
+		return ctxErr.Code
+	}
+	// Plain sentinel strings used by contextwindow / sessioncontext.
+	msg := err.Error()
+	for _, code := range []string{
+		execution.ErrCodeContextSnapshotUnsupported,
+		execution.ErrCodeContextModelLimitUnknown,
+		execution.ErrCodeContextRequiredInputTooLarge,
+		execution.ErrCodeContextAssemblyFailed,
+		execution.ErrCodeContextWindowExceededUpstream,
+	} {
+		if strings.Contains(msg, code) {
+			return code
+		}
 	}
 	if code := execution.ErrorCode(err); code != "" {
 		return code

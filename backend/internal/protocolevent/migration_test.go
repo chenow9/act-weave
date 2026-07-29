@@ -36,7 +36,7 @@ func TestProtocolEventMigration(t *testing.T) {
 	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 2 || version.Dirty {
+	if !version.Applied || version.Number != 3 || version.Dirty {
 		t.Fatalf("expected clean protocol event migration version 37, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -50,7 +50,7 @@ func TestRunItemMigration(t *testing.T) {
 	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 2 || version.Dirty {
+	if !version.Applied || version.Number != 3 || version.Dirty {
 		t.Fatalf("expected clean run item migration version 38, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -125,7 +125,7 @@ func TestProtocolEventImmutable(t *testing.T) {
 	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 2 || version.Dirty {
+	if !version.Applied || version.Number != 3 || version.Dirty {
 		t.Fatalf("expected clean envelope guard migration version 39, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -152,7 +152,7 @@ func TestEnvelopeConstraint(t *testing.T) {
 	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 2 || version.Dirty {
+	if !version.Applied || version.Number != 3 || version.Dirty {
 		t.Fatalf("expected clean envelope guard migration version 39, got %+v", version)
 	}
 	db := testDatabase.Open(t)

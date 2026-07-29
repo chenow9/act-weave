@@ -37,6 +37,31 @@ export interface UserWorkspaceMembership {
   disabledAt?: string;
 }
 
+/** ZKL-74 session-context-policy.v1 patch (workspace/agent). Empty object inherits. */
+export interface SessionContextPolicy {
+  schemaVersion?: "session-context-policy.v1";
+  mode?: "token_window" | "rolling_summary" | "disabled";
+  maxInputTokens?: number;
+  outputReserveTokens?: number;
+  safetyMarginTokens?: number;
+  maxRecentTurns?: number;
+  summary?: {
+    maxTokens?: number;
+    minEvictedTurns?: number;
+    maxGenerationPasses?: number;
+  };
+}
+
+/** ZKL-74 model-runtime.v1 hard capabilities (never merged into options). */
+export interface ModelRuntimeCapabilities {
+  schemaVersion?: "model-runtime.v1";
+  contextWindowTokens?: number;
+  defaultOutputReserveTokens?: number;
+  outputTokenLimitMode?: "max_tokens" | "max_completion_tokens";
+  tokenizerProfile?: "o200k_base" | "cl100k_base" | "byte_upper_bound" | string;
+  tokenizerVersion?: string;
+}
+
 export interface Workspace {
   id: string;
   name: string;
@@ -49,6 +74,8 @@ export interface Workspace {
   defaultModelConfigId?: string;
   modelConfigId: string;
   settings?: Record<string, unknown>;
+  /** Dedicated context policy column; not nested under settings. */
+  contextPolicy?: SessionContextPolicy | Record<string, unknown>;
   createdBy?: string;
   createdByUsername?: string;
   updatedBy?: string;
@@ -136,6 +163,8 @@ export interface ModelApiConfig {
   credentialConfigured: boolean;
   credentialSecretId?: string;
   options: Record<string, unknown>;
+  /** Strict runtime capabilities; must not be merged into options. */
+  runtimeCapabilities?: ModelRuntimeCapabilities | Record<string, unknown>;
   status: "UNVERIFIED" | "VERIFIED" | "ERROR" | "DISABLED";
   lastVerifiedAt?: string;
   lastLatencyMs?: number;
@@ -164,6 +193,8 @@ export interface Agent {
   systemPrompt: string;
   isDefault: boolean;
   status: "ACTIVE" | "DISABLED";
+  /** Agent-level context policy override; empty inherits workspace/platform. */
+  contextPolicy?: SessionContextPolicy | Record<string, unknown>;
   toolsCount: number;
   workflowsCount: number;
   createdBy: string;

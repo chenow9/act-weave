@@ -218,7 +218,7 @@ func newAuthorizationTest(t *testing.T) (*Service, *sql.DB) {
 	t.Helper()
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 2 || version.Dirty {
+	if !version.Applied || version.Number != 3 || version.Dirty {
 		t.Fatalf("expected clean authorization migration version 5, got %+v", version)
 	}
 	db := testDatabase.Open(t)

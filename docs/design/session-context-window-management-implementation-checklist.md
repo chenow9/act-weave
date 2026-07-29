@@ -6,7 +6,7 @@
 > 生效决策：D1-A、D2-A、D3-A、D4-A、D5-A、D6-A、D7-A
 > 事实基线：`b4b131899fd0c4dbe916ed2fc9c53662536f2310`
 > 总项数：14
-> 当前状态：READY_FOR_IMPLEMENTATION
+> 当前状态：IMPLEMENTATION_COMPLETE_PENDING_SENTINEL
 
 ## 1. 使用规则
 
@@ -56,12 +56,12 @@
 | IC-06 | 纯 `token_window` assembler | VERIFIED | AssembleTokenWindow pure | subagent `019fabb3-15b3-7d52-91e6-64e987698936` PASS |
 | IC-07 | Assembly manifest 与稳定错误契约 | VERIFIED | ContextAssemblyRepository + 5 error codes | subagent `019fabb6-0f1d-7bf1-88de-611c5aa8241f` PASS |
 | IC-08 | Bridge / model adapter 初始运行接入 | VERIFIED | buildInitialMessages + sink-after-assembly + manifest | subagent `019fabb9-0731-7310-aabe-e6a1b9ee537f` PASS |
-| IC-09 | Usage、overflow、可观测与用户错误投影 | PENDING | — | — |
-| IC-10 | Shadow 与 token-window 灰度就绪 | PENDING | — | — |
-| IC-11 | 摘要存储、对象与 claim 状态机 | PENDING | — | — |
-| IC-12 | 受限滚动摘要生成器 | PENDING | — | — |
-| IC-13 | `rolling_summary` assembler/bridge 接入 | PENDING | — | — |
-| IC-14 | 管理 UI、全链路验收与发布交付 | PENDING | — | — |
+| IC-09 | Usage、overflow、可观测与用户错误投影 | VERIFIED | safe error projection + frontend map | subagent `019fabbb-e3d7-7e11-87bc-27482931a8f2` PASS |
+| IC-10 | Shadow 与 token-window 灰度就绪 | VERIFIED | sessionContext gate + runbook | subagent `019fabbb-e3d7-7e11-87bc-27482931a8f2` PASS |
+| IC-11 | 摘要存储、对象与 claim 状态机 | VERIFIED | 000003 + contextsummary claim API | subagent `019fabbe-e25f-7423-a90e-21b4e7a58ff7` PASS |
+| IC-12 | 受限滚动摘要生成器 | VERIFIED | extractive Generator + claim/store | subagent `019fabc0-40d1-7453-bf31-51f874d34ff3` PASS |
+| IC-13 | `rolling_summary` assembler/bridge 接入 | VERIFIED | OptionalSummary ASSISTANT inject | subagent `019fabc0-40d1-7453-bf31-51f874d34ff3` PASS |
+| IC-14 | 管理 UI、全链路验收与发布交付 | VERIFIED | types + error UX + runbook | subagent `019fabc2-6404-7441-8be2-67e8c1ec6968` PASS |
 
 ## 5. 顺序实施项
 
@@ -482,10 +482,10 @@
 
 **进度记录**
 
-- 状态：PENDING
-- 实现证据：—
-- 开发自测：—
-- Verification subagent / 结果：—
+- 状态：VERIFIED
+- 实现证据：userSafeBridgeError/executionErrorCode + frontend CONTEXT_* map
+- 开发自测：go test chatruntimebridge; npm type-check
+- Verification subagent / 结果：`019fabbb-e3d7-7e11-87bc-27482931a8f2` PASS
 
 ### IC-10 — Shadow 与 token-window 灰度就绪
 
@@ -529,10 +529,10 @@
 
 **进度记录**
 
-- 状态：PENDING
-- 实现证据：—
-- 开发自测：—
-- Verification subagent / 结果：—
+- 状态：VERIFIED
+- 实现证据：runtime.sessionContext fail-closed + runbook
+- 开发自测：go test config; runbook present
+- Verification subagent / 结果：`019fabbb-e3d7-7e11-87bc-27482931a8f2` PASS
 
 ### IC-11 — 摘要存储、对象与 claim 状态机
 
@@ -576,10 +576,10 @@
 
 **进度记录**
 
-- 状态：PENDING
-- 实现证据：—
-- 开发自测：—
-- Verification subagent / 结果：—
+- 状态：VERIFIED
+- 实现证据：000003 chat_context_summaries + claim repository
+- 开发自测：go test database/contextsummary/storedobject
+- Verification subagent / 结果：`019fabbe-e25f-7423-a90e-21b4e7a58ff7` PASS
 
 ### IC-12 — 受限滚动摘要生成器
 
@@ -623,10 +623,10 @@
 
 **进度记录**
 
-- 状态：PENDING
-- 实现证据：—
-- 开发自测：—
-- Verification subagent / 结果：—
+- 状态：VERIFIED
+- 实现证据：contextsummary.Generator extractive + claim/store fallback
+- 开发自测：go test contextsummary
+- Verification subagent / 结果：`019fabc0-40d1-7453-bf31-51f874d34ff3` PASS
 
 ### IC-13 — `rolling_summary` assembler/bridge 接入
 
@@ -670,10 +670,10 @@
 
 **进度记录**
 
-- 状态：PENDING
-- 实现证据：—
-- 开发自测：—
-- Verification subagent / 结果：—
+- 状态：VERIFIED
+- 实现证据：AssembleTokenWindow OptionalSummary ASSISTANT inject
+- 开发自测：go test contextwindow assembler summary
+- Verification subagent / 结果：`019fabc0-40d1-7453-bf31-51f874d34ff3` PASS
 
 ### IC-14 — 管理 UI、全链路验收与发布交付
 
@@ -721,10 +721,10 @@
 
 **进度记录**
 
-- 状态：PENDING
-- 实现证据：—
-- 开发自测：—
-- Verification subagent / 结果：—
+- 状态：VERIFIED
+- 实现证据：frontend types + error UX + runbook delivery
+- 开发自测：type-check + backend smoke
+- Verification subagent / 结果：`019fabc2-6404-7441-8be2-67e8c1ec6968` VERDICT PASS
 
 ## 6. PR 边界映射
 

@@ -15,6 +15,7 @@ const (
 	KindExecutionCheckpoint   = "EXECUTION_CHECKPOINT"
 	KindAuditEventPayload     = "AUDIT_EVENT_PAYLOAD"
 	KindAuditExport           = "AUDIT_EXPORT"
+	KindChatContextSummary    = "CHAT_CONTEXT_SUMMARY"
 	ClassificationPublic      = "PUBLIC"
 	ClassificationInternal    = "INTERNAL"
 	ClassificationSensitive   = "SENSITIVE"

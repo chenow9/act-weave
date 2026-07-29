@@ -121,7 +121,24 @@ export function createChatExecutionPageModel() {
 
   const runtimeSummary = computed(() => {
     if (chat.runStatus === "WAITING_CONFIRMATION") return "运行时已完成意图识别，当前停在确认门禁。";
-    if (chat.runStatus === "FAILED") return chat.latestRun?.errorCode || "运行时执行失败。";
+    if (chat.runStatus === "FAILED") {
+      const code = chat.latestRun?.errorCode || "";
+      // ZKL-74: stable context-window error projections (no raw provider body).
+      switch (code) {
+        case "CONTEXT_SNAPSHOT_UNSUPPORTED":
+          return "运行上下文版本不受支持，请联系管理员。";
+        case "CONTEXT_MODEL_LIMIT_UNKNOWN":
+          return "模型未配置上下文容量，请联系管理员。";
+        case "CONTEXT_REQUIRED_INPUT_TOO_LARGE":
+          return "当前输入过长；请缩短输入、减少附件/工具或新建会话。";
+        case "CONTEXT_ASSEMBLY_FAILED":
+          return "无法准备本次上下文，请稍后重试。";
+        case "CONTEXT_WINDOW_EXCEEDED_UPSTREAM":
+          return "模型上下文容量校验失败，请联系管理员。";
+        default:
+          return code || "运行时执行失败。";
+      }
+    }
     if (chat.runStatus === "SUCCEEDED") return "运行时已完成，步骤时间线如下。";
     if (chat.runStatus === "RUNNING") return "运行时正在执行，步骤会持续刷新。";
     if (chat.runStatus === "PENDING") return "请求已进入队列，等待运行时处理。";

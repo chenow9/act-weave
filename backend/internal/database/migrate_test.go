@@ -30,8 +30,15 @@ func TestEmbeddedMigrationSetStartsWithBaselineThenSessionContext(t *testing.T) 
 	if next != 2 {
 		t.Fatalf("expected second migration version 2, got %d", next)
 	}
-	if _, err := source.Next(next); err == nil {
-		t.Fatal("expected only two embedded migrations (baseline + session context contracts)")
+	third, err := source.Next(next)
+	if err != nil {
+		t.Fatalf("expected chat context summaries migration: %v", err)
+	}
+	if third != 3 {
+		t.Fatalf("expected third migration version 3, got %d", third)
+	}
+	if _, err := source.Next(third); err == nil {
+		t.Fatal("expected only three embedded migrations")
 	}
 
 	for _, item := range []struct {
@@ -40,6 +47,7 @@ func TestEmbeddedMigrationSetStartsWithBaselineThenSessionContext(t *testing.T) 
 	}{
 		{version: 1, identifier: "init"},
 		{version: 2, identifier: "session_context_contracts"},
+		{version: 3, identifier: "chat_context_summaries"},
 	} {
 		for _, direction := range []struct {
 			name string

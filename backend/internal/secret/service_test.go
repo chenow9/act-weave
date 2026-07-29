@@ -237,7 +237,7 @@ func newSecretServiceTest(t *testing.T) (*Service, *LocalEncryptor, *sql.DB) {
 	t.Helper()
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 2 || version.Dirty {
+	if !version.Applied || version.Number != 3 || version.Dirty {
 		t.Fatalf("expected clean secret service migration version 6, got %+v", version)
 	}
 	db := testDatabase.Open(t)
