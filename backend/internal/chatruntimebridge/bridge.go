@@ -2,6 +2,8 @@ package chatruntimebridge
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,9 +16,11 @@ import (
 	"actweave/backend/internal/agentrun"
 	"actweave/backend/internal/chat"
 	"actweave/backend/internal/chatruntime"
+	"actweave/backend/internal/contextwindow"
 	"actweave/backend/internal/einoruntime"
 	"actweave/backend/internal/execution"
 	"actweave/backend/internal/modelconfig"
+	"actweave/backend/internal/sessioncontext"
 	"actweave/backend/internal/tooltranslator"
 
 	"github.com/cloudwego/eino/components/model"
@@ -84,6 +88,9 @@ type Dependencies struct {
 	// Loaded once from process config; default false. Required for audit UI
 	// to show LLM thinking (output_summary.reasoning).
 	AgentAuditDebug bool
+	// Assemblies persists immutable context assembly manifests (ZKL-74).
+	// Optional in tests; required for session-context.v1 initial runs in production.
+	Assemblies *execution.ContextAssemblyRepository
 }
 
 // Bridge implements agentrun.Runtime on the eino engine path.
@@ -108,6 +115,7 @@ type Bridge struct {
 	logger          *slog.Logger
 	now             func() time.Time
 	agentAuditDebug bool
+	assemblies      *execution.ContextAssemblyRepository
 
 	activeMu   sync.Mutex
 	activeRuns map[string]*activeRunExecution
@@ -159,6 +167,7 @@ func NewBridge(deps Dependencies) (*Bridge, error) {
 		textSinkFactory: deps.TextSinkFactory,
 		maxIterations:   maxIter, maxTools: maxTools,
 		logger: logger, now: now, agentAuditDebug: deps.AgentAuditDebug,
+		assemblies:      deps.Assemblies,
 		activeRuns:      make(map[string]*activeRunExecution),
 		pendingConfirms: make(map[string][]einoruntime.PendingConfirmInterrupt),
 	}, nil
@@ -401,35 +410,40 @@ func (b *Bridge) drive(
 	}
 
 	// D14: true Stream chunks → StreamDeltaRecorder → TextDeltaSink → item.delta.
-	// Production TextSinkFactory returns ProtocolMessageTextSink (or compatible).
-	// MessageID is allocated before open so permanent chat_messages + item.completed
-	// can reuse the same identity as item.started / item.delta.
-	//
-	// ModelTurnHook persists MODEL agent_run_steps for platform-admin audit
-	// (reasoning in output_summary when AgentAuditDebug is on).
+	// For initial runs, assemble context BEFORE opening the text sink so
+	// preflight failures do not emit empty streaming items (ZKL-74 D6-A).
+	// Resume continues to open the sink first because checkpoint path skips assembly.
 	projector := &StreamDeltaRecorder{
 		Now: b.now,
 		ModelTurnHook: func(hookCtx context.Context, turn einoruntime.ModelTurn) error {
 			return b.recordModelTurn(hookCtx, job, run, turn)
 		},
 	}
-	if b.textSinkFactory != nil {
+	openSink := func() error {
+		if b.textSinkFactory == nil || projector.Sink != nil {
+			return nil
+		}
 		messageID, idErr := newRuntimeID()
 		if idErr != nil {
-			return "", "", idErr
+			return idErr
 		}
 		streamMessageID = messageID
 		sink, sinkErr := b.textSinkFactory(ctx, TextSinkArgs{
 			Job: job, Run: run, MessageID: messageID,
 		})
 		if sinkErr != nil {
-			return "", "", fmt.Errorf("open stream text sink: %w", sinkErr)
+			return fmt.Errorf("open stream text sink: %w", sinkErr)
 		}
 		projector.Sink = sink
+		return nil
 	}
 
 	var result *einoruntime.RunResult
 	if targets != nil {
+		// Resume: no history re-assembly, no manifest, no summary.
+		if err := openSink(); err != nil {
+			return "", "", err
+		}
 		result, err = b.engine.Resume(ctx, built, einoruntime.ResumeInput{
 			WorkspaceID:  job.WorkspaceID,
 			RunID:        job.RunID,
@@ -438,10 +452,12 @@ func (b *Bridge) drive(
 			Projector:    projector,
 		})
 	} else {
-		messages, msgErr := b.buildMessages(ctx, job, configuredAgent, instruction)
+		messages, msgErr := b.buildInitialMessages(ctx, job, run, configuredAgent, instruction)
 		if msgErr != nil {
-			_ = projector.FailIncomplete(ctx, "MODEL_STREAM_INTERRUPTED", true)
 			return "", streamMessageID, msgErr
+		}
+		if err := openSink(); err != nil {
+			return "", streamMessageID, err
 		}
 		result, err = b.engine.Run(ctx, built, einoruntime.RunInput{
 			WorkspaceID:  job.WorkspaceID,
@@ -586,6 +602,40 @@ func (b *Bridge) systemPrompt(ctx context.Context, job agentrun.Job, configuredA
 	return systemPrompt
 }
 
+// buildInitialMessages chooses legacy full-history or session-context.v1 assembly.
+// Resume path must never call this.
+func (b *Bridge) buildInitialMessages(
+	ctx context.Context,
+	job agentrun.Job,
+	run execution.AgentRun,
+	configuredAgent agent.Agent,
+	instruction string,
+) ([]*schema.Message, error) {
+	if sessioncontext.IsLegacySnapshot(run.ContextPolicySnapshot) ||
+		run.SnapshotSchemaVersion == "" ||
+		run.SnapshotSchemaVersion == execution.RunSnapshotSchemaV1 {
+		return b.buildMessages(ctx, job, configuredAgent, instruction)
+	}
+	// Explicit unknown run schema → safe fail (do not fall back to full history).
+	if run.SnapshotSchemaVersion != execution.RunSnapshotSchemaV2 {
+		return nil, execution.NewContextError(execution.ErrCodeContextSnapshotUnsupported)
+	}
+	resolved, err := sessioncontext.ParseResolvedSnapshot(run.ContextPolicySnapshot)
+	if err != nil {
+		if errors.Is(err, sessioncontext.ErrUnsupportedSnapshot) {
+			return nil, execution.NewContextError(execution.ErrCodeContextSnapshotUnsupported)
+		}
+		return nil, execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
+	}
+	if resolved.Mode == sessioncontext.ModeLegacy {
+		return b.buildMessages(ctx, job, configuredAgent, instruction)
+	}
+	if resolved.ModelContextWindowTokens <= 0 || resolved.TokenizerProfile == "" {
+		return nil, execution.NewContextError(execution.ErrCodeContextModelLimitUnknown)
+	}
+	return b.buildMessagesTokenWindow(ctx, job, run, instruction, resolved)
+}
+
 func (b *Bridge) buildMessages(
 	ctx context.Context,
 	job agentrun.Job,
@@ -634,6 +684,126 @@ func (b *Bridge) buildMessages(
 		return nil, errors.New("chat history has no user content for model turn")
 	}
 	return messages, nil
+}
+
+func (b *Bridge) buildMessagesTokenWindow(
+	ctx context.Context,
+	job agentrun.Job,
+	run execution.AgentRun,
+	instruction string,
+	policy sessioncontext.ResolvedSnapshot,
+) ([]*schema.Message, error) {
+	history, err := b.sessions.ListMessages(ctx, job.WorkspaceID, job.SessionID)
+	if err != nil {
+		return nil, execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
+	}
+	// Load permanent bodies needed for estimation/selection.
+	hist := make([]contextwindow.HistoryMessage, 0, len(history))
+	for _, msg := range history {
+		content := strings.TrimSpace(msg.Content)
+		if content == "" && msg.ContentObjectID != "" && b.content != nil {
+			loaded, readErr := b.content.ReadPermanentChat(
+				ctx, job.WorkspaceID, msg.ContentObjectID, job.ActorID,
+			)
+			if readErr != nil {
+				return nil, execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
+			}
+			content = strings.TrimSpace(loaded)
+		}
+		hist = append(hist, contextwindow.HistoryMessage{
+			ID: msg.ID, SessionID: msg.SessionID, Role: msg.Role, Content: content,
+			ContentHash: msg.ContentSHA256, RunID: msg.RunID, CreatedAt: msg.CreatedAt,
+		})
+	}
+	currentID := strings.TrimSpace(job.UserMessageID)
+	turns, current, err := contextwindow.NormalizeTurns(hist, currentID, job.SessionID)
+	if err != nil {
+		return nil, execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
+	}
+	// Prefer instruction from agent_snapshot prompt revision when bound (run.v2).
+	system := instruction
+	if revID := agentSnapshotPromptRevisionID(run.AgentSnapshot); revID != "" && b.agents != nil {
+		// AgentReader may not expose revision API; keep injected instruction as source of truth
+		// when only current prompt is available. Full revision pin is enforced at snapshot time.
+		_ = revID
+	}
+	plan, err := contextwindow.AssembleTokenWindow(contextwindow.AssemblerInput{
+		PolicyMode:               policy.Mode,
+		ModelContextWindowTokens: policy.ModelContextWindowTokens,
+		OutputReserveTokens:      policy.OutputReserveTokens,
+		SafetyMarginTokens:       policy.SafetyMarginTokens,
+		MaxInputTokens:           policy.EffectiveMaxInputTokens,
+		MaxRecentTurns:           policy.MaxRecentTurns,
+		TokenizerProfile:         policy.TokenizerProfile,
+		SystemPrompt:             system,
+		PriorTurns:               turns,
+		CurrentUser:              current,
+	})
+	if err != nil {
+		if errors.Is(err, contextwindow.ErrRequiredInputTooLarge) {
+			return nil, execution.NewContextError(execution.ErrCodeContextRequiredInputTooLarge)
+		}
+		return nil, execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
+	}
+	if b.assemblies != nil {
+		segments := make([]map[string]any, 0, len(plan.IncludedMessages))
+		for _, m := range plan.IncludedMessages {
+			segments = append(segments, map[string]any{
+				"messageId": m.ID, "role": m.Role, "contentHash": m.ContentHash,
+			})
+		}
+		segJSON, _ := json.Marshal(segments)
+		rec := execution.ContextAssemblyRecord{
+			WorkspaceID: job.WorkspaceID, RunID: job.RunID, SessionID: job.SessionID,
+			Mode: plan.Mode,
+			PolicySnapshotHash:     execution.HashJSONObject(run.ContextPolicySnapshot),
+			ModelSnapshotHash:      execution.HashJSONObject(run.ModelSnapshot),
+			CapabilitySnapshotHash: execution.HashJSONObject(run.CapabilitySnapshot),
+			AgentSnapshotHash:      execution.HashJSONObject(run.AgentSnapshot),
+			EstimatorProfile:       plan.EstimatorProfile,
+			EstimatorVersion:       plan.EstimatorVersion,
+			HardInputCeilingTokens: plan.HardInputCeilingTokens,
+			OutputReserveTokens:    plan.OutputReserveTokens,
+			SafetyMarginTokens:     plan.SafetyMarginTokens,
+			ToolsOverheadTokens:    plan.ToolsOverheadTokens,
+			SystemPromptHash:       sha256Hex(system),
+			IncludedSegments:       segJSON,
+			OmittedPrefixCount:     plan.OmittedTurnCount,
+			EstimatedTotalTokens:   plan.EstimatedTotalTokens,
+		}
+		rec.AssemblyDigest = execution.ComputeAssemblyDigest(rec)
+		if _, err := b.assemblies.InsertImmutable(ctx, rec); err != nil {
+			return nil, execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
+		}
+	}
+	out := make([]*schema.Message, 0, len(plan.PromptMessages))
+	for _, m := range plan.PromptMessages {
+		switch m.Role {
+		case contextwindow.RoleSystem:
+			out = append(out, schema.SystemMessage(m.Content))
+		case contextwindow.RoleUser:
+			out = append(out, schema.UserMessage(m.Content))
+		case contextwindow.RoleAssistant:
+			out = append(out, schema.AssistantMessage(m.Content, nil))
+		}
+	}
+	if len(out) < 2 {
+		return nil, execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
+	}
+	return out, nil
+}
+
+func agentSnapshotPromptRevisionID(raw json.RawMessage) string {
+	var doc struct {
+		PromptRevisionID string `json:"promptRevisionId"`
+	}
+	_ = json.Unmarshal(raw, &doc)
+	return strings.TrimSpace(doc.PromptRevisionID)
+}
+
+func sha256Hex(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:])
 }
 
 func modelRole(value string) string {

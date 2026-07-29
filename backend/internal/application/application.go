@@ -1061,6 +1061,10 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if modelTurnErr != nil {
 		return nil, fmt.Errorf("model turn content service: %w", modelTurnErr)
 	}
+	assemblyRepo, assemblyRepoErr := execution.NewContextAssemblyRepository(db)
+	if assemblyRepoErr != nil {
+		return nil, fmt.Errorf("context assembly repository: %w", assemblyRepoErr)
+	}
 	bridge, bridgeErr := chatruntimebridge.NewBridge(chatruntimebridge.Dependencies{
 		Sessions: chatRepository, Results: chatService, Content: chatObjects,
 		Agents: agentRepository, Models: modelRepository, Runs: runRepository,
@@ -1074,6 +1078,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		MaxIterations:      runtimeCfg.Eino.MaxIterations,
 		MaxToolInvocations: runtimeCfg.Eino.MaxToolInvocations,
 		AgentAuditDebug:    config.AgentAuditDebug,
+		Assemblies:         assemblyRepo,
 		BuildChatModel: func(ctx context.Context, cfg modelconfig.Config) (model.BaseChatModel, error) {
 			return modelapi.NewEinoOpenAIChatModel(ctx, modelHTTP, secretService, cfg)
 		},
