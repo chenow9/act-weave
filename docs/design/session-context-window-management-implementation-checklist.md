@@ -54,7 +54,7 @@
 | IC-04 | Tokenizer registry 与 token estimator | VERIFIED | contextwindow registry + estimator + tiktoken-go | subagent `019fabaf-e6ff-7560-898a-69406774b21b` PASS |
 | IC-05 | Principal-safe 历史分页与轮次规范化 | VERIFIED | reverse page + NormalizeTurns | subagent `019fabb3-15b2-7c13-ae60-bfd9d7900736` PASS |
 | IC-06 | 纯 `token_window` assembler | VERIFIED | AssembleTokenWindow pure | subagent `019fabb3-15b3-7d52-91e6-64e987698936` PASS |
-| IC-07 | Assembly manifest 与稳定错误契约 | PENDING | — | — |
+| IC-07 | Assembly manifest 与稳定错误契约 | VERIFIED | ContextAssemblyRepository + 5 error codes | subagent `019fabb6-0f1d-7bf1-88de-611c5aa8241f` PASS |
 | IC-08 | Bridge / model adapter 初始运行接入 | PENDING | — | — |
 | IC-09 | Usage、overflow、可观测与用户错误投影 | PENDING | — | — |
 | IC-10 | Shadow 与 token-window 灰度就绪 | PENDING | — | — |
@@ -386,10 +386,10 @@
 
 **进度记录**
 
-- 状态：PENDING
-- 实现证据：—
-- 开发自测：—
-- Verification subagent / 结果：—
+- 状态：VERIFIED
+- 实现证据：`execution/context_assembly.go` InsertImmutable/GetByRun/ComputeAssemblyDigest/NewContextError
+- 开发自测：`go test ./internal/execution/ -run 'TestContextAssembly|TestContextError'` → ok
+- Verification subagent / 结果：`019fabb6-0f1d-7bf1-88de-611c5aa8241f` VERDICT PASS
 
 ### IC-08 — Bridge / model adapter 初始运行接入
 
