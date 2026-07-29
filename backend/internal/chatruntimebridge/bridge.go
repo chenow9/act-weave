@@ -693,39 +693,22 @@ func (b *Bridge) buildMessagesTokenWindow(
 	instruction string,
 	policy sessioncontext.ResolvedSnapshot,
 ) ([]*schema.Message, error) {
-	history, err := b.sessions.ListMessages(ctx, job.WorkspaceID, job.SessionID)
-	if err != nil {
-		return nil, execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
-	}
-	// Load permanent bodies needed for estimation/selection.
-	hist := make([]contextwindow.HistoryMessage, 0, len(history))
-	for _, msg := range history {
-		content := strings.TrimSpace(msg.Content)
-		if content == "" && msg.ContentObjectID != "" && b.content != nil {
-			loaded, readErr := b.content.ReadPermanentChat(
-				ctx, job.WorkspaceID, msg.ContentObjectID, job.ActorID,
-			)
-			if readErr != nil {
-				return nil, execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
-			}
-			content = strings.TrimSpace(loaded)
-		}
-		hist = append(hist, contextwindow.HistoryMessage{
-			ID: msg.ID, SessionID: msg.SessionID, Role: msg.Role, Content: content,
-			ContentHash: msg.ContentSHA256, RunID: msg.RunID, CreatedAt: msg.CreatedAt,
-		})
-	}
-	currentID := strings.TrimSpace(job.UserMessageID)
-	turns, current, err := contextwindow.NormalizeTurns(hist, currentID, job.SessionID)
-	if err != nil {
-		return nil, execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
-	}
 	// Prefer instruction from agent_snapshot prompt revision when bound (run.v2).
 	system := instruction
 	if revID := agentSnapshotPromptRevisionID(run.AgentSnapshot); revID != "" && b.agents != nil {
 		// AgentReader may not expose revision API; keep injected instruction as source of truth
 		// when only current prompt is available. Full revision pin is enforced at snapshot time.
 		_ = revID
+	}
+
+	// Bounded reverse history: page newest→older, decrypt only candidates still
+	// needed for assembly; stop once a full AssembleTokenWindow omits further turns.
+	current, priorTurns, err := b.loadBoundedHistoryForAssembly(ctx, job, system, policy)
+	if err != nil {
+		if errors.Is(err, contextwindow.ErrRequiredInputTooLarge) {
+			return nil, execution.NewContextError(execution.ErrCodeContextRequiredInputTooLarge)
+		}
+		return nil, execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
 	}
 	plan, err := contextwindow.AssembleTokenWindow(contextwindow.AssemblerInput{
 		PolicyMode:               policy.Mode,
@@ -736,7 +719,7 @@ func (b *Bridge) buildMessagesTokenWindow(
 		MaxRecentTurns:           policy.MaxRecentTurns,
 		TokenizerProfile:         policy.TokenizerProfile,
 		SystemPrompt:             system,
-		PriorTurns:               turns,
+		PriorTurns:               priorTurns,
 		CurrentUser:              current,
 	})
 	if err != nil {
@@ -791,6 +774,138 @@ func (b *Bridge) buildMessagesTokenWindow(
 		return nil, execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
 	}
 	return out, nil
+}
+
+// historyPageSize is the reverse-page resource bound for session-context assembly.
+// It is not a semantic turn limit.
+const historyPageSize = 50
+
+// loadBoundedHistoryForAssembly reverse-pages message metadata (no body decrypt)
+// and decrypts bodies newest→older only while AssembleTokenWindow still selects
+// every loaded prior turn. Once any loaded turn is omitted, older bodies are not
+// decrypted and further pages are not fetched.
+func (b *Bridge) loadBoundedHistoryForAssembly(
+	ctx context.Context,
+	job agentrun.Job,
+	system string,
+	policy sessioncontext.ResolvedSnapshot,
+) (contextwindow.HistoryMessage, []contextwindow.Turn, error) {
+	currentID := strings.TrimSpace(job.UserMessageID)
+	if currentID == "" {
+		return contextwindow.HistoryMessage{}, nil, contextwindow.ErrCurrentUserMissing
+	}
+	curMsg, err := b.sessions.GetMessage(ctx, job.WorkspaceID, currentID)
+	if err != nil {
+		return contextwindow.HistoryMessage{}, nil, err
+	}
+	if curMsg.SessionID != "" && job.SessionID != "" && curMsg.SessionID != job.SessionID {
+		return contextwindow.HistoryMessage{}, nil, contextwindow.ErrCurrentUserSessionMismatch
+	}
+	curContent, err := b.resolveMessageContent(ctx, job, curMsg)
+	if err != nil {
+		return contextwindow.HistoryMessage{}, nil, err
+	}
+	current := contextwindow.HistoryMessage{
+		ID: curMsg.ID, SessionID: curMsg.SessionID, Role: curMsg.Role, Content: curContent,
+		ContentHash: curMsg.ContentSHA256, RunID: curMsg.RunID, CreatedAt: curMsg.CreatedAt,
+	}
+
+	var (
+		cursor     *chat.MessagePageCursor
+		// histNewestFirst holds decrypted history strictly before current, newest first.
+		histNewestFirst []contextwindow.HistoryMessage
+		priorTurns      []contextwindow.Turn
+		pagesFetched    int
+	)
+	const maxPages = 200
+	stopDecrypt := false
+	for pagesFetched < maxPages && !stopDecrypt {
+		page, pageErr := b.sessions.ListMessagesReversePage(
+			ctx, job.WorkspaceID, job.SessionID, historyPageSize, cursor,
+		)
+		if pageErr != nil {
+			return contextwindow.HistoryMessage{}, nil, pageErr
+		}
+		pagesFetched++
+		if len(page.Messages) == 0 {
+			break
+		}
+		// Page is newest-first; decrypt in that order so budget stops early.
+		for _, msg := range page.Messages {
+			if msg.ID == currentID {
+				continue
+			}
+			if msg.CreatedAt.After(current.CreatedAt) ||
+				(msg.CreatedAt.Equal(current.CreatedAt) && msg.ID >= current.ID) {
+				continue
+			}
+			content, cErr := b.resolveMessageContent(ctx, job, msg)
+			if cErr != nil {
+				return contextwindow.HistoryMessage{}, nil, cErr
+			}
+			histNewestFirst = append(histNewestFirst, contextwindow.HistoryMessage{
+				ID: msg.ID, SessionID: msg.SessionID, Role: msg.Role, Content: content,
+				ContentHash: msg.ContentSHA256, RunID: msg.RunID, CreatedAt: msg.CreatedAt,
+			})
+
+			// Rebuild chronological history from newest-first buffer.
+			histMsgs := make([]contextwindow.HistoryMessage, len(histNewestFirst))
+			for i, m := range histNewestFirst {
+				histMsgs[len(histNewestFirst)-1-i] = m
+			}
+			allForNorm := append(append([]contextwindow.HistoryMessage{}, histMsgs...), current)
+			turns, cur, normErr := contextwindow.NormalizeTurns(allForNorm, currentID, job.SessionID)
+			if normErr != nil {
+				return contextwindow.HistoryMessage{}, nil, normErr
+			}
+			current = cur
+			plan, planErr := contextwindow.AssembleTokenWindow(contextwindow.AssemblerInput{
+				PolicyMode:               policy.Mode,
+				ModelContextWindowTokens: policy.ModelContextWindowTokens,
+				OutputReserveTokens:      policy.OutputReserveTokens,
+				SafetyMarginTokens:       policy.SafetyMarginTokens,
+				MaxInputTokens:           policy.EffectiveMaxInputTokens,
+				MaxRecentTurns:           policy.MaxRecentTurns,
+				TokenizerProfile:         policy.TokenizerProfile,
+				SystemPrompt:             system,
+				PriorTurns:               turns,
+				CurrentUser:              current,
+			})
+			if planErr != nil {
+				return contextwindow.HistoryMessage{}, nil, planErr
+			}
+			priorTurns = turns
+			// Continuous recent-suffix selection: once any loaded turn is omitted,
+			// older bodies cannot enter the window — stop decrypting/fetching.
+			if plan.OmittedTurnCount > 0 {
+				stopDecrypt = true
+				break
+			}
+			if policy.MaxRecentTurns > 0 && int64(plan.SelectedTurnCount) >= policy.MaxRecentTurns {
+				stopDecrypt = true
+				break
+			}
+		}
+		if stopDecrypt || !page.HasMore || page.NextCursor == nil {
+			break
+		}
+		cursor = page.NextCursor
+	}
+	return current, priorTurns, nil
+}
+
+func (b *Bridge) resolveMessageContent(ctx context.Context, job agentrun.Job, msg chat.Message) (string, error) {
+	content := strings.TrimSpace(msg.Content)
+	if content == "" && msg.ContentObjectID != "" && b.content != nil {
+		loaded, readErr := b.content.ReadPermanentChat(
+			ctx, job.WorkspaceID, msg.ContentObjectID, job.ActorID,
+		)
+		if readErr != nil {
+			return "", readErr
+		}
+		content = strings.TrimSpace(loaded)
+	}
+	return content, nil
 }
 
 func agentSnapshotPromptRevisionID(raw json.RawMessage) string {

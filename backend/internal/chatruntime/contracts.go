@@ -38,6 +38,11 @@ type ContinueLifecycle = agentrun.ContinueLifecycle
 type SessionReader interface {
 	GetSession(context.Context, string, string) (chat.Session, error)
 	ListMessages(context.Context, string, string) ([]chat.Message, error)
+	// ListMessagesReversePage returns newest-first pages without decrypting bodies.
+	// Used by session-context.v1 assembly to avoid loading entire session history.
+	ListMessagesReversePage(ctx context.Context, workspaceID, sessionID string, limit int, cursor *chat.MessagePageCursor) (chat.MessagePage, error)
+	// GetMessage loads a single message by id (workspace scoped).
+	GetMessage(ctx context.Context, workspaceID, messageID string) (chat.Message, error)
 }
 
 type AssistantRecorder interface {

@@ -67,6 +67,14 @@ func (pauseSessions) GetSession(_ context.Context, workspaceID, sessionID string
 func (pauseSessions) ListMessages(context.Context, string, string) ([]chat.Message, error) {
 	return nil, nil
 }
+func (pauseSessions) ListMessagesReversePage(
+	context.Context, string, string, int, *chat.MessagePageCursor,
+) (chat.MessagePage, error) {
+	return chat.MessagePage{}, nil
+}
+func (pauseSessions) GetMessage(context.Context, string, string) (chat.Message, error) {
+	return chat.Message{}, chat.ErrNotFound
+}
 
 type pauseRuns struct {
 	run execution.AgentRun

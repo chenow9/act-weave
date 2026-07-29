@@ -34,6 +34,25 @@ Env overrides (if present in config loader): prefer config.yaml for local.
 3. Existing `run.v2` runs continue to honor their immutable snapshots.
 4. Do **not** drop tables/columns or delete manifests / permanent messages / summaries.
 
+## Capacity / long-history assembly (D-01 / §20.9)
+
+Enforced `token_window` / `rolling_summary` paths **must not** load or decrypt an entire session:
+
+| Stage | Behavior |
+| --- | --- |
+| Metadata | `ListMessagesReversePage` newest-first, page size resource-bound (default 50), stable `(created_at, id)` cursor |
+| Body decrypt | Newest→older only via `ReadPermanentChat` when content is object-backed |
+| Stop | After each decrypted message, re-run `AssembleTokenWindow`; stop when `OmittedTurnCount > 0` or `MaxRecentTurns` reached — no further pages or older decrypts |
+| Legacy | Gate off / `ModeLegacy` still uses full `ListMessages` (unchanged rollback path) |
+
+**Publish thresholds (before expanding enforce allowlist):**
+
+- 10k+ message sessions: assembly must stay page-bounded; decrypt count ≪ total object-backed messages
+- Monitor assembly P95 latency and object-store read rate under load
+- If reverse-page volume or decrypt fan-out spikes, keep gate disabled and investigate before broaden allowlist
+
+Unit evidence: `TestLoadBoundedHistoryStopsDecryptAfterBudget` (listAll=0, bounded decrypts).
+
 ## Diagnostics (no prompt bodies)
 
 - Assembly table: `agent_run_context_assemblies` by `(workspace_id, run_id)` — IDs, hashes, budgets only

@@ -407,6 +407,46 @@ func (s *bridgeSessions) GetSession(_ context.Context, workspaceID, sessionID st
 func (s *bridgeSessions) ListMessages(context.Context, string, string) ([]chat.Message, error) {
 	return s.messages, nil
 }
+func (s *bridgeSessions) ListMessagesReversePage(
+	_ context.Context, _, _ string, limit int, cursor *chat.MessagePageCursor,
+) (chat.MessagePage, error) {
+	msgs := append([]chat.Message(nil), s.messages...)
+	// newest first
+	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
+		msgs[i], msgs[j] = msgs[j], msgs[i]
+	}
+	start := 0
+	if cursor != nil {
+		for i, m := range msgs {
+			if m.ID == cursor.ID {
+				start = i + 1
+				break
+			}
+		}
+	}
+	if start > len(msgs) {
+		start = len(msgs)
+	}
+	end := start + limit
+	hasMore := end < len(msgs)
+	if end > len(msgs) {
+		end = len(msgs)
+	}
+	page := chat.MessagePage{Messages: msgs[start:end], HasMore: hasMore}
+	if hasMore && len(page.Messages) > 0 {
+		last := page.Messages[len(page.Messages)-1]
+		page.NextCursor = &chat.MessagePageCursor{CreatedAt: last.CreatedAt, ID: last.ID}
+	}
+	return page, nil
+}
+func (s *bridgeSessions) GetMessage(_ context.Context, _, messageID string) (chat.Message, error) {
+	for _, m := range s.messages {
+		if m.ID == messageID {
+			return m, nil
+		}
+	}
+	return chat.Message{}, chat.ErrNotFound
+}
 
 type bridgeResults struct {
 	mu      sync.Mutex

@@ -52,10 +52,10 @@
 | IC-02 | 严格配置、权限与管理 API | VERIFIED | model-runtime.v1 + session-context-policy.v1 config APIs | subagent `019faba4-29e2-7853-8e26-86b08ef348a6` PASS |
 | IC-03 | `run.v2` 快照绑定与策略解析 | VERIFIED | run.v2 + session-context.v1 resolver + fail-closed gate | subagent `019fabab-cc43-7b91-b138-0da5b2203891` PASS |
 | IC-04 | Tokenizer registry 与 token estimator | VERIFIED | contextwindow registry + estimator + tiktoken-go | subagent `019fabaf-e6ff-7560-898a-69406774b21b` PASS |
-| IC-05 | Principal-safe 历史分页与轮次规范化 | VERIFIED | reverse page + NormalizeTurns | subagent `019fabb3-15b2-7c13-ae60-bfd9d7900736` PASS |
+| IC-05 | Principal-safe 历史分页与轮次规范化 | VERIFIED | reverse page + NormalizeTurns + D-01 bounded load | subagent `019fabd7-6c9b-71e1-bd85-43138a81c725` PASS (D-01 re-verify) |
 | IC-06 | 纯 `token_window` assembler | VERIFIED | AssembleTokenWindow pure | subagent `019fabb3-15b3-7d52-91e6-64e987698936` PASS |
 | IC-07 | Assembly manifest 与稳定错误契约 | VERIFIED | ContextAssemblyRepository + 5 error codes | subagent `019fabb6-0f1d-7bf1-88de-611c5aa8241f` PASS |
-| IC-08 | Bridge / model adapter 初始运行接入 | VERIFIED | buildInitialMessages + sink-after-assembly + manifest | subagent `019fabb9-0731-7310-aabe-e6a1b9ee537f` PASS |
+| IC-08 | Bridge / model adapter 初始运行接入 | VERIFIED | buildInitialMessages + bounded history + manifest | subagent `019fabd7-6c9c-7363-89c1-f2cb0bb2e1d7` PASS (D-01 re-verify) |
 | IC-09 | Usage、overflow、可观测与用户错误投影 | VERIFIED | safe error projection + frontend map | subagent `019fabbb-e3d7-7e11-87bc-27482931a8f2` PASS |
 | IC-10 | Shadow 与 token-window 灰度就绪 | VERIFIED | sessionContext gate + runbook | subagent `019fabbb-e3d7-7e11-87bc-27482931a8f2` PASS |
 | IC-11 | 摘要存储、对象与 claim 状态机 | VERIFIED | 000003 + contextsummary claim API | subagent `019fabbe-e25f-7423-a90e-21b4e7a58ff7` PASS |
@@ -293,9 +293,9 @@
 **进度记录**
 
 - 状态：VERIFIED
-- 实现证据：`ListMessagesForPrincipalReversePage`/`CountMessagesForPrincipal`；`contextwindow/turns.go` NormalizeTurns
-- 开发自测：`go test ./internal/chat/... ./internal/contextwindow/...` → ok
-- Verification subagent / 结果：`019fabb3-15b2-7c13-ae60-bfd9d7900736` VERDICT PASS
+- 实现证据：`ListMessagesReversePage` / `ListMessagesForPrincipalReversePage`；`contextwindow/turns.go` NormalizeTurns；bridge `loadBoundedHistoryForAssembly` 有界解密
+- 开发自测：`go test ./internal/chat/... ./internal/contextwindow/... ./internal/chatruntimebridge/ -run 'TestListMessagesReversePage|TestLoadBoundedHistory|TestBuildMessagesTokenWindow|TestNormalize|TestAssemble'` → ok
+- Verification subagent / 结果：首验 `019fabb3-15b2-7c13-ae60-bfd9d7900736` PASS；**D-01 复验** `019fabd7-6c9b-71e1-bd85-43138a81c725` **PASS**（reverse page + listAll=0 + decrypts=5/41 @ MaxRecentTurns=2）
 
 ### IC-06 — 纯 `token_window` assembler
 
@@ -435,9 +435,9 @@
 **进度记录**
 
 - 状态：VERIFIED
-- 实现证据：`chatruntimebridge.buildInitialMessages` / `buildMessagesTokenWindow`；Resume bypass；application wires Assemblies
-- 开发自测：`go test ./internal/chatruntimebridge/... ./internal/application/... ./internal/einoruntime/... ./internal/chat/...` → ok
-- Verification subagent / 结果：`019fabb9-0731-7310-aabe-e6a1b9ee537f` VERDICT PASS
+- 实现证据：`buildInitialMessages` → `buildMessagesTokenWindow` → `loadBoundedHistoryForAssembly`（`ListMessagesReversePage` + 达预算停止解密）；Resume bypass；legacy 仍 `ListMessages`；application wires Assemblies
+- 开发自测：`go test ./internal/chatruntimebridge/...` → ok（含 `TestLoadBoundedHistoryStopsDecryptAfterBudget` / `TestBuildMessagesTokenWindowUsesBoundedHistory`）
+- Verification subagent / 结果：首验 `019fabb9-0731-7310-aabe-e6a1b9ee537f` PASS；**D-01 复验** `019fabd7-6c9c-7363-89c1-f2cb0bb2e1d7` **PASS**（package ok；token_window 无全量 ListMessages；Resume 不重组装）
 
 ### IC-09 — Usage、overflow、可观测与用户错误投影
 

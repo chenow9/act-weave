@@ -308,6 +308,67 @@ func (r *Repository) ListMessagesForPrincipal(
 	return values, nil
 }
 
+// ListMessagesReversePage returns up to limit messages newest-first for a
+// workspace-scoped session using a stable (created_at, id) reverse cursor.
+// Does not decrypt permanent object bodies. Used by runtime assembly after the
+// run is already authorized for the session.
+func (r *Repository) ListMessagesReversePage(
+	ctx context.Context,
+	workspaceID, sessionID string,
+	limit int,
+	cursor *MessagePageCursor,
+) (MessagePage, error) {
+	workspaceID, sessionID = strings.TrimSpace(workspaceID), strings.TrimSpace(sessionID)
+	if !validUUID(workspaceID) || !validUUID(sessionID) {
+		return MessagePage{}, ErrInvalid
+	}
+	if limit < 1 || limit > 500 {
+		return MessagePage{}, ErrInvalid
+	}
+	args := []any{workspaceID, sessionID}
+	cursorClause := ""
+	if cursor != nil && !cursor.CreatedAt.IsZero() && validUUID(cursor.ID) {
+		args = append(args, cursor.CreatedAt.UTC(), cursor.ID)
+		cursorClause = fmt.Sprintf(
+			` AND (cm.created_at, cm.id) < ($%d::timestamptz, $%d::uuid)`,
+			len(args)-1, len(args),
+		)
+	}
+	args = append(args, limit+1)
+	limitArg := len(args)
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT `+messageColumns+` FROM chat_messages cm
+		WHERE cm.workspace_id=$1 AND cm.session_id=$2`+cursorClause+`
+		ORDER BY cm.created_at DESC, cm.id DESC
+		LIMIT $`+fmt.Sprintf("%d", limitArg)+`
+	`, args...)
+	if err != nil {
+		return MessagePage{}, fmt.Errorf("list reverse page chat messages: %w", err)
+	}
+	defer rows.Close()
+	values := make([]Message, 0, limit)
+	for rows.Next() {
+		value, scanErr := scanMessage(rows)
+		if scanErr != nil {
+			return MessagePage{}, fmt.Errorf("scan reverse page chat message: %w", scanErr)
+		}
+		values = append(values, value)
+	}
+	if err := rows.Err(); err != nil {
+		return MessagePage{}, err
+	}
+	page := MessagePage{HasMore: len(values) > limit}
+	if page.HasMore {
+		values = values[:limit]
+	}
+	page.Messages = values
+	if page.HasMore && len(values) > 0 {
+		last := values[len(values)-1]
+		page.NextCursor = &MessagePageCursor{CreatedAt: last.CreatedAt, ID: last.ID}
+	}
+	return page, nil
+}
+
 // ListMessagesForPrincipalReversePage returns up to limit messages newest-first
 // for an authorized session, using a stable (created_at, id) reverse cursor.
 // limit is a resource bound only; it does not change semantic selection.
