@@ -51,7 +51,7 @@
 | IC-01 | Expand-only schema 与领域契约 | VERIFIED | feat/zkl-74-session-context-window (000002 + domain models) | subagent `019fab98-4085-75f1-b484-8b5bfa286f84` PASS |
 | IC-02 | 严格配置、权限与管理 API | VERIFIED | model-runtime.v1 + session-context-policy.v1 config APIs | subagent `019faba4-29e2-7853-8e26-86b08ef348a6` PASS |
 | IC-03 | `run.v2` 快照绑定与策略解析 | VERIFIED | run.v2 + session-context.v1 resolver + fail-closed gate | subagent `019fabab-cc43-7b91-b138-0da5b2203891` PASS |
-| IC-04 | Tokenizer registry 与 token estimator | PENDING | — | — |
+| IC-04 | Tokenizer registry 与 token estimator | VERIFIED | contextwindow registry + estimator + tiktoken-go | subagent `019fabaf-e6ff-7560-898a-69406774b21b` PASS |
 | IC-05 | Principal-safe 历史分页与轮次规范化 | PENDING | — | — |
 | IC-06 | 纯 `token_window` assembler | PENDING | — | — |
 | IC-07 | Assembly manifest 与稳定错误契约 | PENDING | — | — |
@@ -246,10 +246,10 @@
 
 **进度记录**
 
-- 状态：PENDING
-- 实现证据：—
-- 开发自测：—
-- Verification subagent / 结果：—
+- 状态：VERIFIED
+- 实现证据：`contextwindow/{registry,estimator}.go`；profiles o200k_base/cl100k_base/byte_upper_bound；`github.com/pkoukk/tiktoken-go v0.1.7`
+- 开发自测：`go test ./internal/contextwindow/...` → ok
+- Verification subagent / 结果：`019fabaf-e6ff-7560-898a-69406774b21b` VERDICT PASS
 
 ### IC-05 — Principal-safe 历史分页与轮次规范化
 
