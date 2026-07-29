@@ -5,13 +5,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"actweave/backend/internal/agent"
 	"actweave/backend/internal/capability"
+	"actweave/backend/internal/config"
 	"actweave/backend/internal/database/dbtest"
 	"actweave/backend/internal/execution"
 	"actweave/backend/internal/modelconfig"
+	"actweave/backend/internal/workspace"
 )
 
 const (
@@ -223,5 +226,127 @@ func insertAgentRunSnapshotFixtures(t *testing.T, db *sql.DB) {
 		VALUES($1,$2,'Snapshot Agent',$3,$4,$4)
 	`, snapshotAgentID, snapshotWorkspaceID, snapshotModelID, snapshotOwnerID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+const snapshotRevisionID = "a08f1f2e-7b5a-7c3d-8e9f-123456789006"
+
+func TestAgentRunSnapshotsV2WhenGateAndCapabilitiesReady(t *testing.T) {
+	testDatabase := dbtest.New(t)
+	testDatabase.MigrateToLatest(t)
+	db := testDatabase.Open(t)
+	insertAgentRunSnapshotFixtures(t, db)
+	if _, err := db.Exec(`
+		INSERT INTO agent_prompt_revisions(
+			id,workspace_id,agent_id,revision_no,system_prompt,source,content_sha256,created_by
+		) VALUES($1,$2,$3,1,'You are a test agent.','MANUAL',$4,$5)
+	`, snapshotRevisionID, snapshotWorkspaceID, snapshotAgentID,
+		strings.Repeat("a", 64), snapshotOwnerID); err != nil {
+		t.Fatalf("insert prompt revision: %v", err)
+	}
+	if _, err := db.Exec(`
+		UPDATE agents SET current_prompt_revision_id=$2 WHERE id=$1
+	`, snapshotAgentID, snapshotRevisionID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		UPDATE model_configs SET runtime_capabilities=$2::jsonb WHERE id=$1
+	`, snapshotModelID, `{
+		"schemaVersion":"model-runtime.v1",
+		"contextWindowTokens":128000,
+		"defaultOutputReserveTokens":4096,
+		"outputTokenLimitMode":"max_tokens",
+		"tokenizerProfile":"o200k_base",
+		"tokenizerVersion":"2026-01"
+	}`); err != nil {
+		t.Fatal(err)
+	}
+
+	agentRepository, err := agent.NewRepository(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	modelRepository, err := modelconfig.NewRepository(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capabilityRepository, err := capability.NewRepository(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := capability.NewCatalog(capabilityRepository, capabilityRepository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaceRepository, err := workspace.NewRepository(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Gate off → legacy.
+	legacySource := &agentRunSnapshots{
+		agents: agentRepository, models: modelRepository, catalog: catalog,
+		workspaces: workspaceRepository,
+		sessionContext: config.SessionContextRollout{Enabled: false, Mode: "disabled"},
+	}
+	legacy, err := legacySource.SnapshotAgentRun(context.Background(), snapshotWorkspaceID, snapshotAgentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy.SchemaVersion != execution.RunSnapshotSchemaV1 {
+		t.Fatalf("gate off expected run.v1, got %s", legacy.SchemaVersion)
+	}
+
+	// Gate on + complete capabilities → run.v2 + session-context.v1.
+	v2Source := &agentRunSnapshots{
+		agents: agentRepository, models: modelRepository, catalog: catalog,
+		workspaces: workspaceRepository,
+		sessionContext: config.SessionContextRollout{
+			Enabled: true, AllowAllWorkspaces: true, Mode: "enforced",
+			RolloutVersion: "test-rollout",
+		},
+	}
+	v2, err := v2Source.SnapshotAgentRun(context.Background(), snapshotWorkspaceID, snapshotAgentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v2.SchemaVersion != execution.RunSnapshotSchemaV2 {
+		t.Fatalf("expected run.v2, got %s", v2.SchemaVersion)
+	}
+	if !strings.Contains(string(v2.ContextPolicy), `"schemaVersion":"session-context.v1"`) {
+		t.Fatalf("context snapshot: %s", v2.ContextPolicy)
+	}
+	if !strings.Contains(string(v2.Agent), snapshotRevisionID) {
+		t.Fatalf("agent snapshot missing revision: %s", v2.Agent)
+	}
+	if !strings.Contains(string(v2.Model), "runtimeCapabilities") {
+		t.Fatalf("model snapshot missing runtimeCapabilities: %s", v2.Model)
+	}
+
+	// Persist and re-read: snapshots immutable; agent_snapshot stored.
+	runRepository, err := execution.NewRunRepository(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := runRepository.StartAgentRun(context.Background(), execution.StartAgentRunInput{
+		ID: snapshotRunID, WorkspaceID: snapshotWorkspaceID, AgentID: snapshotAgentID,
+		TriggerType: "CHAT", TriggeredByType: "USER", TriggeredByID: snapshotOwnerID,
+		TraceID: "trace-v2-snapshot", Snapshots: v2,
+		AuthorizationSnapshot: json.RawMessage(`{}`), InputSummary: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("start v2 run: %v", err)
+	}
+	if run.SnapshotSchemaVersion != execution.RunSnapshotSchemaV2 {
+		t.Fatalf("stored schema: %s", run.SnapshotSchemaVersion)
+	}
+	if string(run.AgentSnapshot) == "" || string(run.AgentSnapshot) == "{}" {
+		t.Fatalf("expected agent_snapshot stored, got %s", run.AgentSnapshot)
+	}
+	// Mutating agent_snapshot must fail (immutable).
+	if _, err := db.Exec(`
+		UPDATE agent_runs SET agent_snapshot='{}'::jsonb, lock_version=lock_version+1 WHERE id=$1
+	`, snapshotRunID); err == nil {
+		t.Fatal("expected agent_snapshot immutability")
 	}
 }

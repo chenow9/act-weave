@@ -15,7 +15,8 @@ import (
 const agentRunColumns = `
 	ar.id,ar.workspace_id,ar.session_id,ar.agent_id,ar.status,ar.trigger_type,
 	ar.triggered_by_type,ar.triggered_by_id,ar.trace_id,ar.model_snapshot,
-	ar.capability_snapshot,ar.context_policy_snapshot,ar.snapshot_schema_version,
+	ar.capability_snapshot,ar.context_policy_snapshot,ar.agent_snapshot,
+	ar.snapshot_schema_version,
 	ar.authorization_snapshot,ar.input_summary,ar.output_summary,ar.error_code,
 	ar.started_at,ar.finished_at,ar.lock_version,ar.principal_snapshot_version,
 	ar.subject_type,ar.subject_id,ar.client_id,ar.grant_id,ar.grant_version,
@@ -83,10 +84,11 @@ func startAgentRun(
 	model, modelErr := canonicalRunObject(input.Snapshots.Model)
 	capabilities, capabilityErr := canonicalRunObject(input.Snapshots.Capabilities)
 	contextPolicy, contextErr := canonicalRunObject(input.Snapshots.ContextPolicy)
+	agentSnapshot, agentSnapErr := canonicalRunObject(input.Snapshots.Agent)
 	authorization, authorizationErr := canonicalRunObject(input.AuthorizationSnapshot)
 	inputSummary, inputErr := canonicalRunObject(input.InputSummary)
 	if !validStartAgentRun(input) || errors.Join(
-		modelErr, capabilityErr, contextErr, authorizationErr, inputErr,
+		modelErr, capabilityErr, contextErr, agentSnapErr, authorizationErr, inputErr,
 	) != nil {
 		return AgentRun{}, ErrRunInvalid
 	}
@@ -102,15 +104,15 @@ func startAgentRun(
 		INSERT INTO agent_runs AS ar(
 		 id,workspace_id,session_id,agent_id,status,trigger_type,triggered_by_type,
 		 triggered_by_id,trace_id,model_snapshot,capability_snapshot,
-		 context_policy_snapshot,snapshot_schema_version,authorization_snapshot,
+		 context_policy_snapshot,agent_snapshot,snapshot_schema_version,authorization_snapshot,
 		 input_summary,principal_snapshot_version,subject_type,subject_id,client_id,
 		 grant_id,grant_version,agent_policy_version
-		) VALUES($1,$2,$3,$4,'RUNNING',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
-		 $15,$16,$17,$18,$19,$20,$21)
+		) VALUES($1,$2,$3,$4,'RUNNING',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
+		 $16,$17,$18,$19,$20,$21,$22)
 		RETURNING `+agentRunColumns,
 		input.ID, input.WorkspaceID, runNullableString(input.SessionID), input.AgentID,
 		input.TriggerType, input.TriggeredByType, input.TriggeredByID, input.TraceID,
-		[]byte(model), []byte(capabilities), []byte(contextPolicy),
+		[]byte(model), []byte(capabilities), []byte(contextPolicy), []byte(agentSnapshot),
 		input.Snapshots.SchemaVersion, []byte(authorizationEnvelope), []byte(inputSummary),
 		snapshotArguments[0], snapshotArguments[1], snapshotArguments[2], snapshotArguments[3],
 		snapshotArguments[4], snapshotArguments[5], snapshotArguments[6]))
@@ -712,7 +714,10 @@ func normalizeStartAgentRun(input StartAgentRunInput) StartAgentRunInput {
 	input.TriggeredByID, input.TraceID = strings.TrimSpace(input.TriggeredByID), strings.TrimSpace(input.TraceID)
 	input.Snapshots.SchemaVersion = strings.TrimSpace(input.Snapshots.SchemaVersion)
 	if input.Snapshots.SchemaVersion == "" {
-		input.Snapshots.SchemaVersion = "run.v1"
+		input.Snapshots.SchemaVersion = RunSnapshotSchemaV1
+	}
+	if len(input.Snapshots.Agent) == 0 {
+		input.Snapshots.Agent = json.RawMessage(`{}`)
 	}
 	return input
 }
@@ -890,6 +895,7 @@ func scanAgentRun(scanner runScanner) (AgentRun, error) {
 		&value.ID, &value.WorkspaceID, &sessionID, &value.AgentID, &value.Status,
 		&value.TriggerType, &value.TriggeredByType, &value.TriggeredByID, &value.TraceID,
 		&value.ModelSnapshot, &value.CapabilitySnapshot, &value.ContextPolicySnapshot,
+		&value.AgentSnapshot,
 		&value.SnapshotSchemaVersion, &value.AuthorizationSnapshot, &value.InputSummary,
 		&value.OutputSummary, &errorCode, &value.StartedAt, &finishedAt, &value.LockVersion,
 		&value.PrincipalSnapshotVersion, &subjectType, &subjectID, &clientID, &grantID,

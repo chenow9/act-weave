@@ -792,7 +792,10 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		return nil, err
 	}
 	runService, err := execution.NewRunService(runRepository,
-		&agentRunSnapshots{agents: agentRepository, models: modelRepository, catalog: capabilityCatalog},
+		&agentRunSnapshots{
+			agents: agentRepository, models: modelRepository, catalog: capabilityCatalog,
+			workspaces: workspaceRepository, sessionContext: config.Runtime.SessionContext,
+		},
 		&runAuthorizer{authorizer: authorizer})
 	if err != nil {
 		return nil, err

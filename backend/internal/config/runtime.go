@@ -237,9 +237,75 @@ func (tuning EinoRuntimeTuning) Normalized() EinoRuntimeTuning {
 // empty (Normalized → wrapper) for fail-closed unit tests.
 // No dual-run fields by design.
 type RuntimeConfig struct {
-	Agent    RuntimeFeatureRollout `yaml:"agent"`
-	Workflow WorkflowRuntimeConfig `yaml:"workflow"`
-	Eino     EinoRuntimeTuning     `yaml:"eino"`
+	Agent          RuntimeFeatureRollout `yaml:"agent"`
+	Workflow       WorkflowRuntimeConfig `yaml:"workflow"`
+	Eino           EinoRuntimeTuning     `yaml:"eino"`
+	// SessionContext is the fail-closed gate for session context window management
+	// (ZKL-74). Default remains disabled unless explicitly enabled + allowlisted.
+	SessionContext SessionContextRollout `yaml:"sessionContext"`
+}
+
+// SessionContextRollout controls whether new agent runs write session-context.v1
+// / run.v2 snapshots. Gate is evaluated only at run creation time.
+// Mode: disabled (default) | shadow | enforced — IC-10 wires full matrix;
+// IC-03 only needs enabled+allowlist for writing v2 snapshots when enforced.
+type SessionContextRollout struct {
+	Enabled            bool     `yaml:"enabled"`
+	AllowAllWorkspaces bool     `yaml:"allowAllWorkspaces"`
+	WorkspaceIDs       []string `yaml:"workspaceIds"`
+	// Mode is disabled|shadow|enforced. Empty means disabled when Enabled=false.
+	Mode           string `yaml:"mode"`
+	RolloutVersion string `yaml:"rolloutVersion"`
+}
+
+// AllowsWorkspace reports whether the workspace may create session-context.v1 runs.
+// Fail-closed: requires Enabled, mode not disabled, and allowlist/allowAll.
+func (feature SessionContextRollout) AllowsWorkspace(workspaceID string) bool {
+	if !feature.Enabled {
+		return false
+	}
+	mode := strings.ToLower(strings.TrimSpace(feature.Mode))
+	if mode == "disabled" {
+		return false
+	}
+	// Empty mode with Enabled=true is treated as eligible for snapshot writing
+	// (used by IC-03); shadow/enforced semantics expand in IC-10.
+	workspaceID = strings.ToLower(strings.TrimSpace(workspaceID))
+	if workspaceID == "" {
+		return false
+	}
+	if feature.AllowAllWorkspaces {
+		return true
+	}
+	for _, id := range feature.WorkspaceIDs {
+		if strings.ToLower(strings.TrimSpace(id)) == workspaceID {
+			return true
+		}
+	}
+	return false
+}
+
+// Normalized trims IDs and mode.
+func (feature SessionContextRollout) Normalized() SessionContextRollout {
+	out := SessionContextRollout{
+		Enabled:            feature.Enabled,
+		AllowAllWorkspaces: feature.AllowAllWorkspaces,
+		Mode:               strings.ToLower(strings.TrimSpace(feature.Mode)),
+		RolloutVersion:     strings.TrimSpace(feature.RolloutVersion),
+	}
+	if out.Mode == "" && !out.Enabled {
+		out.Mode = "disabled"
+	}
+	if out.RolloutVersion == "" {
+		out.RolloutVersion = "session-context-default"
+	}
+	for _, id := range feature.WorkspaceIDs {
+		id = strings.ToLower(strings.TrimSpace(id))
+		if id != "" {
+			out.WorkspaceIDs = append(out.WorkspaceIDs, id)
+		}
+	}
+	return out
 }
 
 // Normalized returns a copy with defaults applied (engine, budgets, ID lists).
@@ -247,9 +313,10 @@ type RuntimeConfig struct {
 // during Load so explicit construction stays under caller control.
 func (cfg RuntimeConfig) Normalized() RuntimeConfig {
 	return RuntimeConfig{
-		Agent:    cfg.Agent.Normalized(),
-		Workflow: cfg.Workflow.Normalized(),
-		Eino:     cfg.Eino.Normalized(),
+		Agent:          cfg.Agent.Normalized(),
+		Workflow:       cfg.Workflow.Normalized(),
+		Eino:           cfg.Eino.Normalized(),
+		SessionContext: cfg.SessionContext.Normalized(),
 	}
 }
 

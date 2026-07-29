@@ -28,6 +28,7 @@ import (
 	"actweave/backend/internal/chat"
 	"actweave/backend/internal/chatruntime"
 	"actweave/backend/internal/chatruntimebridge"
+	"actweave/backend/internal/config"
 	"actweave/backend/internal/connection"
 	"actweave/backend/internal/domain"
 	"actweave/backend/internal/execution"
@@ -37,7 +38,9 @@ import (
 	"actweave/backend/internal/provider"
 	"actweave/backend/internal/secret"
 	"actweave/backend/internal/serviceendpoint"
+	"actweave/backend/internal/sessioncontext"
 	"actweave/backend/internal/storedobject"
+	"actweave/backend/internal/workspace"
 	"actweave/backend/internal/tool"
 	"actweave/backend/internal/workflowruntime"
 
@@ -1339,9 +1342,11 @@ func workflowIdempotencyKey(invocationContext workflowruntime.ToolInvocationCont
 }
 
 type agentRunSnapshots struct {
-	agents  *agent.Repository
-	models  *modelconfig.Repository
-	catalog *capability.Catalog
+	agents         *agent.Repository
+	models         *modelconfig.Repository
+	catalog        *capability.Catalog
+	workspaces     *workspace.Repository
+	sessionContext config.SessionContextRollout
 }
 
 func (source *agentRunSnapshots) SnapshotAgentRun(
@@ -1360,13 +1365,13 @@ func (source *agentRunSnapshots) SnapshotAgentRun(
 	if err != nil {
 		return execution.AgentRunSnapshots{}, err
 	}
-	modelJSON, err := json.Marshal(map[string]any{
+	modelPayload := map[string]any{
 		"id": model.ID, "provider": model.Provider, "apiBase": model.APIBase,
 		"modelName": model.ModelName, "options": json.RawMessage(model.Options),
 		"lockVersion": model.LockVersion,
-	})
-	if err != nil {
-		return execution.AgentRunSnapshots{}, err
+	}
+	if model.CredentialSecretID != nil {
+		modelPayload["credentialSecretId"] = *model.CredentialSecretID
 	}
 	// agent_runs.capability_snapshot and canonicalRunObject require a JSON object.
 	// Catalog returns a slice; wrap it so chat SendMessage does not fail with
@@ -1400,10 +1405,81 @@ func (source *agentRunSnapshots) SnapshotAgentRun(
 	if err != nil {
 		return execution.AgentRunSnapshots{}, err
 	}
-	return execution.AgentRunSnapshots{
-		SchemaVersion: "run.v1", Model: modelJSON, Capabilities: capabilitiesJSON,
+
+	// Default legacy path (gate off or incomplete config).
+	legacy := execution.AgentRunSnapshots{
+		SchemaVersion: execution.RunSnapshotSchemaV1,
+		Capabilities:  capabilitiesJSON,
 		ContextPolicy: json.RawMessage(`{}`),
-	}, nil
+		Agent:         json.RawMessage(`{}`),
+	}
+
+	gate := source.sessionContext.Normalized()
+	useV2 := gate.AllowsWorkspace(workspaceID)
+	runtimeCaps, capsRaw, capsErr := modelconfig.ParseRuntimeCapabilities(model.RuntimeCapabilities)
+	if useV2 && capsErr == nil && runtimeCaps.SchemaVersion == modelconfig.RuntimeCapabilitiesSchemaV1 {
+		modelPayload["runtimeCapabilities"] = json.RawMessage(capsRaw)
+
+		var workspacePolicy json.RawMessage
+		var workspaceLock int64
+		if source.workspaces != nil {
+			ws, wsErr := source.workspaces.Get(ctx, workspaceID)
+			if wsErr != nil {
+				return execution.AgentRunSnapshots{}, wsErr
+			}
+			workspacePolicy = ws.ContextPolicy
+			workspaceLock = ws.LockVersion
+		}
+		resolved, contextJSON, resolveErr := sessioncontext.Resolve(sessioncontext.ResolveInput{
+			WorkspacePolicy:            workspacePolicy,
+			AgentPolicy:                configuredAgent.ContextPolicy,
+			ContextWindowTokens:        runtimeCaps.ContextWindowTokens,
+			DefaultOutputReserveTokens: runtimeCaps.DefaultOutputReserveTokens,
+			OutputTokenLimitMode:       runtimeCaps.OutputTokenLimitMode,
+			TokenizerProfile:           runtimeCaps.TokenizerProfile,
+			TokenizerVersion:           runtimeCaps.TokenizerVersion,
+			WorkspaceLockVersion:       workspaceLock,
+			AgentLockVersion:           configuredAgent.LockVersion,
+			RolloutVersion:             gate.RolloutVersion,
+			GateEnabled:                true,
+		})
+		if resolveErr == nil && resolved.SchemaVersion == sessioncontext.SnapshotSchemaV1 {
+			revision, revErr := source.agents.GetCurrentPromptRevision(ctx, workspaceID, agentID)
+			if revErr != nil {
+				return execution.AgentRunSnapshots{}, revErr
+			}
+			agentSnap, agentErr := json.Marshal(map[string]any{
+				"schemaVersion":          execution.AgentSnapshotSchemaV1,
+				"agentId":                configuredAgent.ID,
+				"promptRevisionId":       revision.ID,
+				"promptRevisionHash":     revision.ContentSHA256,
+				"modelConfigId":          model.ID,
+				"modelConfigLockVersion": model.LockVersion,
+			})
+			if agentErr != nil {
+				return execution.AgentRunSnapshots{}, agentErr
+			}
+			modelJSON, modelErr := json.Marshal(modelPayload)
+			if modelErr != nil {
+				return execution.AgentRunSnapshots{}, modelErr
+			}
+			return execution.AgentRunSnapshots{
+				SchemaVersion: execution.RunSnapshotSchemaV2,
+				Model:         modelJSON,
+				Capabilities:  capabilitiesJSON,
+				ContextPolicy: contextJSON,
+				Agent:         agentSnap,
+			}, nil
+		}
+		// Incomplete policy/model combination → fall back to legacy (do not fail create).
+	}
+
+	modelJSON, err := json.Marshal(modelPayload)
+	if err != nil {
+		return execution.AgentRunSnapshots{}, err
+	}
+	legacy.Model = modelJSON
+	return legacy, nil
 }
 
 type runAuthorizer struct {

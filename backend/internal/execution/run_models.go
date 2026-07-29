@@ -149,7 +149,19 @@ type AgentRunSnapshots struct {
 	Model         json.RawMessage
 	Capabilities  json.RawMessage
 	ContextPolicy json.RawMessage
+	// Agent is the run.v2 binding snapshot (prompt revision + model config refs).
+	// Empty object means legacy / gate-off.
+	Agent json.RawMessage
 }
+
+// Snapshot schema versions for agent runs.
+const (
+	RunSnapshotSchemaV1 = "run.v1"
+	RunSnapshotSchemaV2 = "run.v2"
+
+	ContextSnapshotSchemaV1 = "session-context.v1"
+	AgentSnapshotSchemaV1   = "agent-binding.v1"
+)
 
 type StartAgentRunInput struct {
 	ID                    string

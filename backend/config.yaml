@@ -88,3 +88,11 @@ runtime:
   eino:
     maxIterations: 8
     maxToolInvocations: 16
+  # ZKL-74 session context window: fail-closed. Do not enable in production
+  # without verified model runtimeCapabilities and allowlist.
+  sessionContext:
+    enabled: false
+    allowAllWorkspaces: false
+    workspaceIds: []
+    mode: disabled
+    rolloutVersion: session-context-default
