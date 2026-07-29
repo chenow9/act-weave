@@ -52,15 +52,16 @@ type Config struct {
 }
 
 type NewConfig struct {
-	ID                 string
-	WorkspaceID        string
-	Name               string
-	Provider           string
-	APIBase            string
-	ModelName          string
-	CredentialSecretID *string
-	Options            json.RawMessage
-	CreatedBy          string
+	ID                  string
+	WorkspaceID         string
+	Name                string
+	Provider            string
+	APIBase             string
+	ModelName           string
+	CredentialSecretID  *string
+	Options             json.RawMessage
+	RuntimeCapabilities json.RawMessage
+	CreatedBy           string
 }
 
 type UpdateConfig struct {
@@ -70,6 +71,7 @@ type UpdateConfig struct {
 	ModelName           string
 	CredentialSecretID  *string
 	Options             json.RawMessage
+	RuntimeCapabilities json.RawMessage
 	Status              Status
 	UpdatedBy           string
 	ExpectedLockVersion int64

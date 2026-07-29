@@ -82,6 +82,7 @@ type workspaceDTO struct {
 	DefaultAgentID       *string          `json:"defaultAgentId,omitempty"`
 	DefaultModelConfigID *string          `json:"defaultModelConfigId,omitempty"`
 	Settings             json.RawMessage  `json:"settings"`
+	ContextPolicy        json.RawMessage  `json:"contextPolicy"`
 	CreatedBy            string           `json:"createdBy"`
 	CreatedByUsername    string           `json:"createdByUsername,omitempty"`
 	UpdatedBy            string           `json:"updatedBy"`
@@ -198,10 +199,11 @@ func (routes *WorkspaceRoutes) getWorkspace(c *gin.Context) {
 }
 
 type updateWorkspaceRequest struct {
-	DisplayName *string         `json:"displayName"`
-	Mode        *workspace.Mode `json:"mode"`
-	Settings    json.RawMessage `json:"settings"`
-	LockVersion int64           `json:"lockVersion"`
+	DisplayName   *string         `json:"displayName"`
+	Mode          *workspace.Mode `json:"mode"`
+	Settings      json.RawMessage `json:"settings"`
+	ContextPolicy json.RawMessage `json:"contextPolicy"`
+	LockVersion   int64           `json:"lockVersion"`
 }
 
 func (routes *WorkspaceRoutes) updateWorkspace(c *gin.Context) {
@@ -216,6 +218,7 @@ func (routes *WorkspaceRoutes) updateWorkspace(c *gin.Context) {
 	principal, _ := PrincipalFrom(c.Request.Context())
 	value, err := routes.service.Update(c.Request.Context(), c.Param("wid"), workspace.UpdateWorkspaceInput{
 		DisplayName: request.DisplayName, Mode: request.Mode, Settings: request.Settings,
+		ContextPolicy: request.ContextPolicy, ContextPolicySet: request.ContextPolicy != nil,
 		UpdatedBy: principal.UserID, ExpectedLockVersion: request.LockVersion,
 	})
 	if err != nil {
@@ -501,11 +504,16 @@ func parseWorkspaceListQuery(c *gin.Context) (workspace.WorkspaceListQuery, erro
 }
 
 func toWorkspaceDTO(value workspace.Workspace) workspaceDTO {
+	policy := value.ContextPolicy
+	if len(policy) == 0 {
+		policy = json.RawMessage(`{}`)
+	}
 	return workspaceDTO{
 		ID: value.ID, Slug: value.Slug, DisplayName: value.DisplayName,
 		Mode: value.Mode, Status: value.Status, OwnerUserID: value.OwnerUserID,
 		DefaultAgentID: value.DefaultAgentID, DefaultModelConfigID: value.DefaultModelConfigID,
-		Settings: value.Settings, CreatedBy: value.CreatedBy, UpdatedBy: value.UpdatedBy,
+		Settings: value.Settings, ContextPolicy: policy,
+		CreatedBy: value.CreatedBy, UpdatedBy: value.UpdatedBy,
 		CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt, LockVersion: value.LockVersion,
 	}
 }

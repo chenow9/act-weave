@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"actweave/backend/internal/sessioncontext"
+
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -25,6 +27,7 @@ var (
 const agentColumns = `
 	a.id, a.workspace_id, a.name::TEXT, a.role_description,
 	a.current_prompt_revision_id, a.model_config_id, a.is_default, a.status,
+	a.context_policy,
 	a.created_by, a.updated_by, a.created_at, a.updated_at, a.lock_version, a.deleted_at
 `
 
@@ -186,13 +189,19 @@ func (r *Repository) Update(ctx context.Context, workspaceID, agentID string, in
 	if !validUUID(workspaceID) || !validUUID(agentID) || !validUpdateAgent(input) {
 		return Agent{}, ErrInvalid
 	}
+	var contextPolicy any
+	if input.ContextPolicySet {
+		contextPolicy = []byte(input.ContextPolicy)
+	}
 	value, err := scanAgent(r.db.QueryRowContext(ctx, `
 		UPDATE agents a SET name=$3, role_description=$4, model_config_id=$5,
-			status=$6, updated_by=$7, updated_at=clock_timestamp(), lock_version=lock_version+1
-		WHERE workspace_id=$1 AND id=$2 AND deleted_at IS NULL AND lock_version=$8
+			status=$6,
+			context_policy=COALESCE($7, a.context_policy),
+			updated_by=$8, updated_at=clock_timestamp(), lock_version=lock_version+1
+		WHERE workspace_id=$1 AND id=$2 AND deleted_at IS NULL AND lock_version=$9
 		RETURNING `+agentColumns,
 		workspaceID, agentID, input.Name, input.RoleDescription, input.ModelConfigID,
-		input.Status, input.UpdatedBy, input.ExpectedLockVersion))
+		input.Status, contextPolicy, input.UpdatedBy, input.ExpectedLockVersion))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Agent{}, r.classifyAgentWrite(ctx, workspaceID, agentID)
 	}
@@ -590,19 +599,25 @@ type rowScanner interface{ Scan(...any) error }
 
 func scanAgent(row rowScanner) (Agent, error) {
 	var value Agent
+	var contextPolicy []byte
 	err := row.Scan(&value.ID, &value.WorkspaceID, &value.Name, &value.RoleDescription,
 		&value.CurrentPromptRevisionID, &value.ModelConfigID, &value.IsDefault, &value.Status,
+		&contextPolicy,
 		&value.CreatedBy, &value.UpdatedBy, &value.CreatedAt, &value.UpdatedAt,
 		&value.LockVersion, &value.DeletedAt)
+	value.ContextPolicy = append(json.RawMessage(nil), contextPolicy...)
 	return value, err
 }
 
 func scanSummary(row rowScanner) (Summary, error) {
 	var value Summary
+	var contextPolicy []byte
 	err := row.Scan(&value.ID, &value.WorkspaceID, &value.Name, &value.RoleDescription,
 		&value.CurrentPromptRevisionID, &value.ModelConfigID, &value.IsDefault, &value.Status,
+		&contextPolicy,
 		&value.CreatedBy, &value.UpdatedBy, &value.CreatedAt, &value.UpdatedAt,
 		&value.LockVersion, &value.DeletedAt, &value.ToolsCount, &value.WorkflowsCount)
+	value.ContextPolicy = append(json.RawMessage(nil), contextPolicy...)
 	return value, err
 }
 
@@ -710,12 +725,32 @@ func validNewAgent(input NewAgent) bool {
 func normalizeUpdateAgent(input UpdateAgent) UpdateAgent {
 	input.Name, input.RoleDescription = strings.TrimSpace(input.Name), strings.TrimSpace(input.RoleDescription)
 	input.ModelConfigID, input.UpdatedBy = strings.TrimSpace(input.ModelConfigID), strings.TrimSpace(input.UpdatedBy)
+	if input.ContextPolicySet {
+		if normalized, err := normalizeAgentContextPolicy(input.ContextPolicy); err == nil {
+			input.ContextPolicy = normalized
+		}
+	} else if len(input.ContextPolicy) == 0 {
+		input.ContextPolicy = json.RawMessage(`{}`)
+	}
 	return input
 }
 
 func validUpdateAgent(input UpdateAgent) bool {
-	return input.Name != "" && validUUID(input.ModelConfigID) && validUUID(input.UpdatedBy) &&
-		input.ExpectedLockVersion > 0 && (input.Status == StatusActive || input.Status == StatusDisabled || input.Status == StatusError)
+	if input.Name == "" || !validUUID(input.ModelConfigID) || !validUUID(input.UpdatedBy) ||
+		input.ExpectedLockVersion <= 0 ||
+		(input.Status != StatusActive && input.Status != StatusDisabled && input.Status != StatusError) {
+		return false
+	}
+	if input.ContextPolicySet {
+		if _, err := normalizeAgentContextPolicy(input.ContextPolicy); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizeAgentContextPolicy(raw json.RawMessage) (json.RawMessage, error) {
+	return sessioncontext.NormalizePolicyRaw(raw)
 }
 
 func normalizePromptRun(input NewPromptRun) NewPromptRun {

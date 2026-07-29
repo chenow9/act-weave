@@ -40,6 +40,7 @@ const configColumns = `
 		)
 	),
 	m.options,
+	m.runtime_capabilities,
 	m.status,
 	m.last_verified_at,
 	m.last_latency_ms,
@@ -100,8 +101,8 @@ func (r *Repository) Create(ctx context.Context, input NewConfig) (Config, error
 		WITH inserted AS (
 			INSERT INTO model_configs (
 				id, workspace_id, name, provider, api_base, model_name,
-				credential_secret_id, options, created_by, updated_by
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
+				credential_secret_id, options, runtime_capabilities, created_by, updated_by
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
 			RETURNING *
 		)
 		SELECT `+configColumns+`
@@ -117,6 +118,7 @@ func (r *Repository) Create(ctx context.Context, input NewConfig) (Config, error
 		input.ModelName,
 		input.CredentialSecretID,
 		[]byte(input.Options),
+		[]byte(input.RuntimeCapabilities),
 		input.CreatedBy,
 	))
 	if err != nil {
@@ -193,12 +195,13 @@ func (r *Repository) Update(
 				model_name = $6,
 				credential_secret_id = $7,
 				options = $8,
-				status = $9,
-				updated_by = $10,
+				runtime_capabilities = $9,
+				status = $10,
+				updated_by = $11,
 				updated_at = clock_timestamp(),
 				lock_version = lock_version + 1
 			WHERE workspace_id = $1 AND id = $2
-			  AND deleted_at IS NULL AND lock_version = $11
+			  AND deleted_at IS NULL AND lock_version = $12
 			RETURNING *
 		)
 		SELECT `+configColumns+`
@@ -215,6 +218,7 @@ func (r *Repository) Update(
 		input.ModelName,
 		input.CredentialSecretID,
 		[]byte(input.Options),
+		[]byte(input.RuntimeCapabilities),
 		input.Status,
 		input.UpdatedBy,
 		input.ExpectedLockVersion,
@@ -355,6 +359,7 @@ type rowScanner interface {
 func scanConfig(row rowScanner) (Config, error) {
 	var config Config
 	var options []byte
+	var runtimeCapabilities []byte
 	err := row.Scan(
 		&config.ID,
 		&config.WorkspaceID,
@@ -365,6 +370,7 @@ func scanConfig(row rowScanner) (Config, error) {
 		&config.CredentialSecretID,
 		&config.CredentialConfigured,
 		&options,
+		&runtimeCapabilities,
 		&config.Status,
 		&config.LastVerifiedAt,
 		&config.LastLatencyMS,
@@ -377,6 +383,7 @@ func scanConfig(row rowScanner) (Config, error) {
 		&config.DeletedAt,
 	)
 	config.Options = append(json.RawMessage(nil), options...)
+	config.RuntimeCapabilities = append(json.RawMessage(nil), runtimeCapabilities...)
 	return config, err
 }
 
@@ -394,6 +401,9 @@ func normalizeNewConfig(input NewConfig) NewConfig {
 	} else {
 		input.Options = append(json.RawMessage(nil), input.Options...)
 	}
+	if normalized, err := NormalizeRuntimeCapabilitiesRaw(input.RuntimeCapabilities); err == nil {
+		input.RuntimeCapabilities = normalized
+	}
 	return input
 }
 
@@ -409,6 +419,9 @@ func normalizeUpdateConfig(input UpdateConfig) UpdateConfig {
 	} else {
 		input.Options = append(json.RawMessage(nil), input.Options...)
 	}
+	if normalized, err := NormalizeRuntimeCapabilitiesRaw(input.RuntimeCapabilities); err == nil {
+		input.RuntimeCapabilities = normalized
+	}
 	if input.Status == "" {
 		input.Status = StatusUnverified
 	}
@@ -422,6 +435,13 @@ func validateNewConfig(input NewConfig) error {
 		!validJSONObject(input.Options) || containsSensitiveKey(input.Options) {
 		return ErrInvalid
 	}
+	if _, err := NormalizeRuntimeCapabilitiesRaw(input.RuntimeCapabilities); err != nil {
+		return ErrInvalid
+	}
+	// Runtime capabilities must never appear inside provider Options.
+	if containsRuntimeCapabilityLeak(input.Options) {
+		return ErrInvalid
+	}
 	return nil
 }
 
@@ -433,7 +453,29 @@ func validateUpdateConfig(input UpdateConfig) error {
 		containsSensitiveKey(input.Options) {
 		return ErrInvalid
 	}
+	if _, err := NormalizeRuntimeCapabilitiesRaw(input.RuntimeCapabilities); err != nil {
+		return ErrInvalid
+	}
+	if containsRuntimeCapabilityLeak(input.Options) {
+		return ErrInvalid
+	}
 	return nil
+}
+
+func containsRuntimeCapabilityLeak(options json.RawMessage) bool {
+	var object map[string]json.RawMessage
+	if json.Unmarshal(options, &object) != nil || object == nil {
+		return true
+	}
+	for _, forbidden := range []string{
+		"runtimeCapabilities", "contextWindowTokens", "tokenizerProfile",
+		"defaultOutputReserveTokens", "outputTokenLimitMode", "tokenizerVersion",
+	} {
+		if _, ok := object[forbidden]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func validStatus(status Status) bool {

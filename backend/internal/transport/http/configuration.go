@@ -213,6 +213,7 @@ type modelConfigDTO struct {
 	ModelName            string             `json:"modelName"`
 	CredentialConfigured bool               `json:"credentialConfigured"`
 	Options              json.RawMessage    `json:"options"`
+	RuntimeCapabilities  json.RawMessage    `json:"runtimeCapabilities"`
 	Status               modelconfig.Status `json:"status"`
 	LastVerifiedAt       *time.Time         `json:"lastVerifiedAt,omitempty"`
 	LastLatencyMS        *int               `json:"lastLatencyMs,omitempty"`
@@ -225,25 +226,31 @@ type modelConfigDTO struct {
 }
 
 func modelDTO(v modelconfig.Config) modelConfigDTO {
-	return modelConfigDTO{v.ID, v.Name, v.Provider, v.APIBase, v.ModelName, v.CredentialConfigured, v.Options, v.Status, v.LastVerifiedAt, v.LastLatencyMS, v.LastErrorCode, v.CreatedBy, v.UpdatedBy, v.CreatedAt, v.UpdatedAt, v.LockVersion}
+	caps := v.RuntimeCapabilities
+	if len(caps) == 0 {
+		caps = json.RawMessage(`{}`)
+	}
+	return modelConfigDTO{v.ID, v.Name, v.Provider, v.APIBase, v.ModelName, v.CredentialConfigured, v.Options, caps, v.Status, v.LastVerifiedAt, v.LastLatencyMS, v.LastErrorCode, v.CreatedBy, v.UpdatedBy, v.CreatedAt, v.UpdatedAt, v.LockVersion}
 }
 
 type createModelRequest struct {
-	Name               string          `json:"name"`
-	Provider           string          `json:"provider"`
-	APIBase            string          `json:"apiBase"`
-	ModelName          string          `json:"modelName"`
-	CredentialSecretID *string         `json:"credentialSecretId"`
-	Options            json.RawMessage `json:"options"`
+	Name                string          `json:"name"`
+	Provider            string          `json:"provider"`
+	APIBase             string          `json:"apiBase"`
+	ModelName           string          `json:"modelName"`
+	CredentialSecretID  *string         `json:"credentialSecretId"`
+	Options             json.RawMessage `json:"options"`
+	RuntimeCapabilities json.RawMessage `json:"runtimeCapabilities"`
 }
 type updateModelRequest struct {
-	Name               *string         `json:"name"`
-	Provider           *string         `json:"provider"`
-	APIBase            *string         `json:"apiBase"`
-	ModelName          *string         `json:"modelName"`
-	CredentialSecretID *string         `json:"credentialSecretId"`
-	Options            json.RawMessage `json:"options"`
-	LockVersion        int64           `json:"lockVersion"`
+	Name                *string         `json:"name"`
+	Provider            *string         `json:"provider"`
+	APIBase             *string         `json:"apiBase"`
+	ModelName           *string         `json:"modelName"`
+	CredentialSecretID  *string         `json:"credentialSecretId"`
+	Options             json.RawMessage `json:"options"`
+	RuntimeCapabilities json.RawMessage `json:"runtimeCapabilities"`
+	LockVersion         int64           `json:"lockVersion"`
 }
 
 func (r *ConfigurationRoutes) listModels(c *gin.Context) {
@@ -275,7 +282,11 @@ func (r *ConfigurationRoutes) createModel(c *gin.Context) {
 		RespondError(c, e)
 		return
 	}
-	v, e := r.models.Create(c.Request.Context(), modelconfig.NewConfig{ID: id, WorkspaceID: c.Param("wid"), Name: q.Name, Provider: q.Provider, APIBase: q.APIBase, ModelName: q.ModelName, CredentialSecretID: q.CredentialSecretID, Options: q.Options, CreatedBy: actor(c)})
+	v, e := r.models.Create(c.Request.Context(), modelconfig.NewConfig{
+		ID: id, WorkspaceID: c.Param("wid"), Name: q.Name, Provider: q.Provider,
+		APIBase: q.APIBase, ModelName: q.ModelName, CredentialSecretID: q.CredentialSecretID,
+		Options: q.Options, RuntimeCapabilities: q.RuntimeCapabilities, CreatedBy: actor(c),
+	})
 	if e != nil {
 		RespondError(c, e)
 		return
@@ -325,7 +336,15 @@ func (r *ConfigurationRoutes) updateModel(c *gin.Context) {
 	if q.Options != nil {
 		old.Options = q.Options
 	}
-	v, e := r.models.Update(c.Request.Context(), c.Param("wid"), c.Param("id"), modelconfig.UpdateConfig{Name: old.Name, Provider: old.Provider, APIBase: old.APIBase, ModelName: old.ModelName, CredentialSecretID: old.CredentialSecretID, Options: old.Options, Status: modelconfig.StatusUnverified, UpdatedBy: actor(c), ExpectedLockVersion: q.LockVersion})
+	if q.RuntimeCapabilities != nil {
+		old.RuntimeCapabilities = q.RuntimeCapabilities
+	}
+	v, e := r.models.Update(c.Request.Context(), c.Param("wid"), c.Param("id"), modelconfig.UpdateConfig{
+		Name: old.Name, Provider: old.Provider, APIBase: old.APIBase, ModelName: old.ModelName,
+		CredentialSecretID: old.CredentialSecretID, Options: old.Options,
+		RuntimeCapabilities: old.RuntimeCapabilities, Status: modelconfig.StatusUnverified,
+		UpdatedBy: actor(c), ExpectedLockVersion: q.LockVersion,
+	})
 	if e != nil {
 		RespondError(c, e)
 		return

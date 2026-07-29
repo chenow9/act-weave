@@ -126,6 +126,10 @@ type UpdateAgent struct {
 	RoleDescription     string
 	ModelConfigID       string
 	Status              Status
+	ContextPolicy       json.RawMessage
+	// ContextPolicySet is true when the caller explicitly patches contextPolicy
+	// (including clearing to {}). When false, the existing DB value is retained.
+	ContextPolicySet    bool
 	UpdatedBy           string
 	ExpectedLockVersion int64
 }

@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"actweave/backend/internal/sessioncontext"
+
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -30,6 +32,7 @@ const workspaceColumns = `
 	default_agent_id,
 	default_model_config_id,
 	settings,
+	context_policy,
 	created_by,
 	updated_by,
 	created_at,
@@ -304,7 +307,8 @@ func (r *Repository) ListAccessiblePage(
 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT w.id,w.slug::TEXT,w.display_name,w.mode,w.status,w.owner_user_id,
-			w.default_agent_id,w.default_model_config_id,w.settings,w.created_by,w.updated_by,
+			w.default_agent_id,w.default_model_config_id,w.settings,w.context_policy,
+			w.created_by,w.updated_by,
 			w.created_at,w.updated_at,w.lock_version,w.deleted_at,m.role::TEXT
 		`+fromWhere+`
 		ORDER BY `+orderBy+`
@@ -345,7 +349,8 @@ func (r *Repository) GetAccessible(ctx context.Context, userID, workspaceID stri
 	}
 	row := r.db.QueryRowContext(ctx, `
 		SELECT w.id,w.slug::TEXT,w.display_name,w.mode,w.status,w.owner_user_id,
-			w.default_agent_id,w.default_model_config_id,w.settings,w.created_by,w.updated_by,
+			w.default_agent_id,w.default_model_config_id,w.settings,w.context_policy,
+			w.created_by,w.updated_by,
 			w.created_at,w.updated_at,w.lock_version,w.deleted_at,m.role::TEXT
 		FROM workspaces w
 		JOIN workspace_members m ON m.workspace_id = w.id AND m.user_id = $1 AND m.disabled_at IS NULL
@@ -400,7 +405,7 @@ func (r *Repository) Update(
 ) (Workspace, error) {
 	workspaceID, input.UpdatedBy = strings.TrimSpace(workspaceID), strings.TrimSpace(input.UpdatedBy)
 	if !validUUID(workspaceID) || !validUUID(input.UpdatedBy) || input.ExpectedLockVersion < 1 ||
-		(input.DisplayName == nil && input.Mode == nil && len(input.Settings) == 0) ||
+		(input.DisplayName == nil && input.Mode == nil && len(input.Settings) == 0 && !input.ContextPolicySet) ||
 		(input.DisplayName != nil && strings.TrimSpace(*input.DisplayName) == "") ||
 		(input.Mode != nil && !validMode(*input.Mode)) {
 		return Workspace{}, ErrInvalid
@@ -413,13 +418,24 @@ func (r *Repository) Update(
 		}
 		settings = []byte(input.Settings)
 	}
+	var contextPolicy any
+	if input.ContextPolicySet {
+		normalized, err := sessioncontext.NormalizePolicyRaw(input.ContextPolicy)
+		if err != nil {
+			return Workspace{}, ErrInvalid
+		}
+		contextPolicy = []byte(normalized)
+	}
 	value, err := scanWorkspace(r.db.QueryRowContext(ctx, `
 		UPDATE workspaces SET display_name=COALESCE($2,display_name),mode=COALESCE($3,mode),
-			settings=COALESCE($4,settings),updated_by=$5,updated_at=clock_timestamp(),
+			settings=COALESCE($4,settings),
+			context_policy=COALESCE($5,context_policy),
+			updated_by=$6,updated_at=clock_timestamp(),
 			lock_version=lock_version+1
-		WHERE id=$1 AND deleted_at IS NULL AND lock_version=$6
+		WHERE id=$1 AND deleted_at IS NULL AND lock_version=$7
 		RETURNING `+workspaceColumns,
-		workspaceID, input.DisplayName, input.Mode, settings, input.UpdatedBy, input.ExpectedLockVersion))
+		workspaceID, input.DisplayName, input.Mode, settings,
+		contextPolicy, input.UpdatedBy, input.ExpectedLockVersion))
 	return r.workspaceMutationResult(ctx, workspaceID, value, err, "update workspace")
 }
 
@@ -948,6 +964,7 @@ type rowScanner interface {
 func scanWorkspace(row rowScanner) (Workspace, error) {
 	var workspace Workspace
 	var settings []byte
+	var contextPolicy []byte
 	err := row.Scan(
 		&workspace.ID,
 		&workspace.Slug,
@@ -958,6 +975,7 @@ func scanWorkspace(row rowScanner) (Workspace, error) {
 		&workspace.DefaultAgentID,
 		&workspace.DefaultModelConfigID,
 		&settings,
+		&contextPolicy,
 		&workspace.CreatedBy,
 		&workspace.UpdatedBy,
 		&workspace.CreatedAt,
@@ -966,12 +984,14 @@ func scanWorkspace(row rowScanner) (Workspace, error) {
 		&workspace.DeletedAt,
 	)
 	workspace.Settings = append(json.RawMessage(nil), settings...)
+	workspace.ContextPolicy = append(json.RawMessage(nil), contextPolicy...)
 	return workspace, err
 }
 
 func scanAccessibleWorkspace(row rowScanner) (AccessibleWorkspace, error) {
 	var item AccessibleWorkspace
 	var settings []byte
+	var contextPolicy []byte
 	var role string
 	err := row.Scan(
 		&item.ID,
@@ -983,6 +1003,7 @@ func scanAccessibleWorkspace(row rowScanner) (AccessibleWorkspace, error) {
 		&item.DefaultAgentID,
 		&item.DefaultModelConfigID,
 		&settings,
+		&contextPolicy,
 		&item.CreatedBy,
 		&item.UpdatedBy,
 		&item.CreatedAt,
@@ -992,6 +1013,7 @@ func scanAccessibleWorkspace(row rowScanner) (AccessibleWorkspace, error) {
 		&role,
 	)
 	item.Settings = append(json.RawMessage(nil), settings...)
+	item.ContextPolicy = append(json.RawMessage(nil), contextPolicy...)
 	item.CurrentUserRole = Role(role)
 	if err == nil && !validRole(item.CurrentUserRole) {
 		return AccessibleWorkspace{}, fmt.Errorf("invalid membership role %q", role)

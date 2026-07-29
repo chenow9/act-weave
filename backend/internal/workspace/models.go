@@ -66,6 +66,9 @@ type UpdateWorkspaceInput struct {
 	DisplayName         *string
 	Mode                *Mode
 	Settings            json.RawMessage
+	ContextPolicy       json.RawMessage
+	// ContextPolicySet is true when the caller explicitly patches contextPolicy.
+	ContextPolicySet    bool
 	UpdatedBy           string
 	ExpectedLockVersion int64
 }

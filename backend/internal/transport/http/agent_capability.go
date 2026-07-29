@@ -116,25 +116,30 @@ func (r *AgentCapabilityRoutes) authorize(c *gin.Context, action authz.Action) b
 }
 
 type agentDTO struct {
-	ID                      string       `json:"id"`
-	Name                    string       `json:"name"`
-	RoleDescription         string       `json:"roleDescription"`
-	CurrentPromptRevisionID *string      `json:"currentPromptRevisionId,omitempty"`
-	ModelConfigID           string       `json:"modelConfigId"`
-	IsDefault               bool         `json:"isDefault"`
-	Status                  agent.Status `json:"status"`
-	ToolsCount              int          `json:"toolsCount"`
-	WorkflowsCount          int          `json:"workflowsCount"`
-	CreatedBy               string       `json:"createdBy"`
-	UpdatedBy               string       `json:"updatedBy"`
-	CreatedAt               time.Time    `json:"createdAt"`
-	UpdatedAt               time.Time    `json:"updatedAt"`
-	LockVersion             int64        `json:"lockVersion"`
+	ID                      string          `json:"id"`
+	Name                    string          `json:"name"`
+	RoleDescription         string          `json:"roleDescription"`
+	CurrentPromptRevisionID *string         `json:"currentPromptRevisionId,omitempty"`
+	ModelConfigID           string          `json:"modelConfigId"`
+	IsDefault               bool            `json:"isDefault"`
+	Status                  agent.Status    `json:"status"`
+	ContextPolicy           json.RawMessage `json:"contextPolicy"`
+	ToolsCount              int             `json:"toolsCount"`
+	WorkflowsCount          int             `json:"workflowsCount"`
+	CreatedBy               string          `json:"createdBy"`
+	UpdatedBy               string          `json:"updatedBy"`
+	CreatedAt               time.Time       `json:"createdAt"`
+	UpdatedAt               time.Time       `json:"updatedAt"`
+	LockVersion             int64           `json:"lockVersion"`
 }
 
 func agentSummaryDTO(v agent.Summary) agentDTO {
+	policy := v.ContextPolicy
+	if len(policy) == 0 {
+		policy = json.RawMessage(`{}`)
+	}
 	return agentDTO{v.ID, v.Name, v.RoleDescription, v.CurrentPromptRevisionID, v.ModelConfigID,
-		v.IsDefault, v.Status, v.ToolsCount, v.WorkflowsCount, v.CreatedBy, v.UpdatedBy,
+		v.IsDefault, v.Status, policy, v.ToolsCount, v.WorkflowsCount, v.CreatedBy, v.UpdatedBy,
 		v.CreatedAt, v.UpdatedAt, v.LockVersion}
 }
 
@@ -312,11 +317,12 @@ func (r *AgentCapabilityRoutes) getAgent(c *gin.Context) {
 }
 
 type updateAgentRequest struct {
-	Name            *string       `json:"name"`
-	RoleDescription *string       `json:"roleDescription"`
-	ModelConfigID   *string       `json:"modelConfigId"`
-	Status          *agent.Status `json:"status"`
-	LockVersion     int64         `json:"lockVersion"`
+	Name            *string         `json:"name"`
+	RoleDescription *string         `json:"roleDescription"`
+	ModelConfigID   *string         `json:"modelConfigId"`
+	Status          *agent.Status   `json:"status"`
+	ContextPolicy   json.RawMessage `json:"contextPolicy"`
+	LockVersion     int64           `json:"lockVersion"`
 }
 
 func (r *AgentCapabilityRoutes) updateAgent(c *gin.Context) {
@@ -351,7 +357,9 @@ func (r *AgentCapabilityRoutes) updateAgent(c *gin.Context) {
 	}
 	value, err := r.agents.Update(c.Request.Context(), c.Param("wid"), c.Param("id"), agent.UpdateAgent{
 		Name: current.Name, RoleDescription: current.RoleDescription, ModelConfigID: current.ModelConfigID,
-		Status: current.Status, UpdatedBy: actor(c), ExpectedLockVersion: request.LockVersion})
+		Status: current.Status, ContextPolicy: request.ContextPolicy,
+		ContextPolicySet: request.ContextPolicy != nil,
+		UpdatedBy: actor(c), ExpectedLockVersion: request.LockVersion})
 	if err != nil {
 		RespondError(c, err)
 		return

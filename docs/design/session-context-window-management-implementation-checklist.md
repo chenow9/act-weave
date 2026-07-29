@@ -49,7 +49,7 @@
 | ID | 项目 | 状态 | 实现证据 | Verification |
 | --- | --- | --- | --- | --- |
 | IC-01 | Expand-only schema 与领域契约 | VERIFIED | feat/zkl-74-session-context-window (000002 + domain models) | subagent `019fab98-4085-75f1-b484-8b5bfa286f84` PASS |
-| IC-02 | 严格配置、权限与管理 API | PENDING | — | — |
+| IC-02 | 严格配置、权限与管理 API | VERIFIED | model-runtime.v1 + session-context-policy.v1 config APIs | subagent `019faba4-29e2-7853-8e26-86b08ef348a6` PASS |
 | IC-03 | `run.v2` 快照绑定与策略解析 | PENDING | — | — |
 | IC-04 | Tokenizer registry 与 token estimator | PENDING | — | — |
 | IC-05 | Principal-safe 历史分页与轮次规范化 | PENDING | — | — |
@@ -153,10 +153,10 @@
 
 **进度记录**
 
-- 状态：PENDING
-- 实现证据：—
-- 开发自测：—
-- Verification subagent / 结果：—
+- 状态：VERIFIED
+- 实现证据：`modelconfig/runtime_capabilities.go` + repo CAS；`sessioncontext/policy.go`；HTTP DTO/handlers for model/workspace/agent；options leak rejection
+- 开发自测：`go test ./internal/modelconfig/... ./internal/sessioncontext/... ./internal/agent/... ./internal/workspace/... ./internal/transport/http/...` → all ok
+- Verification subagent / 结果：`019faba4-29e2-7853-8e26-86b08ef348a6` VERDICT PASS
 
 ### IC-03 — `run.v2` 快照绑定与策略解析
 
