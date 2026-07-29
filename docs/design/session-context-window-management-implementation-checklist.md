@@ -52,8 +52,8 @@
 | IC-02 | 严格配置、权限与管理 API | VERIFIED | model-runtime.v1 + session-context-policy.v1 config APIs | subagent `019faba4-29e2-7853-8e26-86b08ef348a6` PASS |
 | IC-03 | `run.v2` 快照绑定与策略解析 | VERIFIED | run.v2 + session-context.v1 resolver + fail-closed gate | subagent `019fabab-cc43-7b91-b138-0da5b2203891` PASS |
 | IC-04 | Tokenizer registry 与 token estimator | VERIFIED | contextwindow registry + estimator + tiktoken-go | subagent `019fabaf-e6ff-7560-898a-69406774b21b` PASS |
-| IC-05 | Principal-safe 历史分页与轮次规范化 | PENDING | — | — |
-| IC-06 | 纯 `token_window` assembler | PENDING | — | — |
+| IC-05 | Principal-safe 历史分页与轮次规范化 | VERIFIED | reverse page + NormalizeTurns | subagent `019fabb3-15b2-7c13-ae60-bfd9d7900736` PASS |
+| IC-06 | 纯 `token_window` assembler | VERIFIED | AssembleTokenWindow pure | subagent `019fabb3-15b3-7d52-91e6-64e987698936` PASS |
 | IC-07 | Assembly manifest 与稳定错误契约 | PENDING | — | — |
 | IC-08 | Bridge / model adapter 初始运行接入 | PENDING | — | — |
 | IC-09 | Usage、overflow、可观测与用户错误投影 | PENDING | — | — |
@@ -292,10 +292,10 @@
 
 **进度记录**
 
-- 状态：PENDING
-- 实现证据：—
-- 开发自测：—
-- Verification subagent / 结果：—
+- 状态：VERIFIED
+- 实现证据：`ListMessagesForPrincipalReversePage`/`CountMessagesForPrincipal`；`contextwindow/turns.go` NormalizeTurns
+- 开发自测：`go test ./internal/chat/... ./internal/contextwindow/...` → ok
+- Verification subagent / 结果：`019fabb3-15b2-7c13-ae60-bfd9d7900736` VERDICT PASS
 
 ### IC-06 — 纯 `token_window` assembler
 
@@ -339,10 +339,10 @@
 
 **进度记录**
 
-- 状态：PENDING
-- 实现证据：—
-- 开发自测：—
-- Verification subagent / 结果：—
+- 状态：VERIFIED
+- 实现证据：`contextwindow/assembler.go` AssembleTokenWindow；budget/mandatory/suffix tests
+- 开发自测：`go test ./internal/contextwindow/...` → ok
+- Verification subagent / 结果：`019fabb3-15b3-7d52-91e6-64e987698936` VERDICT PASS
 
 ### IC-07 — Assembly manifest 与稳定错误契约
 

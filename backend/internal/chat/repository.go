@@ -308,6 +308,105 @@ func (r *Repository) ListMessagesForPrincipal(
 	return values, nil
 }
 
+// ListMessagesForPrincipalReversePage returns up to limit messages newest-first
+// for an authorized session, using a stable (created_at, id) reverse cursor.
+// limit is a resource bound only; it does not change semantic selection.
+// Does not decrypt permanent object bodies.
+func (r *Repository) ListMessagesForPrincipalReversePage(
+	ctx context.Context,
+	access Access,
+	sessionID string,
+	limit int,
+	cursor *MessagePageCursor,
+) (MessagePage, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if access.Validate(access.Identity.Actor.WorkspaceID) != nil || !validUUID(sessionID) {
+		return MessagePage{}, ErrInvalid
+	}
+	if limit < 1 || limit > 500 {
+		return MessagePage{}, ErrInvalid
+	}
+	// Ensure session is visible before paging (IDOR protection).
+	if _, err := r.GetSessionForPrincipal(ctx, access, sessionID); err != nil {
+		return MessagePage{}, err
+	}
+	actorType, actorID, subjectType, subjectID, clientID, shared := accessArguments(access)
+	args := []any{
+		access.Identity.Actor.WorkspaceID, actorType, actorID, clientID,
+		subjectType, subjectID, shared, sessionID,
+	}
+	cursorClause := ""
+	if cursor != nil && !cursor.CreatedAt.IsZero() && validUUID(cursor.ID) {
+		args = append(args, cursor.CreatedAt.UTC(), cursor.ID)
+		// Fetch strictly older than cursor in reverse order.
+		cursorClause = fmt.Sprintf(
+			` AND (cm.created_at, cm.id) < ($%d::timestamptz, $%d::uuid)`,
+			len(args)-1, len(args),
+		)
+	}
+	args = append(args, limit+1)
+	limitArg := len(args)
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT `+messageColumns+` FROM chat_messages cm
+		JOIN chat_sessions cs ON cs.workspace_id=cm.workspace_id AND cs.id=cm.session_id
+		WHERE `+sessionVisibilityPredicate+` AND cs.id=$8`+cursorClause+`
+		ORDER BY cm.created_at DESC, cm.id DESC
+		LIMIT $`+fmt.Sprintf("%d", limitArg)+`
+	`, args...)
+	if err != nil {
+		return MessagePage{}, fmt.Errorf("list reverse page chat messages: %w", err)
+	}
+	defer rows.Close()
+	values := make([]Message, 0, limit)
+	for rows.Next() {
+		value, scanErr := scanMessage(rows)
+		if scanErr != nil {
+			return MessagePage{}, fmt.Errorf("scan reverse page chat message: %w", scanErr)
+		}
+		values = append(values, value)
+	}
+	if err := rows.Err(); err != nil {
+		return MessagePage{}, err
+	}
+	page := MessagePage{HasMore: len(values) > limit}
+	if page.HasMore {
+		values = values[:limit]
+	}
+	page.Messages = values
+	if page.HasMore && len(values) > 0 {
+		last := values[len(values)-1]
+		page.NextCursor = &MessagePageCursor{CreatedAt: last.CreatedAt, ID: last.ID}
+	}
+	return page, nil
+}
+
+// CountMessagesForPrincipal returns the message count for a visible session.
+func (r *Repository) CountMessagesForPrincipal(
+	ctx context.Context,
+	access Access,
+	sessionID string,
+) (int64, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if access.Validate(access.Identity.Actor.WorkspaceID) != nil || !validUUID(sessionID) {
+		return 0, ErrInvalid
+	}
+	if _, err := r.GetSessionForPrincipal(ctx, access, sessionID); err != nil {
+		return 0, err
+	}
+	actorType, actorID, subjectType, subjectID, clientID, shared := accessArguments(access)
+	var count int64
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM chat_messages cm
+		JOIN chat_sessions cs ON cs.workspace_id=cm.workspace_id AND cs.id=cm.session_id
+		WHERE `+sessionVisibilityPredicate+` AND cs.id=$8
+	`, access.Identity.Actor.WorkspaceID, actorType, actorID, clientID,
+		subjectType, subjectID, shared, sessionID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count visible chat messages: %w", err)
+	}
+	return count, nil
+}
+
 func (r *Repository) insertMessageInTransaction(
 	ctx context.Context,
 	tx *sql.Tx,

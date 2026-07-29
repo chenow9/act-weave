@@ -151,6 +151,20 @@ type Message struct {
 	PolicyVersion   int64
 }
 
+// MessagePageCursor is a reverse (created_at, id) cursor for history pagination.
+// Empty means "start from newest".
+type MessagePageCursor struct {
+	CreatedAt time.Time
+	ID        string
+}
+
+// MessagePage is one page of messages newest-first (caller may reverse for chronology).
+type MessagePage struct {
+	Messages   []Message
+	NextCursor *MessagePageCursor
+	HasMore    bool
+}
+
 type CreateSessionInput struct {
 	ID          string
 	WorkspaceID string
