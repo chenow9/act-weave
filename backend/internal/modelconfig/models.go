@@ -14,6 +14,18 @@ const (
 	StatusDisabled   Status = "DISABLED"
 )
 
+// RuntimeCapabilities holds non-provider model limits and tokenizer binding.
+// Schema validation and CAS write paths are introduced in later checklist items;
+// IC-01 only establishes the domain shape. Values are never merged into Options.
+type RuntimeCapabilities struct {
+	SchemaVersion              string `json:"schemaVersion,omitempty"`
+	ContextWindowTokens        int64  `json:"contextWindowTokens,omitempty"`
+	DefaultOutputReserveTokens int64  `json:"defaultOutputReserveTokens,omitempty"`
+	OutputTokenLimitMode       string `json:"outputTokenLimitMode,omitempty"`
+	TokenizerProfile           string `json:"tokenizerProfile,omitempty"`
+	TokenizerVersion           string `json:"tokenizerVersion,omitempty"`
+}
+
 type Config struct {
 	ID                   string
 	WorkspaceID          string
@@ -24,16 +36,19 @@ type Config struct {
 	CredentialSecretID   *string
 	CredentialConfigured bool
 	Options              json.RawMessage
-	Status               Status
-	LastVerifiedAt       *time.Time
-	LastLatencyMS        *int
-	LastErrorCode        *string
-	CreatedBy            string
-	UpdatedBy            string
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
-	LockVersion          int64
-	DeletedAt            *time.Time
+	// RuntimeCapabilities is the raw JSON object from model_configs.runtime_capabilities.
+	// Empty object "{}" is the expand-only default and means "unset".
+	RuntimeCapabilities json.RawMessage
+	Status              Status
+	LastVerifiedAt      *time.Time
+	LastLatencyMS       *int
+	LastErrorCode       *string
+	CreatedBy           string
+	UpdatedBy           string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	LockVersion         int64
+	DeletedAt           *time.Time
 }
 
 type NewConfig struct {

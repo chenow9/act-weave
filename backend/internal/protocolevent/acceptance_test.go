@@ -18,8 +18,8 @@ import (
 func TestEventKernelDatabaseAcceptance(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 1 || version.Dirty {
-		t.Fatalf("expected clean latest schema version 1, got %+v", version)
+	if !version.Applied || version.Number != 2 || version.Dirty {
+		t.Fatalf("expected clean latest schema version 2, got %+v", version)
 	}
 	db := testDatabase.Open(t)
 	insertProtocolEventFixtures(t, db)

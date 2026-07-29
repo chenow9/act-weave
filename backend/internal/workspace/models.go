@@ -41,12 +41,15 @@ type Workspace struct {
 	DefaultAgentID       *string
 	DefaultModelConfigID *string
 	Settings             json.RawMessage
-	CreatedBy            string
-	UpdatedBy            string
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
-	LockVersion          int64
-	DeletedAt            *time.Time
+	// ContextPolicy is the raw JSON object from workspaces.context_policy.
+	// Empty object "{}" is the expand-only default and means platform defaults apply.
+	ContextPolicy json.RawMessage
+	CreatedBy     string
+	UpdatedBy     string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	LockVersion   int64
+	DeletedAt     *time.Time
 }
 
 type NewWorkspace struct {

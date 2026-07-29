@@ -13,6 +13,25 @@ const (
 	StatusError    Status = "ERROR"
 )
 
+// ContextPolicy is the versioned session-context policy patch stored on an Agent.
+// Unset fields mean inherit; strict validation lands in later checklist items.
+type ContextPolicy struct {
+	SchemaVersion       string                `json:"schemaVersion,omitempty"`
+	Mode                string                `json:"mode,omitempty"`
+	MaxInputTokens      int64                 `json:"maxInputTokens,omitempty"`
+	OutputReserveTokens int64                 `json:"outputReserveTokens,omitempty"`
+	SafetyMarginTokens  int64                 `json:"safetyMarginTokens,omitempty"`
+	MaxRecentTurns      int64                 `json:"maxRecentTurns,omitempty"`
+	Summary             *ContextPolicySummary `json:"summary,omitempty"`
+}
+
+// ContextPolicySummary holds optional rolling-summary knobs; ignored until that mode is enabled.
+type ContextPolicySummary struct {
+	MaxTokens           int64 `json:"maxTokens,omitempty"`
+	MinEvictedTurns     int64 `json:"minEvictedTurns,omitempty"`
+	MaxGenerationPasses int64 `json:"maxGenerationPasses,omitempty"`
+}
+
 type Agent struct {
 	ID                      string
 	WorkspaceID             string
@@ -22,12 +41,15 @@ type Agent struct {
 	ModelConfigID           string
 	IsDefault               bool
 	Status                  Status
-	CreatedBy               string
-	UpdatedBy               string
-	CreatedAt               time.Time
-	UpdatedAt               time.Time
-	LockVersion             int64
-	DeletedAt               *time.Time
+	// ContextPolicy is the raw JSON object from agents.context_policy.
+	// Empty object "{}" is the expand-only default and means "unset / inherit".
+	ContextPolicy json.RawMessage
+	CreatedBy     string
+	UpdatedBy     string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	LockVersion   int64
+	DeletedAt     *time.Time
 }
 
 type Summary struct {

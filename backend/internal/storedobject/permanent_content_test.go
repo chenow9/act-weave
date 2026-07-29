@@ -9,7 +9,7 @@ import (
 func TestPermanentContentReferenceMigration(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 1 || version.Dirty {
+	if !version.Applied || version.Number != 2 || version.Dirty {
 		t.Fatalf("permanent content migration version = %+v", version)
 	}
 	db := testDatabase.Open(t)

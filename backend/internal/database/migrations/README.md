@@ -1,10 +1,10 @@
 # Database migrations
 
-The embedded migration set is a **single baseline** for formal testing and clean installs:
+The embedded migration set starts from a **baseline** plus additive steps:
 
 ```text
-000001_init.up.sql
-000001_init.down.sql
+000001_init.up.sql / 000001_init.down.sql
+000002_session_context_contracts.up.sql / 000002_session_context_contracts.down.sql
 ```
 
 Historical step migrations (`000001`–`000061` before the squash) are preserved under
@@ -13,7 +13,7 @@ embedded into the binary and are not applied by `cmd/migrate`.
 
 ## Rules
 
-- new schema changes continue as `000002_*.up.sql` / `000002_*.down.sql` and beyond;
+- new schema changes continue as `000003_*.up.sql` / `000003_*.down.sql` and beyond;
 - every new migration must have a matching down file until production policy says otherwise;
 - schema changes belong here, never in service startup or repository code;
 - migrations must not read, transform, or dual-write retired aggregate snapshots;

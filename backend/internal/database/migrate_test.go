@@ -9,7 +9,7 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 )
 
-func TestEmbeddedMigrationSetIsSingleBaseline(t *testing.T) {
+func TestEmbeddedMigrationSetStartsWithBaselineThenSessionContext(t *testing.T) {
 	source, err := iofs.New(migrationFiles, migrationDirectory)
 	if err != nil {
 		t.Fatalf("open embedded migrations: %v", err)
@@ -23,35 +23,50 @@ func TestEmbeddedMigrationSetIsSingleBaseline(t *testing.T) {
 	if version != 1 {
 		t.Fatalf("expected first migration version 1, got %d", version)
 	}
-	if _, err := source.Next(version); err == nil {
-		t.Fatal("expected a single baseline migration with no next version")
+	next, err := source.Next(version)
+	if err != nil {
+		t.Fatalf("expected session-context migration after baseline: %v", err)
+	}
+	if next != 2 {
+		t.Fatalf("expected second migration version 2, got %d", next)
+	}
+	if _, err := source.Next(next); err == nil {
+		t.Fatal("expected only two embedded migrations (baseline + session context contracts)")
 	}
 
-	for _, direction := range []struct {
-		name string
-		read func(uint) (io.ReadCloser, string, error)
+	for _, item := range []struct {
+		version    uint
+		identifier string
 	}{
-		{name: "up", read: source.ReadUp},
-		{name: "down", read: source.ReadDown},
+		{version: 1, identifier: "init"},
+		{version: 2, identifier: "session_context_contracts"},
 	} {
-		t.Run(direction.name, func(t *testing.T) {
-			reader, identifier, err := direction.read(version)
-			if err != nil {
-				t.Fatalf("read %s migration: %v", direction.name, err)
-			}
-			defer reader.Close()
+		for _, direction := range []struct {
+			name string
+			read func(uint) (io.ReadCloser, string, error)
+		}{
+			{name: "up", read: source.ReadUp},
+			{name: "down", read: source.ReadDown},
+		} {
+			t.Run(item.identifier+"/"+direction.name, func(t *testing.T) {
+				reader, identifier, err := direction.read(item.version)
+				if err != nil {
+					t.Fatalf("read %s migration: %v", direction.name, err)
+				}
+				defer reader.Close()
 
-			body, err := io.ReadAll(reader)
-			if err != nil {
-				t.Fatalf("read %s migration body: %v", direction.name, err)
-			}
-			if identifier != "init" {
-				t.Fatalf("unexpected migration identifier %q", identifier)
-			}
-			if len(strings.TrimSpace(string(body))) == 0 {
-				t.Fatalf("%s migration body must not be empty", direction.name)
-			}
-		})
+				body, err := io.ReadAll(reader)
+				if err != nil {
+					t.Fatalf("read %s migration body: %v", direction.name, err)
+				}
+				if identifier != item.identifier {
+					t.Fatalf("unexpected migration identifier %q", identifier)
+				}
+				if len(strings.TrimSpace(string(body))) == 0 {
+					t.Fatalf("%s migration body must not be empty", direction.name)
+				}
+			})
+		}
 	}
 }
 

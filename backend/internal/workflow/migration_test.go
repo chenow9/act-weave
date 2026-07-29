@@ -35,7 +35,7 @@ func TestWorkflowMigration(t *testing.T) {
 	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 1 || version.Dirty {
+	if !version.Applied || version.Number != 2 || version.Dirty {
 		t.Fatalf("expected clean workflow migration version 16, got %+v", version)
 	}
 	db := testDatabase.Open(t)

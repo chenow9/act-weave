@@ -195,7 +195,7 @@ func newRepositoryTest(t *testing.T) (*Repository, *sql.DB) {
 	t.Helper()
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 1 || version.Dirty {
+	if !version.Applied || version.Number != 2 || version.Dirty {
 		t.Fatalf("expected clean repository migration version 4, got %+v", version)
 	}
 	db := testDatabase.Open(t)

@@ -119,7 +119,7 @@ func TestClientCredentialsTokenEndpointMigrationEnforcesFiveToFifteenMinuteTTL(t
 		t.Fatal(err)
 	}
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 1 || version.Dirty {
+	if !version.Applied || version.Number != 2 || version.Dirty {
 		t.Fatalf("expected clean token TTL migration version 47, got %+v", version)
 	}
 }
