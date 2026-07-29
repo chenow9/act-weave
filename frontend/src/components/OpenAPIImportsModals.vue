@@ -8,7 +8,10 @@ const scp = useOpenAPIImportsPageContext();
 /* prettier-ignore */
 const {
   connectionsStore, importModalVisible, importMode, selectedOpenAPIFile, selectedOpenAPIFilePreview, selectedImportId, detailLoading, detailError, actionNote, importingOpenAPI, generatingDraftsByImportId, deletingImportId, pendingDeleteImport, importDialogRef, detailDialogRef, deleteDialogRef,
-  openapiDropdowns, importForm, importProviders, selectedWorkspaceOption, selectedProviderOption, selectedProviderCanImportOnline, selectedConnectionOption, selectedImport, selectedWorkspace, selectedConnection, selectedImportDetail, canImportOpenAPI, selectedImportDetailVisible, workspaceLabel, providerLabel, canProviderImportOnline,
+  openapiDropdowns, importForm, importProviders, selectedWorkspaceOption, selectedProviderOption, selectedProviderCanImportOnline, selectedConnectionOption, selectedImport, selectedWorkspace, selectedConnection, selectedImportDetail,
+  filteredImportEndpoints, visibleImportEndpoints, hasMoreImportEndpoints, endpointDetailQuery,
+  toggleEndpointDetail, isEndpointDetailExpanded, showMoreImportEndpoints,
+  canImportOpenAPI, selectedImportDetailVisible, workspaceLabel, providerLabel, canProviderImportOnline,
   statusClass, statusDotClass, connectionAddress, toggleOpenAPIDropdown, handleModalTab, closeImportModal, retryImportDetail, closeImportDetail, closeDeleteConfirm, confirmRemoveImport, dismissActionNote, selectImportProvider, selectImportConnection, selectOpenAPIFile, importOpenAPI, generateDrafts
 } = scp;
 void ToolSchemaTreeView;
@@ -367,7 +370,16 @@ void ToolSchemaTreeView;
               <strong>{{ selectedImport.readyEndpoints }} 个可生成</strong>
             </div>
           </div>
-          <div class="openapi-detail-schema-stack">
+          <!-- Aggregate trees only when there is no per-endpoint list (avoids double cost). -->
+          <div
+            v-if="
+              !selectedImportDetail?.endpoints?.length &&
+              ((selectedImportDetail?.requestTransport || []).length ||
+                (selectedImportDetail?.requestBodyNodes || []).length ||
+                (selectedImportDetail?.responseNodes || []).length)
+            "
+            class="openapi-detail-schema-stack"
+          >
             <ToolSchemaTreeView
               :nodes="selectedImportDetail?.requestTransport || []"
               title="请求参数"
@@ -384,35 +396,69 @@ void ToolSchemaTreeView;
               empty-text="当前导入记录未返回响应结构。"
             />
           </div>
-          <div v-if="selectedImportDetail?.endpoints.length" class="tool-schema-endpoint-list">
-            <div class="editable-schema-head">
+          <div v-if="selectedImportDetail?.endpoints?.length" class="tool-schema-endpoint-list">
+            <div class="editable-schema-head openapi-endpoint-list-head">
               <div>
                 <strong>接口明细</strong>
-                <span>按接口查看导入出的结构化契约。</span>
+                <span
+                  >共 {{ selectedImportDetail.endpoints.length }} 个接口；默认折叠，点击展开查看契约（避免一次渲染过多表格导致卡顿）。</span
+                >
               </div>
+              <label class="openapi-endpoint-search">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true" />
+                <input
+                  v-model="endpointDetailQuery"
+                  type="search"
+                  placeholder="搜索 method / path / 摘要"
+                  aria-label="搜索接口明细"
+                />
+              </label>
             </div>
+            <p v-if="!filteredImportEndpoints.length" class="openapi-endpoint-empty">没有匹配的接口</p>
             <div
-              v-for="endpoint in selectedImportDetail.endpoints"
+              v-for="endpoint in visibleImportEndpoints"
               :key="`${endpoint.method}-${endpoint.path}`"
               class="tool-schema-endpoint-card"
+              :class="{ open: isEndpointDetailExpanded(endpoint) }"
             >
-              <div class="tool-schema-endpoint-head">
-                <strong :title="`${endpoint.method} ${endpoint.path}`"
-                  >{{ endpoint.method }} {{ endpoint.path }}</strong
-                >
-                <span>{{ endpoint.summary || endpoint.operationId || endpoint.status }}</span>
+              <button
+                type="button"
+                class="tool-schema-endpoint-head tool-schema-endpoint-toggle"
+                :aria-expanded="isEndpointDetailExpanded(endpoint)"
+                @click="toggleEndpointDetail(endpoint)"
+              >
+                <span class="tool-schema-endpoint-title">
+                  <strong :title="`${endpoint.method} ${endpoint.path}`"
+                    >{{ endpoint.method }} {{ endpoint.path }}</strong
+                  >
+                  <span>{{ endpoint.summary || endpoint.operationId || endpoint.status }}</span>
+                </span>
+                <i
+                  class="fa-solid fa-chevron-down tool-schema-endpoint-chevron"
+                  aria-hidden="true"
+                />
+              </button>
+              <div v-if="isEndpointDetailExpanded(endpoint)" class="tool-schema-endpoint-body">
+                <ToolSchemaTreeView
+                  :nodes="endpoint.requestContract ? ([endpoint.requestContract].flat() as ToolSchemaNode[]) : []"
+                  title="请求体 Body"
+                  empty-text="无请求结构"
+                />
+                <ToolSchemaTreeView
+                  :nodes="endpoint.responseContract ? ([endpoint.responseContract].flat() as ToolSchemaNode[]) : []"
+                  title="响应结果"
+                  empty-text="无响应结构"
+                />
               </div>
-              <ToolSchemaTreeView
-                :nodes="endpoint.requestContract ? ([endpoint.requestContract].flat() as ToolSchemaNode[]) : []"
-                title="请求体 Body"
-                empty-text="无请求结构"
-              />
-              <ToolSchemaTreeView
-                :nodes="endpoint.responseContract ? ([endpoint.responseContract].flat() as ToolSchemaNode[]) : []"
-                title="响应结果"
-                empty-text="无响应结构"
-              />
             </div>
+            <button
+              v-if="hasMoreImportEndpoints"
+              type="button"
+              class="openapi-endpoint-more"
+              @click="showMoreImportEndpoints"
+            >
+              显示更多（已显示 {{ visibleImportEndpoints.length }} / {{ filteredImportEndpoints.length }}）
+            </button>
           </div>
         </template>
       </div>

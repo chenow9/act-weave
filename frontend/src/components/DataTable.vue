@@ -688,7 +688,7 @@ onBeforeUnmount(() => {
 .data-table-column-option input {
   width: 16px;
   height: 16px;
-  accent-color: #10b981;
+  accent-color: var(--aw-primary, #0d9488);
 }
 
 .data-table-column-option.locked {
@@ -840,12 +840,13 @@ onBeforeUnmount(() => {
 }
 
 .data-table tbody tr:focus-visible {
-  box-shadow: inset 0 0 0 2px rgba(16, 185, 129, 0.35);
+  box-shadow: inset 0 0 0 2px rgba(148, 163, 184, 0.45);
 }
 
-.data-table tbody tr.is-selected {
-  border-left: 2px solid #10b981;
-  background: #ecfdf5;
+.data-table tbody tr.is-selected,
+.data-table tbody tr.is-checked {
+  box-shadow: inset 2px 0 0 #0d9488;
+  background: #f8fafc;
 }
 
 .data-table tbody tr.is-selection-neutral:focus-visible {
@@ -853,7 +854,7 @@ onBeforeUnmount(() => {
 }
 
 .data-table tbody tr.is-selection-neutral.is-selected {
-  border-left-color: transparent;
+  box-shadow: none;
   background: #fbfdff;
 }
 
@@ -881,11 +882,11 @@ onBeforeUnmount(() => {
 }
 
 .data-table tbody tr.is-selected td {
-  background: #ecfdf5;
+  background: #f8fafc;
 }
 
 .data-table tbody tr.is-checked td {
-  background: #ecfdf5;
+  background: #f8fafc;
 }
 
 .data-table tbody tr.is-selection-neutral.is-selected td {
@@ -900,11 +901,50 @@ onBeforeUnmount(() => {
 }
 
 .data-table-checkbox {
-  width: 15px;
-  height: 15px;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
   margin: 0;
-  accent-color: #10b981;
+  border: 1px solid #cbd5e1;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: none;
   cursor: pointer;
+  vertical-align: middle;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.data-table-checkbox:hover {
+  border-color: #94a3b8;
+}
+
+.data-table-checkbox:focus-visible {
+  outline: 0;
+  border-color: #0d9488;
+  box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.2);
+}
+
+/* Scheme A: solid brand fill + thin white check */
+.data-table-checkbox:checked {
+  border-color: #0d9488;
+  background-color: #0d9488;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3.5 8.2 6.6 11.2 12.5 4.8' stroke='%23ffffff' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 12px 12px;
+}
+
+.data-table-checkbox:indeterminate {
+  border-color: #0d9488;
+  background-color: #0d9488;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4 8h8' stroke='%23ffffff' stroke-width='1.7' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 12px 12px;
 }
 
 .data-table th.data-table-selection-cell {

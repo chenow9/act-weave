@@ -325,6 +325,18 @@ func buildSnapshotHTTPRequest(
 			return nil, execution.NewError(execution.ErrorCodeInvalidSnapshot, "VALIDATION", false, 0, nil)
 		}
 	}
+	// Residual input keys not declared in action.parameters become query params.
+	// OpenAPI imports often omit query (pageNum/pageSize); tests still need them on the wire.
+	for key, value := range input {
+		if consumed[key] || value == nil {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(key), "body") {
+			continue
+		}
+		addURLValues(query, key, value)
+		consumed[key] = true
+	}
 	if strings.Contains(resolvedPath, "{") || strings.Contains(resolvedPath, "}") {
 		return nil, execution.NewError(execution.ErrorCodeInvalidRequest, "VALIDATION", false, 0, nil)
 	}

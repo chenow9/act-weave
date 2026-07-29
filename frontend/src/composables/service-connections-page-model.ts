@@ -406,7 +406,14 @@ export function createServiceConnectionsPageModel() {
     if (!verification) return [];
     const passed = verification.status === "SUCCEEDED";
     return [
-      { label: "连接验证", passed, desc: verification.diagnostics.code || (passed ? "连接验证通过" : "连接验证失败") },
+      {
+        label: "连接验证",
+        passed,
+        desc: passed
+          ? "连接验证通过"
+          : [verification.diagnostics.code, verification.diagnostics.detail].filter(Boolean).join(" · ") ||
+            "连接验证失败",
+      },
       { label: "安全诊断", passed, desc: verification.diagnostics.category || "无诊断分类" },
     ];
   });
@@ -1665,7 +1672,7 @@ export function createServiceConnectionsPageModel() {
         return;
       }
       showActionNote(
-        `${connection.name} 验证后仍需处理：${verification.diagnostics.code || "请检查 Provider、认证和凭据配置。"}`,
+        `${connection.name} 验证后仍需处理：${formatVerificationFailure(verification)}`,
         "warning",
       );
     } finally {
@@ -1728,11 +1735,11 @@ export function createServiceConnectionsPageModel() {
         closeConnectionForm();
         return;
       }
-      formSubmitError.value = verification.diagnostics.code || "请检查连接配置。";
+      formSubmitError.value = formatVerificationFailure(verification);
       showActionNote(
         refreshError
-          ? `${saved.name} 已保存，但验证仍需处理；${refreshError}`
-          : `${saved.name} 已保存，但验证仍需处理。`,
+          ? `${saved.name} 已保存，但验证仍需处理（${formatVerificationFailure(verification)}）；${refreshError}`
+          : `${saved.name} 已保存，但验证仍需处理：${formatVerificationFailure(verification)}`,
         "warning",
       );
       focusFirstVerificationFailure(verification);
@@ -1844,6 +1851,18 @@ export function createServiceConnectionsPageModel() {
     );
   }
 
+  function formatVerificationFailure(verification: {
+    diagnostics?: Record<string, string>;
+    status?: string;
+  }) {
+    const code = verification.diagnostics?.code?.trim();
+    const detail = verification.diagnostics?.detail?.trim();
+    if (code && detail) return `${code}（${detail}）`;
+    if (code) return code;
+    if (detail) return detail;
+    return "请检查 Provider 验证 URL、认证与网络连通性。";
+  }
+
   function verificationModeLabel(connectionId: string) {
     const verification = connectionsStore.verificationByConnectionId[connectionId];
     if (verification) return `后端验证 · ${verification.latencyMs ?? 0}ms`;
@@ -1853,9 +1872,11 @@ export function createServiceConnectionsPageModel() {
 
   function verificationSummary(connectionId: string) {
     const verification = connectionsStore.verificationByConnectionId[connectionId];
-    return verification
-      ? `${verification.diagnostics.category || "UNKNOWN"} · ${verification.diagnostics.code || verification.status}`
-      : "点击验证后会显示后端返回的稳定诊断码。";
+    if (!verification) return "点击验证后会显示后端返回的稳定诊断码。";
+    if (verification.status === "SUCCEEDED") {
+      return `${verification.diagnostics.category || "OK"} · ${verification.diagnostics.code || "CONNECTION_VERIFIED"}`;
+    }
+    return formatVerificationFailure(verification);
   }
 
   return {

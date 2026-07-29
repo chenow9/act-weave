@@ -441,6 +441,8 @@
 }
 
 .openapi-detail-modal-card {
+  display: flex;
+  flex-direction: column;
   width: min(100%, 920px);
 }
 
@@ -962,11 +964,155 @@
 
 .openapi-detail-modal-body {
   display: grid;
+  flex: 1 1 auto;
   gap: 14px;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   padding: 20px;
+  overscroll-behavior: contain;
+}
+
+.openapi-endpoint-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.openapi-endpoint-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: min(100%, 260px);
+  padding: 0 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.openapi-endpoint-search i {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.openapi-endpoint-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: #0f172a;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.openapi-endpoint-empty {
+  margin: 0;
+  padding: 16px;
+  color: #64748b;
+  font-size: 12px;
+  text-align: center;
+  border: 1px dashed #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.tool-schema-endpoint-list {
+  display: grid;
+  gap: 8px;
+}
+
+.tool-schema-endpoint-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.tool-schema-endpoint-card.open {
+  border-color: #99f6e4;
+  box-shadow: 0 0 0 1px rgba(13, 148, 136, 0.08);
+}
+
+.tool-schema-endpoint-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tool-schema-endpoint-toggle:hover {
+  background: #f8fafc;
+}
+
+.tool-schema-endpoint-title {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tool-schema-endpoint-title strong {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-schema-endpoint-title span {
+  color: #64748b;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-schema-endpoint-chevron {
+  flex: 0 0 auto;
+  color: #94a3b8;
+  font-size: 11px;
+  transition: transform 0.15s ease;
+}
+
+.tool-schema-endpoint-card.open .tool-schema-endpoint-chevron {
+  color: #0f766e;
+  transform: rotate(180deg);
+}
+
+.tool-schema-endpoint-body {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 12px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.openapi-endpoint-more {
+  min-height: 40px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #334155;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.openapi-endpoint-more:hover {
+  border-color: #94a3b8;
+  background: #f1f5f9;
 }
 
 .openapi-detail-schema-stack {

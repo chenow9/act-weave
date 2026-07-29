@@ -5,7 +5,7 @@ import { useModalFocus } from "../composables/useModalFocus";
 import { useConnectionsStore } from "../stores/connections";
 import { useToolsStore } from "../stores/tools";
 import type { OutboundCredentialsEnvelope, Tool, ToolTestExecutionResult } from "../types/domain";
-import { buildDefaultToolTestInput } from "../utils/tool-test-inputs";
+import { buildDefaultToolTestInput, collectToolTestParams } from "../utils/tool-test-inputs";
 
 const props = defineProps<{
   modelValue: boolean;
@@ -28,13 +28,13 @@ const passthroughToken = ref("");
 const passthroughExpiresAt = ref("");
 const passthroughConnectionId = ref("");
 
+const effectiveParams = computed(() => (props.tool ? collectToolTestParams(props.tool) : []));
 const groupedParams = computed(() => {
-  const tool = props.tool;
-  if (!tool) return [];
+  if (!props.tool) return [];
   return ["Path", "Query", "Header", "Body"]
     .map((location) => ({
       location,
-      params: tool.requestParams.filter((param) => param.location === location),
+      params: effectiveParams.value.filter((param) => param.location === location),
     }))
     .filter((group) => group.params.length > 0);
 });
@@ -57,15 +57,27 @@ const requiresPassthrough = computed(() => toolConnection.value?.outboundMode ==
 watch(
   () => props.tool,
   (tool) => {
-    inputDraft.value = tool ? buildDefaultToolTestInput(tool.requestParams) : {};
+    inputDraft.value = tool ? buildDefaultToolTestInput(tool) : {};
     result.value = null;
     errorMessage.value = "";
     passthroughToken.value = "";
-    passthroughExpiresAt.value = "";
+    // datetime-local default: now + 1h (server requires expiresAt strictly in the future)
+    passthroughExpiresAt.value = toDatetimeLocalValue(new Date(Date.now() + 60 * 60 * 1000));
     passthroughConnectionId.value = tool?.connectionId || "";
   },
   { immediate: true },
 );
+
+/** Format Date for <input type="datetime-local"> (local wall clock, no seconds required). */
+function toDatetimeLocalValue(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** Strip accidental "Bearer " prefix — connection inject already adds it. */
+function normalizePassthroughToken(raw: string) {
+  return raw.trim().replace(/^Bearer\s+/i, "").trim();
+}
 
 useModalFocus({
   visible: () => props.modelValue,
@@ -89,21 +101,32 @@ function parseComplexInput(value: string) {
 function buildOutboundEnvelope(): OutboundCredentialsEnvelope | undefined {
   if (!requiresPassthrough.value) return undefined;
   const connectionId = passthroughConnectionId.value || props.tool?.connectionId || "";
-  if (!connectionId || !passthroughToken.value.trim()) {
+  const token = normalizePassthroughToken(passthroughToken.value);
+  if (!connectionId || !token) {
     errorMessage.value = "透传 Connection 需要一次性业务 Token 与 Connection。";
     return undefined;
   }
-  const expiresAt = passthroughExpiresAt.value
-    ? new Date(passthroughExpiresAt.value).toISOString()
-    : new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  // Prefer explicit UI value; fall back to +1h. Must be strictly after server "now".
+  const expiresDate = passthroughExpiresAt.value
+    ? new Date(passthroughExpiresAt.value)
+    : new Date(Date.now() + 60 * 60 * 1000);
+  if (Number.isNaN(expiresDate.getTime())) {
+    errorMessage.value = "过期时间格式无效，请重新选择（本地时间）。";
+    return undefined;
+  }
+  // Require at least ~2 minutes remaining to absorb clock skew + request RTT.
+  if (expiresDate.getTime() <= Date.now() + 2 * 60 * 1000) {
+    errorMessage.value = "过期时间必须晚于当前时间至少 2 分钟（当前设置已过期或过近）。";
+    return undefined;
+  }
   return {
     schemaVersion: "outbound-credentials.v1",
     bindings: [
       {
         connectionId,
         credentialType: "ACCESS_TOKEN",
-        value: passthroughToken.value,
-        expiresAt,
+        value: token,
+        expiresAt: expiresDate.toISOString(),
       },
     ],
   };
@@ -145,10 +168,17 @@ async function runTest() {
 }
 
 function toolTestActionError(error: unknown) {
-  const responseError = (error as { response?: { data?: { error?: string | { message?: string } } } }).response?.data
-    ?.error;
-  if (typeof responseError === "string") return responseError;
-  if (responseError?.message) return responseError.message;
+  const payload = (error as { response?: { data?: { error?: string | { message?: string; code?: string } } } })
+    .response?.data?.error;
+  const code = typeof payload === "object" && payload ? payload.code : undefined;
+  const message = typeof payload === "string" ? payload : payload?.message;
+  if (code === "OUTBOUND_CREDENTIAL_EXPIRED" || /no longer available|expired/i.test(message || "")) {
+    return "出站 Token 信封已过期：请把「过期时间」调到当前时间之后（建议 +1 小时），并重新粘贴业务 Token。";
+  }
+  if (code === "OUTBOUND_CREDENTIAL_INVALID" || /envelope is not valid/i.test(message || "")) {
+    return "出站凭据无效：请检查 Token 是否为空/含换行、Connection 是否匹配，以及过期时间是否为将来时间。Token 勿重复加 Bearer 前缀。";
+  }
+  if (typeof message === "string" && message) return message;
   return error instanceof Error && error.message ? error.message : "执行测试失败";
 }
 
@@ -162,6 +192,18 @@ function responseMessage(value: unknown) {
   if (typeof value !== "object" || value === null) return "";
   const record = value as Record<string, unknown>;
   return typeof record.msg === "string" ? record.msg : typeof record.message === "string" ? record.message : "";
+}
+
+function formatResponseBody(body: unknown) {
+  if (body === undefined || body === null) return "(无响应体)";
+  if (typeof body === "string") {
+    try {
+      return JSON.stringify(JSON.parse(body), null, 2);
+    } catch {
+      return body;
+    }
+  }
+  return JSON.stringify(body, null, 2);
 }
 
 function formatToolTestError(testResult: ToolTestExecutionResult) {
@@ -327,8 +369,8 @@ function updateComplexInput(paramName: string, event: Event) {
               <pre class="tool-test-json-block">{{ JSON.stringify(result.requestInput, null, 2) }}</pre>
             </div>
             <div>
-              <h4>响应体</h4>
-              <pre class="tool-test-json-block">{{ JSON.stringify(result.responseBody, null, 2) }}</pre>
+              <h4>上游响应原文</h4>
+              <pre class="tool-test-json-block">{{ formatResponseBody(result.responseBody) }}</pre>
             </div>
           </div>
         </section>

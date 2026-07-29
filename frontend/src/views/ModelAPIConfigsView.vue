@@ -300,8 +300,15 @@ const modelRuntimeSectionSummary = computed(() => {
   return `${windowLabel} · 预留 ${reserve}`;
 });
 
-function toggleModelRuntimeSection() {
+async function toggleModelRuntimeSection() {
   modelRuntimeSectionOpen.value = !modelRuntimeSectionOpen.value;
+  if (!modelRuntimeSectionOpen.value) return;
+  await nextTick();
+  // Keep expanded fields in the scrollable form viewport (card clips overflow).
+  document.getElementById("model-runtime-section-body")?.scrollIntoView({
+    block: "nearest",
+    behavior: "smooth",
+  });
 }
 
 function openCreateModel() {
@@ -1918,7 +1925,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
 
 .model-modal-card {
   width: 100%;
-  max-width: 512px;
+  max-width: 560px;
   max-height: calc(100vh - 32px);
   display: flex;
   flex-direction: column;
@@ -2078,11 +2085,14 @@ function handleModelModalKeydown(event: KeyboardEvent) {
 
 .model-modal-form {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 16px;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 24px;
+  overscroll-behavior: contain;
 }
 
 .model-modal-fieldset {
@@ -2091,6 +2101,11 @@ function handleModelModalKeydown(event: KeyboardEvent) {
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   background: #f8fafc;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.model-runtime-section {
   overflow: hidden;
 }
 
@@ -2172,7 +2187,23 @@ function handleModelModalKeydown(event: KeyboardEvent) {
 }
 
 .model-runtime-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   padding: 14px 16px 16px;
+  background: #f8fafc;
+}
+
+.model-runtime-section-body .model-modal-fieldset-help {
+  margin: 0;
+}
+
+.model-runtime-section-body .model-context-presets {
+  margin: 0;
+}
+
+.model-runtime-section-body .model-modal-field {
+  margin-bottom: 0;
 }
 
 .model-modal-fieldset-help {

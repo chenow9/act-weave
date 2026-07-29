@@ -20,6 +20,7 @@ import (
 	"actweave/backend/internal/connection"
 	"actweave/backend/internal/execution"
 	"actweave/backend/internal/identity"
+	"actweave/backend/internal/listpage"
 	"actweave/backend/internal/modelconfig"
 	"actweave/backend/internal/openapiimport"
 	"actweave/backend/internal/outboundidentity"
@@ -454,6 +455,7 @@ func isInvalid(err error) bool {
 		errors.Is(err, agent.ErrInvalid) || errors.Is(err, capability.ErrInvalid) ||
 		errors.Is(err, modelconfig.ErrInvalid) || errors.Is(err, connection.ErrInvalid) ||
 		errors.Is(err, secret.ErrInvalid) || errors.Is(err, tool.ErrInvalid) ||
+		errors.Is(err, listpage.ErrInvalid) ||
 		errors.Is(err, workflow.ErrInvalid) || errors.Is(err, chat.ErrInvalid) ||
 		errors.Is(err, execution.ErrRunInvalid) || errors.Is(err, execution.ErrToolInvocationInvalid) ||
 		errors.Is(err, execution.ErrConfirmationInvalid) ||

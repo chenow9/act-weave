@@ -372,30 +372,43 @@ onBeforeUnmount(() => {
 <template>
   <section class="management-list" :class="{ 'has-card-list': hasCardSlot }" :aria-busy="loading">
     <div class="management-list-toolbar">
-      <div v-if="checkedRowKeys.length" class="management-list-batch-bar" role="status" aria-live="polite">
-        <span>已选 {{ checkedRowKeys.length }} 项</span>
-        <slot name="batch-actions" :checked-row-keys="checkedRowKeys" />
-        <button type="button" aria-label="取消选择" @click="emit('update:checked-row-keys', [])">取消选择</button>
-      </div>
-      <label v-else class="management-list-search">
-        <i class="fa-solid fa-magnifying-glass" aria-hidden="true" />
-        <input
-          :value="search"
-          type="search"
-          :aria-label="searchAriaLabel"
-          :placeholder="searchPlaceholder"
-          @input="updateSearch"
-        />
-        <button
-          v-if="search"
-          type="button"
-          :title="clearSearchAriaLabel"
-          :aria-label="clearSearchAriaLabel"
-          @click="emit('update:search', '')"
+      <!--
+        Search always stays in document flow to reserve height/width.
+        Batch bar overlays it so selection never pushes the table down.
+      -->
+      <div class="management-list-toolbar-start">
+        <label class="management-list-search" :class="{ 'is-covered': checkedRowKeys.length > 0 }">
+          <i class="fa-solid fa-magnifying-glass" aria-hidden="true" />
+          <input
+            :value="search"
+            type="search"
+            :aria-label="searchAriaLabel"
+            :placeholder="searchPlaceholder"
+            :tabindex="checkedRowKeys.length ? -1 : undefined"
+            @input="updateSearch"
+          />
+          <button
+            v-if="search"
+            type="button"
+            :title="clearSearchAriaLabel"
+            :aria-label="clearSearchAriaLabel"
+            :tabindex="checkedRowKeys.length ? -1 : undefined"
+            @click="emit('update:search', '')"
+          >
+            <i class="fa-solid fa-circle-xmark" aria-hidden="true" />
+          </button>
+        </label>
+        <div
+          v-if="checkedRowKeys.length"
+          class="management-list-batch-bar"
+          role="status"
+          aria-live="polite"
         >
-          <i class="fa-solid fa-circle-xmark" aria-hidden="true" />
-        </button>
-      </label>
+          <span>已选 {{ checkedRowKeys.length }} 项</span>
+          <slot name="batch-actions" :checked-row-keys="checkedRowKeys" />
+          <button type="button" aria-label="取消选择" @click="emit('update:checked-row-keys', [])">取消选择</button>
+        </div>
+      </div>
       <div class="management-list-toolbar-actions">
         <div v-if="$slots.filters" class="management-list-filters">
           <slot name="filters" />
@@ -641,6 +654,15 @@ onBeforeUnmount(() => {
   border-bottom: 0;
 }
 
+.management-list-toolbar-start {
+  position: relative;
+  flex: 0 0 auto;
+  width: min(280px, 100%);
+  height: 40px;
+  min-height: 40px;
+  max-height: 40px;
+}
+
 .management-list-toolbar-actions {
   display: flex;
   min-width: 0;
@@ -653,52 +675,142 @@ onBeforeUnmount(() => {
 .management-list-search {
   position: relative;
   display: block;
-  width: min(280px, 100%);
-  flex-shrink: 0;
+  width: 100%;
+  height: 40px;
+}
+
+.management-list-search.is-covered {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .management-list-batch-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
   display: inline-flex;
-  width: min(max-content, 100%);
-  min-width: min(280px, 100%);
+  height: 40px;
   min-height: 40px;
-  flex-shrink: 0;
+  max-height: 40px;
+  width: max-content;
+  min-width: 100%;
+  max-width: min(720px, calc(100cqw - 24px));
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.75rem;
-  background: #f9fafb;
-  color: #4b5563;
+  gap: 6px;
+  padding: 0 6px 0 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #fff;
+  color: #334155;
   font-size: var(--aw-table-toolbar-size, 0.8125rem);
-  font-weight: 600;
+  font-weight: 700;
   white-space: nowrap;
   box-sizing: border-box;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
 }
 
-.management-list-batch-bar button {
-  min-height: 32px;
+.management-list-batch-bar > span {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.management-list-batch-bar > button[aria-label="取消选择"] {
+  min-height: 28px;
+  height: 28px;
   padding: 0 10px;
-  border: 0;
-  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
   background: transparent;
-  color: inherit;
+  color: #64748b;
   font: inherit;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+  flex: 0 0 auto;
 }
 
-.management-list-batch-bar button:hover,
-.management-list-batch-bar button:focus-visible {
+.management-list-batch-bar > button[aria-label="取消选择"]:hover,
+.management-list-batch-bar > button[aria-label="取消选择"]:focus-visible {
   outline: 0;
-  background: #fff;
-  color: #111827;
-  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.06);
+  background: #f8fafc;
+  color: #0f172a;
 }
 
-.management-list-batch-bar button:disabled {
+/*
+ * Slot content is compiled by the parent, so scoped rules must use :slotted().
+ * Also keep unscoped utility classes in page CSS for reliability.
+ */
+.management-list-batch-bar :slotted(.management-list-batch-action),
+.management-list-batch-bar :slotted(button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 28px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.management-list-batch-bar :slotted(.management-list-batch-action i),
+.management-list-batch-bar :slotted(button i) {
+  font-size: 11px;
+}
+
+.management-list-batch-bar :slotted(.management-list-batch-action.is-primary) {
+  border-color: rgba(13, 148, 136, 0.35);
+  background: #fff;
+  color: #0d9488;
+  box-shadow: none;
+}
+
+.management-list-batch-bar :slotted(.management-list-batch-action.is-primary:hover:not(:disabled)),
+.management-list-batch-bar :slotted(.management-list-batch-action.is-primary:focus-visible:not(:disabled)) {
+  outline: 0;
+  border-color: rgba(13, 148, 136, 0.5);
+  background: #ecfdf5;
+  color: #0f766e;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
+}
+
+.management-list-batch-bar :slotted(.management-list-batch-action.is-danger) {
+  border-color: #fecaca;
+  background: #fff;
+  color: #b91c1c;
+}
+
+.management-list-batch-bar :slotted(.management-list-batch-action.is-danger:hover:not(:disabled)),
+.management-list-batch-bar :slotted(.management-list-batch-action.is-danger:focus-visible:not(:disabled)) {
+  outline: 0;
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #991b1b;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+}
+
+.management-list-batch-bar :slotted(.management-list-batch-action:disabled),
+.management-list-batch-bar :slotted(button:disabled) {
   cursor: not-allowed;
   opacity: 0.55;
+  box-shadow: none;
 }
 
 .management-list-search > i {
@@ -878,7 +990,7 @@ onBeforeUnmount(() => {
 .data-table-column-option input {
   width: 16px;
   height: 16px;
-  accent-color: #10b981;
+  accent-color: var(--aw-primary, #0d9488);
 }
 
 .data-table-column-option.locked {
@@ -1134,8 +1246,12 @@ onBeforeUnmount(() => {
     flex-direction: column;
   }
 
-  .management-list-search {
+  .management-list-toolbar-start {
     width: 100%;
+  }
+
+  .management-list-batch-bar {
+    max-width: 100%;
   }
 
   .management-list-toolbar-actions {
@@ -1155,8 +1271,12 @@ onBeforeUnmount(() => {
     flex-direction: column;
   }
 
-  .management-list-search {
+  .management-list-toolbar-start {
     width: 100%;
+  }
+
+  .management-list-batch-bar {
+    max-width: 100%;
   }
 
   .management-list-toolbar-actions {

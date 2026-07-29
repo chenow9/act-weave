@@ -674,6 +674,9 @@ export interface ToolTestResult {
   runtimePolicyPassed: boolean;
   requestSummary: Record<string, unknown>;
   responseSummary: Record<string, unknown>;
+  /** Interactive-only raw upstream body from test API (not stored in redacted summary). */
+  responseBody?: unknown;
+  requestBody?: unknown;
   latencyMs?: number;
   errorCode?: string;
   testedBy: string;

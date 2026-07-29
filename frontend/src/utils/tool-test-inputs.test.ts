@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { ToolRequestParam } from "../types/domain";
-import { buildDefaultToolTestInput } from "./tool-test-inputs";
+import type { Tool, ToolRequestParam } from "../types/domain";
+import { buildDefaultToolTestInput, collectToolTestParams } from "./tool-test-inputs";
 
 describe("tool test input defaults", () => {
   it("builds default test input values from request schema examples and fallback types", () => {
@@ -52,6 +52,67 @@ describe("tool test input defaults", () => {
 
     expect(buildDefaultToolTestInput(params)).toEqual({
       pageSize: 20,
+    });
+  });
+
+  it("fills path placeholders and common pagination when OpenAPI schema is empty", () => {
+    const tool = {
+      requestParams: [],
+      actionConfig: {
+        method: "GET",
+        path: "/api/v1/configs/key/{key}",
+        parameters: [{ in: "path", name: "key", input: "key", required: true }],
+      },
+    } as Pick<Tool, "requestParams" | "actionConfig">;
+
+    expect(collectToolTestParams(tool).map((p) => p.name)).toEqual(["key"]);
+    expect(buildDefaultToolTestInput(tool)).toEqual({ key: "1" });
+  });
+
+  it("injects pageNum/pageSize for empty GET list endpoints", () => {
+    const tool = {
+      requestParams: [],
+      actionConfig: {
+        method: "GET",
+        path: "/api/v1/configs",
+        parameters: [],
+      },
+    } as Pick<Tool, "requestParams" | "actionConfig">;
+
+    expect(buildDefaultToolTestInput(tool)).toEqual({
+      pageNum: 1,
+      pageSize: 10,
+    });
+  });
+
+  it("includes optional query params with common defaults", () => {
+    const params: ToolRequestParam[] = [
+      {
+        location: "Query",
+        name: "pageNum",
+        type: "integer",
+        required: false,
+        description: "",
+      },
+      {
+        location: "Query",
+        name: "pageSize",
+        type: "integer",
+        required: false,
+        description: "",
+      },
+      {
+        location: "Query",
+        name: "keyword",
+        type: "string",
+        required: false,
+        description: "",
+      },
+    ];
+    expect(buildDefaultToolTestInput(params)).toEqual({
+      pageNum: 1,
+      pageSize: 10,
+      keyword: "",
     });
   });
 });

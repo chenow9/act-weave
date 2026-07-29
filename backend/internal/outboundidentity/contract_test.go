@@ -396,7 +396,7 @@ func TestCredentialsEnvelopeValidation(t *testing.T) {
 	if err := ValidateCredentialsEnvelopeExpiry(envelope, now); err != nil {
 		t.Fatalf("expiry: %v", err)
 	}
-	if err := ValidateCredentialsEnvelopeExpiry(envelope, now.Add(10*time.Minute)); !errors.Is(err, ErrCredentialInvalid) {
+	if err := ValidateCredentialsEnvelopeExpiry(envelope, now.Add(10*time.Minute)); !errors.Is(err, ErrCredentialExpired) {
 		t.Fatalf("expected expired, got %v", err)
 	}
 

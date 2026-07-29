@@ -12,6 +12,7 @@ import (
 
 	"actweave/backend/internal/authz"
 	"actweave/backend/internal/execution"
+	"actweave/backend/internal/listpage"
 	"actweave/backend/internal/openapiimport"
 	"actweave/backend/internal/outboundidentity"
 	"actweave/backend/internal/tool"
@@ -21,6 +22,8 @@ import (
 
 type ToolStore interface {
 	List(context.Context, string) ([]tool.Tool, error)
+	// ListPage is preferred for management tables (server-side pagination + head version summary).
+	ListPage(context.Context, string, tool.ListQuery) (tool.ListPage, error)
 	Create(context.Context, tool.CreateInput) (tool.Tool, tool.Version, error)
 	Get(context.Context, string, string) (tool.Tool, error)
 	UpdateMetadata(context.Context, string, string, tool.MetadataUpdate) (tool.Tool, error)
@@ -34,7 +37,7 @@ type ToolStore interface {
 	BatchLatestTestSummaries(context.Context, string, []string) (map[string]*tool.LatestTestSummary, error)
 }
 type ToolTestRunner interface {
-	Run(context.Context, tool.RunToolTestInput) (tool.TestRecord, error)
+	Run(context.Context, tool.RunToolTestInput) (tool.TestRunResult, error)
 }
 type ToolTestConnectionResolver interface {
 	ResolveTestConnection(context.Context, string, string, string, string) (execution.ConnectionSnapshot, execution.CredentialReference, error)
@@ -145,6 +148,18 @@ type toolDTO struct {
 	// LatestTest is additive (ZKL-56). null/omitted means historical test unknown —
 	// never inferred from Published lifecycle.
 	LatestTest *latestTestDTO `json:"latestTest"`
+	// HeadVersion is the latest version summary for list rows (no input/output schemas).
+	HeadVersion *headVersionDTO `json:"headVersion,omitempty"`
+}
+
+type headVersionDTO struct {
+	ID                  string          `json:"id"`
+	VersionNo           int             `json:"versionNo"`
+	LifecycleStatus     string          `json:"lifecycleStatus"`
+	ExecutorType        string          `json:"executorType"`
+	DefaultConnectionID *string         `json:"defaultConnectionId,omitempty"`
+	ActionSchemaVersion string          `json:"actionSchemaVersion,omitempty"`
+	ActionConfig        json.RawMessage `json:"actionConfig,omitempty"`
 }
 
 type latestTestDTO struct {
@@ -155,7 +170,13 @@ type latestTestDTO struct {
 }
 
 func toolDTOFor(v tool.Tool) toolDTO {
-	return toolDTO{v.CapabilityID, v.ProviderID, v.SourceAssetID, v.DefaultConnectionID, v.SourceEndpointID, v.Name, v.Slug, v.Description, v.Status, v.ActiveReleaseID, v.CreatedBy, v.UpdatedBy, v.CreatedAt, v.UpdatedAt, v.LockVersion, nil}
+	return toolDTO{
+		ID: v.CapabilityID, ProviderID: v.ProviderID, SourceAssetID: v.SourceAssetID,
+		DefaultConnectionID: v.DefaultConnectionID, SourceEndpointID: v.SourceEndpointID,
+		Name: v.Name, Slug: v.Slug, Description: v.Description, Status: v.Status,
+		ActiveReleaseID: v.ActiveReleaseID, CreatedBy: v.CreatedBy, UpdatedBy: v.UpdatedBy,
+		CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, LockVersion: v.LockVersion,
+	}
 }
 
 func latestTestDTOFor(summary *tool.LatestTestSummary) *latestTestDTO {
@@ -230,26 +251,81 @@ func (r *ToolOpenAPIRoutes) listTools(c *gin.Context) {
 	if !r.authorize(c, authz.ActionView) {
 		return
 	}
-	v, e := r.tools.List(c.Request.Context(), c.Param("wid"))
+	params, err := ParseListPage(c, listpage.Options{
+		DefaultPageSize: listpage.DefaultPageSize,
+		AllowedSort:     map[string]string{"name": "name", "protocol": "protocol", "status": "status", "createdAt": "createdAt", "updatedAt": "updatedAt", "updatedBy": "updatedBy"},
+	})
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+	// Always server-paginated for management lists. Missing page defaults to page 1 / size 20.
+	if params.Page == 0 {
+		params.Page = listpage.DefaultPage
+		params.PageSize = listpage.DefaultPageSize
+	}
+	query := tool.ListQuery{
+		Params: params,
+		Status: strings.TrimSpace(c.Query("status")),
+		Type:   strings.TrimSpace(c.Query("type")),
+	}
+	// Map FE lifecycle labels to repository status codes.
+	switch strings.ToLower(query.Status) {
+	case "draft":
+		query.Status = "DRAFT"
+	case "review":
+		query.Status = "REVIEW"
+	case "tested":
+		query.Status = "TESTED"
+	case "published":
+		query.Status = "PUBLISHED"
+	case "disabled":
+		query.Status = "DISABLED"
+	case "attention":
+		// Connection-health attention still requires client-side connection catalog;
+		// ignore unknown server filter for now (returns unfiltered page).
+		query.Status = ""
+	}
+	page, e := r.tools.ListPage(c.Request.Context(), c.Param("wid"), query)
 	if e != nil {
 		RespondError(c, e)
 		return
 	}
-	ids := make([]string, len(v))
-	for i := range v {
-		ids[i] = v[i].CapabilityID
+	ids := make([]string, len(page.Items))
+	for i := range page.Items {
+		ids[i] = page.Items[i].CapabilityID
 	}
 	summaries, sumErr := r.tools.BatchLatestTestSummaries(c.Request.Context(), c.Param("wid"), ids)
 	if sumErr != nil {
-		// Fail closed to null latestTest rather than failing the whole list.
 		summaries = map[string]*tool.LatestTestSummary{}
 	}
-	items := make([]toolDTO, len(v))
-	for i := range v {
-		items[i] = toolDTOFor(v[i])
-		items[i].LatestTest = latestTestDTOFor(summaries[v[i].CapabilityID])
+	items := make([]toolDTO, len(page.Items))
+	for i := range page.Items {
+		item := page.Items[i]
+		dto := toolDTOFor(item.Tool)
+		dto.LatestTest = latestTestDTOFor(summaries[item.CapabilityID])
+		if item.Head.ID != "" {
+			dto.HeadVersion = &headVersionDTO{
+				ID:                  item.Head.ID,
+				VersionNo:           item.Head.VersionNo,
+				LifecycleStatus:     item.Head.LifecycleStatus,
+				ExecutorType:        item.Head.ExecutorType,
+				DefaultConnectionID: item.Head.DefaultConnectionID,
+				ActionSchemaVersion: item.Head.ActionSchemaVersion,
+				ActionConfig:        item.Head.ActionConfig,
+			}
+			// Prefer head version connection for list display binding.
+			if dto.DefaultConnectionID == nil && item.Head.DefaultConnectionID != nil {
+				dto.DefaultConnectionID = item.Head.DefaultConnectionID
+			}
+		}
+		items[i] = dto
 	}
-	c.JSON(200, gin.H{"items": items})
+	RespondListPageWithExtra(c, items, listpage.Meta{
+		Page:     page.Page,
+		PageSize: page.PageSize,
+		Total:    page.Total,
+	}, gin.H{"summary": page.Summary})
 }
 func (r *ToolOpenAPIRoutes) createTool(c *gin.Context) {
 	if !r.authorize(c, authz.ActionEdit) {
@@ -450,16 +526,31 @@ type toolTestDTO struct {
 	RuntimePolicyPassed  bool            `json:"runtimePolicyPassed"`
 	RequestSummary       json.RawMessage `json:"requestSummary"`
 	ResponseSummary      json.RawMessage `json:"responseSummary"`
-	LatencyMS            *int            `json:"latencyMs,omitempty"`
-	ErrorCode            *string         `json:"errorCode,omitempty"`
-	TestedBy             string          `json:"testedBy"`
-	TestedAt             time.Time       `json:"testedAt"`
+	// RequestBody / ResponseBody are interactive-only previews of the raw payloads.
+	// Persisted summaries stay redacted (keys/byteSize/status only).
+	RequestBody  json.RawMessage `json:"requestBody,omitempty"`
+	ResponseBody json.RawMessage `json:"responseBody,omitempty"`
+	LatencyMS    *int            `json:"latencyMs,omitempty"`
+	ErrorCode    *string         `json:"errorCode,omitempty"`
+	TestedBy     string          `json:"testedBy"`
+	TestedAt     time.Time       `json:"testedAt"`
 }
 
 func toolTestDTOFor(v tool.TestRecord) toolTestDTO {
-	return toolTestDTO{v.ID, v.Status, v.ConnectivityPassed, v.ResponseSchemaPassed,
-		v.ErrorMappingPassed, v.RuntimePolicyPassed, v.RequestSummary, v.ResponseSummary,
-		v.LatencyMS, v.ErrorCode, v.TestedBy, v.TestedAt}
+	return toolTestDTO{
+		ID: v.ID, Status: v.Status, ConnectivityPassed: v.ConnectivityPassed,
+		ResponseSchemaPassed: v.ResponseSchemaPassed, ErrorMappingPassed: v.ErrorMappingPassed,
+		RuntimePolicyPassed: v.RuntimePolicyPassed, RequestSummary: v.RequestSummary,
+		ResponseSummary: v.ResponseSummary, LatencyMS: v.LatencyMS, ErrorCode: v.ErrorCode,
+		TestedBy: v.TestedBy, TestedAt: v.TestedAt,
+	}
+}
+
+func toolTestDTOFromRun(run tool.TestRunResult) toolTestDTO {
+	dto := toolTestDTOFor(run.Record)
+	dto.RequestBody = run.RequestBody
+	dto.ResponseBody = run.ResponseBody
+	return dto
 }
 
 func (r *ToolOpenAPIRoutes) testVersion(c *gin.Context) {
@@ -493,7 +584,7 @@ func (r *ToolOpenAPIRoutes) testVersion(c *gin.Context) {
 	// split.Zero must not clear the transferred slice.
 	creds := split.CredentialsRaw
 	split.CredentialsRaw = nil
-	v, e := r.tests.Run(c.Request.Context(), tool.RunToolTestInput{
+	run, e := r.tests.Run(c.Request.Context(), tool.RunToolTestInput{
 		TestID: id, WorkspaceID: c.Param("wid"), CapabilityID: c.Param("id"), VersionID: c.Param("vid"),
 		TraceID: rc.TraceID, TestedBy: actor(c), Connection: connection, Credential: credential,
 		Input: q.Input, CredentialsRaw: creds,
@@ -503,7 +594,7 @@ func (r *ToolOpenAPIRoutes) testVersion(c *gin.Context) {
 		RespondError(c, e)
 		return
 	}
-	c.JSON(200, toolTestDTOFor(v))
+	c.JSON(200, toolTestDTOFromRun(run))
 }
 
 type publishVersionRequest struct {

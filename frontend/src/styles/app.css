@@ -2955,9 +2955,23 @@ a[href]:focus-visible {
 }
 
 .workspace-switcher-options > button:hover:not(:disabled),
-.workspace-switcher-options > button:focus-visible,
+.workspace-switcher-options > button:focus-visible {
+  background: #f8fafc;
+}
+
 .workspace-switcher-options > button[aria-selected="true"] {
-  background: #f0fdf7;
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.workspace-switcher-options > button[aria-selected="true"] .workspace-option-copy strong {
+  color: #047857;
+}
+
+.workspace-switcher-options > button[aria-selected="true"] .workspace-option-icon {
+  border-color: #6ee7b7;
+  background: #d1fae5;
+  color: #047857;
 }
 
 .workspace-switcher-options > button:disabled {

@@ -5,7 +5,15 @@
 import { defineStore } from "pinia";
 
 import { apiClient } from "../services/api";
-import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, type ListPagination } from "../services/paginated-list";
+import {
+  DEFAULT_PAGE_SIZE,
+  PAGE_SIZE_OPTIONS,
+  buildListQueryString,
+  emptyListPagination,
+  mergeListQuery,
+  normalizeListPagination,
+  type ListPagination,
+} from "../services/paginated-list";
 import { requireActiveWorkspaceId, accessibleWorkspaceIDs } from "../services/integration/workspace";
 import type { CatalogLoadStatus } from "../services/integration/catalog-types";
 import * as mappers from "../services/integration/mappers";
@@ -24,14 +32,13 @@ const {
   normalizeProvider,
   connectionFromDTO,
   toolFromDTO,
+  toolFromListDTO,
   normalizeToolVersion,
   normalizeToolTestResult,
   toolDraftPayload,
   toolSpecSignature,
   slugify,
   numberValue,
-  filterTools,
-  sortTools,
 } = mappers;
 type ConnectionDTO = mappers.ConnectionDTO;
 type ToolDTO = mappers.ToolDTO;
@@ -42,13 +49,17 @@ export const useToolsStore = defineStore("tools", {
   state: () => ({
     tools: [] as Tool[],
     toolPageItems: [] as Tool[],
-    toolPagination: {
-      page: 1,
-      pageSize: DEFAULT_PAGE_SIZE,
+    toolPagination: emptyListPagination(DEFAULT_PAGE_SIZE) as ListPagination,
+    toolListQuery: { query: "", page: 1, pageSize: DEFAULT_PAGE_SIZE } as ToolListQuery,
+    /** Workspace-level KPI counts from list summary (not the current page). */
+    toolListSummary: {
       total: 0,
-      pageSizeOptions: [...PAGE_SIZE_OPTIONS],
-    } as ListPagination,
-    toolListQuery: { query: "", page: 1, pageSize: DEFAULT_PAGE_SIZE } as any,
+      published: 0,
+      tested: 0,
+      draft: 0,
+      review: 0,
+      disabled: 0,
+    },
     toolPageLoading: false,
     toolPageError: null as string | null,
     toolPageHasLoaded: false,
@@ -71,12 +82,9 @@ export const useToolsStore = defineStore("tools", {
       input: Record<string, unknown>,
       outboundCredentials?: import("../types/domain").OutboundCredentialsEnvelope,
     ) {
-      const workspaceID = this.workspaceID();
-      const response = await apiClient.post(
-        `/workspaces/${workspaceID}/tools/${toolId}:test`,
-        outboundCredentials ? { input, outboundCredentials } : { input },
-      );
-      return response.data;
+      // Same route as testTool: version-scoped __command/test (colon form rewrites to
+      // /versions/:vid/__command/test). Tool-level /tools/:id:test is not registered → 404.
+      return this.testTool(toolId, input, outboundCredentials);
     },
 
     async trialWorkflowWithOutbound(
@@ -113,22 +121,47 @@ export const useToolsStore = defineStore("tools", {
       return tools;
     },
 
+    /**
+     * Lightweight catalog for pickers (workflow editor, etc.).
+     * Uses server pages + headVersion — never fans out /versions per tool.
+     */
     async fetchToolCatalog() {
       const workspaceIDs = await accessibleWorkspaceIDs();
+      const pageSize = 50;
       const responses = await Promise.all(
         workspaceIDs.map(async (workspaceID) => {
-          const response = await apiClient.get<{ items: ToolDTO[] }>(`/workspaces/${workspaceID}/tools`);
-          return Promise.all(
-            response.data.items.map(async (tool) => {
-              const versions = await apiClient.get<{ items: ToolVersionDTO[] }>(
-                `/workspaces/${workspaceID}/tools/${tool.id}/versions`,
-              );
-              return toolFromDTO(tool, workspaceID, versions.data.items);
-            }),
-          );
+          const collected: Tool[] = [];
+          let page = 1;
+          let total = Infinity;
+          while (collected.length < total) {
+            const qs = buildListQueryString({ page, pageSize });
+            const response = await apiClient.get<{
+              items: ToolDTO[];
+              pagination?: { page?: number; pageSize?: number; total?: number };
+            }>(`/workspaces/${workspaceID}/tools?${qs}`);
+            const items = (response.data.items || []).map((tool) => toolFromListDTO(tool, workspaceID));
+            collected.push(...items);
+            total = response.data.pagination?.total ?? items.length;
+            if (!items.length || items.length < pageSize) break;
+            page += 1;
+            if (page > 200) break; // safety
+          }
+          return collected;
         }),
       );
       return responses.flat();
+    },
+
+    /** Load full versions for one tool (detail / edit / test / publish). */
+    async loadToolVersions(toolId: string, workspaceId?: string) {
+      const workspaceID = workspaceId || this.workspaceID();
+      const [meta, versions] = await Promise.all([
+        apiClient.get<ToolDTO>(`/workspaces/${workspaceID}/tools/${toolId}`),
+        apiClient.get<{ items: ToolVersionDTO[] }>(`/workspaces/${workspaceID}/tools/${toolId}/versions`),
+      ]);
+      const normalized = toolFromDTO(meta.data, workspaceID, versions.data.items);
+      this.upsertTool(normalized);
+      return normalized;
     },
 
     async loadToolPage(query: ToolListQuery = {}) {
@@ -136,33 +169,70 @@ export const useToolsStore = defineStore("tools", {
       this.toolPageError = null;
       const nextSortBy = query.sortBy !== undefined ? query.sortBy || undefined : this.toolListQuery.sortBy;
       const nextSortOrder = query.sortOrder !== undefined ? query.sortOrder || undefined : this.toolListQuery.sortOrder;
-      const requestQuery = {
-        ...this.toolListQuery,
+      const requestQuery = mergeListQuery(this.toolListQuery, {
         ...query,
-        query: query.query ?? this.toolListQuery.query,
-        page: query.page ?? this.toolListQuery.page,
-        pageSize: query.pageSize ?? this.toolListQuery.pageSize,
         sortBy: nextSortBy,
         sortOrder: nextSortBy ? nextSortOrder : undefined,
-      };
+      });
       try {
-        const catalog = await this.fetchToolCatalog();
-        await this.loadToolConnections(catalog);
-        const filtered = filterTools(catalog, requestQuery.query, requestQuery.status, requestQuery.type, (tool) =>
-          this.connectionForTool(tool),
-        );
-        const sorted = sortTools(filtered, requestQuery.sortBy, requestQuery.sortOrder);
-        const page = Math.max(1, requestQuery.page);
-        const pageSize = Math.max(1, requestQuery.pageSize);
-        this.tools = catalog;
-        this.toolPageItems = sorted.slice((page - 1) * pageSize, page * pageSize);
-        this.toolPagination = { page, pageSize, total: sorted.length, pageSizeOptions: [...PAGE_SIZE_OPTIONS] };
-        this.toolListQuery = {
+        const workspaceID = this.workspaceID();
+        const qs = buildListQueryString({
           query: requestQuery.query,
+          page: requestQuery.page,
+          pageSize: requestQuery.pageSize,
+          sortBy: requestQuery.sortBy,
+          sortOrder: requestQuery.sortOrder,
           status: requestQuery.status,
           type: requestQuery.type,
-          page,
-          pageSize,
+        });
+        const response = await apiClient.get<{
+          items: ToolDTO[];
+          pagination?: { page?: number; pageSize?: number; total?: number };
+          summary?: {
+            total?: number;
+            published?: number;
+            tested?: number;
+            draft?: number;
+            review?: number;
+            disabled?: number;
+          };
+        }>(`/workspaces/${workspaceID}/tools?${qs}`);
+
+        const pageItems = (response.data.items || []).map((tool) => toolFromListDTO(tool, workspaceID));
+        // Attention filter is connection-health based (needs catalog); apply client-side on the page.
+        let visible = pageItems;
+        if (requestQuery.status === "attention") {
+          await this.loadToolConnections(pageItems);
+          visible = pageItems.filter((tool) => {
+            const connection = this.connectionForTool(tool);
+            const status = connection?.status || "";
+            return ["Needs attention", "UNVERIFIED", "ERROR", "DISABLED"].includes(status) || !connection;
+          });
+        } else {
+          void this.loadToolConnections(pageItems);
+        }
+
+        this.toolPageItems = visible;
+        // Keep tools as the current page working set (plus any detail-hydrated rows).
+        const pageIds = new Set(visible.map((t) => t.id));
+        const retained = this.tools.filter((t) => !pageIds.has(t.id) && t.versions.some((v) => v.inputSchema && Object.keys(v.inputSchema).length));
+        this.tools = [...visible, ...retained];
+        this.toolPagination = normalizeListPagination(response.data.pagination, requestQuery, visible.length);
+        const summary = response.data.summary;
+        this.toolListSummary = {
+          total: summary?.total ?? this.toolPagination.total,
+          published: summary?.published ?? 0,
+          tested: summary?.tested ?? 0,
+          draft: summary?.draft ?? 0,
+          review: summary?.review ?? 0,
+          disabled: summary?.disabled ?? 0,
+        };
+        this.toolListQuery = {
+          query: requestQuery.query || "",
+          status: requestQuery.status,
+          type: requestQuery.type,
+          page: this.toolPagination.page,
+          pageSize: this.toolPagination.pageSize,
           sortBy: requestQuery.sortBy,
           sortOrder: requestQuery.sortOrder,
         };
@@ -346,17 +416,35 @@ export const useToolsStore = defineStore("tools", {
       this.toolPagination = { ...this.toolPagination, total: Math.max(0, this.toolPagination.total - 1) };
     },
 
-    async testTool(toolId: string, inputParams: Record<string, unknown>) {
-      const tool =
+    async testTool(
+      toolId: string,
+      inputParams: Record<string, unknown>,
+      outboundCredentials?: import("../types/domain").OutboundCredentialsEnvelope,
+    ) {
+      let tool =
         this.tools.find((item) => item.id === toolId) || this.toolPageItems.find((item) => item.id === toolId);
+      // List rows only have headVersion summary; hydrate full versions before test.
+      if (tool && !(tool.versions || []).some((version) => Boolean(version.checksum))) {
+        tool = await this.loadToolVersions(toolId, tool.workspaceId);
+      }
       const version = tool?.draftVersion;
       if (!tool || !version || version.lifecycleStatus === "PUBLISHED")
         throw new Error("Select an editable Tool Version before testing.");
+      if (!tool.connectionId) throw new Error("Tool has no default connection for testing.");
       const response = await apiClient.post<ToolTestResult>(
         `/workspaces/${tool.workspaceId}/tools/${toolId}/versions/${version.id}:test`,
-        { connectionId: tool.connectionId, input: inputParams },
+        {
+          connectionId: tool.connectionId,
+          input: inputParams,
+          ...(outboundCredentials ? { outboundCredentials } : {}),
+        },
       );
       const testResult = normalizeToolTestResult(response.data)!;
+      // Prefer interactive raw body; fall back to redacted summary metadata only.
+      const rawBody =
+        (response.data as { responseBody?: unknown }).responseBody ??
+        testResult.responseBody ??
+        (testResult.responseSummary as { body?: unknown })?.body;
       const versionsResponse = await apiClient.get<{ items: ToolVersionDTO[] }>(
         `/workspaces/${tool.workspaceId}/tools/${toolId}/versions`,
       );
@@ -373,7 +461,7 @@ export const useToolsStore = defineStore("tools", {
         testResult,
         requestInput: inputParams,
         responseStatus,
-        responseBody: testResult.responseSummary.body ?? testResult.responseSummary,
+        responseBody: rawBody !== undefined ? rawBody : testResult.responseSummary,
         latencyMs: testResult.latencyMs || 0,
         passed: testResult.status === "Tested",
         errorMessage: testResult.errorCode || "",

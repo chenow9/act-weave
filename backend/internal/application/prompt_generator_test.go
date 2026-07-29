@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"actweave/backend/internal/agent"
 	"actweave/backend/internal/modelconfig"
@@ -96,5 +97,23 @@ func TestPromptGeneratorGenerateRejectsEmptyModelContent(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "no content") {
 		t.Fatalf("err=%v, want no content", err)
+	}
+}
+
+func TestPromptGeneratorLLMHTTPClientRejectsShortSharedTimeout(t *testing.T) {
+	t.Parallel()
+	gen := &promptGenerator{client: &http.Client{Timeout: 15 * time.Second}}
+	got := gen.llmHTTPClient()
+	if got == nil {
+		t.Fatal("expected fallback client")
+	}
+	if got.Timeout != 0 {
+		t.Fatalf("want stream-safe Timeout=0, got %v", got.Timeout)
+	}
+	// Explicit long/zero clients are preserved.
+	long := &http.Client{Timeout: promptGenerationTimeout}
+	gen.client = long
+	if gen.llmHTTPClient() != long {
+		t.Fatal("expected long-timeout client to be reused")
 	}
 }

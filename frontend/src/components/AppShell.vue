@@ -381,11 +381,6 @@ function handleDocumentKeydown(event: KeyboardEvent) {
                 <span class="workspace-option-meta">
                   <em>{{ workspaceModeLabel(workspace.mode) }}</em>
                   <em v-if="workspace.status === 'Disabled'" class="disabled">已停用</em>
-                  <i
-                    v-if="workspace.id === workspaces.activeWorkspaceId"
-                    class="fa-solid fa-check"
-                    aria-hidden="true"
-                  />
                 </span>
               </button>
               <p v-if="!filteredWorkspaces.length">没有匹配的业务空间</p>

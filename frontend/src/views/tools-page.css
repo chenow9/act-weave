@@ -1418,33 +1418,274 @@
   font-weight: 700;
 }
 
+/* Batch bar actions are slotted into ManagementList (parent scope); style here too. */
+.tool-management-list .management-list-batch-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 28px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.tool-management-list .management-list-batch-action i {
+  font-size: 11px;
+}
+
+.tool-management-list .management-list-batch-action.is-primary {
+  border-color: rgba(13, 148, 136, 0.35) !important;
+  background: #fff !important;
+  color: #0d9488 !important;
+  box-shadow: none;
+}
+
+.tool-management-list .management-list-batch-action.is-primary:hover:not(:disabled),
+.tool-management-list .management-list-batch-action.is-primary:focus-visible:not(:disabled) {
+  outline: 0;
+  border-color: rgba(13, 148, 136, 0.5) !important;
+  background: #ecfdf5 !important;
+  color: #0f766e !important;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
+}
+
+.tool-management-list .management-list-batch-action.is-danger {
+  border-color: #fecaca !important;
+  background: #fff !important;
+  color: #b91c1c !important;
+}
+
+.tool-management-list .management-list-batch-action.is-danger:hover:not(:disabled),
+.tool-management-list .management-list-batch-action.is-danger:focus-visible:not(:disabled) {
+  outline: 0;
+  border-color: #fca5a5 !important;
+  background: #fef2f2 !important;
+  color: #991b1b !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+}
+
+.tool-management-list .management-list-batch-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  box-shadow: none;
+}
+
 .tool-risk-confirmation-modal {
-  width: min(560px, calc(100vw - 40px));
+  width: min(480px, calc(100vw - 40px));
+  overflow: hidden;
+}
+
+.tool-batch-test-modal {
+  width: min(520px, calc(100vw - 40px));
+}
+
+.tool-batch-test-notes {
+  margin: 0;
+  padding-left: 1.15rem;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.tool-batch-test-passthrough {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.tool-batch-test-passthrough header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tool-batch-test-passthrough header strong {
+  color: #b45309;
+  font-size: 13px;
+}
+
+.tool-batch-test-passthrough header span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.tool-batch-test-passthrough label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tool-batch-test-passthrough input {
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+  font-weight: 500;
+}
+
+.tool-batch-test-progress {
+  margin: 0;
+  color: #0f766e;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.tool-risk-confirmation-modal.is-elevated-risk .tool-risk-confirmation-head > div > span {
+  color: #b91c1c;
+}
+
+.tool-risk-confirmation-modal.is-standard-risk .tool-risk-confirmation-head > div > span {
+  color: #0f766e;
 }
 
 .tool-risk-confirmation-body {
   display: flex;
   flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px 8px;
+}
+
+.tool-risk-target {
+  display: flex;
+  align-items: center;
   gap: 12px;
-  padding: 18px;
+  padding: 12px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
 }
 
-.tool-risk-confirmation-body > strong {
+.tool-risk-target-icon {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: #ecfdf5;
+  border: 1px solid #d1fae5;
+  color: #059669;
+  font-size: 15px;
+}
+
+.tool-risk-confirmation-modal.is-elevated-risk .tool-risk-target-icon {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #e11d48;
+}
+
+.tool-risk-target-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.tool-risk-target-copy strong {
   color: #0f172a;
-  font-size: 16px;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.tool-risk-confirmation-body p {
-  margin: 0;
+.tool-risk-target-copy small {
   color: #64748b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-risk-description {
+  margin: 0;
+  color: #475569;
   font-size: 13px;
   line-height: 1.6;
 }
 
 .tool-impact-summary {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+.tool-impact-item {
+  display: grid;
+  gap: 4px;
+  min-height: 72px;
+  padding: 12px 12px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.tool-impact-item.tone-ok {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.tool-impact-item.tone-warn {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.tool-impact-item.tone-neutral {
+  background: #f8fafc;
+}
+
+.tool-impact-label {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.tool-impact-value {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.tool-risk-confirmation-actions {
+  padding: 12px 20px 18px;
+  border-top: 1px solid #f1f5f9;
+  background: #fff;
+}
+
+@media (max-width: 520px) {
+  .tool-impact-summary {
+    grid-template-columns: 1fr;
+  }
 }
 
 .tool-detail-hero .status-pill,

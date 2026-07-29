@@ -1,0 +1,3782 @@
+openapi: 3.0.0
+info:
+  title: manage (zkys-gin) API
+  description: '从 manage 项目 zkys-gin 导出并针对 ActWeave 导入做过契约修补的 OpenAPI 3 文档。
+
+
+    修补内容：
+
+    1. 为空的 `data` 等字段补上 `type: object`（Swagger 转换后常缺类型）。
+
+    2. `allOf + $ref` 的属性补充 `type: object`。
+
+    3. 裸数组请求体包装为 object（deptIds / menuIds / defects / items），便于 Tool 生成。
+
+    '
+  version: 1.0.2
+paths:
+  /api/v1/auth/captcha:
+    get:
+      description: 获取图形验证码
+      tags:
+      - 01.认证中心
+      summary: 获取验证码
+      responses:
+        '200':
+          description: code/msg/data，data 为 CaptchaVO
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_auth_captcha
+  /api/v1/auth/login:
+    post:
+      description: 用户名密码登录，返回访问令牌和刷新令牌
+      tags:
+      - 01.认证中心
+      summary: 账号密码登录
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/model.LoginRequest'
+        description: 登录信息
+        required: true
+      responses:
+        '200':
+          description: code/msg/data，data 为 AuthenticationToken
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: post_api_v1_auth_login
+  /api/v1/auth/logout:
+    delete:
+      security:
+      - Bearer: []
+      description: 使当前访问令牌失效
+      tags:
+      - 01.认证中心
+      summary: 退出登录
+      responses:
+        '200':
+          description: code/msg
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: delete_api_v1_auth_logout
+  /api/v1/auth/refresh-token:
+    post:
+      description: 使用刷新令牌获取新的访问令牌
+      tags:
+      - 01.认证中心
+      summary: 刷新令牌
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  description: 刷新令牌
+                  type: string
+              required:
+              - refreshToken
+        required: true
+      responses:
+        '200':
+          description: code/msg/data，data 为 AuthenticationToken
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: post_api_v1_auth_refresh_token
+  /api/v1/auth/wechat/callback:
+    get:
+      description: 微信开放平台扫码确认后的回调地址
+      tags:
+      - 01.认证中心
+      summary: 微信网页登录回调
+      parameters:
+      - description: 微信授权码
+        name: code
+        in: query
+        required: true
+        schema:
+          type: string
+      - description: 登录状态标识
+        name: state
+        in: query
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: get_api_v1_auth_wechat_callback
+  /api/v1/auth/wechat/qr-url:
+    get:
+      description: 生成微信开放平台网页登录二维码地址和轮询state
+      tags:
+      - 01.认证中心
+      summary: 获取微信扫码登录地址
+      responses:
+        '200':
+          description: code/msg/data，data 为 WechatWebQRCodeVO
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_auth_wechat_qr_url
+  /api/v1/auth/wechat/status:
+    get:
+      description: 根据state轮询微信扫码登录状态
+      tags:
+      - 01.认证中心
+      summary: 获取微信扫码登录状态
+      parameters:
+      - description: 登录状态标识
+        name: state
+        in: query
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: code/msg/data，data 为 WechatWebLoginStatusVO
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_auth_wechat_status
+  /api/v1/configs:
+    get:
+      tags:
+      - 07.系统配置
+      summary: 配置分页
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: get_api_v1_configs
+    post:
+      tags:
+      - 07.系统配置
+      summary: 新增配置
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: post_api_v1_configs
+  /api/v1/configs/key/{key}:
+    get:
+      tags:
+      - 07.系统配置
+      summary: 根据键获取配置
+      parameters:
+      - description: 配置键
+        name: key
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: get_api_v1_configs_key_key
+  /api/v1/configs/refresh:
+    post:
+      tags:
+      - 07.系统配置
+      summary: 刷新全部配置缓存
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: post_api_v1_configs_refresh
+  /api/v1/configs/refresh/{key}:
+    post:
+      tags:
+      - 07.系统配置
+      summary: 刷新配置缓存
+      parameters:
+      - description: 配置键
+        name: key
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: post_api_v1_configs_refresh_key
+  /api/v1/configs/{ids}:
+    delete:
+      tags:
+      - 07.系统配置
+      summary: 删除配置
+      parameters:
+      - description: 配置ID列表
+        name: ids
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: delete_api_v1_configs_ids
+  /api/v1/configs/{id}:
+    get:
+      tags:
+      - 07.系统配置
+      summary: 配置详情
+      parameters:
+      - description: 配置ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: get_api_v1_configs_id
+    put:
+      tags:
+      - 07.系统配置
+      summary: 更新配置
+      parameters:
+      - description: 配置ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: put_api_v1_configs_id
+  /api/v1/configs/{id}/form:
+    get:
+      tags:
+      - 07.系统配置
+      summary: 配置表单
+      parameters:
+      - description: 配置ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: get_api_v1_configs_id_form
+  /api/v1/depts:
+    get:
+      tags:
+      - 05.部门接口
+      summary: 部门列表
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_depts
+    post:
+      tags:
+      - 05.部门接口
+      summary: 新增部门
+      requestBody:
+        $ref: '#/components/requestBodies/model.DeptForm'
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: post_api_v1_depts
+  /api/v1/depts/options:
+    get:
+      tags:
+      - 05.部门接口
+      summary: 部门下拉列表
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_depts_options
+  /api/v1/depts/{id}:
+    put:
+      tags:
+      - 05.部门接口
+      summary: 更新部门
+      parameters:
+      - description: 部门ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        $ref: '#/components/requestBodies/model.DeptForm'
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: put_api_v1_depts_id
+    delete:
+      tags:
+      - 05.部门接口
+      summary: 删除部门
+      parameters:
+      - description: 部门ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: delete_api_v1_depts_id
+  /api/v1/depts/{id}/form:
+    get:
+      tags:
+      - 05.部门接口
+      summary: 获取部门表单数据
+      parameters:
+      - description: 部门ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_depts_id_form
+  /api/v1/dicts:
+    get:
+      tags:
+      - 06.字典接口
+      summary: 字典分页列表
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_dicts
+    post:
+      tags:
+      - 06.字典接口
+      summary: 新增字典
+      requestBody:
+        $ref: '#/components/requestBodies/model.DictForm'
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: post_api_v1_dicts
+  /api/v1/dicts/options:
+    get:
+      tags:
+      - 06.字典接口
+      summary: 字典下拉列表
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_dicts_options
+  /api/v1/dicts/{id}:
+    put:
+      tags:
+      - 06.字典接口
+      summary: 更新字典
+      parameters:
+      - description: 字典ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        $ref: '#/components/requestBodies/model.DictForm'
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: put_api_v1_dicts_id
+    delete:
+      tags:
+      - 06.字典接口
+      summary: 删除字典
+      parameters:
+      - description: 字典ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: delete_api_v1_dicts_id
+  /api/v1/dicts/{id}/form:
+    get:
+      tags:
+      - 06.字典接口
+      summary: 获取字典表单数据
+      parameters:
+      - description: 字典ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_dicts_id_form
+  /api/v1/dicts/{id}/items:
+    get:
+      tags:
+      - 06.字典接口
+      summary: 字典项列表
+      parameters:
+      - description: 字典编码
+        name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_dicts_id_items
+    post:
+      tags:
+      - 06.字典接口
+      summary: 新增字典项
+      parameters:
+      - description: 字典编码
+        name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        $ref: '#/components/requestBodies/model.DictItemForm'
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: post_api_v1_dicts_id_items
+  /api/v1/dicts/{id}/items/{itemIds}:
+    delete:
+      tags:
+      - 06.字典接口
+      summary: 删除字典项
+      parameters:
+      - description: 字典编码
+        name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - description: 字典项ID（多个用逗号分隔）
+        name: itemIds
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: delete_api_v1_dicts_id_items_itemIds
+  /api/v1/dicts/{id}/items/{itemId}:
+    put:
+      tags:
+      - 06.字典接口
+      summary: 修改字典项
+      parameters:
+      - description: 字典编码
+        name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - description: 字典项ID
+        name: itemId
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        $ref: '#/components/requestBodies/model.DictItemForm'
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: put_api_v1_dicts_id_items_itemId
+  /api/v1/dicts/{id}/items/{itemId}/form:
+    get:
+      tags:
+      - 06.字典接口
+      summary: 字典项表单数据
+      parameters:
+      - description: 字典编码
+        name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - description: 字典项ID
+        name: itemId
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_dicts_id_items_itemId_form
+  /api/v1/files/sts:
+    get:
+      tags:
+      - 10.文件接口
+      summary: 获取 MinIO 临时上传凭证
+      parameters:
+      - description: 允许上传的路径前缀
+        name: path
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/handler.UploadCredentialsResult'
+      operationId: get_api_v1_files_sts
+  /api/v1/integrated/activate:
+    post:
+      tags:
+      - 11.一体化平台管理
+      summary: 一体化平台激活
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/model.ActivateRequest'
+        description: 激活信息
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.ActivateResult'
+      operationId: post_api_v1_integrated_activate
+  /api/v1/integrated/activation-codes:
+    get:
+      tags:
+      - 11.一体化平台管理
+      summary: 激活码分页
+      parameters:
+      - description: 页码
+        name: pageNum
+        in: query
+        schema:
+          type: integer
+      - description: 每页数量
+        name: pageSize
+        in: query
+        schema:
+          type: integer
+      - description: 关键字
+        name: keywords
+        in: query
+        schema:
+          type: string
+      - description: 软件ID
+        name: softwareId
+        in: query
+        schema:
+          type: integer
+      - description: 授权时长
+        name: duration
+        in: query
+        schema:
+          type: string
+      - description: 状态
+        name: status
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.ActivationCodePageResult'
+      operationId: get_api_v1_integrated_activation_codes
+    post:
+      tags:
+      - 11.一体化平台管理
+      summary: 新增激活码
+      requestBody:
+        $ref: '#/components/requestBodies/model.ActivationCodeForm'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_integrated_model.EmptyResult'
+      operationId: post_api_v1_integrated_activation_codes
+  /api/v1/integrated/activation-codes/batch:
+    post:
+      tags:
+      - 11.一体化平台管理
+      summary: 批量生成激活码
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/model.ActivationCodeBatchForm'
+        description: 批量生成信息
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_integrated_model.EmptyResult'
+      operationId: post_api_v1_integrated_activation_codes_batch
+  /api/v1/integrated/activation-codes/{id}:
+    put:
+      tags:
+      - 11.一体化平台管理
+      summary: 更新激活码
+      parameters:
+      - description: 激活码ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        $ref: '#/components/requestBodies/model.ActivationCodeForm'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_integrated_model.EmptyResult'
+      operationId: put_api_v1_integrated_activation_codes_id
+    delete:
+      tags:
+      - 11.一体化平台管理
+      summary: 删除激活码
+      parameters:
+      - description: 激活码ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_integrated_model.EmptyResult'
+      operationId: delete_api_v1_integrated_activation_codes_id
+  /api/v1/integrated/authorizations:
+    get:
+      tags:
+      - 11.一体化平台管理
+      summary: 授权记录分页
+      parameters:
+      - description: 页码
+        name: pageNum
+        in: query
+        schema:
+          type: integer
+      - description: 每页数量
+        name: pageSize
+        in: query
+        schema:
+          type: integer
+      - description: 关键字
+        name: keywords
+        in: query
+        schema:
+          type: string
+      - description: 软件ID
+        name: softwareId
+        in: query
+        schema:
+          type: integer
+      - description: 状态
+        name: status
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.AuthorizationPageResult'
+      operationId: get_api_v1_integrated_authorizations
+  /api/v1/integrated/authorizations/{id}:
+    delete:
+      tags:
+      - 11.一体化平台管理
+      summary: 删除授权记录
+      parameters:
+      - description: 授权记录ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_integrated_model.EmptyResult'
+      operationId: delete_api_v1_integrated_authorizations_id
+  /api/v1/integrated/authorizations/{id}/authorize:
+    post:
+      tags:
+      - 11.一体化平台管理
+      summary: 延长授权
+      parameters:
+      - description: 授权记录ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/model.AuthorizationExtendForm'
+        description: 授权信息
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_integrated_model.EmptyResult'
+      operationId: post_api_v1_integrated_authorizations_id_authorize
+  /api/v1/integrated/authorizations/{id}/remark:
+    put:
+      tags:
+      - 11.一体化平台管理
+      summary: 更新授权备注
+      parameters:
+      - description: 授权记录ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/model.AuthorizationRemarkForm'
+        description: 备注信息
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_integrated_model.EmptyResult'
+      operationId: put_api_v1_integrated_authorizations_id_remark
+  /api/v1/integrated/software:
+    get:
+      tags:
+      - 11.一体化平台管理
+      summary: 一体化软件列表
+      parameters:
+      - description: 关键字
+        name: keywords
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.SoftwareListResult'
+      operationId: get_api_v1_integrated_software
+    post:
+      tags:
+      - 11.一体化平台管理
+      summary: 新增一体化软件
+      requestBody:
+        $ref: '#/components/requestBodies/model.SoftwareForm'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_integrated_model.EmptyResult'
+      operationId: post_api_v1_integrated_software
+  /api/v1/integrated/software/options:
+    get:
+      tags:
+      - 11.一体化平台管理
+      summary: 一体化软件选项
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.SoftwareOptionListResult'
+      operationId: get_api_v1_integrated_software_options
+  /api/v1/integrated/software/{id}:
+    get:
+      tags:
+      - 11.一体化平台管理
+      summary: 一体化软件详情
+      parameters:
+      - description: 软件ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.SoftwareResult'
+      operationId: get_api_v1_integrated_software_id
+    put:
+      tags:
+      - 11.一体化平台管理
+      summary: 更新一体化软件
+      parameters:
+      - description: 软件ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        $ref: '#/components/requestBodies/model.SoftwareForm'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_integrated_model.EmptyResult'
+      operationId: put_api_v1_integrated_software_id
+    delete:
+      tags:
+      - 11.一体化平台管理
+      summary: 删除一体化软件
+      parameters:
+      - description: 软件ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_integrated_model.EmptyResult'
+      operationId: delete_api_v1_integrated_software_id
+  /api/v1/menus:
+    get:
+      tags:
+      - 04.菜单接口
+      summary: 菜单列表
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_menus
+    post:
+      tags:
+      - 04.菜单接口
+      summary: 新增菜单
+      requestBody:
+        $ref: '#/components/requestBodies/model.MenuForm'
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: post_api_v1_menus
+  /api/v1/menus/options:
+    get:
+      tags:
+      - 04.菜单接口
+      summary: 菜单下拉列表
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_menus_options
+  /api/v1/menus/routes:
+    get:
+      tags:
+      - 04.菜单接口
+      summary: 获取当前用户路由
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_menus_routes
+  /api/v1/menus/{id}:
+    put:
+      tags:
+      - 04.菜单接口
+      summary: 更新菜单
+      parameters:
+      - description: 菜单ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        $ref: '#/components/requestBodies/model.MenuForm'
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: put_api_v1_menus_id
+    delete:
+      tags:
+      - 04.菜单接口
+      summary: 删除菜单
+      parameters:
+      - description: 菜单ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: delete_api_v1_menus_id
+  /api/v1/menus/{id}/form:
+    get:
+      tags:
+      - 04.菜单接口
+      summary: 获取菜单表单数据
+      parameters:
+      - description: 菜单ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_menus_id_form
+  /api/v1/recognition/models/defect-details:
+    get:
+      tags:
+      - 08.识别场景
+      summary: 模型缺陷详情分页
+      parameters:
+      - description: 页码
+        name: pageNum
+        in: query
+        schema:
+          type: integer
+      - description: 每页数量
+        name: pageSize
+        in: query
+        schema:
+          type: integer
+      - description: 模型哈希
+        name: modelHash
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.ModelDefectPageResult'
+      operationId: get_api_v1_recognition_models_defect_details
+  /api/v1/recognition/scenes:
+    get:
+      tags:
+      - 08.识别场景
+      summary: 识别场景分页
+      parameters:
+      - description: 页码
+        name: pageNum
+        in: query
+        schema:
+          type: integer
+      - description: 每页数量
+        name: pageSize
+        in: query
+        schema:
+          type: integer
+      - description: 关键字
+        name: keywords
+        in: query
+        schema:
+          type: string
+      - description: 场景类型
+        name: sceneType
+        in: query
+        schema:
+          type: string
+      - description: 场景视角
+        name: sceneView
+        in: query
+        schema:
+          type: string
+      - description: 模型名称
+        name: modelName
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.ScenePageResult'
+      operationId: get_api_v1_recognition_scenes
+    post:
+      tags:
+      - 08.识别场景
+      summary: 新增识别场景
+      requestBody:
+        $ref: '#/components/requestBodies/model.SceneForm'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_recognition_model.EmptyResult'
+      operationId: post_api_v1_recognition_scenes
+  /api/v1/recognition/scenes/{id}:
+    get:
+      tags:
+      - 08.识别场景
+      summary: 识别场景详情
+      parameters:
+      - description: 场景ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.SceneDetailResult'
+      operationId: get_api_v1_recognition_scenes_id
+    put:
+      tags:
+      - 08.识别场景
+      summary: 更新识别场景
+      parameters:
+      - description: 场景ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        $ref: '#/components/requestBodies/model.SceneForm'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_recognition_model.EmptyResult'
+      operationId: put_api_v1_recognition_scenes_id
+    delete:
+      tags:
+      - 08.识别场景
+      summary: 删除识别场景
+      parameters:
+      - description: 场景ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_recognition_model.EmptyResult'
+      operationId: delete_api_v1_recognition_scenes_id
+  /api/v1/recognition/scenes/{id}/defects:
+    get:
+      tags:
+      - 08.识别场景
+      summary: 识别场景缺陷列表
+      parameters:
+      - description: 场景ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.DefectListResult'
+      operationId: get_api_v1_recognition_scenes_id_defects
+    put:
+      tags:
+      - 08.识别场景
+      summary: 保存识别场景缺陷
+      parameters:
+      - description: 场景ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - defects
+              properties:
+                defects:
+                  type: array
+                  description: 缺陷列表
+                  items:
+                    $ref: '#/components/schemas/zkys-gin_internal_recognition_model.Defect'
+              description: 缺陷列表（为适配 Tool 生成，已将裸数组请求体包装为 object）
+        description: 缺陷列表
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_recognition_model.EmptyResult'
+      operationId: put_api_v1_recognition_scenes_id_defects
+  /api/v1/recognition/scenes/{id}/models:
+    get:
+      tags:
+      - 08.识别场景
+      summary: 识别场景模型列表
+      parameters:
+      - description: 场景ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.SceneDetailResult'
+      operationId: get_api_v1_recognition_scenes_id_models
+  /api/v1/recognition/scenes/{id}/thresholds:
+    get:
+      tags:
+      - 08.识别场景
+      summary: 获取识别场景阈值
+      parameters:
+      - description: 场景ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.ThresholdResult'
+      operationId: get_api_v1_recognition_scenes_id_thresholds
+    put:
+      tags:
+      - 08.识别场景
+      summary: 保存识别场景阈值
+      parameters:
+      - description: 场景ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/model.Threshold'
+        description: 阈值信息
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_recognition_model.EmptyResult'
+      operationId: put_api_v1_recognition_scenes_id_thresholds
+  /api/v1/recognition/tasks:
+    get:
+      tags:
+      - 09.识别任务
+      summary: 识别任务分页
+      parameters:
+      - description: 页码
+        name: pageNum
+        in: query
+        schema:
+          type: integer
+      - description: 每页数量
+        name: pageSize
+        in: query
+        schema:
+          type: integer
+      - description: 关键字
+        name: keywords
+        in: query
+        schema:
+          type: string
+      - description: 场景ID
+        name: sceneId
+        in: query
+        schema:
+          type: integer
+      - description: 任务状态
+        name: taskStatus
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.TaskPageResult'
+      operationId: get_api_v1_recognition_tasks
+    post:
+      tags:
+      - 09.识别任务
+      summary: 新增识别任务
+      requestBody:
+        $ref: '#/components/requestBodies/model.TaskForm'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_recognition_model.EmptyResult'
+      operationId: post_api_v1_recognition_tasks
+  /api/v1/recognition/tasks/{id}:
+    get:
+      tags:
+      - 09.识别任务
+      summary: 识别任务详情
+      parameters:
+      - description: 任务ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.TaskDetailResult'
+      operationId: get_api_v1_recognition_tasks_id
+    put:
+      tags:
+      - 09.识别任务
+      summary: 更新识别任务
+      parameters:
+      - description: 任务ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        $ref: '#/components/requestBodies/model.TaskForm'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_recognition_model.EmptyResult'
+      operationId: put_api_v1_recognition_tasks_id
+    delete:
+      tags:
+      - 09.识别任务
+      summary: 删除识别任务
+      parameters:
+      - description: 任务ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_recognition_model.EmptyResult'
+      operationId: delete_api_v1_recognition_tasks_id
+  /api/v1/recognition/tasks/{id}/images:
+    get:
+      tags:
+      - 09.识别任务
+      summary: 识别任务图片分页
+      parameters:
+      - description: 任务ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      - description: 页码
+        name: pageNum
+        in: query
+        schema:
+          type: integer
+      - description: 每页数量
+        name: pageSize
+        in: query
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.TaskImagePageResult'
+      operationId: get_api_v1_recognition_tasks_id_images
+    post:
+      tags:
+      - 09.识别任务
+      summary: 上传识别任务图片
+      parameters:
+      - description: 任务ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  description: 单张图片
+                  type: string
+                  format: binary
+                files:
+                  description: 图片列表
+                  type: string
+                  format: binary
+                visibleFiles:
+                  description: 可见光图片列表
+                  type: string
+                  format: binary
+                infraredFiles:
+                  description: 红外图片列表
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.TaskImageListResult'
+      operationId: post_api_v1_recognition_tasks_id_images
+  /api/v1/recognition/tasks/{id}/images/complete:
+    post:
+      tags:
+      - 09.识别任务
+      summary: 完成识别任务图片上传
+      parameters:
+      - description: 任务ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/model.CompleteTaskImageUploadForm'
+        description: 已上传图片信息
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.TaskImageListResult'
+      operationId: post_api_v1_recognition_tasks_id_images_complete
+  /api/v1/recognition/tasks/{id}/images/{imageId}/results:
+    put:
+      tags:
+      - 09.识别任务
+      summary: 保存识别任务图片结果
+      parameters:
+      - description: 任务ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      - description: 图片ID
+        name: imageId
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/model.AuditTaskImageResultsForm'
+        description: 审核后的结果
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_recognition_model.EmptyResult'
+      operationId: put_api_v1_recognition_tasks_id_images_imageId_results
+  /api/v1/recognition/tasks/{id}/progress:
+    get:
+      tags:
+      - 09.识别任务
+      summary: 获取识别任务进度
+      parameters:
+      - description: 任务ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.ProgressResult'
+      operationId: get_api_v1_recognition_tasks_id_progress
+  /api/v1/recognition/tasks/{id}/reports:
+    get:
+      tags:
+      - 09.识别任务
+      summary: 识别任务报告分页
+      parameters:
+      - description: 任务ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      - description: 页码
+        name: pageNum
+        in: query
+        schema:
+          type: integer
+      - description: 每页数量
+        name: pageSize
+        in: query
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.TaskReportPageResult'
+      operationId: get_api_v1_recognition_tasks_id_reports
+  /api/v1/recognition/tasks/{id}/reports/word:
+    post:
+      tags:
+      - 09.识别任务
+      summary: 创建识别任务 Word 报告
+      parameters:
+      - description: 任务ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.TaskReportResult'
+      operationId: post_api_v1_recognition_tasks_id_reports_word
+  /api/v1/recognition/tasks/{id}/results:
+    get:
+      tags:
+      - 09.识别任务
+      summary: 识别任务结果列表
+      parameters:
+      - description: 任务ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/model.TaskResultListResult'
+      operationId: get_api_v1_recognition_tasks_id_results
+  /api/v1/recognition/tasks/{id}/review:
+    post:
+      tags:
+      - 09.识别任务
+      summary: 审核识别任务
+      parameters:
+      - description: 任务ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/model.ReviewForm'
+        description: 审核信息
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_recognition_model.EmptyResult'
+      operationId: post_api_v1_recognition_tasks_id_review
+  /api/v1/recognition/tasks/{id}/start:
+    post:
+      tags:
+      - 09.识别任务
+      summary: 启动识别任务
+      parameters:
+      - description: 任务ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/zkys-gin_internal_recognition_model.EmptyResult'
+      operationId: post_api_v1_recognition_tasks_id_start
+  /api/v1/roles:
+    get:
+      tags:
+      - 03.角色接口
+      summary: 角色分页列表
+      parameters:
+      - description: 页码
+        name: pageNum
+        in: query
+        schema:
+          type: integer
+      - description: 每页数量
+        name: pageSize
+        in: query
+        schema:
+          type: integer
+      - description: 关键字
+        name: keywords
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_roles
+    post:
+      tags:
+      - 03.角色接口
+      summary: 新增角色
+      requestBody:
+        $ref: '#/components/requestBodies/model.RoleForm'
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: post_api_v1_roles
+  /api/v1/roles/options:
+    get:
+      tags:
+      - 03.角色接口
+      summary: 角色下拉列表
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_roles_options
+  /api/v1/roles/{id}:
+    put:
+      tags:
+      - 03.角色接口
+      summary: 更新角色
+      parameters:
+      - description: 角色ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        $ref: '#/components/requestBodies/model.RoleForm'
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: put_api_v1_roles_id
+    delete:
+      tags:
+      - 03.角色接口
+      summary: 删除角色
+      parameters:
+      - description: 角色ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: delete_api_v1_roles_id
+  /api/v1/roles/{id}/dept-ids:
+    get:
+      tags:
+      - 03.角色接口
+      summary: 获取角色自定义部门ID列表
+      parameters:
+      - description: 角色ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_roles_id_dept_ids
+  /api/v1/roles/{id}/depts:
+    put:
+      tags:
+      - 03.角色接口
+      summary: 分配角色自定义部门
+      parameters:
+      - description: 角色ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - deptIds
+              properties:
+                deptIds:
+                  type: array
+                  description: 部门ID列表
+                  items:
+                    type: integer
+              description: 部门ID列表（为适配 Tool 生成，已将裸数组请求体包装为 object）
+        description: 部门ID列表
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: put_api_v1_roles_id_depts
+  /api/v1/roles/{id}/form:
+    get:
+      tags:
+      - 03.角色接口
+      summary: 获取角色表单数据
+      parameters:
+      - description: 角色ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_roles_id_form
+  /api/v1/roles/{id}/menu-ids:
+    get:
+      tags:
+      - 03.角色接口
+      summary: 获取角色菜单ID列表
+      parameters:
+      - description: 角色ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_roles_id_menu_ids
+  /api/v1/roles/{id}/menus:
+    put:
+      tags:
+      - 03.角色接口
+      summary: 分配菜单权限
+      parameters:
+      - description: 角色ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - menuIds
+              properties:
+                menuIds:
+                  type: array
+                  description: 菜单ID列表
+                  items:
+                    type: integer
+              description: 菜单ID列表（为适配 Tool 生成，已将裸数组请求体包装为 object）
+        description: 菜单ID列表
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: put_api_v1_roles_id_menus
+  /api/v1/user/perms:
+    get:
+      tags:
+      - 04.菜单接口
+      summary: 获取当前用户权限（按钮权限）
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+                additionalProperties: true
+      operationId: get_api_v1_user_perms
+  /api/v1/users:
+    get:
+      tags:
+      - 02.用户接口
+      summary: 用户分页列表
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: get_api_v1_users
+    post:
+      tags:
+      - 02.用户接口
+      summary: 保存用户
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: post_api_v1_users
+  /api/v1/users/email:
+    put:
+      tags:
+      - 02.用户接口
+      summary: 绑定或更换邮箱
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: put_api_v1_users_email
+    delete:
+      tags:
+      - 02.用户接口
+      summary: 解绑邮箱
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: delete_api_v1_users_email
+  /api/v1/users/email/code:
+    post:
+      tags:
+      - 02.用户接口
+      summary: 发送邮箱验证码
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: post_api_v1_users_email_code
+  /api/v1/users/export:
+    get:
+      tags:
+      - 02.用户接口
+      summary: 导出用户
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: get_api_v1_users_export
+  /api/v1/users/import:
+    post:
+      tags:
+      - 02.用户接口
+      summary: 导入用户
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: post_api_v1_users_import
+  /api/v1/users/me:
+    get:
+      tags:
+      - 02.用户接口
+      summary: 当前登录用户
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: get_api_v1_users_me
+  /api/v1/users/mobile:
+    put:
+      tags:
+      - 02.用户接口
+      summary: 绑定或更换手机号
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: put_api_v1_users_mobile
+    delete:
+      tags:
+      - 02.用户接口
+      summary: 解绑手机号
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: delete_api_v1_users_mobile
+  /api/v1/users/mobile/code:
+    post:
+      tags:
+      - 02.用户接口
+      summary: 发送手机号验证码
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: post_api_v1_users_mobile_code
+  /api/v1/users/options:
+    get:
+      tags:
+      - 02.用户接口
+      summary: 用户下拉选项
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: get_api_v1_users_options
+  /api/v1/users/password:
+    put:
+      tags:
+      - 02.用户接口
+      summary: 修改当前用户密码
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: put_api_v1_users_password
+  /api/v1/users/profile:
+    get:
+      tags:
+      - 02.用户接口
+      summary: 个人中心信息
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: get_api_v1_users_profile
+    put:
+      tags:
+      - 02.用户接口
+      summary: 更新个人中心信息
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: put_api_v1_users_profile
+  /api/v1/users/template:
+    get:
+      tags:
+      - 02.用户接口
+      summary: 下载用户导入模板
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: get_api_v1_users_template
+  /api/v1/users/{ids}:
+    delete:
+      tags:
+      - 02.用户接口
+      summary: 删除用户
+      parameters:
+      - description: 用户ID列表
+        name: ids
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: delete_api_v1_users_ids
+  /api/v1/users/{userId}:
+    put:
+      tags:
+      - 02.用户接口
+      summary: 更新用户
+      parameters:
+      - description: 用户ID
+        name: userId
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: put_api_v1_users_userId
+  /api/v1/users/{userId}/form:
+    get:
+      tags:
+      - 02.用户接口
+      summary: 获取用户表单
+      parameters:
+      - description: 用户ID
+        name: userId
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: get_api_v1_users_userId_form
+  /api/v1/users/{userId}/password/reset:
+    put:
+      tags:
+      - 02.用户接口
+      summary: 重置用户密码
+      parameters:
+      - description: 用户ID
+        name: userId
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: put_api_v1_users_userId_password_reset
+  /api/v1/users/{userId}/status:
+    patch:
+      tags:
+      - 02.用户接口
+      summary: 修改用户状态
+      parameters:
+      - description: 用户ID
+        name: userId
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: 成功
+          type: object
+          nullable: true
+      operationId: patch_api_v1_users_userId_status
+components:
+  requestBodies:
+    model.SceneForm:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/model.SceneForm'
+      description: 场景信息
+      required: true
+    model.DictItemForm:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/model.DictItemForm'
+      description: 字典项信息
+      required: true
+    model.TaskForm:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/model.TaskForm'
+      description: 任务信息
+      required: true
+    model.ActivationCodeForm:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/model.ActivationCodeForm'
+      description: 激活码信息
+      required: true
+    model.MenuForm:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/model.MenuForm'
+      description: 菜单信息
+      required: true
+    model.DeptForm:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/model.DeptForm'
+      description: 部门信息
+      required: true
+    model.DictForm:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/model.DictForm'
+      description: 字典信息
+      required: true
+    model.SoftwareForm:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/model.SoftwareForm'
+      description: 软件信息
+      required: true
+    model.RoleForm:
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/model.RoleForm'
+      description: 角色信息
+      required: true
+  schemas:
+    handler.UploadCredentialsResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: MinIO 临时上传凭证。
+          allOf:
+          - $ref: '#/components/schemas/storage.STSCredentials'
+          type: object
+        msg:
+          description: 响应消息。
+          type: string
+    model.ActivateRequest:
+      type: object
+      required:
+      - activationCode
+      - authType
+      - checkKey
+      - deviceModel
+      - deviceSn
+      properties:
+        activationCode:
+          description: 激活码。
+          type: string
+        authType:
+          description: 授权类型。
+          type: string
+        checkKey:
+          description: 软件校验Key。
+          type: string
+        deviceModel:
+          description: 设备型号。
+          type: string
+        deviceSn:
+          description: 设备序列号。
+          type: string
+    model.ActivateResponse:
+      type: object
+      properties:
+        expireTime:
+          description: 授权过期时间。
+          type: string
+        softwareName:
+          description: 软件名称。
+          type: string
+        status:
+          description: 授权状态。
+          type: string
+    model.ActivateResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 激活结果。
+          allOf:
+          - $ref: '#/components/schemas/model.ActivateResponse'
+          type: object
+        msg:
+          description: 响应消息。
+          type: string
+    model.ActivationCodeBatchForm:
+      type: object
+      required:
+      - count
+      - duration
+      - softwareId
+      properties:
+        count:
+          description: 生成数量，范围 1-500。
+          type: integer
+          maximum: 500
+          minimum: 1
+        duration:
+          description: 授权时长，取值：7_DAYS、30_DAYS、LONG_TERM。
+          type: string
+          enum:
+          - 7_DAYS
+          - 30_DAYS
+          - LONG_TERM
+        remark:
+          description: 备注。
+          type: string
+        softwareId:
+          description: 所属软件ID。
+          type: string
+          example: '0'
+    model.ActivationCodeForm:
+      type: object
+      required:
+      - duration
+      - softwareId
+      properties:
+        duration:
+          description: 授权时长，取值：7_DAYS、30_DAYS、LONG_TERM。
+          type: string
+          enum:
+          - 7_DAYS
+          - 30_DAYS
+          - LONG_TERM
+        id:
+          description: 激活码ID，新增时为空。
+          type: string
+          example: '0'
+        remark:
+          description: 备注。
+          type: string
+        softwareId:
+          description: 所属软件ID。
+          type: string
+          example: '0'
+        status:
+          description: 激活码状态，取值：UNUSED、USED。
+          type: string
+          enum:
+          - UNUSED
+          - USED
+    model.ActivationCodePageData:
+      type: object
+      properties:
+        list:
+          description: 当前页激活码列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/model.ActivationCodeVO'
+        total:
+          description: 总记录数。
+          type: integer
+    model.ActivationCodePageResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 激活码分页数据。
+          allOf:
+          - $ref: '#/components/schemas/model.ActivationCodePageData'
+          type: object
+        msg:
+          description: 响应消息。
+          type: string
+    model.ActivationCodeVO:
+      type: object
+      properties:
+        code:
+          description: 激活码。
+          type: string
+        createTime:
+          description: 创建时间。
+          type: string
+        duration:
+          description: 授权时长，取值：7_DAYS、30_DAYS、LONG_TERM。
+          type: string
+        id:
+          description: 激活码ID。
+          type: string
+          example: '0'
+        remark:
+          description: 备注。
+          type: string
+        softwareId:
+          description: 软件ID。
+          type: string
+          example: '0'
+        softwareName:
+          description: 软件名称。
+          type: string
+        status:
+          description: 激活码状态，取值：UNUSED、USED。
+          type: string
+        updateTime:
+          description: 更新时间。
+          type: string
+        usedTime:
+          description: 使用时间。
+          type: string
+    model.AuditResultForm:
+      type: object
+      required:
+      - coordinates
+      - faultTypeName
+      properties:
+        confidence:
+          description: 置信度。
+          type: string
+        coordinates:
+          description: 缺陷坐标。
+          type: string
+        faultType:
+          description: 故障类型。
+          type: string
+        faultTypeCode:
+          description: 故障类型编码。
+          type: integer
+        faultTypeName:
+          description: 故障类型名称。
+          type: string
+        gps:
+          description: GPS 信息。
+          type: string
+        id:
+          description: 识别结果ID，新增时为空。
+          type: string
+          example: '0'
+        source:
+          description: 结果来源。
+          type: string
+    model.AuditTaskImageResultsForm:
+      type: object
+      properties:
+        results:
+          description: 审核后的识别结果列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/model.AuditResultForm'
+    model.AuthorizationExtendForm:
+      type: object
+      required:
+      - expireTime
+      properties:
+        expireTime:
+          description: 新的授权过期时间。
+          type: string
+    model.AuthorizationPageData:
+      type: object
+      properties:
+        list:
+          description: 当前页授权记录列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/model.AuthorizationVO'
+        total:
+          description: 总记录数。
+          type: integer
+    model.AuthorizationPageResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 授权记录分页数据。
+          allOf:
+          - $ref: '#/components/schemas/model.AuthorizationPageData'
+          type: object
+        msg:
+          description: 响应消息。
+          type: string
+    model.AuthorizationRemarkForm:
+      type: object
+      properties:
+        remark:
+          description: 备注。
+          type: string
+    model.AuthorizationVO:
+      type: object
+      properties:
+        activationCode:
+          description: 对应激活码。
+          type: string
+        createTime:
+          description: 创建时间。
+          type: string
+        deviceModel:
+          description: 设备型号。
+          type: string
+        deviceSn:
+          description: 设备序列号。
+          type: string
+        expireTime:
+          description: 授权过期时间。
+          type: string
+        id:
+          description: 授权记录ID。
+          type: string
+          example: '0'
+        lastVerifyTime:
+          description: 最近校验时间。
+          type: string
+        remark:
+          description: 备注。
+          type: string
+        softwareId:
+          description: 软件ID。
+          type: string
+          example: '0'
+        softwareName:
+          description: 软件名称。
+          type: string
+        status:
+          description: 授权状态，取值：VALID、EXPIRING、EXPIRED。
+          type: string
+        updateTime:
+          description: 更新时间。
+          type: string
+    model.CompleteTaskImageUploadForm:
+      type: object
+      properties:
+        files:
+          description: 普通图片列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/model.UploadedImageObject'
+        infraredFiles:
+          description: 红外图片列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/model.UploadedImageObject'
+        visibleFiles:
+          description: 可见光图片列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/model.UploadedImageObject'
+    model.DefectListResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 缺陷列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/zkys-gin_internal_recognition_model.Defect'
+        msg:
+          description: 响应消息。
+          type: string
+    model.DeptForm:
+      type: object
+      required:
+      - code
+      - name
+      properties:
+        code:
+          type: string
+        id:
+          type: integer
+        name:
+          type: string
+        parentId:
+          type: integer
+        sort:
+          type: integer
+        status:
+          type: integer
+          enum:
+          - 0
+          - 1
+    model.DictForm:
+      type: object
+      required:
+      - dictCode
+      - name
+      properties:
+        dictCode:
+          type: string
+        id:
+          type: integer
+        name:
+          type: string
+        remark:
+          type: string
+        status:
+          type: integer
+          enum:
+          - 0
+          - 1
+    model.DictItemForm:
+      type: object
+      required:
+      - dictCode
+      - label
+      - value
+      properties:
+        dictCode:
+          type: string
+        id:
+          type: integer
+        label:
+          type: string
+        remark:
+          type: string
+        sort:
+          type: integer
+        status:
+          type: integer
+          enum:
+          - 0
+          - 1
+        tagType:
+          type: string
+        value:
+          type: string
+    model.KeyValue:
+      type: object
+      properties:
+        key:
+          type: string
+        value:
+          type: string
+    model.LoginRequest:
+      type: object
+      required:
+      - password
+      - username
+      properties:
+        password:
+          description: 密码
+          type: string
+          example: '123456'
+        username:
+          description: 用户名
+          type: string
+          example: admin
+    model.MenuForm:
+      type: object
+      required:
+      - name
+      - type
+      properties:
+        alwaysShow:
+          type: integer
+        component:
+          type: string
+        icon:
+          type: string
+        id:
+          type: integer
+        keepAlive:
+          type: integer
+        name:
+          type: string
+        params:
+          type: array
+          items:
+            $ref: '#/components/schemas/model.KeyValue'
+        parentId:
+          type: integer
+        perm:
+          type: string
+        redirect:
+          type: string
+        routeName:
+          type: string
+        routePath:
+          type: string
+        sort:
+          type: integer
+        type:
+          type: string
+          enum:
+          - C
+          - M
+          - B
+        visible:
+          type: integer
+          enum:
+          - 0
+          - 1
+    model.ModelDefectPageData:
+      type: object
+      properties:
+        list:
+          description: 当前页模型缺陷详情列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/model.OpenAPIModelDetail'
+        total:
+          description: 总记录数。
+          type: integer
+    model.ModelDefectPageResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 模型缺陷详情分页数据。
+          allOf:
+          - $ref: '#/components/schemas/model.ModelDefectPageData'
+          type: object
+        msg:
+          description: 响应消息。
+          type: string
+    model.OpenAPIModelDefect:
+      type: object
+      properties:
+        deptId:
+          description: 部门ID。
+          type: integer
+        eName:
+          description: 缺陷英文名。
+          type: string
+        faultTypeCode:
+          description: 故障类型编码。
+          type: integer
+        id:
+          description: 缺陷ID。
+          type: integer
+        name:
+          description: 缺陷名称。
+          type: string
+        sceneCode:
+          description: 场景编码。
+          type: integer
+    model.OpenAPIModelDetail:
+      type: object
+      properties:
+        defects:
+          description: 模型缺陷列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/model.OpenAPIModelDefect'
+        modelHash:
+          description: 模型哈希。
+          type: string
+        modelId:
+          description: 模型ID。
+          type: integer
+        modelName:
+          description: 模型名称。
+          type: string
+        sceneCode:
+          description: 场景编码。
+          type: integer
+    model.ProgressResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 任务进度信息。
+          allOf:
+          - $ref: '#/components/schemas/model.ProgressVO'
+          type: object
+        msg:
+          description: 响应消息。
+          type: string
+    model.ProgressVO:
+      type: object
+      properties:
+        message:
+          description: 进度消息。
+          type: string
+        progress:
+          description: 任务进度，范围 0-100。
+          type: integer
+        status:
+          description: 任务状态。
+          type: string
+        updatedAt:
+          description: 更新时间。
+          type: string
+    model.ReviewForm:
+      type: object
+      required:
+      - reviewStatus
+      properties:
+        reviewRemark:
+          description: 审核备注。
+          type: string
+        reviewStatus:
+          description: 审核状态。
+          type: string
+    model.RoleForm:
+      type: object
+      required:
+      - code
+      - name
+      properties:
+        code:
+          type: string
+        dataScope:
+          type: integer
+          enum:
+          - 1
+          - 2
+          - 3
+          - 4
+          - 5
+        deptIds:
+          type: array
+          items:
+            type: integer
+        id:
+          type: integer
+        name:
+          type: string
+        sort:
+          type: integer
+        status:
+          type: integer
+          enum:
+          - 0
+          - 1
+    model.Scene:
+      type: object
+      properties:
+        createBy:
+          type: integer
+        createTime:
+          type: string
+        defectCount:
+          description: 缺陷数量。
+          type: integer
+        id:
+          description: 场景ID。
+          type: string
+          example: '0'
+        modelName:
+          description: 关联模型名称，多个模型以逗号分隔。
+          type: string
+        remark:
+          description: 备注。
+          type: string
+        sceneName:
+          description: 场景名称。
+          type: string
+        scenePrice:
+          description: 场景单价。
+          type: number
+        sceneType:
+          description: 场景类型，取值：IR、RGB、RGBIR。
+          type: string
+        sceneView:
+          description: 场景视角。
+          type: string
+        status:
+          description: 状态。
+          type: string
+        updateBy:
+          type: integer
+        updateTime:
+          type: string
+    model.SceneDetailData:
+      type: object
+      properties:
+        models:
+          description: 场景关联模型列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/model.SceneModel'
+        scene:
+          description: 场景基础信息。
+          allOf:
+          - $ref: '#/components/schemas/model.Scene'
+          type: object
+    model.SceneDetailResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 识别场景详情。
+          allOf:
+          - $ref: '#/components/schemas/model.SceneDetailData'
+          type: object
+        msg:
+          description: 响应消息。
+          type: string
+    model.SceneForm:
+      type: object
+      required:
+      - sceneName
+      - sceneType
+      - sceneView
+      properties:
+        defectCount:
+          description: 缺陷数量。
+          type: integer
+        id:
+          description: 场景ID，新增时为空。
+          type: string
+          example: '0'
+        modelName:
+          description: 模型名称。
+          type: string
+        models:
+          description: 关联模型配置列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/model.SceneModel'
+        remark:
+          description: 备注。
+          type: string
+        sceneName:
+          description: 场景名称。
+          type: string
+        scenePrice:
+          description: 场景单价。
+          type: number
+        sceneType:
+          description: 场景类型，取值：IR、RGB、RGBIR。
+          type: string
+        sceneView:
+          description: 场景视角。
+          type: string
+        status:
+          description: 状态。
+          type: string
+    model.SceneModel:
+      type: object
+      properties:
+        createBy:
+          type: integer
+        createTime:
+          type: string
+        dataType:
+          description: 数据类型，取值：IR、RGB。
+          type: string
+        defects:
+          description: 模型缺陷配置列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/zkys-gin_internal_recognition_model.Defect'
+        id:
+          description: 场景模型配置ID。
+          type: string
+          example: '0'
+        modelHash:
+          description: 模型哈希。
+          type: string
+        modelId:
+          description: 模型ID。
+          type: string
+          example: '0'
+        modelName:
+          description: 模型名称。
+          type: string
+        modelPath:
+          description: 模型路径。
+          type: string
+        modelRole:
+          description: 模型角色，取值：MAIN、SUB。
+          type: string
+        modelVersion:
+          description: 模型版本。
+          type: string
+        sceneCode:
+          description: 下游场景编码。
+          type: integer
+        sceneId:
+          description: 场景ID。
+          type: string
+          example: '0'
+        secondaryDefectCodes:
+          description: 二级缺陷编码集合。
+          type: string
+        updateBy:
+          type: integer
+        updateTime:
+          type: string
+    model.ScenePageData:
+      type: object
+      properties:
+        list:
+          description: 当前页识别场景列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/model.Scene'
+        total:
+          description: 总记录数。
+          type: integer
+    model.ScenePageResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 识别场景分页数据。
+          allOf:
+          - $ref: '#/components/schemas/model.ScenePageData'
+          type: object
+        msg:
+          description: 响应消息。
+          type: string
+    model.Software:
+      type: object
+      properties:
+        checkKey:
+          description: 软件校验Key。
+          type: string
+        createBy:
+          type: integer
+        createTime:
+          type: string
+        id:
+          description: 软件ID。
+          type: string
+          example: '0'
+        name:
+          description: 软件名称。
+          type: string
+        remark:
+          description: 备注。
+          type: string
+        updateBy:
+          type: integer
+        updateTime:
+          type: string
+    model.SoftwareForm:
+      type: object
+      required:
+      - checkKey
+      - name
+      properties:
+        checkKey:
+          description: 软件校验Key。
+          type: string
+        id:
+          description: 软件ID，新增时为空。
+          type: string
+          example: '0'
+        name:
+          description: 软件名称。
+          type: string
+        remark:
+          description: 备注。
+          type: string
+    model.SoftwareListResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 软件列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/model.Software'
+        msg:
+          description: 响应消息。
+          type: string
+    model.SoftwareOption:
+      type: object
+      properties:
+        checkKey:
+          description: 软件校验Key。
+          type: string
+        id:
+          description: 软件ID。
+          type: string
+          example: '0'
+        name:
+          description: 软件名称。
+          type: string
+    model.SoftwareOptionListResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 软件下拉选项列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/model.SoftwareOption'
+        msg:
+          description: 响应消息。
+          type: string
+    model.SoftwareResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 软件详情。
+          allOf:
+          - $ref: '#/components/schemas/model.Software'
+          type: object
+        msg:
+          description: 响应消息。
+          type: string
+    model.Task:
+      type: object
+      properties:
+        createBy:
+          type: integer
+        createByName:
+          description: 创建人名称。
+          type: string
+        createTime:
+          type: string
+        errorMessage:
+          description: 错误信息。
+          type: string
+        finishedAt:
+          description: 任务完成时间。
+          type: string
+        id:
+          description: 任务ID。
+          type: string
+          example: '0'
+        imageCount:
+          description: 图片数量。
+          type: integer
+        progress:
+          description: 任务进度，范围 0-100。
+          type: integer
+        reviewRemark:
+          description: 审核备注。
+          type: string
+        reviewStatus:
+          description: 审核状态。
+          type: string
+        sceneId:
+          description: 场景ID。
+          type: string
+          example: '0'
+        sceneName:
+          description: 场景名称。
+          type: string
+        startedAt:
+          description: 任务开始时间。
+          type: string
+        taskName:
+          description: 任务名称。
+          type: string
+        taskStatus:
+          description: 任务状态。
+          type: string
+        updateBy:
+          type: integer
+        updateTime:
+          type: string
+    model.TaskDetailResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 识别任务详情。
+          allOf:
+          - $ref: '#/components/schemas/model.Task'
+          type: object
+        msg:
+          description: 响应消息。
+          type: string
+    model.TaskForm:
+      type: object
+      required:
+      - sceneId
+      - taskName
+      properties:
+        id:
+          description: 任务ID，新增时为空。
+          type: string
+          example: '0'
+        sceneId:
+          description: 场景ID。
+          type: string
+          example: '0'
+        taskName:
+          description: 任务名称。
+          type: string
+    model.TaskImage:
+      type: object
+      properties:
+        createBy:
+          type: integer
+        createTime:
+          type: string
+        dataType:
+          description: 数据类型，取值：IR、RGB。
+          type: string
+        id:
+          description: 图片ID。
+          type: string
+          example: '0'
+        imageName:
+          description: 图片名称。
+          type: string
+        imagePath:
+          description: 图片存储路径。
+          type: string
+        imageSize:
+          description: 图片大小，单位字节。
+          type: integer
+        imageUrl:
+          description: 图片访问URL。
+          type: string
+        pairIndex:
+          description: 双光图片配对序号。
+          type: integer
+        pairKey:
+          description: 双光图片配对Key。
+          type: string
+        recordCount:
+          description: 识别结果数量。
+          type: integer
+        status:
+          description: 图片处理状态。
+          type: string
+        taskId:
+          description: 任务ID。
+          type: string
+          example: '0'
+        updateBy:
+          type: integer
+        updateTime:
+          type: string
+    model.TaskImageListResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 任务图片列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/model.TaskImage'
+        msg:
+          description: 响应消息。
+          type: string
+    model.TaskImagePageData:
+      type: object
+      properties:
+        list:
+          description: 当前页任务图片列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/model.TaskImage'
+        total:
+          description: 总记录数。
+          type: integer
+    model.TaskImagePageResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 任务图片分页数据。
+          allOf:
+          - $ref: '#/components/schemas/model.TaskImagePageData'
+          type: object
+        msg:
+          description: 响应消息。
+          type: string
+    model.TaskPageData:
+      type: object
+      properties:
+        list:
+          description: 当前页识别任务列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/model.Task'
+        total:
+          description: 总记录数。
+          type: integer
+    model.TaskPageResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 识别任务分页数据。
+          allOf:
+          - $ref: '#/components/schemas/model.TaskPageData'
+          type: object
+        msg:
+          description: 响应消息。
+          type: string
+    model.TaskReport:
+      type: object
+      properties:
+        createBy:
+          type: integer
+        createTime:
+          type: string
+        errorMessage:
+          description: 错误信息。
+          type: string
+        id:
+          description: 报告ID。
+          type: string
+          example: '0'
+        reportName:
+          description: 报告名称。
+          type: string
+        reportPath:
+          description: 报告存储路径。
+          type: string
+        reportStatus:
+          description: 报告状态。
+          type: string
+        reportType:
+          description: 报告类型。
+          type: string
+        reportUrl:
+          description: 报告访问URL。
+          type: string
+        taskId:
+          description: 任务ID。
+          type: string
+          example: '0'
+        updateBy:
+          type: integer
+        updateTime:
+          type: string
+    model.TaskReportPageData:
+      type: object
+      properties:
+        list:
+          description: 当前页任务报告列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/model.TaskReport'
+        total:
+          description: 总记录数。
+          type: integer
+    model.TaskReportPageResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 任务报告分页数据。
+          allOf:
+          - $ref: '#/components/schemas/model.TaskReportPageData'
+          type: object
+        msg:
+          description: 响应消息。
+          type: string
+    model.TaskReportResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 任务报告信息。
+          allOf:
+          - $ref: '#/components/schemas/model.TaskReport'
+          type: object
+        msg:
+          description: 响应消息。
+          type: string
+    model.TaskResult:
+      type: object
+      properties:
+        confidence:
+          description: 置信度。
+          type: string
+        coordinates:
+          description: 缺陷坐标。
+          type: string
+        createBy:
+          type: integer
+        createTime:
+          type: string
+        dataType:
+          description: 数据类型，取值：IR、RGB。
+          type: string
+        faultType:
+          description: 故障类型。
+          type: string
+        faultTypeCode:
+          description: 故障类型编码。
+          type: integer
+        faultTypeName:
+          description: 故障类型名称。
+          type: string
+        fileName:
+          description: 文件名。
+          type: string
+        gps:
+          description: GPS 信息。
+          type: string
+        id:
+          description: 识别结果ID。
+          type: string
+          example: '0'
+        imageId:
+          description: 图片ID。
+          type: string
+          example: '0'
+        modelHash:
+          description: 模型哈希。
+          type: string
+        modelId:
+          description: 模型ID。
+          type: string
+          example: '0'
+        modelName:
+          description: 模型名称。
+          type: string
+        modelRole:
+          description: 模型角色，取值：MAIN、SUB。
+          type: string
+        parentResultId:
+          description: 父级识别结果ID。
+          type: string
+          example: '0'
+        rawResult:
+          description: 原始识别结果。
+          type: string
+        reviewed:
+          description: 是否已复核。
+          type: boolean
+        source:
+          description: 结果来源。
+          type: string
+        taskId:
+          description: 任务ID。
+          type: string
+          example: '0'
+        tempMax:
+          description: 最高温度。
+          type: number
+        tempMean:
+          description: 平均温度。
+          type: number
+        tempMin:
+          description: 最低温度。
+          type: number
+        updateBy:
+          type: integer
+        updateTime:
+          type: string
+    model.TaskResultListResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 任务识别结果列表。
+          type: array
+          items:
+            $ref: '#/components/schemas/model.TaskResult'
+        msg:
+          description: 响应消息。
+          type: string
+    model.Threshold:
+      type: object
+      properties:
+        createBy:
+          type: integer
+        createTime:
+          type: string
+        id:
+          description: 阈值配置ID。
+          type: string
+          example: '0'
+        sceneId:
+          description: 场景ID。
+          type: string
+          example: '0'
+        threshold:
+          description: 阈值配置JSON。
+          type: string
+        updateBy:
+          type: integer
+        updateTime:
+          type: string
+    model.ThresholdResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 场景阈值配置。
+          allOf:
+          - $ref: '#/components/schemas/model.Threshold'
+          type: object
+        msg:
+          description: 响应消息。
+          type: string
+    model.UploadedImageObject:
+      type: object
+      required:
+      - name
+      - path
+      properties:
+        contentType:
+          description: 文件 MIME 类型。
+          type: string
+        name:
+          description: 文件名。
+          type: string
+        path:
+          description: 文件存储路径。
+          type: string
+        size:
+          description: 文件大小，单位字节。
+          type: integer
+        url:
+          description: 文件访问URL。
+          type: string
+    storage.STSCredentials:
+      type: object
+      properties:
+        accessKeyId:
+          description: 临时访问密钥ID。
+          type: string
+        bucket:
+          description: 存储桶名称。
+          type: string
+        endpoint:
+          description: MinIO/S3 上传端点。
+          type: string
+        expiration:
+          description: 凭证过期时间。
+          type: string
+        prefix:
+          description: 允许上传的对象路径前缀。
+          type: string
+        region:
+          description: 区域。
+          type: string
+        secretAccessKey:
+          description: 临时访问密钥Secret。
+          type: string
+        sessionToken:
+          description: 临时会话令牌。
+          type: string
+        stsEarlyRefreshSeconds:
+          description: 前端提前刷新 STS 凭证的秒数。
+          type: integer
+        usePathStyle:
+          description: 是否使用 path-style 访问。
+          type: boolean
+    zkys-gin_internal_integrated_model.EmptyResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 响应数据，无业务数据时为空。
+          type: object
+          nullable: true
+        msg:
+          description: 响应消息。
+          type: string
+    zkys-gin_internal_recognition_model.Defect:
+      type: object
+      properties:
+        createBy:
+          type: integer
+        createTime:
+          type: string
+        defectCode:
+          description: 缺陷编码。
+          type: string
+        defectLevel:
+          description: 缺陷等级。
+          type: string
+        defectName:
+          description: 缺陷名称。
+          type: string
+        description:
+          description: 缺陷描述。
+          type: string
+        eName:
+          description: 缺陷英文名。
+          type: string
+        faultTypeCode:
+          description: 故障类型编码。
+          type: integer
+        id:
+          description: 缺陷ID。
+          type: string
+          example: '0'
+        modelHash:
+          description: 模型哈希。
+          type: string
+        operationGuide:
+          description: 操作指引。
+          type: string
+        sceneId:
+          description: 场景ID。
+          type: string
+          example: '0'
+        sceneModelId:
+          description: 场景模型配置ID。
+          type: string
+          example: '0'
+        threshold:
+          description: 置信度阈值。
+          type: number
+        updateBy:
+          type: integer
+        updateTime:
+          type: string
+    zkys-gin_internal_recognition_model.EmptyResult:
+      type: object
+      properties:
+        code:
+          description: 响应码，00000 表示成功。
+          type: string
+        data:
+          description: 响应数据，无业务数据时为空。
+          type: object
+          nullable: true
+        msg:
+          description: 响应消息。
+          type: string
+servers:
+- url: http://127.0.0.1:8080
+  description: manage 本地后端（按实际环境修改）

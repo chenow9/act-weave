@@ -494,9 +494,11 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if err != nil {
 		return nil, err
 	}
+	// Prompt enhance/preview is LLM-bound (often 30–120s). Do not reuse the
+	// shared 15s application HTTP client — that yields PROMPT_GENERATION_TIMEOUT.
 	promptService, err := agent.NewPromptService(agentRepository, promptObjects,
 		&modelSnapshotSource{models: modelRepository},
-		&promptGenerator{models: modelRepository, secrets: secretService, client: client})
+		&promptGenerator{models: modelRepository, secrets: secretService, client: modelapi.NewStreamingHTTPClient()})
 	if err != nil {
 		return nil, err
 	}

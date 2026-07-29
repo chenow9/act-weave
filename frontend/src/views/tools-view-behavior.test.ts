@@ -17,6 +17,7 @@ const integrationState = {
   toolPageItems: [] as Tool[],
   toolPagination: { page: 1, pageSize: 10, total: 0, pageSizeOptions: [10, 20, 50] },
   toolListQuery: { query: "", page: 1, pageSize: 10 } as Record<string, unknown>,
+  toolListSummary: { total: 0, published: 0, tested: 0, draft: 0, review: 0, disabled: 0 },
   toolPageLoading: false,
   toolPageError: null as string | null,
   toolPageHasLoaded: true,
@@ -27,6 +28,11 @@ const integrationState = {
   loading: false,
   loadM2Assets: loadM2AssetsMock,
   loadToolPage: loadToolPageMock,
+  loadToolVersions: vi.fn(async (id: string) => integrationState.tools.find((t) => t.id === id) || integrationState.toolPageItems.find((t) => t.id === id)),
+  connectionForTool: vi.fn((tool: Tool) => {
+    const list = integrationState.toolConnectionsByWorkspace[tool.workspaceId] || integrationState.serviceConnections;
+    return list.find((c) => c.id === tool.connectionId);
+  }),
   deleteTool: vi.fn(),
   publishTool: vi.fn(),
   updateTool: vi.fn(),
@@ -253,6 +259,17 @@ describe("tools view detail behavior", () => {
       total: integrationState.tools.length,
       pageSizeOptions: [10, 20, 50],
     };
+    integrationState.toolListSummary = {
+      total: integrationState.tools.length,
+      published: integrationState.tools.filter((t) => t.status === "Published").length,
+      tested: integrationState.tools.filter((t) => t.status === "Tested").length,
+      draft: integrationState.tools.filter((t) => t.status === "Draft").length,
+      review: integrationState.tools.filter((t) => t.status === "Review").length,
+      disabled: integrationState.tools.filter((t) => t.status === "Disabled").length,
+    };
+    integrationState.toolConnectionsByWorkspace = {
+      "workspace-1": integrationState.serviceConnections,
+    };
     loadM2AssetsMock.mockResolvedValue(undefined);
     loadToolPageMock.mockResolvedValue(integrationState.toolPageItems);
     loadWorkspacesMock.mockResolvedValue(undefined);
@@ -294,6 +311,10 @@ describe("tools view detail behavior", () => {
     ];
     integrationState.toolPageItems = [...integrationState.tools];
     integrationState.toolPagination = { page: 1, pageSize: 10, total: 3, pageSizeOptions: [10, 20, 50] };
+    integrationState.toolListSummary = { total: 3, published: 2, tested: 0, draft: 0, review: 1, disabled: 0 };
+    integrationState.toolConnectionsByWorkspace = {
+      "workspace-1": integrationState.serviceConnections,
+    };
 
     const wrapper = mountToolsView();
     await flushPromises();
@@ -382,7 +403,10 @@ describe("tools view detail behavior", () => {
     expect(wrapper.get(".tool-entity-copy small").attributes("title")).toBe("查询订单");
     expect(wrapper.findAll('.data-table-checkbox[aria-label^="选择 "]')).toHaveLength(2);
     await wrapper.get('.data-table-checkbox[aria-label="选择 缺失连接 Tool"]').setValue(true);
-    expect(wrapper.get(".management-list-batch-bar").text()).toContain("已选 1 项");
+    const batchBar = wrapper.get(".management-list-batch-bar");
+    expect(batchBar.text()).toContain("已选 1 项");
+    expect(batchBar.text()).toContain("批量测试");
+    expect(batchBar.text()).toContain("批量删除");
     wrapper.unmount();
   });
 
@@ -413,7 +437,12 @@ describe("tools view detail behavior", () => {
     document.body.querySelector<HTMLButtonElement>('button[data-action-key="delete"]')!.click();
     await wrapper.vm.$nextTick();
 
-    expect(wrapper.get(".tool-risk-confirmation-modal").text()).toContain("确认删除 Tool");
+    const modal = wrapper.get(".tool-risk-confirmation-modal");
+    expect(modal.text()).toContain("确认删除 Tool");
+    expect(modal.text()).not.toContain("Risk Control");
+    expect(modal.text()).toMatch(/操作确认|高风险操作/);
+    expect(modal.text()).toContain("Agent 绑定");
+    expect(modal.text()).not.toContain("由发布态 Release 解析");
     wrapper.unmount();
   });
 

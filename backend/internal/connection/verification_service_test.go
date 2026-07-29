@@ -89,6 +89,12 @@ func TestVerifyConnectionPersistsStableRedactedErrors(t *testing.T) {
 			if verification.Status != "FAILED" || diagnostic["code"] != test.code || diagnostic["category"] != test.category {
 				t.Fatalf("unexpected verification error: %+v diagnostics=%v", verification, diagnostic)
 			}
+			if diagnostic["detail"] == "" {
+				t.Fatalf("expected redacted detail in diagnostics: %v", diagnostic)
+			}
+			if strings.Contains(diagnostic["detail"], "raw-connection-secret") {
+				t.Fatalf("detail leaked secret: %v", diagnostic)
+			}
 			var storedCode string
 			var storedDiagnostics string
 			if err := db.QueryRow(`

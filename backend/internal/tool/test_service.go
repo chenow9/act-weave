@@ -107,28 +107,39 @@ func (service *TestService) WithBindingAttacher(attacher *outboundidentity.Bindi
 	return service
 }
 
-func (service *TestService) Run(ctx context.Context, input RunToolTestInput) (TestRecord, error) {
+// TestRunResult is the interactive test outcome: a persisted redacted record plus
+// raw response body for the immediate HTTP response (not stored in summaries).
+type TestRunResult struct {
+	Record       TestRecord
+	RequestBody  json.RawMessage
+	ResponseBody json.RawMessage
+}
+
+// MaxTestResponseBodyPreviewBytes caps body returned to the console UI.
+const MaxTestResponseBodyPreviewBytes = 64 << 10 // 64 KiB
+
+func (service *TestService) Run(ctx context.Context, input RunToolTestInput) (TestRunResult, error) {
 	input = normalizeRunToolTest(input)
 	if !validRunToolTest(input) {
-		return TestRecord{}, ErrInvalid
+		return TestRunResult{}, ErrInvalid
 	}
 	version, err := service.repository.GetVersion(ctx, input.WorkspaceID, input.CapabilityID, input.VersionID)
 	if err != nil {
-		return TestRecord{}, err
+		return TestRunResult{}, err
 	}
 	if version.LifecycleStatus == "PUBLISHED" {
-		return TestRecord{}, ErrImmutable
+		return TestRunResult{}, ErrImmutable
 	}
 	executor, err := service.executors.Resolve(version.ExecutorType)
 	if err != nil {
-		return TestRecord{}, err
+		return TestRunResult{}, err
 	}
 	// Attach write-only passthrough credentials and pin dual-mode invoke context
 	// before the shared SecretInjector boundary (same order as workflow trial).
 	invokeCtx, cleanup, attachErr := service.prepareOutboundInvoke(ctx, input)
 	if attachErr != nil {
 		_ = outboundidentity.ZeroCredentialsRaw(input.CredentialsRaw)
-		return TestRecord{}, attachErr
+		return TestRunResult{}, attachErr
 	}
 	defer cleanup()
 	_ = outboundidentity.ZeroCredentialsRaw(input.CredentialsRaw)
@@ -183,14 +194,14 @@ func (service *TestService) Run(ctx context.Context, input RunToolTestInput) (Te
 		RetentionMode: TestRetentionPermanent, TestedBy: input.TestedBy,
 	})
 	if err != nil {
-		return TestRecord{}, execution.NewError(TestErrorArtifactWrite, "INTERNAL", false, 0, err)
+		return TestRunResult{}, execution.NewError(TestErrorArtifactWrite, "INTERNAL", false, 0, err)
 	}
 	latency := durationMilliseconds(result.Latency)
 	var storedErrorCode *string
 	if errorCode != "" {
 		storedErrorCode = &errorCode
 	}
-	return service.repository.RecordTest(ctx, RecordTestInput{
+	record, err := service.repository.RecordTest(ctx, RecordTestInput{
 		ID: input.TestID, WorkspaceID: input.WorkspaceID, ToolVersionID: version.ID,
 		VersionChecksum: version.Checksum, ExpectedVersionLock: version.LockVersion,
 		Status: status, ConnectivityPassed: connectivityPassed,
@@ -198,6 +209,30 @@ func (service *TestService) Run(ctx context.Context, input RunToolTestInput) (Te
 		RuntimePolicyPassed: runtimePolicyPassed, RequestSummary: requestSummary,
 		ResponseSummary: responseSummary, LatencyMS: &latency, ErrorCode: storedErrorCode,
 		RawObjectID: &artifactID, TestedBy: input.TestedBy,
+	})
+	if err != nil {
+		return TestRunResult{}, err
+	}
+	return TestRunResult{
+		Record:       record,
+		RequestBody:  cloneRaw(input.Input),
+		ResponseBody: previewTestResponseBody(result.Output),
+	}, nil
+}
+
+func previewTestResponseBody(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	if len(raw) <= MaxTestResponseBodyPreviewBytes {
+		return cloneRaw(raw)
+	}
+	// Truncate oversized bodies; keep valid-ish JSON string envelope for UI.
+	preview := string(raw[:MaxTestResponseBodyPreviewBytes])
+	return mustJSON(map[string]any{
+		"truncated": true,
+		"byteSize":  len(raw),
+		"preview":   preview,
 	})
 }
 
@@ -382,6 +417,13 @@ func validRunToolTest(input RunToolTestInput) bool {
 }
 
 func validateSchemaValue(ctx context.Context, schemaJSON, valueJSON json.RawMessage, response bool) bool {
+	// Missing / empty schemas: treat as "no contract" rather than reject every payload.
+	// Incomplete OpenAPI imports often store {"type":"object","properties":{},"additionalProperties":false}
+	// which would fail any real test input (pageNum/pageSize, path keys, etc.).
+	if len(bytes.TrimSpace(schemaJSON)) == 0 || bytes.Equal(bytes.TrimSpace(schemaJSON), []byte("null")) ||
+		bytes.Equal(bytes.TrimSpace(schemaJSON), []byte("{}")) {
+		return jsonObjectOrAnyJSON(valueJSON)
+	}
 	var schema openapi3.Schema
 	if json.Unmarshal(schemaJSON, &schema) != nil || schema.Validate(ctx) != nil {
 		return false
@@ -392,10 +434,48 @@ func validateSchemaValue(ctx context.Context, schemaJSON, valueJSON json.RawMess
 	if decoder.Decode(&value) != nil {
 		return false
 	}
+	if !response && isEmptyObjectRequestSchema(&schema) {
+		// Allow free-form request objects when the tool contract has no declared properties.
+		return true
+	}
 	if response {
 		return schema.VisitJSON(value, openapi3.VisitAsResponse()) == nil
 	}
 	return schema.VisitJSON(value, openapi3.VisitAsRequest()) == nil
+}
+
+// isEmptyObjectRequestSchema reports schemas that declare no properties/required fields.
+// These commonly come from OpenAPI operations that omitted parameters; rejecting extra
+// keys with additionalProperties=false would make tool tests unusable.
+func isEmptyObjectRequestSchema(schema *openapi3.Schema) bool {
+	if schema == nil {
+		return true
+	}
+	if len(schema.Required) > 0 {
+		return false
+	}
+	if schema.Properties != nil && len(schema.Properties) > 0 {
+		return false
+	}
+	// type omitted or object (possibly with allOf empty etc.)
+	if schema.Type != nil && !schema.Type.Is("object") && schema.Type.Is("array") {
+		return false
+	}
+	if schema.Type != nil && !schema.Type.Is("object") &&
+		(schema.Type.Is("string") || schema.Type.Is("number") || schema.Type.Is("integer") || schema.Type.Is("boolean")) {
+		return false
+	}
+	return true
+}
+
+func jsonObjectOrAnyJSON(valueJSON json.RawMessage) bool {
+	if len(bytes.TrimSpace(valueJSON)) == 0 {
+		return false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(valueJSON))
+	decoder.UseNumber()
+	var value any
+	return decoder.Decode(&value) == nil
 }
 
 func validateErrorMappings(raw json.RawMessage) bool {

@@ -40,6 +40,46 @@ export function normalizeParameterLocation(value: unknown) {
   );
 }
 
+/** Recover request params from http.v1 actionConfig when inputSchema has no properties. */
+export function mergeRequestParamsFromActionConfig(
+  schemaParams: ToolRequestParam[],
+  actionConfig: Record<string, unknown>,
+): ToolRequestParam[] {
+  const byName = new Map<string, ToolRequestParam>();
+  for (const param of schemaParams) {
+    if (param?.name) byName.set(param.name, param);
+  }
+  const parameters = Array.isArray(actionConfig.parameters) ? actionConfig.parameters : [];
+  for (const raw of parameters) {
+    if (!isRecord(raw)) continue;
+    const name = String(raw.input || raw.name || "").trim();
+    if (!name || byName.has(name)) continue;
+    const location = normalizeParameterLocation(raw.in) || "Query";
+    byName.set(name, {
+      location,
+      name,
+      type: "string",
+      required: Boolean(raw.required) || location === "Path",
+      description: typeof raw.description === "string" ? raw.description : "",
+    });
+  }
+  const path = typeof actionConfig.path === "string" ? actionConfig.path : "";
+  const re = /\{([^{}]+)\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(path))) {
+    const name = match[1].trim();
+    if (!name || byName.has(name)) continue;
+    byName.set(name, {
+      location: "Path",
+      name,
+      type: "string",
+      required: true,
+      description: "",
+    });
+  }
+  return [...byName.values()];
+}
+
 export function normalizeSchemaNode(node: unknown, fallback: Partial<ToolSchemaNode> = {}): ToolSchemaNode {
   const source = isRecord(node) ? node : {};
   const sourceRequired = Array.isArray(source.required)
@@ -161,6 +201,43 @@ export function normalizeToolErrorMappings(mappings: ToolVersionDTO["errorMappin
   });
 }
 
+/**
+ * Map list-row DTO using headVersion only (no /versions fan-out).
+ * Full schemas are empty until detail/edit loads versions.
+ */
+export function toolFromListDTO(tool: ToolDTO, workspaceId: string): Tool {
+  const head = tool.headVersion;
+  const syntheticVersions: ToolVersionDTO[] = head
+    ? [
+        {
+          id: head.id,
+          versionNo: head.versionNo,
+          lifecycleStatus: head.lifecycleStatus,
+          executorType: head.executorType || "HTTP",
+          defaultConnectionId: head.defaultConnectionId,
+          actionSchemaVersion: head.actionSchemaVersion || "http.v1",
+          actionConfig: head.actionConfig || {},
+          inputSchema: {},
+          outputSchema: {},
+          errorMappings: {},
+          runtimePolicy: {},
+          riskLevel: "LOW",
+          sideEffectLevel: "READ",
+          requiresConfirmation: false,
+          checksum: "",
+          createdBy: tool.createdBy,
+          updatedBy: tool.updatedBy,
+          lockVersion: 1,
+        },
+      ]
+    : [];
+  const mapped = toolFromDTO(tool, workspaceId, syntheticVersions);
+  if (tool.latestTest) {
+    mapped.latestTest = tool.latestTest;
+  }
+  return mapped;
+}
+
 export function toolFromDTO(
   tool: ToolDTO,
   workspaceId: string,
@@ -176,6 +253,18 @@ export function toolFromDTO(
   const runtimePolicy = draftVersion?.runtimePolicy || {};
   const errorMappings = normalizeToolErrorMappings(draftVersion?.errorMappings || {});
   const lifecycle = tool.status === "DISABLED" ? "Disabled" : lifecycleLabel(draftVersion?.lifecycleStatus);
+  // Prefer inputSchema nodes; when OpenAPI left schema empty, recover params from actionConfig.
+  const schemaParams = inputNodes.map((node) => ({
+    location: node.location || "Body",
+    name: node.name,
+    type: node.type,
+    required: node.required,
+    description: node.description,
+    valueSource: node.valueSource,
+    defaultValue: node.defaultValue,
+    schema: node,
+  }));
+  const requestParams = mergeRequestParamsFromActionConfig(schemaParams, actionConfig);
   return {
     id: tool.id,
     workspaceId,
@@ -195,14 +284,7 @@ export function toolFromDTO(
     activeReleaseId: tool.activeReleaseId,
     versions,
     draftVersion,
-    requestParams: inputNodes.map((node) => ({
-      location: node.location || "Body",
-      name: node.name,
-      type: node.type,
-      required: node.required,
-      description: node.description,
-      schema: node,
-    })),
+    requestParams,
     responseFields: outputNodes.map((node) => ({
       name: node.name,
       type: node.type,
@@ -218,6 +300,7 @@ export function toolFromDTO(
       rateLimitPolicy: String(runtimePolicy.rateLimitPolicy || "60 rpm"),
     },
     lastTestResult: normalizeToolTestResult(testResult),
+    latestTest: tool.latestTest ?? null,
     createdBy: tool.createdBy,
     updatedBy: tool.updatedBy,
     createdAt: tool.createdAt,
@@ -348,6 +431,16 @@ export function replaceByID<T extends { id: string }>(items: T[], replacement: T
     : [replacement, ...items];
 }
 
+export interface ToolHeadVersionDTO {
+  id: string;
+  versionNo: number;
+  lifecycleStatus: ToolVersion["lifecycleStatus"];
+  executorType: string;
+  defaultConnectionId?: string;
+  actionSchemaVersion?: string;
+  actionConfig?: Record<string, unknown>;
+}
+
 export interface ToolDTO {
   id: string;
   providerId: string;
@@ -364,6 +457,14 @@ export interface ToolDTO {
   createdAt: string;
   updatedAt: string;
   lockVersion: number;
+  /** List API head version summary (no full schemas). Prefer over N+1 /versions. */
+  headVersion?: ToolHeadVersionDTO | null;
+  latestTest?: {
+    status: string;
+    testedAt: string;
+    testedBy: string;
+    errorCode?: string;
+  } | null;
 }
 
 export interface ToolVersionDTO {

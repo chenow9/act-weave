@@ -137,7 +137,8 @@ func ValidateCredentialsEnvelopeExpiry(envelope CredentialsEnvelope, now time.Ti
 	}
 	for _, binding := range envelope.Bindings {
 		if !binding.ExpiresAt.After(now) {
-			return ErrCredentialInvalid
+			// Distinct from shape/schema invalid so clients can show a clear message.
+			return ErrCredentialExpired
 		}
 	}
 	return nil

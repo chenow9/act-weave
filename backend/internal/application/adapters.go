@@ -749,7 +749,8 @@ func (verifier *serviceConnectionVerifier) probeVerificationHTTP(
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return err
+		// Keep operator-actionable class without embedding request secrets.
+		return fmt.Errorf("connection verification request failed: %w", err)
 	}
 	defer response.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4<<10))
@@ -757,6 +758,7 @@ func (verifier *serviceConnectionVerifier) probeVerificationHTTP(
 		return connection.ErrUpstreamAuthentication
 	}
 	if !endpoint.Verification.Accepts(response.StatusCode) {
+		// Token form is parsed into diagnostics.detail / ops logs (no response body).
 		return fmt.Errorf("connection verification returned HTTP_STATUS_%d", response.StatusCode)
 	}
 	return nil
@@ -1089,12 +1091,28 @@ type modelConfigReader interface {
 	Get(ctx context.Context, workspaceID, configID string) (modelconfig.Config, error)
 }
 
+// promptGenerationTimeout matches frontend enhance-prompt axios timeout (210s)
+// and modelapi defaultModelTimeout. The shared application HTTP client is only
+// 15s and must not be used for LLM Generate.
+const promptGenerationTimeout = 210 * time.Second
+
 // promptGenerator uses the shared eino-ext OpenAI ChatModel boundary (same as
 // agent chatruntimebridge / smartdag). No parallel hand-rolled Completions client.
 type promptGenerator struct {
 	models  modelConfigReader
 	secrets modelapi.SecretOpener
 	client  *http.Client
+}
+
+func (generator *promptGenerator) llmHTTPClient() *http.Client {
+	// Prefer an explicit stream-safe client. Reject short overall Timeout from the
+	// shared app client (15s) which surfaces as PROMPT_GENERATION_TIMEOUT ~15s.
+	if generator != nil && generator.client != nil {
+		if generator.client.Timeout == 0 || generator.client.Timeout >= promptGenerationTimeout {
+			return generator.client
+		}
+	}
+	return modelapi.NewStreamingHTTPClient()
 }
 
 func (generator *promptGenerator) Generate(
@@ -1119,16 +1137,24 @@ func (generator *promptGenerator) Generate(
 	if err != nil {
 		return "", err
 	}
-	chatModel, err := modelapi.NewEinoOpenAIChatModel(ctx, generator.client, generator.secrets, cfg)
+	// Bound wall time even when HTTP client has Timeout=0 (stream-safe client).
+	genCtx, cancel := context.WithTimeout(ctx, promptGenerationTimeout)
+	defer cancel()
+	chatModel, err := modelapi.NewEinoOpenAIChatModel(genCtx, generator.llmHTTPClient(), generator.secrets, cfg)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", agent.ErrPromptGeneration, err)
 	}
 	userPrompt := strings.TrimSpace(request.Input)
 	if userPrompt == "" {
-		userPrompt = "Improve the system prompt for this agent."
+		userPrompt = "请为该 Agent 优化系统提示词，使其更清晰、可执行，并使用 Markdown 结构化编写。"
 	}
-	msg, err := chatModel.Generate(ctx, []*schema.Message{
-		{Role: schema.System, Content: "Return only the revised system prompt."},
+	msg, err := chatModel.Generate(genCtx, []*schema.Message{
+		{
+			Role: schema.System,
+			Content: "你是系统提示词润色助手。根据用户提供的草稿或整理要求，输出优化后的系统提示词。" +
+				"必须使用 Markdown 格式组织内容（可用标题、列表、加粗、引用等），结构清晰、便于阅读与维护。" +
+				"只返回提示词正文本身，不要额外解释、前言或后记；不要用外层 ``` 代码块把整篇包起来。",
+		},
 		{Role: schema.User, Content: userPrompt},
 	})
 	if err != nil {

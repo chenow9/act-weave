@@ -66,13 +66,13 @@ func TestToolTestRecordsExactVersionAndLatestPassingAttempt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run successful tool test: %v", err)
 	}
-	if succeeded.Status != "SUCCEEDED" || !succeeded.ConnectivityPassed ||
-		!succeeded.ResponseSchemaPassed || !succeeded.ErrorMappingPassed ||
-		!succeeded.RuntimePolicyPassed || succeeded.ErrorCode != nil ||
-		succeeded.RawObjectID == nil || *succeeded.RawObjectID != toolTestArtifactOneID {
+	if succeeded.Record.Status != "SUCCEEDED" || !succeeded.Record.ConnectivityPassed ||
+		!succeeded.Record.ResponseSchemaPassed || !succeeded.Record.ErrorMappingPassed ||
+		!succeeded.Record.RuntimePolicyPassed || succeeded.Record.ErrorCode != nil ||
+		succeeded.Record.RawObjectID == nil || *succeeded.Record.RawObjectID != toolTestArtifactOneID {
 		t.Fatalf("unexpected successful test record: %+v", succeeded)
 	}
-	for _, summary := range []json.RawMessage{succeeded.RequestSummary, succeeded.ResponseSummary} {
+	for _, summary := range []json.RawMessage{succeeded.Record.RequestSummary, succeeded.Record.ResponseSummary} {
 		for _, forbidden := range []string{"customer-sensitive-order", "upstream-sensitive-value"} {
 			if strings.Contains(string(summary), forbidden) {
 				t.Fatalf("tool test summary leaked %q: %s", forbidden, summary)
@@ -84,7 +84,7 @@ func TestToolTestRecordsExactVersionAndLatestPassingAttempt(t *testing.T) {
 		t.Fatalf("successful test did not mark exact version tested: %+v err=%v", testedVersion, err)
 	}
 	latest, err := repository.LatestSuccessfulTest(context.Background(), repositoryWorkspaceID, version.ID)
-	if err != nil || latest.ID != succeeded.ID {
+	if err != nil || latest.ID != succeeded.Record.ID {
 		t.Fatalf("resolve latest passing test: %+v err=%v", latest, err)
 	}
 
@@ -95,12 +95,12 @@ func TestToolTestRecordsExactVersionAndLatestPassingAttempt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("record response schema failure: %v", err)
 	}
-	if failed.Status != "FAILED" || failed.ErrorCode == nil || *failed.ErrorCode != TestErrorResponseSchema ||
-		!failed.ConnectivityPassed || failed.ResponseSchemaPassed || !failed.ErrorMappingPassed || !failed.RuntimePolicyPassed {
+	if failed.Record.Status != "FAILED" || failed.Record.ErrorCode == nil || *failed.Record.ErrorCode != TestErrorResponseSchema ||
+		!failed.Record.ConnectivityPassed || failed.Record.ResponseSchemaPassed || !failed.Record.ErrorMappingPassed || !failed.Record.RuntimePolicyPassed {
 		t.Fatalf("unexpected failed test record: %+v", failed)
 	}
-	if strings.Contains(string(failed.ResponseSummary), "upstream-sensitive-failure") {
-		t.Fatalf("failed test summary leaked response: %s", failed.ResponseSummary)
+	if strings.Contains(string(failed.Record.ResponseSummary), "upstream-sensitive-failure") {
+		t.Fatalf("failed test summary leaked response: %s", failed.Record.ResponseSummary)
 	}
 	if _, err := repository.LatestSuccessfulTest(context.Background(), repositoryWorkspaceID, version.ID); !errors.Is(err, ErrNoPassingTest) {
 		t.Fatalf("later failure should invalidate older success, got %v", err)
@@ -112,8 +112,8 @@ func TestToolTestRecordsExactVersionAndLatestPassingAttempt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("record input schema failure: %v", err)
 	}
-	if invalidInput.Status != "FAILED" || invalidInput.ConnectivityPassed ||
-		invalidInput.ErrorCode == nil || *invalidInput.ErrorCode != TestErrorInputSchema {
+	if invalidInput.Record.Status != "FAILED" || invalidInput.Record.ConnectivityPassed ||
+		invalidInput.Record.ErrorCode == nil || *invalidInput.Record.ErrorCode != TestErrorInputSchema {
 		t.Fatalf("unexpected input validation record: %+v", invalidInput)
 	}
 	var storedCount int
@@ -218,7 +218,7 @@ func TestToolTestUsesTheSameCredentialInjectionBoundaryAsRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run credential-bearing Tool test: %v", err)
 	}
-	if result.Status != "SUCCEEDED" || injector.calls != 1 ||
+	if result.Record.Status != "SUCCEEDED" || injector.calls != 1 ||
 		injector.reference.SecretID != "credential-secret" {
 		t.Fatalf("credential injection was not applied exactly once: result=%+v injector=%+v", result, injector)
 	}
@@ -318,7 +318,7 @@ func TestToolTestRequestPassthroughEnvelopeReachesUpstream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request-passthrough tool test: %v", err)
 	}
-	if result.Status != "SUCCEEDED" || !result.ConnectivityPassed {
+	if result.Record.Status != "SUCCEEDED" || !result.Record.ConnectivityPassed {
 		t.Fatalf("result=%+v", result)
 	}
 	if hit != 1 {
@@ -328,8 +328,8 @@ func TestToolTestRequestPassthroughEnvelopeReachesUpstream(t *testing.T) {
 		t.Fatalf("upstream Authorization=%q", sawAuth)
 	}
 	// Token must not leak into durable test summaries / error codes.
-	if strings.Contains(string(result.RequestSummary), canary) ||
-		strings.Contains(string(result.ResponseSummary), canary) {
+	if strings.Contains(string(result.Record.RequestSummary), canary) ||
+		strings.Contains(string(result.Record.ResponseSummary), canary) {
 		t.Fatalf("canary leaked into test record summaries: %+v", result)
 	}
 	// Vault root cleaned after Run.

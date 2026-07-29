@@ -59,6 +59,10 @@ export function createOpenAPIImportsPageModel() {
   /** Detail shell local state (T2=A): open shell first, then load. */
   const detailLoading = ref(false);
   const detailError = ref("");
+  /** Accordion key for endpoint schema trees — avoid mounting 100+ vxe tables at once. */
+  const expandedEndpointKey = ref("");
+  const endpointDetailQuery = ref("");
+  const endpointDetailVisibleLimit = ref(40);
   let detailRequestSeq = 0;
   const actionNote = ref("");
   const importingOpenAPI = ref(false);
@@ -218,6 +222,50 @@ export function createOpenAPIImportsPageModel() {
       endpoints: detail?.endpoints || [],
     };
   });
+
+  const filteredImportEndpoints = computed(() => {
+    const endpoints = selectedImportDetail.value?.endpoints || [];
+    const needle = endpointDetailQuery.value.trim().toLowerCase();
+    if (!needle) return endpoints;
+    return endpoints.filter((endpoint) => {
+      const haystack = [
+        endpoint.method,
+        endpoint.path,
+        endpoint.summary,
+        endpoint.operationId,
+        endpoint.status,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(needle);
+    });
+  });
+
+  const visibleImportEndpoints = computed(() =>
+    filteredImportEndpoints.value.slice(0, endpointDetailVisibleLimit.value),
+  );
+
+  const hasMoreImportEndpoints = computed(
+    () => filteredImportEndpoints.value.length > visibleImportEndpoints.value.length,
+  );
+
+  function endpointDetailKey(endpoint: { method?: string; path?: string; id?: string }) {
+    return endpoint.id || `${endpoint.method || "GET"} ${endpoint.path || ""}`;
+  }
+
+  function toggleEndpointDetail(endpoint: { method?: string; path?: string; id?: string }) {
+    const key = endpointDetailKey(endpoint);
+    expandedEndpointKey.value = expandedEndpointKey.value === key ? "" : key;
+  }
+
+  function isEndpointDetailExpanded(endpoint: { method?: string; path?: string; id?: string }) {
+    return expandedEndpointKey.value === endpointDetailKey(endpoint);
+  }
+
+  function showMoreImportEndpoints() {
+    endpointDetailVisibleLimit.value += 40;
+  }
   const canImportOpenAPI = computed(() => {
     const workspaceId = importForm.value.workspaceId.trim();
     const providerId = importForm.value.providerId.trim();
@@ -539,6 +587,9 @@ export function createOpenAPIImportsPageModel() {
     // Open stable shell immediately (list row is enough for header identity).
     selectedImportId.value = record.id;
     detailError.value = "";
+    expandedEndpointKey.value = "";
+    endpointDetailQuery.value = "";
+    endpointDetailVisibleLimit.value = 40;
     void focusModalRoot(() => detailDialogRef.value);
 
     if (record.detail) {
@@ -619,11 +670,15 @@ export function createOpenAPIImportsPageModel() {
   }
 
   function closeImportDetail() {
+    // Bump seq + clear id first so heavy endpoint trees unmount before focus restore.
     detailRequestSeq += 1;
-    selectedImportId.value = "";
+    expandedEndpointKey.value = "";
+    endpointDetailQuery.value = "";
+    endpointDetailVisibleLimit.value = 40;
     detailLoading.value = false;
     detailError.value = "";
-    void restoreModalFocus();
+    selectedImportId.value = "";
+    void nextTick(() => restoreModalFocus());
   }
 
   function requestRemoveImport(record: OpenAPIImport, event?: Event) {
@@ -791,6 +846,16 @@ export function createOpenAPIImportsPageModel() {
     selectedWorkspace,
     selectedConnection,
     selectedImportDetail,
+    filteredImportEndpoints,
+    visibleImportEndpoints,
+    hasMoreImportEndpoints,
+    expandedEndpointKey,
+    endpointDetailQuery,
+    endpointDetailVisibleLimit,
+    endpointDetailKey,
+    toggleEndpointDetail,
+    isEndpointDetailExpanded,
+    showMoreImportEndpoints,
     canImportOpenAPI,
     selectedImportDetailVisible,
     connectionById,

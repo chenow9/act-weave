@@ -21,6 +21,16 @@ const {
   selectedStatusFilter,
   selectedToolTypeFilter,
   selectedToolRowKeys,
+  selectedTools,
+  batchTesting,
+  batchDeleting,
+  batchTestDialogVisible,
+  batchTestModalRef,
+  batchPassthroughToken,
+  batchPassthroughExpiresAt,
+  batchTestProgress,
+  batchTestNeedsPassthrough,
+  canTestWorkspace,
   actionNote,
   actionNoteTone,
   riskConfirmationVisible,
@@ -48,9 +58,20 @@ const {
   closeRiskConfirmation,
   riskConfirmationTitle,
   riskConfirmationPrimaryLabel,
+  riskConfirmationEyebrow,
+  riskConfirmationDescription,
+  riskImpactItems,
+  riskConfirmationToneClass,
+  riskConfirmationTargetName,
+  riskConfirmationTargetMeta,
+  openBatchDeleteConfirmation,
+  batchTestSelectedTools,
+  closeBatchTestDialog,
+  confirmBatchTestSelectedTools,
   confirmRiskAction,
   agentImpactLabel,
   toolVersionLabel,
+  toolEndpointSummary,
   methodOf,
   pathOf,
   methodClass,
@@ -62,7 +83,6 @@ const {
   toolProviderConnectionLabel,
   providerForTool,
   connectionForTool,
-  toolEndpointSummary,
   formatToolTableUpdatedAt,
 } = scp;
 void ManagementList;
@@ -143,6 +163,34 @@ void getToolTypeLabel;
         @page-change="changeToolPage"
         @sort-change="changeToolSort"
       >
+          <template #batch-actions>
+            <button
+              type="button"
+              class="management-list-batch-action is-primary"
+              :disabled="!selectedTools.length || batchTesting || batchDeleting || !canTestWorkspace"
+              :title="
+                batchTesting
+                  ? '批量测试进行中'
+                  : !canTestWorkspace
+                    ? '当前空间无测试权限'
+                    : '使用默认入参批量测试已选 Tool'
+              "
+              @click="batchTestSelectedTools"
+            >
+              <i :class="['fa-solid', batchTesting ? 'fa-spinner fa-spin' : 'fa-vial']" aria-hidden="true" />
+              <span>{{ batchTesting ? "测试中…" : "批量测试" }}</span>
+            </button>
+            <button
+              type="button"
+              class="management-list-batch-action is-danger"
+              :disabled="!selectedTools.length || batchTesting || batchDeleting"
+              :title="batchDeleting ? '批量删除进行中' : '批量删除已选 Tool'"
+              @click="openBatchDeleteConfirmation"
+            >
+              <i :class="['fa-solid', batchDeleting ? 'fa-spinner fa-spin' : 'fa-trash']" aria-hidden="true" />
+              <span>批量删除</span>
+            </button>
+          </template>
           <template #filters>
             <ManagementSegmentedFilter
               :model-value="selectedStatusFilter"
@@ -260,19 +308,20 @@ void getToolTypeLabel;
       <section
         ref="riskConfirmationModalRef"
         class="modal-card tool-risk-confirmation-modal"
+        :class="riskConfirmationToneClass()"
         role="dialog"
         aria-modal="true"
         :aria-label="riskConfirmationTitle()"
       >
-        <div class="modal-card-head">
+        <div class="modal-card-head tool-risk-confirmation-head">
           <div>
-            <span>Risk Control</span>
+            <span>{{ riskConfirmationEyebrow() }}</span>
             <h3>{{ riskConfirmationTitle() }}</h3>
           </div>
           <button
             class="icon-action-button"
             type="button"
-            aria-label="关闭风险确认"
+            aria-label="关闭确认对话框"
             data-modal-initial-focus
             @click="closeRiskConfirmation"
           >
@@ -280,21 +329,111 @@ void getToolTypeLabel;
           </button>
         </div>
         <div class="tool-risk-confirmation-body">
-          <strong>{{ pendingRiskAction.tool?.name }}</strong>
-          <p>该操作可能影响已发布 Release 的 Capability Binding 或 Workflow 引用；请先确认影响面。</p>
-          <div class="tool-impact-summary">
-            <span
-              ><b>Capability Binding</b
-              >{{ pendingRiskAction.tool ? agentImpactLabel(pendingRiskAction.tool) : "-" }}</span
+          <div class="tool-risk-target">
+            <div class="tool-risk-target-icon" aria-hidden="true">
+              <i class="fa-solid fa-wrench" />
+            </div>
+            <div class="tool-risk-target-copy">
+              <strong>{{ riskConfirmationTargetName() }}</strong>
+              <small v-if="riskConfirmationTargetMeta()">{{ riskConfirmationTargetMeta() }}</small>
+            </div>
+          </div>
+          <p class="tool-risk-description">{{ riskConfirmationDescription() }}</p>
+          <div class="tool-impact-summary" role="list" aria-label="影响面摘要">
+            <div
+              v-for="item in riskImpactItems()"
+              :key="item.key"
+              class="tool-impact-item"
+              :class="`tone-${item.tone}`"
+              role="listitem"
             >
-            <span><b>Workflow 引用</b>由发布态 Release 解析</span>
-            <span><b>版本</b>{{ pendingRiskAction.tool ? toolVersionLabel(pendingRiskAction.tool) : "-" }}</span>
+              <span class="tool-impact-label">{{ item.label }}</span>
+              <strong class="tool-impact-value">{{ item.value }}</strong>
+            </div>
           </div>
         </div>
-        <div class="tool-editor-actions">
-          <button class="ghost-button" type="button" @click="closeRiskConfirmation">取消</button>
-          <button class="primary-button danger" type="button" @click="confirmRiskAction">
+        <div class="tool-editor-actions tool-risk-confirmation-actions">
+          <button class="ghost-button" type="button" :disabled="batchDeleting" @click="closeRiskConfirmation">
+            取消
+          </button>
+          <button
+            class="primary-button"
+            :class="pendingRiskAction.type === 'enable' ? '' : 'danger'"
+            type="button"
+            :disabled="batchDeleting"
+            @click="confirmRiskAction"
+          >
+            <i v-if="batchDeleting" class="fa-solid fa-spinner fa-spin" aria-hidden="true" />
             {{ riskConfirmationPrimaryLabel() }}
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <div v-if="batchTestDialogVisible" class="modal-backdrop" @click.self="closeBatchTestDialog">
+      <section
+        ref="batchTestModalRef"
+        class="modal-card tool-risk-confirmation-modal tool-batch-test-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="批量测试 Tool"
+      >
+        <div class="modal-card-head tool-risk-confirmation-head">
+          <div>
+            <span>批量测试</span>
+            <h3>用默认入参测试已选 Tool</h3>
+          </div>
+          <button
+            class="icon-action-button"
+            type="button"
+            aria-label="关闭批量测试"
+            :disabled="batchTesting"
+            @click="closeBatchTestDialog"
+          >
+            <i class="fa-solid fa-xmark" />
+          </button>
+        </div>
+        <div class="tool-risk-confirmation-body">
+          <p class="tool-risk-description">
+            将对 <strong>{{ selectedTools.length }}</strong> 个已选 Tool 顺序执行测试：自动补全 Path/Query
+            默认参数（如 pageNum=1、pageSize=10），结果仅汇总通过/失败数量。
+          </p>
+          <ul class="tool-batch-test-notes">
+            <li>仅测试可编辑草稿（已发布且无新草稿的会跳过）</li>
+            <li>缺少连接的 Tool 会跳过</li>
+            <li>透传连接需填写一次业务 Token，应用到全部透传项</li>
+          </ul>
+          <section v-if="batchTestNeedsPassthrough" class="tool-batch-test-passthrough" aria-label="出站透传凭据">
+            <header>
+              <strong>出站请求透传</strong>
+              <span>Token 为 write-only，不会写入历史或本地存储。请勿加 Bearer 前缀。</span>
+            </header>
+            <label>
+              业务 Token
+              <input
+                v-model="batchPassthroughToken"
+                type="password"
+                autocomplete="off"
+                placeholder="一次性业务 JWT"
+                :disabled="batchTesting"
+              />
+            </label>
+            <label>
+              过期时间
+              <input v-model="batchPassthroughExpiresAt" type="datetime-local" :disabled="batchTesting" />
+            </label>
+          </section>
+          <p v-if="batchTesting" class="tool-batch-test-progress" role="status">
+            测试中… {{ batchTestProgress.current }} / {{ batchTestProgress.total }}
+          </p>
+        </div>
+        <div class="tool-editor-actions tool-risk-confirmation-actions">
+          <button class="ghost-button" type="button" :disabled="batchTesting" @click="closeBatchTestDialog">
+            取消
+          </button>
+          <button class="primary-button" type="button" :disabled="batchTesting" @click="confirmBatchTestSelectedTools">
+            <i :class="['fa-solid', batchTesting ? 'fa-spinner fa-spin' : 'fa-vial']" aria-hidden="true" />
+            {{ batchTesting ? "测试中…" : `开始测试 ${selectedTools.length} 项` }}
           </button>
         </div>
       </section>

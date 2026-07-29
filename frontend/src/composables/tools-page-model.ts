@@ -27,6 +27,7 @@ import {
   toolHasConnectionAttention,
 } from "../utils/tool-governance";
 import { getToolProtocolLabel, getToolTypeLabel } from "../utils/tool-presentation";
+import { buildDefaultToolTestInput } from "../utils/tool-test-inputs";
 import { useWorkspaceStore } from "../stores/workspaces";
 import type {
   Tool,
@@ -47,7 +48,7 @@ export function createToolsPageModel() {
   type ToolStatusFilter = "all" | NonNullable<ToolListQuery["status"]>;
   type ToolTypeFilter = "all" | NonNullable<ToolListQuery["type"]>;
   type DetailTabId = "base" | "connection" | "request" | "response" | "runtime" | "test";
-  type RiskActionType = "disable" | "enable" | "delete" | "";
+  type RiskActionType = "disable" | "enable" | "delete" | "batch-delete" | "";
 
   interface ToolDraft {
     id: string;
@@ -107,7 +108,44 @@ export function createToolsPageModel() {
   const runtimeAdvancedOpen = ref(false);
   const riskConfirmationVisible = ref(false);
   const riskConfirmationModalRef = ref<HTMLElement | null>(null);
-  const pendingRiskAction = ref<{ type: RiskActionType; tool: Tool | null }>({ type: "", tool: null });
+  const pendingRiskAction = ref<{ type: RiskActionType; tool: Tool | null; tools: Tool[] }>({
+    type: "",
+    tool: null,
+    tools: [],
+  });
+  const batchTesting = ref(false);
+  const batchDeleting = ref(false);
+  const batchTestDialogVisible = ref(false);
+  const batchTestModalRef = ref<HTMLElement | null>(null);
+  const batchPassthroughToken = ref("");
+  const batchPassthroughExpiresAt = ref("");
+  const batchTestProgress = ref({ current: 0, total: 0 });
+
+  const selectedTools = computed(() => {
+    const keys = new Set(selectedToolRowKeys.value.map(String));
+    if (!keys.size) return [] as Tool[];
+    const byId = new Map<string, Tool>();
+    for (const tool of [...toolsStore.toolPageItems, ...toolsStore.tools]) {
+      if (keys.has(tool.id)) byId.set(tool.id, tool);
+    }
+    return Array.from(byId.values());
+  });
+
+  /** Selected tools whose connection needs REQUEST_PASSTHROUGH business token. */
+  const batchTestNeedsPassthrough = computed(() =>
+    selectedTools.value.some((tool) => connectionForTool(tool)?.outboundMode === "REQUEST_PASSTHROUGH"),
+  );
+
+  const batchTestPassthroughConnectionIds = computed(() => {
+    const ids = new Set<string>();
+    for (const tool of selectedTools.value) {
+      const connection = connectionForTool(tool);
+      if (connection?.outboundMode === "REQUEST_PASSTHROUGH" && tool.connectionId) {
+        ids.add(tool.connectionId);
+      }
+    }
+    return [...ids];
+  });
 
   const toolEditorSteps = [
     ["基础与接口", "归属、连接与 Endpoint"],
@@ -175,27 +213,40 @@ export function createToolsPageModel() {
 
   const draftTool = ref<ToolDraft>(defaultToolDraft());
 
-  const hasToolRecords = computed(() => toolsStore.tools.length > 0);
-  /** Tools whose bound connection is missing, unverified, failed, or expiring. */
+  const hasToolRecords = computed(
+    () =>
+      (toolsStore.toolListSummary?.total ?? 0) > 0 ||
+      (toolsStore.toolPagination?.total ?? 0) > 0 ||
+      toolsStore.toolPageItems.length > 0,
+  );
+  /** Tools on the current page whose bound connection needs attention (KPI for 需处理 is page-aware). */
   const connectionIssueTools = computed(() =>
-    toolsStore.tools.filter((tool) => toolHasConnectionAttention(tool, connectionForTool(tool))),
+    toolsStore.toolPageItems.filter((tool) => toolHasConnectionAttention(tool, connectionForTool(tool))),
   );
   const publishedWithConnectionIssueCount = computed(
     () => connectionIssueTools.value.filter((tool) => tool.status === "Published").length,
   );
   const toolSummaryItems = computed<ManagementSummaryItem[]>(() => {
-    const tools = toolsStore.tools;
-    const publishedCount = tools.filter((tool) => tool.status === "Published").length;
-    const pendingPublishCount = tools.filter((tool) => tool.status === "Tested").length;
+    const summary = toolsStore.toolListSummary || {
+      total: toolsStore.toolPagination?.total || 0,
+      published: 0,
+      tested: 0,
+      draft: 0,
+      review: 0,
+      disabled: 0,
+    };
+    const publishedCount = summary.published;
+    const pendingPublishCount = summary.tested;
+    // Connection health still requires the connection catalog; show current-page issues as a soft signal.
     const connectionIssueCount = connectionIssueTools.value.length;
     const publishedIssues = publishedWithConnectionIssueCount.value;
     return [
-      { label: "工具总数", value: tools.length, icon: "fa-solid fa-screwdriver-wrench" },
+      { label: "工具总数", value: summary.total, icon: "fa-solid fa-screwdriver-wrench" },
       {
         label: "已发布",
         value: publishedCount,
         icon: "fa-solid fa-circle-check",
-        note: publishedIssues > 0 ? `${publishedIssues} 连接异常` : undefined,
+        note: publishedIssues > 0 ? `${publishedIssues} 连接异常(本页)` : undefined,
         tone: publishedIssues > 0 ? "warning" : "default",
       },
       {
@@ -205,11 +256,11 @@ export function createToolsPageModel() {
         tone: "info",
       },
       {
-        // Same definition as the connection alert + table attention filter (not lifecycle Review/Disabled).
+        // Connection attention: page-scoped until a server-side connection-health filter exists.
         label: "需处理",
         value: connectionIssueCount,
         icon: "fa-solid fa-triangle-exclamation",
-        note: connectionIssueCount > 0 ? "连接异常" : undefined,
+        note: connectionIssueCount > 0 ? "本页连接异常" : undefined,
         tone: connectionIssueCount > 0 ? "danger" : "warning",
       },
     ];
@@ -745,7 +796,145 @@ export function createToolsPageModel() {
   }
 
   function agentImpactLabel(tool: Tool) {
-    return tool.activeReleaseId ? "可通过 Capability Binding 使用" : "尚未发布 Release";
+    return tool.activeReleaseId ? "可通过 Agent 绑定使用" : "尚未发布，暂无 Agent 绑定入口";
+  }
+
+  function riskActionTools(): Tool[] {
+    const { type, tool, tools } = pendingRiskAction.value;
+    if (type === "batch-delete") return tools;
+    return tool ? [tool] : [];
+  }
+
+  function riskConfirmationEyebrow() {
+    const tools = riskActionTools();
+    if (!tools.length) return "操作确认";
+    if (tools.some((tool) => tool.activeReleaseId)) return "高风险操作";
+    return "操作确认";
+  }
+
+  function riskConfirmationDescription() {
+    const { type } = pendingRiskAction.value;
+    const tools = riskActionTools();
+    if (!tools.length) return "请确认后再继续。";
+    const publishedCount = tools.filter((tool) => tool.activeReleaseId).length;
+    if (type === "batch-delete") {
+      return publishedCount > 0
+        ? `将删除已选 ${tools.length} 个 Tool（含 ${publishedCount} 个已发布），删除后不可恢复；已发布项可能影响 Agent 绑定与工作流调用。`
+        : `将删除已选 ${tools.length} 个 Tool。当前均未发布正式版本，影响主要限于草稿与配置记录。`;
+    }
+    const tool = tools[0];
+    const published = Boolean(tool.activeReleaseId);
+    if (type === "delete") {
+      return published
+        ? "删除后不可恢复。若已有 Agent 绑定或工作流引用该 Tool 的已发布版本，相关调用可能失败，请确认影响后再删除。"
+        : "当前 Tool 尚未发布正式版本，删除主要影响本条草稿与版本记录，一般不会波及线上 Agent 绑定。";
+    }
+    if (type === "disable") {
+      return published
+        ? "停用后，依赖该 Tool 已发布版本的 Agent 绑定与工作流将无法继续调用，请确认影响面。"
+        : "停用后该 Tool 将不可被选用；当前尚未发布，影响范围主要限于配置侧。";
+    }
+    if (type === "enable") {
+      return "启用后，该 Tool 可重新参与绑定与调用（仍以发布状态与绑定配置为准）。";
+    }
+    return "请确认后再继续。";
+  }
+
+  function riskImpactItems() {
+    const { type } = pendingRiskAction.value;
+    const tools = riskActionTools();
+    if (!tools.length) return [];
+    if (type === "batch-delete") {
+      const publishedCount = tools.filter((tool) => tool.activeReleaseId).length;
+      return [
+        {
+          key: "count",
+          label: "已选数量",
+          value: `${tools.length} 个 Tool`,
+          tone: "neutral",
+        },
+        {
+          key: "binding",
+          label: "Agent 绑定",
+          value:
+            publishedCount > 0
+              ? `${publishedCount} 个已发布，可能存在绑定`
+              : "均未发布，通常无生效绑定",
+          tone: publishedCount > 0 ? "warn" : "ok",
+        },
+        {
+          key: "workflow",
+          label: "工作流引用",
+          value:
+            publishedCount > 0
+              ? "可能被已发布工作流引用，请抽查核对"
+              : "均未发布，通常无生产引用",
+          tone: publishedCount > 0 ? "warn" : "ok",
+        },
+        {
+          key: "names",
+          label: "示例名称",
+          value: tools
+            .slice(0, 3)
+            .map((tool) => tool.name)
+            .join("、") + (tools.length > 3 ? ` 等 ${tools.length} 个` : ""),
+          tone: "neutral",
+        },
+      ];
+    }
+    const tool = tools[0];
+    const published = Boolean(tool.activeReleaseId);
+    return [
+      {
+        key: "binding",
+        label: "Agent 绑定",
+        value: published ? "可能存在绑定，请到 Agent 能力绑定中核对" : "尚未发布，通常无生效绑定",
+        tone: published ? "warn" : "ok",
+      },
+      {
+        key: "workflow",
+        label: "工作流引用",
+        value: published ? "可能被已发布工作流引用，请在工作流中核对" : "尚未发布，通常无生产引用",
+        tone: published ? "warn" : "ok",
+      },
+      {
+        key: "version",
+        label: "当前版本",
+        value: toolVersionLabel(tool),
+        tone: "neutral",
+      },
+      {
+        key: "endpoint",
+        label: "调用接口",
+        value: toolEndpointSummary(tool),
+        tone: "neutral",
+      },
+    ];
+  }
+
+  function riskConfirmationToneClass() {
+    return riskActionTools().some((tool) => tool.activeReleaseId) ? "is-elevated-risk" : "is-standard-risk";
+  }
+
+  function riskConfirmationTargetName() {
+    const { type, tool, tools } = pendingRiskAction.value;
+    if (type === "batch-delete") {
+      if (!tools.length) return "未选择 Tool";
+      if (tools.length === 1) return tools[0].name;
+      return `${tools[0].name} 等 ${tools.length} 个 Tool`;
+    }
+    return tool?.name || "未命名 Tool";
+  }
+
+  function riskConfirmationTargetMeta() {
+    const { type, tool, tools } = pendingRiskAction.value;
+    if (type === "batch-delete") {
+      const publishedCount = tools.filter((item) => item.activeReleaseId).length;
+      return publishedCount > 0
+        ? `已选 ${tools.length} 个 · 其中 ${publishedCount} 个已发布`
+        : `已选 ${tools.length} 个 · 均未发布`;
+    }
+    return tool ? toolEndpointSummary(tool) : "";
   }
 
   function formatToolTableUpdatedAt(tool: Tool) {
@@ -885,11 +1074,23 @@ export function createToolsPageModel() {
     });
   }
 
-  function openToolDetail(tool: Tool) {
+  async function openToolDetail(tool: Tool) {
     closeFloatingMenus();
     selectedToolId.value = tool.id;
     detailToolId.value = tool.id;
     toolDetailVisible.value = true;
+    // List rows only carry headVersion summary; hydrate full versions for detail panel.
+    if (!toolHasFullVersions(tool)) {
+      try {
+        await toolsStore.loadToolVersions(tool.id, tool.workspaceId);
+      } catch {
+        /* keep summary row visible */
+      }
+    }
+  }
+
+  function toolHasFullVersions(tool: Tool) {
+    return (tool.versions || []).some((version) => Boolean(version.checksum));
   }
 
   function closeToolDetail() {
@@ -897,9 +1098,17 @@ export function createToolsPageModel() {
     detailToolId.value = "";
   }
 
-  function openToolTestDialog(tool: Tool) {
+  async function openToolTestDialog(tool: Tool) {
     closeFloatingMenus();
-    testDialogTool.value = tool;
+    let target = tool;
+    if (!toolHasFullVersions(tool)) {
+      try {
+        target = await toolsStore.loadToolVersions(tool.id, tool.workspaceId);
+      } catch {
+        /* fall through with list summary */
+      }
+    }
+    testDialogTool.value = target;
     testDialogVisible.value = true;
   }
 
@@ -922,17 +1131,34 @@ export function createToolsPageModel() {
 
   function openRiskConfirmation(type: RiskActionType, tool: Tool) {
     closeFloatingMenus();
-    pendingRiskAction.value = { type, tool };
+    pendingRiskAction.value = { type, tool, tools: [] };
+    riskConfirmationVisible.value = true;
+  }
+
+  function openBatchDeleteConfirmation() {
+    const tools = selectedTools.value;
+    if (!tools.length || batchDeleting.value || batchTesting.value) return;
+    closeFloatingMenus();
+    pendingRiskAction.value = {
+      type: "batch-delete",
+      tool: tools[0] || null,
+      tools: [...tools],
+    };
     riskConfirmationVisible.value = true;
   }
 
   function closeRiskConfirmation() {
+    if (batchDeleting.value) return;
     riskConfirmationVisible.value = false;
-    pendingRiskAction.value = { type: "", tool: null };
+    pendingRiskAction.value = { type: "", tool: null, tools: [] };
   }
 
   function riskConfirmationTitle() {
     const action = pendingRiskAction.value.type;
+    if (action === "batch-delete") {
+      const count = pendingRiskAction.value.tools.length;
+      return count > 1 ? `确认删除 ${count} 个 Tool` : "确认删除 Tool";
+    }
     if (action === "delete") return "确认删除 Tool";
     if (action === "disable") return "确认停用 Tool";
     if (action === "enable") return "确认启用 Tool";
@@ -941,6 +1167,11 @@ export function createToolsPageModel() {
 
   function riskConfirmationPrimaryLabel() {
     const action = pendingRiskAction.value.type;
+    if (action === "batch-delete") {
+      return batchDeleting.value
+        ? "删除中…"
+        : `确认删除${pendingRiskAction.value.tools.length > 1 ? ` ${pendingRiskAction.value.tools.length} 项` : ""}`;
+    }
     if (action === "delete") return "确认删除";
     if (action === "disable") return "确认停用";
     if (action === "enable") return "确认启用";
@@ -948,8 +1179,42 @@ export function createToolsPageModel() {
   }
 
   async function confirmRiskAction() {
-    const { type, tool } = pendingRiskAction.value;
-    if (!tool || !type) return;
+    const { type, tool, tools } = pendingRiskAction.value;
+    if (!type) return;
+    if (type === "batch-delete") {
+      if (!tools.length || batchDeleting.value) return;
+      batchDeleting.value = true;
+      let success = 0;
+      let failed = 0;
+      try {
+        for (const item of tools) {
+          try {
+            await toolsStore.deleteTool(item.id);
+            success += 1;
+          } catch {
+            failed += 1;
+          }
+        }
+        selectedToolRowKeys.value = [];
+        await loadToolRegistry();
+        if (selectedToolId.value && !toolsStore.tools.some((item) => item.id === selectedToolId.value)) {
+          selectedToolId.value = toolsStore.tools[0]?.id || "";
+        }
+        if (detailToolId.value && tools.some((item) => item.id === detailToolId.value)) {
+          closeToolDetail();
+        }
+        if (failed === 0) {
+          setActionFeedback(`已批量删除 ${success} 个 Tool。`);
+        } else {
+          setActionFeedback(`批量删除完成：成功 ${success} 个，失败 ${failed} 个。`, "error");
+        }
+      } finally {
+        batchDeleting.value = false;
+        closeRiskConfirmation();
+      }
+      return;
+    }
+    if (!tool) return;
     if (type === "delete") {
       await deleteTool(tool);
     } else if (type === "disable") {
@@ -958,6 +1223,158 @@ export function createToolsPageModel() {
       await enableTool(tool);
     }
     closeRiskConfirmation();
+  }
+
+  function toDatetimeLocalValue(date: Date) {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  /** Open batch-test confirm dialog (default inputs + optional shared passthrough token). */
+  function batchTestSelectedTools() {
+    const tools = selectedTools.value;
+    if (!tools.length || batchTesting.value || batchDeleting.value) return;
+    batchPassthroughToken.value = "";
+    batchPassthroughExpiresAt.value = toDatetimeLocalValue(new Date(Date.now() + 60 * 60 * 1000));
+    batchTestProgress.value = { current: 0, total: tools.length };
+    batchTestDialogVisible.value = true;
+  }
+
+  function closeBatchTestDialog() {
+    if (batchTesting.value) return;
+    batchTestDialogVisible.value = false;
+    batchPassthroughToken.value = "";
+  }
+
+  function normalizePassthroughToken(raw: string) {
+    return raw.trim().replace(/^Bearer\s+/i, "").trim();
+  }
+
+  function buildBatchOutboundEnvelope(
+    connectionId: string,
+  ): import("../types/domain").OutboundCredentialsEnvelope | undefined {
+    if (!batchTestNeedsPassthrough.value) return undefined;
+    const token = normalizePassthroughToken(batchPassthroughToken.value);
+    if (!token || !connectionId) return undefined;
+    const expiresDate = batchPassthroughExpiresAt.value
+      ? new Date(batchPassthroughExpiresAt.value)
+      : new Date(Date.now() + 60 * 60 * 1000);
+    if (Number.isNaN(expiresDate.getTime()) || expiresDate.getTime() <= Date.now() + 2 * 60 * 1000) {
+      return undefined;
+    }
+    return {
+      schemaVersion: "outbound-credentials.v1",
+      bindings: [
+        {
+          connectionId,
+          credentialType: "ACCESS_TOKEN",
+          value: token,
+          expiresAt: expiresDate.toISOString(),
+        },
+      ],
+    };
+  }
+
+  async function confirmBatchTestSelectedTools() {
+    const tools = selectedTools.value;
+    if (!tools.length || batchTesting.value || batchDeleting.value) return;
+
+    if (batchTestNeedsPassthrough.value) {
+      const token = normalizePassthroughToken(batchPassthroughToken.value);
+      if (!token) {
+        setActionFeedback("所选工具含透传连接，请先填写一次性业务 Token。", "error");
+        return;
+      }
+      const expiresDate = batchPassthroughExpiresAt.value
+        ? new Date(batchPassthroughExpiresAt.value)
+        : new Date(Date.now() + 60 * 60 * 1000);
+      if (Number.isNaN(expiresDate.getTime()) || expiresDate.getTime() <= Date.now() + 2 * 60 * 1000) {
+        setActionFeedback("过期时间必须晚于当前时间至少 2 分钟。", "error");
+        return;
+      }
+    }
+
+    batchTesting.value = true;
+    let passed = 0;
+    let failed = 0;
+    let skipped = 0;
+    const failureHints: string[] = [];
+    batchTestProgress.value = { current: 0, total: tools.length };
+    try {
+      for (let index = 0; index < tools.length; index += 1) {
+        const tool = tools[index];
+        batchTestProgress.value = { current: index + 1, total: tools.length };
+        // Prefer hydrated tool for versions when list row is summary-only.
+        let target = tool;
+        if (!(tool.versions || []).some((version) => Boolean(version.checksum))) {
+          try {
+            target = await toolsStore.loadToolVersions(tool.id, tool.workspaceId);
+          } catch {
+            failed += 1;
+            failureHints.push(`${tool.name}: 加载版本失败`);
+            continue;
+          }
+        }
+        const draft = target.draftVersion;
+        if (!draft || draft.lifecycleStatus === "PUBLISHED") {
+          skipped += 1;
+          continue;
+        }
+        if (!target.connectionId) {
+          skipped += 1;
+          continue;
+        }
+        try {
+          const connection = connectionForTool(target);
+          const envelope =
+            connection?.outboundMode === "REQUEST_PASSTHROUGH"
+              ? buildBatchOutboundEnvelope(target.connectionId)
+              : undefined;
+          if (connection?.outboundMode === "REQUEST_PASSTHROUGH" && !envelope) {
+            failed += 1;
+            failureHints.push(`${tool.name}: 缺少透传 Token`);
+            continue;
+          }
+          const result = await toolsStore.testTool(
+            target.id,
+            buildDefaultToolTestInput(target),
+            envelope,
+          );
+          if (result.passed) passed += 1;
+          else {
+            failed += 1;
+            if (failureHints.length < 5) {
+              failureHints.push(
+                `${tool.name}: ${result.errorMessage || `HTTP ${result.responseStatus}` || "失败"}`,
+              );
+            }
+          }
+        } catch (error) {
+          failed += 1;
+          if (failureHints.length < 5) {
+            const message = error instanceof Error ? error.message : "异常";
+            failureHints.push(`${tool.name}: ${message}`);
+          }
+        }
+      }
+      await loadToolRegistry();
+      const parts = [`通过 ${passed}`, `失败 ${failed}`];
+      if (skipped) parts.push(`跳过 ${skipped}`);
+      const hint =
+        failureHints.length > 0 ? ` 示例：${failureHints.slice(0, 3).join("；")}` : "";
+      setActionFeedback(
+        `批量测试完成（${tools.length} 个）：${parts.join("，")}。` +
+          (skipped ? " 跳过项多为仅有已发布版本或缺少连接。" : "") +
+          hint,
+        failed > 0 ? "error" : "success",
+      );
+      batchTestDialogVisible.value = false;
+      batchPassthroughToken.value = "";
+      selectedToolRowKeys.value = [];
+    } finally {
+      batchTesting.value = false;
+      batchTestProgress.value = { current: 0, total: 0 };
+    }
   }
 
   function openCreateTool() {
@@ -1012,21 +1429,25 @@ export function createToolsPageModel() {
     };
   }
 
-  function openEditTool(tool: Tool) {
+  async function openEditTool(tool: Tool) {
     try {
-      if (tool.status === "Published") {
+      let editable = tool;
+      if (!toolHasFullVersions(tool)) {
+        editable = await toolsStore.loadToolVersions(tool.id, tool.workspaceId);
+      }
+      if (editable.status === "Published") {
         setActionFeedback("已发布 Tool 的编辑会从该版本创建新的 Draft Version，原 Release 保持不变。", "success");
       }
       toolEditorMode.value = "edit";
-      editingToolId.value = tool.id;
+      editingToolId.value = editable.id;
       draftStep.value = 1;
-      actionNote.value = tool.status === "Published" ? actionNote.value : "";
+      actionNote.value = editable.status === "Published" ? actionNote.value : "";
       draftError.value = "";
       contractEditorTab.value = "Body";
       runtimeAdvancedOpen.value = false;
       toolDetailVisible.value = false;
       testDialogVisible.value = false;
-      draftTool.value = buildDraftFromTool(tool);
+      draftTool.value = buildDraftFromTool(editable);
       draftSnapshot.value = JSON.stringify(draftTool.value);
       saveState.value = "idle";
       publishImpactConfirmed.value = false;
@@ -1522,6 +1943,26 @@ export function createToolsPageModel() {
     closeRiskConfirmation,
     riskConfirmationTitle,
     riskConfirmationPrimaryLabel,
+    riskConfirmationEyebrow,
+    riskConfirmationDescription,
+    riskImpactItems,
+    riskConfirmationToneClass,
+    riskConfirmationTargetName,
+    riskConfirmationTargetMeta,
+    selectedTools,
+    batchTesting,
+    batchDeleting,
+    batchTestDialogVisible,
+    batchTestModalRef,
+    batchPassthroughToken,
+    batchPassthroughExpiresAt,
+    batchTestProgress,
+    batchTestNeedsPassthrough,
+    batchTestPassthroughConnectionIds,
+    openBatchDeleteConfirmation,
+    batchTestSelectedTools,
+    closeBatchTestDialog,
+    confirmBatchTestSelectedTools,
     confirmRiskAction,
     openCreateTool,
     buildDraftFromTool,
