@@ -142,7 +142,6 @@ const ManagementListStub = {
       <template v-for="row in rows" :key="row.id">
         <slot name="cell-selection" :row="row" />
       </template>
-      <slot v-if="rows[0]" name="cell-model" :row="rows[0]" />
       <slot v-if="rows[0]" name="cell-createdBy" :row="rows[0]" />
       <slot v-if="rows[0]" name="cell-updatedBy" :row="rows[0]" />
       <slot v-if="rows[0]" name="cell-actions" :row="rows[0]" />

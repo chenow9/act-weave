@@ -128,16 +128,9 @@ void WorkspaceContextState;
     <ManagementSummaryStrip :items="workflowSummaryItems" />
 
     <section class="workflow-center-panel workflow-orchestration-table-card management-list-card">
-      <WorkspaceContextState
-        v-if="!hasWorkspaceContext"
-        feature="流程编排"
-        icon="fa-solid fa-diagram-project"
-        @retry="loadWorkflowPageAssets"
-      />
       <ManagementList
-        v-else
         class="workflow-management-list"
-        :rows="workflowStore.pageItems"
+        :rows="hasWorkspaceContext ? workflowStore.pageItems : []"
         :columns="workflowColumns"
         row-key="id"
         :sticky-left-keys="['workflow']"
@@ -145,9 +138,9 @@ void WorkspaceContextState;
         storage-key="actweave:workflows:columns"
         :selected-row-key="selectedWorkflow?.id"
         selection-tone="neutral"
-        :loading="workflowStore.pageLoading"
-        :error="workflowStore.pageError"
-        :has-loaded="workflowStore.pageHasLoaded"
+        :loading="hasWorkspaceContext && workflowStore.pageLoading"
+        :error="hasWorkspaceContext ? workflowStore.pageError : undefined"
+        :has-loaded="hasWorkspaceContext ? workflowStore.pageHasLoaded : true"
         :search="workflowQuery"
         search-placeholder="搜索流程名称 / Slug / 状态..."
         search-aria-label="搜索流程名称、Slug 或状态"
@@ -198,14 +191,25 @@ void WorkspaceContextState;
           />
         </template>
         <template #empty>
-          <div class="workflow-empty-state">
-            <div><i class="fa-solid fa-diagram-project" /></div>
-            <strong>{{ workflowStore.workflows.length ? "没有匹配到编排流程" : "暂无编排流程" }}</strong>
-            <span>{{
-              workflowStore.workflows.length
-                ? "换个关键词试试，或者清空筛选条件。"
-                : "新建第一个编排后，可以在这里查看用途、步骤、校验结果和最近执行。"
-            }}</span>
+          <WorkspaceContextState
+            v-if="!hasWorkspaceContext"
+            embedded-in-list
+            feature="流程编排"
+            icon="fa-solid fa-diagram-project"
+            @retry="loadWorkflowPageAssets"
+          />
+          <div v-else class="empty-state registry-empty-state management-registry-empty-state">
+            <div class="management-empty-state-icon">
+              <i class="fa-solid fa-diagram-project" aria-hidden="true" />
+            </div>
+            <h2>{{ workflowStore.workflows.length ? "没有匹配到编排流程" : "暂无编排流程" }}</h2>
+            <p>
+              {{
+                workflowStore.workflows.length
+                  ? "换个关键词试试，或者清空筛选条件。"
+                  : "新建第一个编排后，可以在这里查看用途、步骤、校验结果和最近执行。"
+              }}
+            </p>
             <button
               v-if="workflowStore.workflows.length"
               class="ghost-button"

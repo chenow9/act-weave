@@ -11,7 +11,6 @@ import ManagementSegmentedFilter from "../components/ManagementSegmentedFilter.v
 import ManagementSummaryStrip, { type ManagementSummaryItem } from "../components/ManagementSummaryStrip.vue";
 import { useAgentStore } from "../stores/agents";
 import { useAuthStore } from "../stores/auth";
-import { useModelConfigStore } from "../stores/modelConfigs";
 import { useWorkspaceStore } from "../stores/workspaces";
 import type {
   Agent,
@@ -29,7 +28,6 @@ const router = useRouter();
 const auth = useAuthStore();
 const workspaces = useWorkspaceStore();
 const agents = useAgentStore();
-const modelConfigs = useModelConfigStore();
 
 const query = ref("");
 const statusFilter = ref<WorkspaceStatusFilter>("ALL");
@@ -130,13 +128,6 @@ const workspaceColumns = computed<ManagementListColumn<Workspace>[]>(() => [
     getValue: (workspace) => workspace.mode,
   },
   { key: "defaultAgent", label: "默认 Agent", width: 180, hidable: true, getValue: getDefaultAgentLabel },
-  {
-    key: "model",
-    label: "模型配置",
-    width: 210,
-    hidable: true,
-    getValue: (workspace) => getModelConfigLabel(workspace.modelConfigId),
-  },
   {
     key: "status",
     label: "状态",
@@ -275,7 +266,7 @@ async function loadWorkspacePage() {
   pageInitialLoading.value = true;
   workspacePageError.value = "";
   try {
-    await Promise.all([workspaces.load(), workspaces.loadWorkspacePage({ page: 1 }), modelConfigs.loadModelConfigs()]);
+    await Promise.all([workspaces.load(), workspaces.loadWorkspacePage({ page: 1 })]);
     // Role projection comes from list/detail currentUserRole (ZKL-64); no member N+1.
     workspacePageError.value = workspaces.pageError || "";
   } catch (error) {
@@ -529,7 +520,8 @@ function openCreateWorkspace() {
   lastFocusBeforeModal.value = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   draftWorkspace.value = {
     ...newWorkspace(),
-    modelConfigId: modelConfigs.items[0]?.id || "",
+    // Workspace default model is not managed in this UI; Agent binds model explicitly.
+    modelConfigId: "",
   };
   workspaceFormTouched.value = false;
   clearWorkspaceToast();
@@ -764,10 +756,6 @@ async function confirmDeleteWorkspace() {
   }
 }
 
-function goModelConfigs() {
-  void router.push({ name: "model-apis" });
-}
-
 function goLogin() {
   auth.logout();
   void router.push({ name: "login" });
@@ -785,16 +773,11 @@ function modeTone(mode: Workspace["mode"]) {
   return mode.toLowerCase();
 }
 
-function getModelConfigLabel(configId: string) {
-  const config = modelConfigs.items.find((item) => item.id === configId);
-  return config ? `${config.name} (${config.modelName})` : "未绑定推理模型";
-}
-
 function getDefaultAgentLabel(workspace: Workspace) {
   return (
     agents.items.find((agent) => agent.id === workspace.defaultAgentId)?.name ||
     workspace.defaultAgentId ||
-    "未绑定 Agent"
+    "未设默认 Agent"
   );
 }
 
@@ -852,7 +835,7 @@ function reconcileWorkspaceListContext() {
   <div
     class="page-grid workspace-grid"
     :class="{
-      'management-page-grid': !workspacePageError && hasWorkspaceRecords && !detailWorkspace,
+      'management-page-grid': !workspacePageError && !detailWorkspace,
     }"
     v-loading="pageInitialLoading"
   >
@@ -872,7 +855,7 @@ function reconcileWorkspaceListContext() {
     </ManagementPageHeader>
 
     <ManagementSummaryStrip
-      v-if="!workspacePageError && hasWorkspaceRecords && !detailWorkspace"
+      v-if="!workspacePageError && !detailWorkspace"
       class="span-12"
       :items="workspaceSummaryItems"
     />
@@ -894,27 +877,9 @@ function reconcileWorkspaceListContext() {
       </div>
     </section>
 
-    <section v-else-if="!hasWorkspaceRecords" class="workspace-init-empty span-12">
-      <div class="workspace-init-panel">
-        <span class="status-pill">尚未初始化业务空间</span>
-        <i class="fa-solid fa-layer-group" aria-hidden="true" />
-        <h3>创建第一个业务空间</h3>
-        <p>业务空间用于隔离 Agent、工具、编排和模型配置。创建后可按需配置模型、创建 Agent 并接入服务与工具。</p>
-        <div class="workspace-init-actions">
-          <button class="primary-button" type="button" @click="openCreateWorkspace">创建业务空间</button>
-          <button class="ghost-button" type="button" @click="goModelConfigs">先配置模型 API</button>
-        </div>
-        <div class="workspace-init-steps">
-          <span><b>1</b>创建空间</span>
-          <span><b>2</b>确认模型配置</span>
-          <span><b>3</b>创建 Agent 并接入服务和工具</span>
-        </div>
-      </div>
-    </section>
-
     <template v-else>
       <section v-if="!detailWorkspace" class="workspace-list-card management-list-card span-12">
-        <header class="workspace-resource-mode-bar">
+        <header v-if="hasWorkspaceRecords" class="workspace-resource-mode-bar">
           <div>
             <span>列表管理</span>
             <strong>{{ workspaces.pagination.total }} 个匹配空间</strong>
@@ -1044,13 +1009,6 @@ function reconcileWorkspaceListContext() {
               ><i class="fa-solid fa-user-gear" aria-hidden="true" />{{ getDefaultAgentLabel(workspace) }}</span
             >
           </template>
-          <template #cell-model="{ row: workspace }">
-            <span class="workspace-model-name aw-table-meta" :title="getModelConfigLabel(workspace.modelConfigId)"
-              ><i class="fa-solid fa-brain" aria-hidden="true" /><span>{{
-                getModelConfigLabel(workspace.modelConfigId)
-              }}</span></span
-            >
-          </template>
           <template #cell-updatedAt="{ row: workspace }"
             ><span class="workspace-updated-at aw-table-meta">{{ formatWorkspaceUpdatedAt(workspace) }}</span></template
           >
@@ -1072,10 +1030,26 @@ function reconcileWorkspaceListContext() {
           </template>
 
           <template #empty>
-            <div class="workspace-filter-empty">
-              <i class="fa-solid fa-magnifying-glass" aria-hidden="true" />
-              <strong>没有匹配的业务空间</strong>
-              <span>请修改关键词、状态或环境筛选。</span>
+            <div
+              v-if="!hasWorkspaceRecords"
+              class="empty-state registry-empty-state management-registry-empty-state"
+            >
+              <div class="management-empty-state-icon">
+                <i class="fa-solid fa-layer-group" aria-hidden="true" />
+              </div>
+              <h2>暂无业务空间</h2>
+              <p>
+                业务空间用于隔离 Agent、工具与模型配置。模型 API 归属业务空间，请先创建空间，再配置模型网关与
+                Agent。
+              </p>
+              <button class="primary-button" type="button" @click="openCreateWorkspace">创建业务空间</button>
+            </div>
+            <div v-else class="empty-state registry-empty-state management-registry-empty-state">
+              <div class="management-empty-state-icon">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true" />
+              </div>
+              <h2>没有匹配的业务空间</h2>
+              <p>请修改关键词、状态或环境筛选后再试。</p>
               <button class="ghost-button" type="button" @click="clearWorkspaceFilters">重置所有过滤条件</button>
             </div>
           </template>
@@ -1237,23 +1211,6 @@ function reconcileWorkspaceListContext() {
                 </dl>
               </article>
 
-              <article class="workspace-detail-content-card">
-                <header class="workspace-detail-section-title">
-                  <span><i class="fa-solid fa-microchip" aria-hidden="true" /></span>
-                  <div><strong>默认模型配置</strong><small>空间内 Agent 默认使用的推理模型</small></div>
-                </header>
-                <div class="workspace-model-readonly-card">
-                  <span class="workspace-model-readonly-value">
-                    <i class="fa-solid fa-microchip" aria-hidden="true" />
-                    {{ getModelConfigLabel(detailWorkspace.modelConfigId) }}
-                  </span>
-                  <p>模型凭据与连接参数由模型 API 配置统一维护，此处仅展示当前绑定关系。</p>
-                  <button type="button" class="workspace-model-config-link" @click="goModelConfigs">
-                    前往模型 API 配置
-                    <i class="fa-solid fa-arrow-right" aria-hidden="true" />
-                  </button>
-                </div>
-              </article>
             </div>
           </section>
 

@@ -341,7 +341,7 @@ async function runAction(action: () => Promise<void>, fallback: string) {
       class="span-12"
       title="Agent 审计中心"
       description="按 Trace ID 查看全链路运行时间轴（仅平台管理员）"
-      icon="fa-solid fa-shield"
+      icon="fa-solid fa-clock-rotate-left"
       eyebrow="ACTWEAVE CONTROL PLANE"
     >
       <template #actions>

@@ -52,25 +52,18 @@ void WorkspaceContextState;
     </ManagementPageHeader>
 
     <section class="openapi-import-table-card management-list-card">
-      <WorkspaceContextState
-        v-if="!hasWorkspaceContext"
-        feature="OpenAPI 导入"
-        icon="fa-solid fa-file-circle-plus"
-        @retry="loadOpenAPIPageAssets"
-      />
       <ManagementList
-        v-else
         class="openapi-import-management-list"
-        :rows="openapiImports.openAPIImportPageItems"
+        :rows="hasWorkspaceContext ? openapiImports.openAPIImportPageItems : []"
         :columns="openAPIImportColumns"
         row-key="id"
         :sticky-left-keys="['file']"
         :sticky-right-keys="['actions']"
         storage-key="actweave:openapi-imports:columns"
         :selected-row-key="selectedImportId"
-        :loading="openAPIListLoading"
-        :error="openAPIListError"
-        :has-loaded="openAPIListHasLoaded"
+        :loading="hasWorkspaceContext && openAPIListLoading"
+        :error="hasWorkspaceContext ? openAPIListError : undefined"
+        :has-loaded="hasWorkspaceContext ? openAPIListHasLoaded : true"
         :search="query"
         search-placeholder="搜索来源 / Provider / 服务连接..."
         search-aria-label="搜索 OpenAPI 导入记录"
@@ -237,7 +230,14 @@ void WorkspaceContextState;
         </template>
 
         <template #empty>
-          <div v-if="!hasImportRecords" class="openapi-empty-state">
+          <WorkspaceContextState
+            v-if="!hasWorkspaceContext"
+            embedded-in-list
+            feature="OpenAPI 导入"
+            icon="fa-solid fa-file-circle-plus"
+            @retry="loadOpenAPIPageAssets"
+          />
+          <div v-else-if="!hasImportRecords" class="openapi-empty-state">
             <div><i class="fa-solid fa-file-circle-plus" /></div>
             <h4>暂无导入记录</h4>
             <p>选择已验证的服务连接，导入 OpenAPI 后再生成 Tool 草稿。</p>

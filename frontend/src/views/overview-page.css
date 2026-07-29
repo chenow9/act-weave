@@ -638,6 +638,15 @@
   border: 1px solid #e8edf3;
   border-radius: 10px;
   background: #fff;
+  /* Hide scrollbar; wheel / trackpad scrolling still works */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.overview-data-table-shell::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .overview-data-table-std {

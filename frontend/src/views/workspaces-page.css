@@ -40,6 +40,12 @@
 .workspace-list-card.management-list-card {
   width: 100%;
   min-width: 0;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .workspace-list-card.management-list-card > .workspace-management-list {

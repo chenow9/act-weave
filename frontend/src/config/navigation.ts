@@ -62,7 +62,7 @@ export const navItems: NavItem[] = [
     label: "OpenAPI 导入",
     route: "/openapi-imports",
   },
-  { id: "model-apis", section: "接入", icon: "fa-solid fa-key", label: "模型 API 配置", route: "/model-apis" },
+  { id: "model-apis", section: "接入", icon: "fa-solid fa-microchip", label: "模型 API 配置", route: "/model-apis" },
   {
     id: "agent-access",
     section: "接入",
@@ -78,8 +78,8 @@ export const navItems: NavItem[] = [
   {
     id: "logs",
     section: "治理",
-    icon: "fa-solid fa-terminal",
-    label: "全链路审计日志",
+    icon: "fa-solid fa-clock-rotate-left",
+    label: "Agent 审计中心",
     route: "/logs",
     platformAdminOnly: true,
   },

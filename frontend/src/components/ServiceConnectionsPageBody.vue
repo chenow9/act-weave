@@ -140,12 +140,6 @@ void WorkspaceContextState;
       </ManagementPageHeader>
 
       <section class="connection-reference-table-card management-list-card">
-        <WorkspaceContextState
-          v-if="!hasWorkspaceContext"
-          feature="Provider 与服务连接"
-          icon="fa-solid fa-plug-circle-xmark"
-          @retry="loadConnections"
-        />
         <div
           v-if="hasWorkspaceContext && migrationRequiredCount > 0"
           class="connection-migration-banner"
@@ -169,18 +163,17 @@ void WorkspaceContextState;
           </button>
         </div>
         <ManagementList
-          v-if="hasWorkspaceContext"
           class="connection-management-list"
-          :rows="filteredConnectionRows"
+          :rows="hasWorkspaceContext ? filteredConnectionRows : []"
           :columns="connectionColumns"
           row-key="id"
           :sticky-left-keys="['name']"
           :sticky-right-keys="['actions']"
           storage-key="actweave:service-connections:columns-v2"
           :selectable="false"
-          :loading="connectionListLoading"
-          :error="connectionLoadError"
-          :has-loaded="connectionsHasLoaded"
+          :loading="hasWorkspaceContext && connectionListLoading"
+          :error="hasWorkspaceContext ? connectionLoadError : undefined"
+          :has-loaded="hasWorkspaceContext ? connectionsHasLoaded : true"
           :search="query"
           :pagination="connectionsStore.serviceConnectionPagination"
           :sort-by="connectionsStore.serviceConnectionListQuery?.sortBy"
@@ -424,7 +417,14 @@ void WorkspaceContextState;
           </template>
 
           <template #empty>
-            <div class="connection-empty-state">
+            <WorkspaceContextState
+              v-if="!hasWorkspaceContext"
+              embedded-in-list
+              feature="Provider 与服务连接"
+              icon="fa-solid fa-plug-circle-xmark"
+              @retry="loadConnections"
+            />
+            <div v-else class="connection-empty-state">
               <div><i class="fa-solid fa-plug-circle-xmark" /></div>
               <h4>{{ hasConnectionRecords ? "没有匹配连接" : "暂无服务连接" }}</h4>
               <p>
@@ -434,10 +434,17 @@ void WorkspaceContextState;
                     : "先创建服务连接，再让 Tool 引用它配置业务动作。"
                 }}
               </p>
-              <button v-if="hasConnectionRecords" type="button" @click.stop="resetConnectionFilters">
+              <button
+                v-if="hasConnectionRecords"
+                class="ghost-button"
+                type="button"
+                @click.stop="resetConnectionFilters"
+              >
                 重置查询条件
               </button>
-              <button v-else type="button" @click.stop="openCreateConnection">新建服务连接</button>
+              <button v-else class="primary-button" type="button" @click.stop="openCreateConnection">
+                新建服务连接
+              </button>
             </div>
           </template>
         </ManagementList>

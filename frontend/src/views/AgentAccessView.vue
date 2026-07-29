@@ -489,33 +489,31 @@ function authMethodShort(method: string) {
       </template>
     </ManagementPageHeader>
 
-    <WorkspaceContextState v-if="!hasWorkspaceContext" class="span-12" feature="Agent Access" @retry="loadPage" />
-    <template v-else>
-      <p v-if="!canManage" data-testid="readonly-notice" class="span-12 readonly-notice">
-        <i class="fa-solid fa-eye" />当前 Workspace 角色仅可查看接入配置；创建、轮换和撤销操作需要 OWNER 或 ADMIN。
-      </p>
-      <p v-if="actionMessage" class="span-12 action-feedback success" role="status">{{ actionMessage }}</p>
-      <p v-if="actionError || access.error" class="span-12 action-feedback error" role="alert">
-        {{ actionError || access.error }}
-      </p>
-      <ManagementSummaryStrip v-if="viewMode === 'list'" class="span-12" :items="summaryItems" />
+    <p v-if="hasWorkspaceContext && !canManage" data-testid="readonly-notice" class="span-12 readonly-notice">
+      <i class="fa-solid fa-eye" />当前 Workspace 角色仅可查看接入配置；创建、轮换和撤销操作需要 OWNER 或 ADMIN。
+    </p>
+    <p v-if="actionMessage" class="span-12 action-feedback success" role="status">{{ actionMessage }}</p>
+    <p v-if="actionError || access.error" class="span-12 action-feedback error" role="alert">
+      {{ actionError || access.error }}
+    </p>
+    <ManagementSummaryStrip v-if="viewMode === 'list'" class="span-12" :items="summaryItems" />
 
-      <!-- List: Client table -->
+    <!-- List: Client table (always keep list chrome; no-workspace empty sits inside) -->
+    <template v-if="viewMode === 'list' || !hasWorkspaceContext">
       <section
-        v-if="viewMode === 'list'"
         class="span-12 management-list-card access-list-card"
-        :aria-busy="access.loading"
+        :aria-busy="hasWorkspaceContext && access.loading"
       >
         <ManagementList
           class="access-client-management-list"
-          :rows="filteredClients"
+          :rows="hasWorkspaceContext ? filteredClients : []"
           :columns="clientColumns"
           row-key="id"
           storage-key="actweave:agent-access:columns"
           :sticky-right-keys="['actions']"
           :selectable="true"
-          :loading="access.loading"
-          :has-loaded="access.hasLoaded"
+          :loading="hasWorkspaceContext && access.loading"
+          :has-loaded="hasWorkspaceContext ? access.hasLoaded : true"
           :search="query"
           search-placeholder="搜索 Client ID 或名称"
           search-aria-label="搜索 Agent Access Client"
@@ -556,18 +554,27 @@ function authMethodShort(method: string) {
             <span class="access-detail-link">详情</span>
           </template>
           <template #empty>
-            <div class="empty-state management-registry-empty-state">
-              <div class="management-empty-state-icon"><i class="fa-solid fa-shield" /></div>
+            <WorkspaceContextState
+              v-if="!hasWorkspaceContext"
+              embedded-in-list
+              feature="Agent Access"
+              icon="fa-solid fa-shield-halved"
+              @retry="loadPage"
+            />
+            <div v-else class="empty-state management-registry-empty-state">
+              <div class="management-empty-state-icon"><i class="fa-solid fa-shield-halved" /></div>
               <h2>尚未注册 Client</h2>
               <p>注册后即可为第三方平台签发独立凭证和 Agent Scope。</p>
             </div>
           </template>
         </ManagementList>
       </section>
+    </template>
 
+    <template v-else-if="hasWorkspaceContext">
       <!-- Detail: credential rotation / grants / config -->
       <section
-        v-else-if="selectedClient"
+        v-if="selectedClient"
         class="span-12 client-detail access-detail-panel"
         :aria-busy="access.detailLoading"
       >

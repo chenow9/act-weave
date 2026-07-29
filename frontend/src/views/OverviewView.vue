@@ -285,8 +285,8 @@ function exportCsv() {
           </div>
 
           <button class="overview-btn overview-btn--ghost" type="button" @click="goLogs">
-            <i class="fa-solid fa-terminal" aria-hidden="true" />
-            审计日志
+            <i class="fa-solid fa-clock-rotate-left" aria-hidden="true" />
+            Agent 审计中心
           </button>
           <button class="overview-btn overview-btn--primary" type="button" @click="goChat">
             <i class="fa-regular fa-comment-dots" aria-hidden="true" />

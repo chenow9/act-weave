@@ -106,50 +106,43 @@ void getToolTypeLabel;
     <ManagementSummaryStrip class="span-12" :items="toolSummaryItems" />
 
     <section class="span-12 tool-runtime-card management-list-card">
-      <WorkspaceContextState
-        v-if="!hasWorkspaceContext"
-        feature="工具管理"
-        icon="fa-solid fa-screwdriver-wrench"
-        @retry="loadToolPageAssets"
-      />
-      <template v-else>
-        <div v-if="hasToolRecords" class="tool-section-bar">
-          <span
-            ><i class="fa-solid fa-circle-info" />这里不再配置域名、端口和认证；这些属于服务连接。Tool
-            关注业务名称、Endpoint、入参出参、重试超时和发布测试。</span
-          >
-          <button type="button" @click="router.push('/openapi-imports')">查看 OpenAPI 导入</button>
-        </div>
-
-        <ManagementList
-          class="tool-management-list"
-          :rows="toolsStore.toolPageItems"
-          :columns="toolColumns"
-          row-key="id"
-          :sticky-left-keys="['tool']"
-          :sticky-right-keys="['actions']"
-          storage-key="actweave:tools:columns"
-          :selectable="false"
-          checkable
-          :checked-row-keys="selectedToolRowKeys"
-          :row-selection-label="(tool: Tool) => `选择 ${tool.name}`"
-          :loading="toolsStore.toolPageLoading"
-          :error="toolsStore.toolPageError"
-          :has-loaded="toolsStore.toolPageHasLoaded"
-          :search="query"
-          search-placeholder="搜索 Tool / 连接 / 路径"
-          search-aria-label="搜索 Tool、服务连接或路径"
-          reset-label="重置"
-          reset-aria-label="重置工具筛选"
-          :pagination="toolsStore.toolPagination"
-          :sort-by="toolsStore.toolListQuery?.sortBy"
-          :sort-order="toolsStore.toolListQuery?.sortOrder"
-          @update:checked-row-keys="selectedToolRowKeys = $event"
-          @update:search="setToolSearch"
-          @reset="resetFilters"
-          @page-change="changeToolPage"
-          @sort-change="changeToolSort"
+      <div v-if="hasWorkspaceContext && hasToolRecords" class="tool-section-bar">
+        <span
+          ><i class="fa-solid fa-circle-info" />这里不再配置域名、端口和认证；这些属于服务连接。Tool
+          关注业务名称、Endpoint、入参出参、重试超时和发布测试。</span
         >
+        <button type="button" @click="router.push('/openapi-imports')">查看 OpenAPI 导入</button>
+      </div>
+
+      <ManagementList
+        class="tool-management-list"
+        :rows="hasWorkspaceContext ? toolsStore.toolPageItems : []"
+        :columns="toolColumns"
+        row-key="id"
+        :sticky-left-keys="['tool']"
+        :sticky-right-keys="['actions']"
+        storage-key="actweave:tools:columns"
+        :selectable="false"
+        checkable
+        :checked-row-keys="selectedToolRowKeys"
+        :row-selection-label="(tool: Tool) => `选择 ${tool.name}`"
+        :loading="hasWorkspaceContext && toolsStore.toolPageLoading"
+        :error="hasWorkspaceContext ? toolsStore.toolPageError : undefined"
+        :has-loaded="hasWorkspaceContext ? toolsStore.toolPageHasLoaded : true"
+        :search="query"
+        search-placeholder="搜索 Tool / 连接 / 路径"
+        search-aria-label="搜索 Tool、服务连接或路径"
+        reset-label="重置"
+        reset-aria-label="重置工具筛选"
+        :pagination="toolsStore.toolPagination"
+        :sort-by="toolsStore.toolListQuery?.sortBy"
+        :sort-order="toolsStore.toolListQuery?.sortOrder"
+        @update:checked-row-keys="selectedToolRowKeys = $event"
+        @update:search="setToolSearch"
+        @reset="resetFilters"
+        @page-change="changeToolPage"
+        @sort-change="changeToolSort"
+      >
           <template #filters>
             <ManagementSegmentedFilter
               :model-value="selectedStatusFilter"
@@ -230,7 +223,17 @@ void getToolTypeLabel;
             />
           </template>
           <template #empty>
-            <div v-if="!hasToolRecords" class="empty-state registry-empty-state management-registry-empty-state">
+            <WorkspaceContextState
+              v-if="!hasWorkspaceContext"
+              embedded-in-list
+              feature="工具管理"
+              icon="fa-solid fa-screwdriver-wrench"
+              @retry="loadToolPageAssets"
+            />
+            <div
+              v-else-if="!hasToolRecords"
+              class="empty-state registry-empty-state management-registry-empty-state"
+            >
               <div class="management-empty-state-icon"><i class="fa-solid fa-box-open" /></div>
               <h2>暂无工具</h2>
               <p>可以注册 Tool，或者从 OpenAPI 导入生成草稿。</p>
@@ -248,7 +251,6 @@ void getToolTypeLabel;
             </div>
           </template>
         </ManagementList>
-      </template>
     </section>
 
     <ToolDetailPanel />

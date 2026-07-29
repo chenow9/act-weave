@@ -8,9 +8,12 @@ withDefaults(
   defineProps<{
     feature: string;
     icon?: string;
+    /** When true, empty sits inside ManagementList content chrome (table outline). */
+    embeddedInList?: boolean;
   }>(),
   {
     icon: "fa-solid fa-layer-group",
+    embeddedInList: false,
   },
 );
 
@@ -40,7 +43,12 @@ async function recheckWorkspace() {
 </script>
 
 <template>
-  <section class="workspace-context-state" role="status" aria-live="polite">
+  <section
+    class="workspace-context-state"
+    :class="{ 'workspace-context-state--in-list': embeddedInList }"
+    role="status"
+    aria-live="polite"
+  >
     <div class="workspace-context-state-icon" aria-hidden="true"><i :class="icon" /></div>
     <span class="workspace-context-state-eyebrow">业务空间上下文</span>
     <h2>还没有可用的业务空间</h2>
@@ -73,6 +81,13 @@ async function recheckWorkspace() {
   padding: 48px 28px;
   text-align: center;
   color: #64748b;
+}
+
+.workspace-context-state--in-list {
+  min-height: 280px;
+  width: 100%;
+  padding: 40px 24px;
+  box-sizing: border-box;
 }
 
 .workspace-context-state-icon {

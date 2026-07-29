@@ -1222,16 +1222,9 @@ function errorMessage(error: unknown, fallback: string) {
     </ManagementPageHeader>
 
     <section class="providers-list-card management-list-card">
-      <WorkspaceContextState
-        v-if="!hasWorkspaceContext"
-        feature="服务 Provider"
-        icon="fa-solid fa-cloud-arrow-down"
-        @retry="loadProviders"
-      />
       <ManagementList
-        v-else
         class="providers-management-list"
-        :rows="providerRows"
+        :rows="hasWorkspaceContext ? providerRows : []"
         :columns="providerColumns"
         row-key="id"
         :sticky-left-keys="['name']"
@@ -1239,9 +1232,9 @@ function errorMessage(error: unknown, fallback: string) {
         storage-key="actweave:providers:columns"
         :selectable="false"
         :expanded-row-key="expandedProviderId"
-        :loading="loading"
-        :error="loadError"
-        :has-loaded="hasLoaded"
+        :loading="hasWorkspaceContext && loading"
+        :error="hasWorkspaceContext ? loadError : undefined"
+        :has-loaded="hasWorkspaceContext ? hasLoaded : true"
         :search="search"
         :pagination="providerPagination"
         :sort-by="sortBy"
@@ -1462,7 +1455,14 @@ function errorMessage(error: unknown, fallback: string) {
         </template>
 
         <template #empty>
-          <div class="providers-empty-state">
+          <WorkspaceContextState
+            v-if="!hasWorkspaceContext"
+            embedded-in-list
+            feature="服务 Provider"
+            icon="fa-solid fa-cloud-arrow-down"
+            @retry="loadProviders"
+          />
+          <div v-else class="providers-empty-state">
             <span><i class="fa-solid fa-cloud-arrow-down" /></span>
             <h2>{{ search || statusFilter !== "ALL" ? "没有符合条件的 Provider" : "还没有服务 Provider" }}</h2>
             <p>
