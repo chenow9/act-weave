@@ -242,18 +242,35 @@ type RuntimeConfig struct {
 	Eino           EinoRuntimeTuning     `yaml:"eino"`
 	// SessionContext is the fail-closed gate for session context window management
 	// (ZKL-74). Default remains disabled unless explicitly enabled + allowlisted.
+	// Nested Compaction is the independent LLM compact gate (ZKL-81 / T6-A),
+	// default-off and evaluated only at run creation.
 	SessionContext SessionContextRollout `yaml:"sessionContext"`
 }
 
 // SessionContextRollout controls whether new agent runs write session-context.v1
 // / run.v2 snapshots. Gate is evaluated only at run creation time.
 // Mode: disabled (default) | shadow | enforced — IC-10 wires full matrix;
-// IC-03 only needs enabled+allowlist for writing v2 snapshots when enforced.
+// IC-03 only needs enabled+allowlist for writing v1/v2 snapshots when enforced.
 type SessionContextRollout struct {
 	Enabled            bool     `yaml:"enabled"`
 	AllowAllWorkspaces bool     `yaml:"allowAllWorkspaces"`
 	WorkspaceIDs       []string `yaml:"workspaceIds"`
 	// Mode is disabled|shadow|enforced. Empty means disabled when Enabled=false.
+	Mode           string `yaml:"mode"`
+	RolloutVersion string `yaml:"rolloutVersion"`
+	// Compaction is an independent sub-gate for session-context.v2 LLM compact (T6-A).
+	// Default closed: does not inherit parent sessionContext allowlist.
+	Compaction CompactionRollout `yaml:"compaction"`
+}
+
+// CompactionRollout is the independent, default-off LLM compact gate (ZKL-81 T6-A).
+// Supports shadow (plan only, no LLM/step/item body) and enforced (full path later).
+// Evaluated only at run creation and frozen into the run snapshot.
+type CompactionRollout struct {
+	Enabled            bool     `yaml:"enabled"`
+	AllowAllWorkspaces bool     `yaml:"allowAllWorkspaces"`
+	WorkspaceIDs       []string `yaml:"workspaceIds"`
+	// Mode is disabled|shadow|enforced. Empty + Enabled=false → disabled.
 	Mode           string `yaml:"mode"`
 	RolloutVersion string `yaml:"rolloutVersion"`
 }
@@ -270,14 +287,51 @@ func (feature SessionContextRollout) AllowsWorkspace(workspaceID string) bool {
 	}
 	// Empty mode with Enabled=true is treated as eligible for snapshot writing
 	// (used by IC-03); shadow/enforced semantics expand in IC-10.
+	return allowlistedWorkspace(feature.AllowAllWorkspaces, feature.WorkspaceIDs, workspaceID)
+}
+
+// AllowsCompaction reports whether the workspace may freeze session-context.v2
+// compact knobs on new runs. Independent of parent allowlist; fail-closed.
+func (feature SessionContextRollout) AllowsCompaction(workspaceID string) bool {
+	return feature.Compaction.AllowsWorkspace(workspaceID)
+}
+
+// AllowsWorkspace reports whether compaction gate admits the workspace.
+func (feature CompactionRollout) AllowsWorkspace(workspaceID string) bool {
+	if !feature.Enabled {
+		return false
+	}
+	mode := strings.ToLower(strings.TrimSpace(feature.Mode))
+	if mode == "" || mode == "disabled" {
+		return false
+	}
+	// shadow and enforced both freeze v2 snapshot at create time; execution of
+	// compact LLM is still gate-mode dependent in later ICs.
+	if mode != "shadow" && mode != "enforced" {
+		return false
+	}
+	return allowlistedWorkspace(feature.AllowAllWorkspaces, feature.WorkspaceIDs, workspaceID)
+}
+
+// IsShadow reports shadow mode (plan only; no LLM/step/item body writes later).
+func (feature CompactionRollout) IsShadow() bool {
+	return strings.ToLower(strings.TrimSpace(feature.Mode)) == "shadow" && feature.Enabled
+}
+
+// IsEnforced reports enforced mode.
+func (feature CompactionRollout) IsEnforced() bool {
+	return strings.ToLower(strings.TrimSpace(feature.Mode)) == "enforced" && feature.Enabled
+}
+
+func allowlistedWorkspace(allowAll bool, ids []string, workspaceID string) bool {
 	workspaceID = strings.ToLower(strings.TrimSpace(workspaceID))
 	if workspaceID == "" {
 		return false
 	}
-	if feature.AllowAllWorkspaces {
+	if allowAll {
 		return true
 	}
-	for _, id := range feature.WorkspaceIDs {
+	for _, id := range ids {
 		if strings.ToLower(strings.TrimSpace(id)) == workspaceID {
 			return true
 		}
@@ -292,12 +346,36 @@ func (feature SessionContextRollout) Normalized() SessionContextRollout {
 		AllowAllWorkspaces: feature.AllowAllWorkspaces,
 		Mode:               strings.ToLower(strings.TrimSpace(feature.Mode)),
 		RolloutVersion:     strings.TrimSpace(feature.RolloutVersion),
+		Compaction:         feature.Compaction.Normalized(),
 	}
 	if out.Mode == "" && !out.Enabled {
 		out.Mode = "disabled"
 	}
 	if out.RolloutVersion == "" {
 		out.RolloutVersion = "session-context-default"
+	}
+	for _, id := range feature.WorkspaceIDs {
+		id = strings.ToLower(strings.TrimSpace(id))
+		if id != "" {
+			out.WorkspaceIDs = append(out.WorkspaceIDs, id)
+		}
+	}
+	return out
+}
+
+// Normalized trims compaction gate fields; default remains closed.
+func (feature CompactionRollout) Normalized() CompactionRollout {
+	out := CompactionRollout{
+		Enabled:            feature.Enabled,
+		AllowAllWorkspaces: feature.AllowAllWorkspaces,
+		Mode:               strings.ToLower(strings.TrimSpace(feature.Mode)),
+		RolloutVersion:     strings.TrimSpace(feature.RolloutVersion),
+	}
+	if out.Mode == "" {
+		out.Mode = "disabled"
+	}
+	if out.RolloutVersion == "" {
+		out.RolloutVersion = "context-compaction-default"
 	}
 	for _, id := range feature.WorkspaceIDs {
 		id = strings.ToLower(strings.TrimSpace(id))

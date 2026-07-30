@@ -80,6 +80,42 @@ func TestAgentAuditDebugDefaultsFalseAndEnvOverrides(t *testing.T) {
 	}
 }
 
+func TestToolsAllowForcePublishDefaultsFalseAndEnvOverrides(t *testing.T) {
+	path := writeConfig(t, validConfigYAML)
+	loaded, err := Load(path, lookup(nil))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if loaded.Tools.AllowForcePublish {
+		t.Fatalf("tools.allowForcePublish must default false")
+	}
+
+	withYAML := writeConfig(t, validConfigYAML+"\ntools:\n  allowForcePublish: true\n")
+	fromFile, err := Load(withYAML, lookup(nil))
+	if err != nil {
+		t.Fatalf("load yaml force publish: %v", err)
+	}
+	if !fromFile.Tools.AllowForcePublish {
+		t.Fatalf("yaml tools.allowForcePublish=true was not applied")
+	}
+
+	envOff, err := Load(withYAML, lookup(map[string]string{"ACTWEAVE_TOOLS_ALLOW_FORCE_PUBLISH": "false"}))
+	if err != nil {
+		t.Fatalf("load env override: %v", err)
+	}
+	if envOff.Tools.AllowForcePublish {
+		t.Fatalf("env ACTWEAVE_TOOLS_ALLOW_FORCE_PUBLISH=false must override yaml true")
+	}
+
+	envOn, err := Load(path, lookup(map[string]string{"ACTWEAVE_TOOLS_ALLOW_FORCE_PUBLISH": "true"}))
+	if err != nil {
+		t.Fatalf("load env true: %v", err)
+	}
+	if !envOn.Tools.AllowForcePublish {
+		t.Fatalf("env ACTWEAVE_TOOLS_ALLOW_FORCE_PUBLISH=true must enable force publish")
+	}
+}
+
 func TestLoadAppliesEnvironmentOverridesAfterFile(t *testing.T) {
 	path := writeConfig(t, validConfigYAML)
 	values := map[string]string{

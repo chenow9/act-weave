@@ -8,7 +8,7 @@ export const AAP_SPEC_VERSION = "1.0" as const;
 export const AAP_PROTOCOL_DATE = "2026-07-20" as const;
 
 /** SHA-256 of the Schema Registry set (filename-sorted concatenation). */
-export const AAP_SCHEMA_SET_SHA256 = "10f0fe5fdc198f2f2c8babaca738ca5322d4121374b7aca812b4064752e00e94" as const;
+export const AAP_SCHEMA_SET_SHA256 = "7fd946170432d088c260a0abef59f2fa45a74145b54d641d48c73f12104a58db" as const;
 
 export const AAP_V1_DOCUMENT_NAMES = [
   "common.schema.json",
@@ -31,7 +31,7 @@ export const AAP_V1_DOCUMENT_SHA256: Record<string, string> = {
   "event-envelope.schema.json": "b7f2365867fd0add3a5071387b70957e6afa06753d5f386cfef533391751d15f",
   "events.schema.json": "934372181ea9a1f32cf4302d54770058273d13346a36bb448a3eff1f2b0ec131",
   "interaction.schema.json": "49ab73b89f06aceba1afe0ecf14e41b76fdbb0d719f840823a1a871e566b66cd",
-  "item.schema.json": "4bd51c58caf3fe8b38d4b2cf2c174f6af6c34145f11d39128a2543e1187f2f96",
+  "item.schema.json": "cd2157bc603749fa76e113849aace1492e9fdfa8e68bb4395332afd8b39fffc0",
   "run.schema.json": "d18782d680c83dc44d89178de848f4f436fb4816095a78288e774768a10f3e33",
   "transport-signal.schema.json": "5217d93ddd08ebd48c9781ec66a9d523715c0e99907cdbaeb3458a85d85d4964",
 };

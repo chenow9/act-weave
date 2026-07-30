@@ -15,6 +15,8 @@ const {
   canvasZoom,
   canvasPan,
   canvasPanning,
+  nodeDragging,
+  canvasWorkspaceSize,
   isNarrowViewport,
   blueprintToolbarCompact,
   leftPanelCollapsed,
@@ -47,6 +49,9 @@ const {
   getNodeTypeClass,
   getParameterSchema,
   getConnectionPath,
+  getNodePortSides,
+  portTitle,
+  getConnectionLabelPoint,
   createBlankBlueprint,
   generateDraft,
   retryLastGenerateTurn,
@@ -61,6 +66,9 @@ const {
   openInWorkflowEditor,
   publishWorkflow,
   deleteNode,
+  startNodeDrag,
+  moveNodeDrag,
+  endNodeDrag,
   startCanvasPan,
   moveCanvasPan,
   endCanvasPan,
@@ -225,24 +233,120 @@ void SmartDagModals;
       >
         <div class="smart-canvas-hint">
           <i class="fa-regular fa-hand" />
-          <span>拖动画布 · 滚轮缩放</span>
+          <span>拖动节点 · 空白处拖动画布 · 滚轮缩放</span>
         </div>
         <div
           id="canvas-workspace"
           class="smart-canvas-workspace"
           :key="canvasRenderKey"
-          :style="{ transform: `translate(${canvasPan.x}px, ${canvasPan.y}px) scale(${canvasZoom})` }"
+          :class="{ 'is-node-dragging': nodeDragging.active }"
+          :style="{
+            width: `${canvasWorkspaceSize.width}px`,
+            height: `${canvasWorkspaceSize.height}px`,
+            transform: `translate(${canvasPan.x}px, ${canvasPan.y}px) scale(${canvasZoom})`,
+          }"
         >
-          <svg id="canvas-svg" class="smart-canvas-svg">
+          <svg
+            id="canvas-svg"
+            class="smart-canvas-svg"
+            :width="canvasWorkspaceSize.width"
+            :height="canvasWorkspaceSize.height"
+            :viewBox="`0 0 ${canvasWorkspaceSize.width} ${canvasWorkspaceSize.height}`"
+          >
+            <defs>
+              <!--
+                refX near triangle base → path end = stroke stop / arrow base.
+                Tip (x=9) is drawn PAST the path end toward the port rim,
+                so dashes never run past the arrow tip.
+              -->
+              <marker
+                id="smart-edge-arrow"
+                viewBox="0 0 10 10"
+                refX="1.5"
+                refY="5"
+                markerWidth="8"
+                markerHeight="8"
+                markerUnits="userSpaceOnUse"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 1.2 L 9 5 L 0 8.8 Z" fill="#64748b" />
+              </marker>
+              <marker
+                id="smart-edge-arrow-loop"
+                viewBox="0 0 10 10"
+                refX="1.5"
+                refY="5"
+                markerWidth="8"
+                markerHeight="8"
+                markerUnits="userSpaceOnUse"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 1.2 L 9 5 L 0 8.8 Z" fill="#64748b" />
+              </marker>
+              <marker
+                id="smart-edge-arrow-branch"
+                viewBox="0 0 10 10"
+                refX="1.5"
+                refY="5"
+                markerWidth="8"
+                markerHeight="8"
+                markerUnits="userSpaceOnUse"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 1.2 L 9 5 L 0 8.8 Z" fill="#0f766e" />
+              </marker>
+            </defs>
             <g v-for="(conn, idx) in currentBlueprint.connections" :key="`${conn.from}-${conn.to}-${idx}`">
-              <path :d="getConnectionPath(conn)" stroke="rgba(20, 184, 166, 0.05)" stroke-width="10" fill="none" />
+              <!-- Hit area -->
+              <path :d="getConnectionPath(conn)" stroke="transparent" stroke-width="14" fill="none" />
+              <!-- Soft base rail -->
               <path
                 :d="getConnectionPath(conn)"
-                stroke="#0d9488"
-                stroke-width="2.5"
                 fill="none"
-                class="connection-path"
+                class="connection-path-base"
+                :class="[
+                  conn.kind === 'loop' ? 'is-loop' : '',
+                  conn.kind === 'branch' ? 'is-branch' : '',
+                  conn.kind === 'sequence' ? 'is-sequence' : '',
+                ]"
               />
+              <!-- Single flowing dashed path + arrow (no extra solid stub) -->
+              <path
+                :d="getConnectionPath(conn)"
+                fill="none"
+                :class="[
+                  'connection-path',
+                  'is-flowing',
+                  conn.kind === 'loop' ? 'is-loop' : '',
+                  conn.kind === 'branch' ? 'is-branch' : '',
+                  conn.kind === 'sequence' ? 'is-sequence' : '',
+                ]"
+                :marker-end="
+                  conn.kind === 'loop'
+                    ? 'url(#smart-edge-arrow-loop)'
+                    : conn.kind === 'branch'
+                      ? 'url(#smart-edge-arrow-branch)'
+                      : 'url(#smart-edge-arrow)'
+                "
+              />
+              <!-- Branch status only on the edge (not on the condition card) -->
+              <g
+                v-if="conn.label && getConnectionLabelPoint(conn)"
+                class="connection-label"
+                :transform="`translate(${getConnectionLabelPoint(conn).x}, ${getConnectionLabelPoint(conn).y})`"
+              >
+                <rect
+                  :x="-(Math.max(36, conn.label.length * 11 + 14) / 2)"
+                  y="-11"
+                  :width="Math.max(36, conn.label.length * 11 + 14)"
+                  height="18"
+                  rx="9"
+                  class="connection-label-bg"
+                />
+                <text y="3" text-anchor="middle" class="connection-label-text">
+                  {{ conn.label }}
+                </text>
+              </g>
             </g>
           </svg>
 
@@ -251,26 +355,66 @@ void SmartDagModals;
             :id="node.id"
             :key="node.id"
             class="smart-canvas-node"
-            :class="{ selected: selectedNodeId === node.id, 'is-ai-draft': node.isAiDraft }"
+            :class="{
+              selected: selectedNodeId === node.id,
+              'is-ai-draft': node.isAiDraft,
+              'is-dragging': nodeDragging.active && nodeDragging.nodeId === node.id,
+              'is-condition': node.graphType === 'Condition',
+              'is-end-success': node.endKind === 'success',
+              'is-end-failure': node.endKind === 'failure',
+            }"
             :data-node-id="node.id"
             :data-node-idx="idx"
             :style="{ transform: `translate(${node.x}px, ${node.y}px)` }"
+            @pointerdown="startNodeDrag($event, node.id)"
+            @pointermove="moveNodeDrag"
+            @pointerup="endNodeDrag"
+            @pointercancel="endNodeDrag"
             @click.stop="selectedNodeId = node.id"
           >
             <header>
               <span class="smart-node-type" :class="getNodeTypeClass(node.theme)">{{ node.type }}</span>
-              <span v-if="node.isAiDraft" class="smart-ai-chip"><i class="fa-solid fa-sparkles" />AI Draft</span>
-              <button type="button" aria-label="删除此节点" title="删除此节点" @click.stop="deleteNode(node.id)">
+              <button
+                type="button"
+                class="smart-node-delete"
+                aria-label="删除此节点"
+                title="删除此节点"
+                @click.stop="deleteNode(node.id)"
+              >
                 <i class="fa-solid fa-trash-can" />
               </button>
             </header>
-            <div>
+            <div class="smart-node-body">
               <strong>{{ node.title }}</strong>
-              <small>{{ node.desc }}</small>
-              <p v-if="node.aiReason">{{ node.aiReason }}</p>
+              <small v-if="node.desc">{{ node.desc }}</small>
+              <span v-if="node.statusHint" class="smart-node-status">{{ node.statusHint }}</span>
             </div>
-            <i v-if="node.type !== 'END'" class="smart-node-port output" />
-            <i v-if="node.type !== 'START'" class="smart-node-port input" />
+            <!-- Ports: one dot per used side; every edge endpoint lands on a dot centre -->
+            <template v-if="node.graphType !== 'Condition'">
+              <i
+                v-for="side in getNodePortSides(node)"
+                :key="`${node.id}-${side}`"
+                class="smart-node-port"
+                :class="[
+                  `is-${side}`,
+                  side === 'left' ? 'input' : 'output',
+                ]"
+                :title="portTitle(side)"
+              />
+            </template>
+            <template v-else>
+              <!-- Ports only; branch status lives on the flowing edge labels -->
+              <i
+                v-for="side in getNodePortSides(node)"
+                :key="`${node.id}-${side}`"
+                class="smart-node-port"
+                :class="[
+                  `is-${side}`,
+                  side === 'left' ? 'input' : 'output is-branch',
+                ]"
+                :title="portTitle(side)"
+              />
+            </template>
           </article>
         </div>
       </div>
@@ -565,6 +709,13 @@ void SmartDagModals;
               <span>说明备注</span>
               <textarea v-model="selectedNode.desc" rows="2" />
             </label>
+            <div v-if="selectedNode.graphType === 'Tool' || selectedNode.type === 'TOOL CALL'" class="smart-tool-binding-card">
+              <span>绑定工具</span>
+              <strong v-if="selectedNode.toolName">{{ selectedNode.toolName }}</strong>
+              <strong v-else class="is-missing">未解析到工具名称</strong>
+              <code v-if="selectedNode.toolId">{{ selectedNode.toolId }}</code>
+              <small v-else>图中缺少 data.toolId，无法绑定已发布能力</small>
+            </div>
             <div v-if="selectedNode.aiReason" class="smart-ai-reason">
               <strong><i class="fa-solid fa-shield-halved" />AI 生成说明</strong>
               <p>{{ selectedNode.aiReason }}</p>

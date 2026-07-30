@@ -207,6 +207,10 @@ export function normalizeToolErrorMappings(mappings: ToolVersionDTO["errorMappin
  */
 export function toolFromListDTO(tool: ToolDTO, workspaceId: string): Tool {
   const head = tool.headVersion;
+  // Prefer head.lockVersion from API. Never hard-code 1: successful tests bump
+  // tool_versions.lock_version, and publish CAS fails with 409 on a stale lock.
+  const headLock =
+    typeof head?.lockVersion === "number" && head.lockVersion > 0 ? head.lockVersion : 1;
   const syntheticVersions: ToolVersionDTO[] = head
     ? [
         {
@@ -227,7 +231,7 @@ export function toolFromListDTO(tool: ToolDTO, workspaceId: string): Tool {
           checksum: "",
           createdBy: tool.createdBy,
           updatedBy: tool.updatedBy,
-          lockVersion: 1,
+          lockVersion: headLock,
         },
       ]
     : [];
@@ -439,6 +443,8 @@ export interface ToolHeadVersionDTO {
   defaultConnectionId?: string;
   actionSchemaVersion?: string;
   actionConfig?: Record<string, unknown>;
+  /** tool_versions.lock_version for publish/test CAS from list rows. */
+  lockVersion?: number;
 }
 
 export interface ToolDTO {

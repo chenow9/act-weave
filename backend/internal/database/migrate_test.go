@@ -37,8 +37,15 @@ func TestEmbeddedMigrationSetStartsWithBaselineThenSessionContext(t *testing.T) 
 	if third != 3 {
 		t.Fatalf("expected third migration version 3, got %d", third)
 	}
-	if _, err := source.Next(third); err == nil {
-		t.Fatal("expected only three embedded migrations")
+	fourth, err := source.Next(third)
+	if err != nil {
+		t.Fatalf("expected agent context llm compaction migration: %v", err)
+	}
+	if fourth != 4 {
+		t.Fatalf("expected fourth migration version 4, got %d", fourth)
+	}
+	if _, err := source.Next(fourth); err == nil {
+		t.Fatal("expected only four embedded migrations")
 	}
 
 	for _, item := range []struct {
@@ -48,6 +55,7 @@ func TestEmbeddedMigrationSetStartsWithBaselineThenSessionContext(t *testing.T) 
 		{version: 1, identifier: "init"},
 		{version: 2, identifier: "session_context_contracts"},
 		{version: 3, identifier: "chat_context_summaries"},
+		{version: 4, identifier: "agent_context_llm_compaction"},
 	} {
 		for _, direction := range []struct {
 			name string

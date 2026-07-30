@@ -80,7 +80,8 @@ func TestMinIOStoreControlledBucketMapping(t *testing.T) {
 		KindPromptRunOutput: BucketExecutions, KindPromptPreviewInput: BucketExecutions,
 		KindPromptPreviewOutput: BucketExecutions, KindModelTurn: BucketExecutions,
 		KindChatMessage: BucketExecutions, KindToolInvocationPayload: BucketExecutions,
-		KindExecutionCheckpoint: BucketExecutions, KindToolTestPayload: BucketToolTests,
+		KindExecutionCheckpoint: BucketExecutions, KindChatContextSummary: BucketExecutions,
+		KindToolTestPayload: BucketToolTests,
 		KindAuditEventPayload: BucketAuditPackages, KindAuditExport: BucketAuditPackages,
 	}
 	for kind, want := range tests {

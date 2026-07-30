@@ -469,9 +469,15 @@ export const useToolsStore = defineStore("tools", {
     },
 
     async publishTool(toolId: string) {
-      const tool =
+      let tool =
         this.tools.find((item) => item.id === toolId) || this.toolPageItems.find((item) => item.id === toolId);
-      const version = tool?.draftVersion;
+      if (!tool) throw new Error("Tool not found.");
+      // Always refresh versions so lockVersion matches DB after tests (list used to hard-code 1).
+      tool = await this.loadToolVersions(toolId, tool.workspaceId);
+      const version =
+        tool.draftVersion ||
+        [...tool.versions].reverse().find((item) => item.lifecycleStatus === "TESTED") ||
+        tool.versions.at(-1);
       if (!tool || !version || version.lifecycleStatus !== "TESTED")
         throw new Error("Test the exact Draft Version before publishing it.");
       const response = await apiClient.post<PublishToolDTO>(
@@ -485,6 +491,47 @@ export const useToolsStore = defineStore("tools", {
       const metadata = await apiClient.get<ToolDTO>(`/workspaces/${tool.workspaceId}/tools/${toolId}`);
       const versions = tool.versions.map((item) =>
         item.id === version.id ? normalizeToolVersion(response.data.version) : item,
+      );
+      const normalized = toolFromDTO(metadata.data, tool.workspaceId, versions, tool.lastTestResult);
+      this.upsertTool(normalized);
+      return normalized;
+    },
+
+    /**
+     * PLATFORM_ADMIN force-publish: skips live invoke test, still freezes a release.
+     * Server requires tools.allowForcePublish + platform admin + workspace PUBLISH.
+     */
+    async forcePublishTool(toolId: string, reason: string) {
+      let tool =
+        this.tools.find((item) => item.id === toolId) || this.toolPageItems.find((item) => item.id === toolId);
+      if (!tool) throw new Error("Tool not found.");
+      // Prefer head version summary; load full versions when draftVersion is missing.
+      let version = tool.draftVersion;
+      if (!version || version.lifecycleStatus === "PUBLISHED") {
+        tool = await this.loadToolVersions(toolId, tool.workspaceId);
+        version =
+          tool.draftVersion ||
+          [...tool.versions].sort((left, right) => right.versionNo - left.versionNo)[0];
+      }
+      if (!version || version.lifecycleStatus === "PUBLISHED") {
+        throw new Error("No unpublished version available to force-publish.");
+      }
+      const trimmedReason = String(reason || "").trim();
+      if (trimmedReason.length < 8) {
+        throw new Error("Force publish requires a reason of at least 8 characters.");
+      }
+      const response = await apiClient.post<PublishToolDTO & { force?: boolean; forceReason?: string }>(
+        `/workspaces/${tool.workspaceId}/tools/${toolId}/versions/${version.id}/__command/force-publish`,
+        {
+          callableName: slugify(tool.slug || tool.name).replace(/-/g, "_"),
+          callableDescription: tool.description,
+          lockVersion: version.lockVersion,
+          reason: trimmedReason,
+        },
+      );
+      const metadata = await apiClient.get<ToolDTO>(`/workspaces/${tool.workspaceId}/tools/${toolId}`);
+      const versions = (tool.versions?.length ? tool.versions : [version]).map((item) =>
+        item.id === version!.id ? normalizeToolVersion(response.data.version) : item,
       );
       const normalized = toolFromDTO(metadata.data, tool.workspaceId, versions, tool.lastTestResult);
       this.upsertTool(normalized);

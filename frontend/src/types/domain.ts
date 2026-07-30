@@ -37,9 +37,9 @@ export interface UserWorkspaceMembership {
   disabledAt?: string;
 }
 
-/** ZKL-74 session-context-policy.v1 patch (workspace/agent). Empty object inherits. */
+/** ZKL-74/ZKL-81 session-context-policy.v1|v2 patch (workspace/agent). Empty object inherits. */
 export interface SessionContextPolicy {
-  schemaVersion?: "session-context-policy.v1";
+  schemaVersion?: "session-context-policy.v1" | "session-context-policy.v2";
   mode?: "token_window" | "rolling_summary" | "disabled";
   maxInputTokens?: number;
   outputReserveTokens?: number;
@@ -49,6 +49,14 @@ export interface SessionContextPolicy {
     maxTokens?: number;
     minEvictedTurns?: number;
     maxGenerationPasses?: number;
+  };
+  /**
+   * Agent-only (policy v2). When true, successful compact summary body is permanently
+   * dual-written as PostgreSQL plaintext protocol projection (T4-B). Closing only affects new runs.
+   * Default false. Workspace policy must not set this field.
+   */
+  aap?: {
+    includeCompactionSummary?: boolean;
   };
 }
 

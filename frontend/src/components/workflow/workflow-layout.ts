@@ -1,26 +1,29 @@
 import type { WorkflowGraphDraft, WorkflowGraphNode } from "../../types/domain";
 
-const LAYOUT_START_X = 120;
-const LAYOUT_CENTER_Y = 320;
-/** Clear horizontal gap between successive process steps (column pitch). */
-const LAYOUT_COLUMN_GAP = 280;
-/** Clear vertical gap between parallel lanes (row pitch). */
-const LAYOUT_ROW_GAP = 200;
-const NODE_MIN_WIDTH = 190;
-const NODE_MIN_HEIGHT = 96;
-const BOX_GAP_X = 40;
-const BOX_GAP_Y = 28;
-const OVERLAP_THRESHOLD = 96;
-
 /**
- * Classic left-to-right process layout.
- *
- * Visual goals (user: 正常流程图 / 间距明确 / 上下均匀 / 关系简洁):
- * 1. Longest happy-path is one straight horizontal spine
- * 2. Side branches sit on parallel lanes with equal row spacing
- * 3. Same column pitch everywhere
- * 4. Join / End stay on the spine so the main story never zigzags
+ * Dify-inspired stage layout:
+ * - Compact spacing inside linear stages
+ * - Wider gaps at forks / stage boundaries
+ * - Success continues right on the main rail
+ * - Side / failure / loop tracks go BELOW (positive Y), never above the main story
  */
+const LAYOUT_START_X = 48;
+const LAYOUT_CENTER_Y = 260;
+/**
+ * Column pitch = left-edge distance between successive layers.
+ * MUST exceed the visual card width (~180) so right-port of node N is left of
+ * left-port of node N+1; otherwise every sequential edge is mis-drawn as a loop.
+ */
+const COLUMN_GAP_TIGHT = 240; // 180 card + 60 clear gap
+/** Wider pitch after a fork / stage boundary. */
+const COLUMN_GAP_STAGE = 280;
+const ROW_GAP = 176;
+const NODE_MIN_WIDTH = 180;
+const NODE_MIN_HEIGHT = 92;
+const BOX_GAP_X = 28;
+const BOX_GAP_Y = 28;
+const OVERLAP_THRESHOLD = 80;
+
 export function autoLayoutWorkflowGraph(graph: WorkflowGraphDraft): WorkflowGraphDraft {
   if (!graph.nodes.length) {
     return graph;
@@ -29,35 +32,14 @@ export function autoLayoutWorkflowGraph(graph: WorkflowGraphDraft): WorkflowGrap
   const outgoing = buildAdjacency(graph, "out");
   const incoming = buildAdjacency(graph, "in");
   const layerById = buildLayers(graph, outgoing, incoming);
-  const spine = findSpine(graph, outgoing, incoming);
-  const spineSet = new Set(spine);
-  const trackById = assignTracks(graph, spine, spineSet, outgoing, incoming, layerById);
+  const trackById = assignBranchTracks(graph, layerById, outgoing, incoming);
+  const orderByLayer = orderNodesInLayers(graph, layerById, trackById);
+  const positions = packLayerPositions(graph, layerById, orderByLayer, trackById, outgoing);
 
-  const maxLayer = Math.max(0, ...[...layerById.values()]);
-  const positions = new Map<string, { x: number; y: number }>();
-
-  for (const node of graph.nodes) {
-    const layer = layerById.get(node.id) ?? 0;
-    const track = trackById.get(node.id) ?? 0;
-    positions.set(node.id, {
-      x: LAYOUT_START_X + layer * LAYOUT_COLUMN_GAP,
-      y: LAYOUT_CENTER_Y + track * LAYOUT_ROW_GAP,
-    });
-  }
-
-  let orphanCol = maxLayer + 1;
-  for (const node of graph.nodes) {
-    if (layerById.has(node.id)) continue;
-    positions.set(node.id, {
-      x: LAYOUT_START_X + orphanCol * LAYOUT_COLUMN_GAP,
-      y: LAYOUT_CENTER_Y,
-    });
-    orphanCol += 1;
-  }
-
-  const separated = separateOverlaps(graph.nodes, positions, trackById);
-  const snapped = snapTracks(separated, trackById);
-  const normalized = normalizeOrigin(snapped);
+  // Resolve Y collisions only within a column; never drift X off the layer grid.
+  const separated = separateOverlapsInColumns(graph.nodes, positions, layerById);
+  const snappedX = snapToLayerColumns(separated, layerById, buildLayerXs(layerById, orderByLayer, outgoing));
+  const normalized = normalizeOrigin(snappedX);
 
   return {
     ...graph,
@@ -75,6 +57,14 @@ export function workflowGraphNeedsLayout(graph: WorkflowGraphDraft): boolean {
   const allZeroOrMissing = nodes.every((n) => !n.position || (n.position.x === 0 && n.position.y === 0));
   if (allZeroOrMissing) return true;
 
+  if (nodes.length >= 3) {
+    const ys = nodes.map((n) => n.position?.y ?? 0);
+    if (Math.max(...ys) - Math.min(...ys) < 24) {
+      const out = buildAdjacency(graph, "out");
+      if ([...out.values()].some((targets) => targets.length > 1)) return true;
+    }
+  }
+
   for (let i = 0; i < nodes.length; i += 1) {
     const a = nodes[i];
     const ax = a.position?.x ?? 0;
@@ -83,9 +73,7 @@ export function workflowGraphNeedsLayout(graph: WorkflowGraphDraft): boolean {
       const b = nodes[j];
       const bx = b.position?.x ?? 0;
       const by = b.position?.y ?? 0;
-      if (Math.hypot(ax - bx, ay - by) < OVERLAP_THRESHOLD) {
-        return true;
-      }
+      if (Math.hypot(ax - bx, ay - by) < OVERLAP_THRESHOLD) return true;
     }
   }
   return false;
@@ -95,167 +83,243 @@ export function layoutWorkflowGraphIfNeeded(graph: WorkflowGraphDraft): Workflow
   return workflowGraphNeedsLayout(graph) ? autoLayoutWorkflowGraph(graph) : graph;
 }
 
-// --- spine / tracks ----------------------------------------------------------
+// --- branch tracks (success right, failure/loop BELOW) -----------------------
 
-function findSpine(
+function assignBranchTracks(
   graph: WorkflowGraphDraft,
-  outgoing: Map<string, string[]>,
-  incoming: Map<string, string[]>,
-): string[] {
-  const starts = graph.nodes
-    .filter((n) => n.type === "Start" || (incoming.get(n.id) || []).length === 0)
-    .map((n) => n.id)
-    .sort((a, b) => preferredRootOrder(graph, a) - preferredRootOrder(graph, b) || a.localeCompare(b));
-
-  const ends = new Set(
-    graph.nodes.filter((n) => n.type === "End" || (outgoing.get(n.id) || []).length === 0).map((n) => n.id),
-  );
-
-  let best: string[] = [];
-  for (const start of starts.length ? starts : graph.nodes.map((n) => n.id)) {
-    const path = dfsLongest(start, outgoing, ends, new Set());
-    if (path.length > best.length) best = path;
-  }
-  if (!best.length && graph.nodes.length) best = [graph.nodes[0].id];
-  return best;
-}
-
-function dfsLongest(
-  nodeId: string,
-  outgoing: Map<string, string[]>,
-  ends: Set<string>,
-  visiting: Set<string>,
-): string[] {
-  if (visiting.has(nodeId)) return [nodeId];
-  visiting.add(nodeId);
-  const nexts = (outgoing.get(nodeId) || []).slice().sort((a, b) => a.localeCompare(b));
-  let bestSuffix: string[] = [];
-  for (const next of nexts) {
-    const suffix = dfsLongest(next, outgoing, ends, visiting);
-    if (suffix.length > bestSuffix.length) bestSuffix = suffix;
-  }
-  visiting.delete(nodeId);
-  return [nodeId, ...bestSuffix];
-}
-
-/**
- * Track 0 = main spine.
- * Side branches: first free lane above (-1), then below (+1), alternating —
- * keeps a single side-branch diagram “top branch + main line” which reads naturally.
- */
-function assignTracks(
-  graph: WorkflowGraphDraft,
-  spine: string[],
-  spineSet: Set<string>,
-  outgoing: Map<string, string[]>,
-  incoming: Map<string, string[]>,
   layerById: Map<string, number>,
+  outgoing: Map<string, string[]>,
+  incoming: Map<string, string[]>,
 ): Map<string, number> {
   const track = new Map<string, number>();
-  for (const id of spine) track.set(id, 0);
+  const byLayerAsc = [...graph.nodes].sort(
+    (a, b) => (layerById.get(a.id) ?? 0) - (layerById.get(b.id) ?? 0) || a.id.localeCompare(b.id),
+  );
 
-  const queue = [...spine];
-  const seen = new Set(spine);
-  let above = 0;
-  let below = 0;
-
-  while (queue.length) {
-    const id = queue.shift()!;
-    const parentTrack = track.get(id) ?? 0;
-    const children = (outgoing.get(id) || []).slice().sort((a, b) => {
-      // Spine child first so the happy path keeps track 0.
-      const as = spineSet.has(a) ? 0 : 1;
-      const bs = spineSet.has(b) ? 0 : 1;
-      if (as !== bs) return as - bs;
-      // Prefer "true" / approved-looking ids first is handled by spine; remaining stable by id.
-      return a.localeCompare(b);
-    });
-
-    const nonSpineChildren = children.filter((c) => !spineSet.has(c));
-
-    for (const child of children) {
-      if (track.has(child)) {
-        if (!seen.has(child)) {
-          seen.add(child);
-          queue.push(child);
-        }
-        continue;
-      }
-
-      if (spineSet.has(child)) {
-        track.set(child, 0);
-      } else if (children.length === 1) {
-        track.set(child, parentTrack);
-      } else if (nonSpineChildren.includes(child) && children.some((c) => spineSet.has(c))) {
-        // Spine continues + N side branches: stack sides above first, then below.
-        const sideIndex = nonSpineChildren.indexOf(child);
-        if (sideIndex % 2 === 0) {
-          above += 1;
-          track.set(child, parentTrack === 0 ? -above : parentTrack - 1);
-        } else {
-          below += 1;
-          track.set(child, parentTrack === 0 ? below : parentTrack + 1);
-        }
-      } else {
-        // Pure multi-way fork with no spine child among them.
-        const forkIndex = nonSpineChildren.indexOf(child);
-        if (forkIndex % 2 === 0) {
-          above += 1;
-          track.set(child, -above);
-        } else {
-          below += 1;
-          track.set(child, below);
-        }
-      }
-
-      if (!seen.has(child)) {
-        seen.add(child);
-        queue.push(child);
-      }
-    }
-  }
-
-  for (const node of graph.nodes) {
+  for (const node of byLayerAsc) {
     if (track.has(node.id)) continue;
-    const preds = (incoming.get(node.id) || []).filter((p) => track.has(p));
-    if (preds.length) {
-      const avg = preds.reduce((s, p) => s + (track.get(p) || 0), 0) / preds.length;
-      track.set(node.id, Math.round(avg));
-    } else {
-      below += 1;
-      track.set(node.id, below);
-    }
-  }
-
-  // End + multi-in joins sit on the spine (main story line).
-  for (const node of graph.nodes) {
-    if (node.type === "End" || spineSet.has(node.id)) {
+    const preds = (incoming.get(node.id) || []).filter(
+      (p) => (layerById.get(p) ?? 0) < (layerById.get(node.id) ?? 0),
+    );
+    if (!preds.length || node.type === "Start") {
       track.set(node.id, 0);
       continue;
     }
-    const preds = (incoming.get(node.id) || []).filter((p) => track.has(p));
-    if (preds.length >= 2) {
-      const tracks = new Set(preds.map((p) => track.get(p)));
-      if (tracks.size >= 2) track.set(node.id, 0);
-    }
+    const predTracks = preds.map((p) => track.get(p) ?? 0).sort((a, b) => a - b);
+    track.set(node.id, predTracks[Math.floor(predTracks.length / 2)] ?? 0);
   }
 
-  // Straighten linear side chains onto parent track.
-  const byLayer = [...graph.nodes].sort(
-    (a, b) => (layerById.get(a.id) ?? 0) - (layerById.get(b.id) ?? 0) || a.id.localeCompare(b.id),
-  );
-  for (const node of byLayer) {
-    if (spineSet.has(node.id) || node.type === "End") continue;
-    const preds = (incoming.get(node.id) || []).filter((p) => track.has(p));
-    if (preds.length !== 1) continue;
-    const pred = preds[0];
-    const successors = outgoing.get(pred) || [];
-    if (successors.length === 1 && successors[0] === node.id) {
-      track.set(node.id, track.get(pred) || 0);
+  for (const node of byLayerAsc) {
+    const parentLayer = layerById.get(node.id) ?? 0;
+    const parentId = node.id;
+    const forwardChildren = (outgoing.get(node.id) || [])
+      .filter((c) => (layerById.get(c) ?? 0) > parentLayer)
+      .sort(
+        (a, b) =>
+          branchPriority(graph, a, parentId) - branchPriority(graph, b, parentId) ||
+          a.localeCompare(b),
+      );
+    if (forwardChildren.length < 2) continue;
+
+    const parentTrack = track.get(node.id) ?? 0;
+    // Main (success) stays on parent track; others stack BELOW: +1, +2, …
+    // Priority 0 = success/main, higher = failure / secondary.
+    forwardChildren.forEach((child, index) => {
+      const t = parentTrack + index; // index 0 main, 1+ below
+      track.set(child, t);
+      propagateTrackAlongChain(child, t, layerById, outgoing, incoming, track);
+    });
+  }
+
+  // Joins: median of forward preds — but never pull a pure-success tooling
+  // path down just because failure also merges into End.
+  for (const node of byLayerAsc) {
+    if (node.type === "End") {
+      // End sits on the main rail so the happy path stays left→right readable.
+      track.set(node.id, 0);
+      continue;
     }
+    const preds = (incoming.get(node.id) || []).filter(
+      (p) => (layerById.get(p) ?? 0) < (layerById.get(node.id) ?? 0),
+    );
+    if (preds.length < 2) continue;
+    const ts = preds.map((p) => track.get(p) ?? 0).sort((a, b) => a - b);
+    track.set(node.id, ts[Math.floor(ts.length / 2)] ?? 0);
+  }
+
+  for (const node of graph.nodes) {
+    if (node.type === "Start") track.set(node.id, 0);
   }
 
   return track;
+}
+
+/** Lower = prefer as main success path (continue right on spine). */
+function branchPriority(graph: WorkflowGraphDraft, nodeId: string, parentId?: string): number {
+  // Edge branch label is the strongest signal (true/completed vs default/reject/failed).
+  if (parentId) {
+    const edge = graph.edges.find((e) => e.sourceNodeId === parentId && e.targetNodeId === nodeId);
+    const raw = edge?.data && typeof edge.data === "object" ? (edge.data as Record<string, unknown>) : {};
+    const branch = String(raw.branch ?? raw.label ?? "").toLowerCase().trim();
+    if (branch) {
+      if (/^(true|completed|success|ok|yes|pass|done|已完成|成功)/.test(branch) || branch === "true") {
+        return 0;
+      }
+      if (
+        /^(false|default|reject|fail|failed|running|timeout|error|no|else|其他|失败|超时|处理中|驳回)/.test(
+          branch,
+        )
+      ) {
+        return 40;
+      }
+    }
+  }
+
+  const node = graph.nodes.find((n) => n.id === nodeId);
+  if (!node) return 50;
+  const id = nodeId.toLowerCase();
+  const label = (node.label || "").toLowerCase();
+  if (/reject|fail|驳回|失败|超时/.test(id) || /reject|fail|驳回|失败|超时/.test(label)) {
+    return 45;
+  }
+  // Success tooling (report, transform) stays on main rail.
+  if (node.type === "Transform") return 0;
+  if (node.type === "Tool" || node.type === "HTTP") {
+    if (/report|success|result|word|export/.test(id) || /report|success|result|word/.test(label)) {
+      return 0;
+    }
+    return 5;
+  }
+  if (node.type === "End") return 20; // failure / early end sits below success tooling
+  if (node.type === "Condition") return 10;
+  return 15;
+}
+
+function propagateTrackAlongChain(
+  startId: string,
+  trackValue: number,
+  layerById: Map<string, number>,
+  outgoing: Map<string, string[]>,
+  incoming: Map<string, string[]>,
+  track: Map<string, number>,
+) {
+  let cursor = startId;
+  const seen = new Set<string>([startId]);
+  while (true) {
+    const nexts = (outgoing.get(cursor) || []).filter(
+      (n) => (layerById.get(n) ?? 0) > (layerById.get(cursor) ?? 0) && !seen.has(n),
+    );
+    if (nexts.length !== 1) break;
+    const only = nexts[0];
+    const ins = (incoming.get(only) || []).filter((p) => (layerById.get(p) ?? 0) < (layerById.get(only) ?? 0));
+    if (ins.length > 1) break;
+    track.set(only, trackValue);
+    seen.add(only);
+    cursor = only;
+  }
+}
+
+function orderNodesInLayers(
+  graph: WorkflowGraphDraft,
+  layerById: Map<string, number>,
+  trackById: Map<string, number>,
+): Map<number, string[]> {
+  const maxLayer = Math.max(0, ...layerById.values());
+  const byLayer = new Map<number, string[]>();
+  for (let L = 0; L <= maxLayer; L += 1) byLayer.set(L, []);
+  for (const node of graph.nodes) {
+    byLayer.get(layerById.get(node.id) ?? 0)!.push(node.id);
+  }
+  for (let L = 0; L <= maxLayer; L += 1) {
+    const ids = byLayer.get(L) || [];
+    ids.sort(
+      (a, b) =>
+        (trackById.get(a) ?? 0) - (trackById.get(b) ?? 0) ||
+        preferredSiblingOrder(graph, a) - preferredSiblingOrder(graph, b) ||
+        a.localeCompare(b),
+    );
+    byLayer.set(L, ids);
+  }
+  return byLayer;
+}
+
+function preferredSiblingOrder(graph: WorkflowGraphDraft, nodeId: string): number {
+  const node = graph.nodes.find((n) => n.id === nodeId);
+  if (!node) return 50;
+  if (node.type === "Start") return 0;
+  if (node.type === "Condition" || node.type === "Parallel" || node.type === "ForEach") return 5;
+  if (node.type === "Approval") return 10;
+  if (node.type === "Tool" || node.type === "HTTP" || node.type === "SubWorkflow") return 20;
+  if (node.type === "Transform") return 30;
+  if (node.type === "End") return 90;
+  return 40;
+}
+
+function buildLayerXs(
+  layerById: Map<string, number>,
+  orderByLayer: Map<number, string[]>,
+  outgoing: Map<string, string[]>,
+): Map<number, number> {
+  const maxLayer = Math.max(0, ...layerById.values());
+  const layerX = new Map<number, number>();
+  let x = LAYOUT_START_X;
+  for (let L = 0; L <= maxLayer; L += 1) {
+    layerX.set(L, x);
+    const ids = orderByLayer.get(L) || [];
+    const isFork = ids.some((id) => {
+      const forward = (outgoing.get(id) || []).filter((c) => (layerById.get(c) ?? 0) > L);
+      return forward.length > 1;
+    });
+    const nextHasMany = (orderByLayer.get(L + 1) || []).length > 1;
+    x += isFork || nextHasMany ? COLUMN_GAP_STAGE : COLUMN_GAP_TIGHT;
+  }
+  return layerX;
+}
+
+function packLayerPositions(
+  graph: WorkflowGraphDraft,
+  layerById: Map<string, number>,
+  orderByLayer: Map<number, string[]>,
+  trackById: Map<string, number>,
+  outgoing: Map<string, string[]>,
+): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>();
+  const maxLayer = Math.max(0, ...layerById.values());
+  const layerX = buildLayerXs(layerById, orderByLayer, outgoing);
+
+  // Tracks ≥ 0 stack below the main rail (positive Y).
+  const usedTracks = [...new Set([...trackById.values()])].sort((a, b) => a - b);
+  const trackIndex = new Map<number, number>();
+  usedTracks.forEach((t, i) => trackIndex.set(t, i));
+
+  for (let L = 0; L <= maxLayer; L += 1) {
+    const ids = orderByLayer.get(L) || [];
+    const colX = layerX.get(L) ?? LAYOUT_START_X;
+    for (const id of ids) {
+      const t = trackById.get(id) ?? 0;
+      const idx = trackIndex.get(t) ?? 0;
+      const y = LAYOUT_CENTER_Y + idx * ROW_GAP;
+      positions.set(id, { x: colX, y });
+    }
+  }
+
+  return positions;
+}
+
+function snapToLayerColumns(
+  positions: Map<string, { x: number; y: number }>,
+  layerById: Map<string, number>,
+  layerX: Map<number, number>,
+): Map<string, { x: number; y: number }> {
+  const next = new Map(positions);
+  for (const [id, pos] of next) {
+    const L = layerById.get(id);
+    if (L == null) continue;
+    const colX = layerX.get(L);
+    if (colX == null) continue;
+    next.set(id, { x: colX, y: pos.y });
+  }
+  return next;
 }
 
 // --- layering ----------------------------------------------------------------
@@ -265,41 +329,89 @@ function buildLayers(
   outgoing: Map<string, string[]>,
   incoming: Map<string, string[]>,
 ): Map<string, number> {
-  const nodeIds = new Set(graph.nodes.map((n) => n.id));
-  const indegree = new Map<string, number>();
-  for (const id of nodeIds) indegree.set(id, (incoming.get(id) || []).length);
+  const nodeIds = graph.nodes.map((n) => n.id);
+  const remaining = new Map<string, number>();
+  for (const id of nodeIds) remaining.set(id, (incoming.get(id) || []).length);
 
   const layer = new Map<string, number>();
   const queue: string[] = [];
-  const remaining = new Map(indegree);
 
-  for (const [id, deg] of remaining) {
-    if (deg === 0) {
-      queue.push(id);
-      layer.set(id, 0);
+  const depthFromPreds = (id: string, fallback: number) => {
+    const preds = (incoming.get(id) || []).filter((p) => layer.has(p));
+    if (!preds.length) return fallback;
+    return Math.max(...preds.map((p) => layer.get(p) || 0)) + 1;
+  };
+
+  const place = (id: string, depth: number) => {
+    if (layer.has(id)) return;
+    layer.set(id, depth);
+    remaining.set(id, 0);
+    queue.push(id);
+  };
+
+  const processQueue = () => {
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      for (const nextId of outgoing.get(id) || []) {
+        if (layer.has(nextId)) {
+          remaining.set(nextId, Math.max(0, (remaining.get(nextId) || 0) - 1));
+          continue;
+        }
+        const left = Math.max(0, (remaining.get(nextId) || 0) - 1);
+        remaining.set(nextId, left);
+        if (left === 0) place(nextId, depthFromPreds(nextId, (layer.get(id) || 0) + 1));
+      }
     }
-  }
-  queue.sort((a, b) => preferredRootOrder(graph, a) - preferredRootOrder(graph, b) || a.localeCompare(b));
+  };
 
-  while (queue.length > 0) {
-    const id = queue.shift()!;
-    const depth = layer.get(id) || 0;
-    for (const nextId of outgoing.get(id) || []) {
-      const candidate = depth + 1;
-      if ((layer.get(nextId) ?? -1) < candidate) layer.set(nextId, candidate);
-      const left = (remaining.get(nextId) || 0) - 1;
-      remaining.set(nextId, left);
-      if (left === 0) queue.push(nextId);
-    }
-  }
-
-  let fallback = 0;
+  const roots = nodeIds
+    .filter((id) => (remaining.get(id) || 0) === 0)
+    .sort((a, b) => preferredRootOrder(graph, a) - preferredRootOrder(graph, b) || a.localeCompare(b));
+  for (const id of roots) place(id, 0);
   for (const node of graph.nodes) {
-    if (!layer.has(node.id)) {
-      layer.set(node.id, fallback);
-      fallback += 1;
-    }
+    if (node.type === "Start") place(node.id, 0);
   }
+  processQueue();
+
+  let guard = nodeIds.length + 2;
+  while (layer.size < nodeIds.length && guard-- > 0) {
+    let bestId = "";
+    let bestScore = Number.NEGATIVE_INFINITY;
+    let bestDepth = 0;
+    for (const id of nodeIds) {
+      if (layer.has(id)) continue;
+      const layeredPreds = (incoming.get(id) || []).filter((p) => layer.has(p));
+      const score = layeredPreds.length * 100 - preferredRootOrder(graph, id);
+      const depth =
+        layeredPreds.length > 0
+          ? Math.max(...layeredPreds.map((p) => layer.get(p) || 0)) + 1
+          : Math.max(0, ...layer.values(), 0) + 1;
+      if (score > bestScore || (score === bestScore && (bestId === "" || depth < bestDepth))) {
+        bestId = id;
+        bestScore = score;
+        bestDepth = depth;
+      }
+    }
+    if (!bestId) break;
+    place(bestId, bestDepth);
+    processQueue();
+  }
+
+  for (const id of nodeIds) {
+    if (!layer.has(id)) layer.set(id, Math.max(0, ...layer.values(), 0) + 1);
+  }
+
+  for (const node of graph.nodes) {
+    if (node.type === "Start") layer.set(node.id, 0);
+  }
+  const nonEndMax = Math.max(
+    0,
+    ...graph.nodes.filter((n) => n.type !== "End").map((n) => layer.get(n.id) || 0),
+  );
+  for (const node of graph.nodes) {
+    if (node.type === "End") layer.set(node.id, nonEndMax + 1);
+  }
+
   return layer;
 }
 
@@ -327,66 +439,37 @@ function buildAdjacency(graph: WorkflowGraphDraft, direction: "in" | "out"): Map
   return map;
 }
 
-function separateOverlaps(
+/** Only separate Y within the same layer/column — preserve stage column alignment. */
+function separateOverlapsInColumns(
   nodes: WorkflowGraphNode[],
   positions: Map<string, { x: number; y: number }>,
-  trackById: Map<string, number>,
+  layerById: Map<string, number>,
 ): Map<string, { x: number; y: number }> {
   const next = new Map(positions);
-  const ids = nodes.map((n) => n.id);
-  for (let sweep = 0; sweep < 6; sweep += 1) {
-    let moved = false;
-    for (let i = 0; i < ids.length; i += 1) {
-      for (let j = i + 1; j < ids.length; j += 1) {
-        const aId = ids[i];
-        const bId = ids[j];
-        const a = next.get(aId)!;
-        const b = next.get(bId)!;
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const minDx = NODE_MIN_WIDTH + BOX_GAP_X;
-        const minDy = NODE_MIN_HEIGHT + BOX_GAP_Y;
-        if (Math.abs(dx) >= minDx || Math.abs(dy) >= minDy) continue;
+  const byLayer = new Map<number, string[]>();
+  for (const node of nodes) {
+    const L = layerById.get(node.id) ?? 0;
+    if (!byLayer.has(L)) byLayer.set(L, []);
+    byLayer.get(L)!.push(node.id);
+  }
 
-        const sameTrack = (trackById.get(aId) ?? 0) === (trackById.get(bId) ?? 0);
-        if (sameTrack || Math.abs(dx) < minDx) {
-          const push = (minDx - Math.abs(dx || 0.1)) / 2 + 1;
-          const sign = dx === 0 ? (aId < bId ? 1 : -1) : Math.sign(dx);
-          next.set(aId, { x: a.x - sign * push, y: a.y });
-          next.set(bId, { x: b.x + sign * push, y: b.y });
-        } else {
-          const push = (minDy - Math.abs(dy || 0.1)) / 2 + 1;
-          const sign = dy === 0 ? (aId < bId ? 1 : -1) : Math.sign(dy);
-          next.set(aId, { x: a.x, y: a.y - sign * push });
-          next.set(bId, { x: b.x, y: b.y + sign * push });
-        }
+  for (const ids of byLayer.values()) {
+    if (ids.length < 2) continue;
+    for (let sweep = 0; sweep < 6; sweep += 1) {
+      let moved = false;
+      const sorted = [...ids].sort((a, b) => (next.get(a)!.y - next.get(b)!.y) || a.localeCompare(b));
+      for (let i = 0; i < sorted.length - 1; i += 1) {
+        const a = next.get(sorted[i])!;
+        const b = next.get(sorted[i + 1])!;
+        const minDy = NODE_MIN_HEIGHT + BOX_GAP_Y;
+        if (b.y - a.y >= minDy) continue;
+        const mid = (a.y + b.y) / 2;
+        next.set(sorted[i], { x: a.x, y: mid - minDy / 2 });
+        next.set(sorted[i + 1], { x: b.x, y: mid + minDy / 2 });
         moved = true;
       }
+      if (!moved) break;
     }
-    if (!moved) break;
-  }
-  return next;
-}
-
-function snapTracks(
-  positions: Map<string, { x: number; y: number }>,
-  trackById: Map<string, number>,
-): Map<string, { x: number; y: number }> {
-  const used = new Set<number>();
-  for (const t of trackById.values()) used.add(t);
-
-  // Uniform rails relative to spine (track 0).
-  const trackY = new Map<number, number>();
-  trackY.set(0, LAYOUT_CENTER_Y);
-  for (const t of used) {
-    if (t === 0) continue;
-    trackY.set(t, LAYOUT_CENTER_Y + t * LAYOUT_ROW_GAP);
-  }
-
-  const next = new Map<string, { x: number; y: number }>();
-  for (const [id, pos] of positions) {
-    const t = trackById.get(id) ?? 0;
-    next.set(id, { x: pos.x, y: trackY.get(t) ?? pos.y });
   }
   return next;
 }
@@ -402,7 +485,6 @@ function normalizeOrigin(positions: Map<string, { x: number; y: number }>): Map<
     maxY = Math.max(maxY, pos.y);
   }
   const shiftX = LAYOUT_START_X - minX;
-  // Center the whole diagram vertically so top/bottom padding looks even.
   const midY = (minY + maxY) / 2;
   const shiftY = LAYOUT_CENTER_Y - midY;
   for (const [id, pos] of next) {

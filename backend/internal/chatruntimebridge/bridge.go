@@ -91,6 +91,10 @@ type Dependencies struct {
 	// Assemblies persists immutable context assembly manifests (ZKL-74).
 	// Optional in tests; required for session-context.v1 initial runs in production.
 	Assemblies *execution.ContextAssemblyRepository
+	// Compact wires LLM rolling compact for session-context.v2 (ZKL-81).
+	// Optional in tests; when nil/incomplete, triggered compact falls back to token_window
+	// after best-effort evidence persistence (or hard-fails on evidence errors).
+	Compact *CompactDependencies
 }
 
 // Bridge implements agentrun.Runtime on the eino engine path.
@@ -116,6 +120,7 @@ type Bridge struct {
 	now             func() time.Time
 	agentAuditDebug bool
 	assemblies      *execution.ContextAssemblyRepository
+	compact         *CompactDependencies
 
 	activeMu   sync.Mutex
 	activeRuns map[string]*activeRunExecution
@@ -168,6 +173,7 @@ func NewBridge(deps Dependencies) (*Bridge, error) {
 		maxIterations:   maxIter, maxTools: maxTools,
 		logger: logger, now: now, agentAuditDebug: deps.AgentAuditDebug,
 		assemblies:      deps.Assemblies,
+		compact:         deps.Compact,
 		activeRuns:      make(map[string]*activeRunExecution),
 		pendingConfirms: make(map[string][]einoruntime.PendingConfirmInterrupt),
 	}, nil
@@ -372,15 +378,28 @@ func (b *Bridge) drive(
 	if configuredAgent.Status != agent.StatusActive {
 		return "", "", errors.New("agent is not active")
 	}
-	cfg, err := b.models.Get(ctx, job.WorkspaceID, configuredAgent.ModelConfigID)
+	liveCfg, err := b.models.Get(ctx, job.WorkspaceID, configuredAgent.ModelConfigID)
 	if err != nil {
 		return "", "", fmt.Errorf("load model config: %w", err)
 	}
-	if cfg.Status == modelconfig.StatusDisabled {
+	if liveCfg.Status == modelconfig.StatusDisabled {
 		return "", "", errors.New("model config is disabled")
 	}
 	if b.buildModel == nil {
 		return "", "", errors.New("chatruntimebridge: chat model builder is not configured")
+	}
+
+	// Snapshot-backed prompt/model/tools for run.v2 (IC-03). Live kill switch only.
+	fallbackInstruction := b.systemPrompt(ctx, job, configuredAgent)
+	resolver := &SnapshotRuntimeResolver{Agents: b.agents, Models: b.models, Content: b.content}
+	snapRT, err := resolver.Resolve(ctx, job.WorkspaceID, run, configuredAgent, fallbackInstruction)
+	if err != nil {
+		return "", "", err
+	}
+	factory := SnapshotModelFactory{Build: b.buildModel}
+	cfg, err := factory.BuildFromSnapshot(ctx, snapRT, liveCfg)
+	if err != nil {
+		return "", "", err
 	}
 	chatModel, err := b.buildModel(ctx, cfg)
 	if err != nil {
@@ -395,7 +414,10 @@ func (b *Bridge) drive(
 		return "", "", err
 	}
 
-	instruction := b.systemPrompt(ctx, job, configuredAgent)
+	instruction := snapRT.SystemPrompt
+	if strings.TrimSpace(instruction) == "" {
+		instruction = fallbackInstruction
+	}
 	agentName := "agent-" + strings.TrimSpace(run.AgentID)
 	built, err := einoruntime.BuildChatModelAgent(ctx, einoruntime.AgentBuildConfig{
 		Name:               agentName,
@@ -452,7 +474,7 @@ func (b *Bridge) drive(
 			Projector:    projector,
 		})
 	} else {
-		messages, msgErr := b.buildInitialMessages(ctx, job, run, configuredAgent, instruction)
+		messages, msgErr := b.buildInitialMessages(ctx, job, run, configuredAgent, instruction, snapRT.ToolSchemas)
 		if msgErr != nil {
 			return "", streamMessageID, msgErr
 		}
@@ -610,6 +632,7 @@ func (b *Bridge) buildInitialMessages(
 	run execution.AgentRun,
 	configuredAgent agent.Agent,
 	instruction string,
+	toolSchemas []contextwindow.ToolSchema,
 ) ([]*schema.Message, error) {
 	if sessioncontext.IsLegacySnapshot(run.ContextPolicySnapshot) ||
 		run.SnapshotSchemaVersion == "" ||
@@ -633,7 +656,7 @@ func (b *Bridge) buildInitialMessages(
 	if resolved.ModelContextWindowTokens <= 0 || resolved.TokenizerProfile == "" {
 		return nil, execution.NewContextError(execution.ErrCodeContextModelLimitUnknown)
 	}
-	return b.buildMessagesTokenWindow(ctx, job, run, instruction, resolved)
+	return b.buildMessagesTokenWindow(ctx, job, run, instruction, resolved, toolSchemas)
 }
 
 func (b *Bridge) buildMessages(
@@ -692,23 +715,33 @@ func (b *Bridge) buildMessagesTokenWindow(
 	run execution.AgentRun,
 	instruction string,
 	policy sessioncontext.ResolvedSnapshot,
+	toolSchemas []contextwindow.ToolSchema,
 ) ([]*schema.Message, error) {
 	// Prefer instruction from agent_snapshot prompt revision when bound (run.v2).
 	system := instruction
 	if revID := agentSnapshotPromptRevisionID(run.AgentSnapshot); revID != "" && b.agents != nil {
-		// AgentReader may not expose revision API; keep injected instruction as source of truth
-		// when only current prompt is available. Full revision pin is enforced at snapshot time.
-		_ = revID
+		if prompt, ok := loadPromptRevision(ctx, b.agents, job.WorkspaceID, run.AgentID, revID); ok {
+			system = prompt
+		}
 	}
 
 	// Bounded reverse history: page newest→older, decrypt only candidates still
 	// needed for assembly; stop once a full AssembleTokenWindow omits further turns.
-	current, priorTurns, err := b.loadBoundedHistoryForAssembly(ctx, job, system, policy)
+	current, priorTurns, err := b.loadBoundedHistoryForAssembly(ctx, job, system, policy, toolSchemas)
 	if err != nil {
 		if errors.Is(err, contextwindow.ErrRequiredInputTooLarge) {
 			return nil, execution.NewContextError(execution.ErrCodeContextRequiredInputTooLarge)
 		}
 		return nil, execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
+	}
+	// IC-10: v2 compaction gate path — pure preflight; safe token-window fallback when
+	// coordinator not fully wired. Resume never reaches here (targets != nil).
+	compact := b.maybeCompactForInitialRun(ctx, agentrunJob{
+		WorkspaceID: job.WorkspaceID, SessionID: job.SessionID, RunID: job.RunID,
+		UserMessageID: job.UserMessageID, ActorID: job.ActorID,
+	}, run, policy, system, toolSchemas, current, priorTurns)
+	if compact.HardFail != nil {
+		return nil, compact.HardFail
 	}
 	plan, err := contextwindow.AssembleTokenWindow(contextwindow.AssemblerInput{
 		PolicyMode:               policy.Mode,
@@ -719,8 +752,10 @@ func (b *Bridge) buildMessagesTokenWindow(
 		MaxRecentTurns:           policy.MaxRecentTurns,
 		TokenizerProfile:         policy.TokenizerProfile,
 		SystemPrompt:             system,
+		Tools:                    toolSchemas,
 		PriorTurns:               priorTurns,
 		CurrentUser:              current,
+		OptionalSummary:          compact.OptionalSummary,
 	})
 	if err != nil {
 		if errors.Is(err, contextwindow.ErrRequiredInputTooLarge) {
@@ -789,6 +824,7 @@ func (b *Bridge) loadBoundedHistoryForAssembly(
 	job agentrun.Job,
 	system string,
 	policy sessioncontext.ResolvedSnapshot,
+	toolSchemas []contextwindow.ToolSchema,
 ) (contextwindow.HistoryMessage, []contextwindow.Turn, error) {
 	currentID := strings.TrimSpace(job.UserMessageID)
 	if currentID == "" {
@@ -868,6 +904,7 @@ func (b *Bridge) loadBoundedHistoryForAssembly(
 				MaxRecentTurns:           policy.MaxRecentTurns,
 				TokenizerProfile:         policy.TokenizerProfile,
 				SystemPrompt:             system,
+				Tools:                    toolSchemas,
 				PriorTurns:               turns,
 				CurrentUser:              current,
 			})

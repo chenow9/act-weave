@@ -138,6 +138,7 @@ func TestRetentionPolicyForcesPermanentSensitiveBusinessContent(t *testing.T) {
 	for _, kind := range []string{
 		KindPromptRunInput, KindPromptRunOutput, KindModelTurn, KindChatMessage,
 		KindToolTestPayload, KindToolInvocationPayload, KindExecutionCheckpoint,
+		KindChatContextSummary,
 	} {
 		base := securePutInput(minioStoreObjectID, kind, []byte("content"))
 		expires := time.Now().UTC().Add(time.Hour)
@@ -167,7 +168,7 @@ func TestRetentionPolicyForcesPermanentSensitiveBusinessContent(t *testing.T) {
 func TestRetentionSecurityPolicyMigration(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 3 || version.Dirty {
+	if !version.Applied || version.Number != 4 || version.Dirty {
 		t.Fatalf("migration version = %+v", version)
 	}
 	db := testDatabase.Open(t)

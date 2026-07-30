@@ -2,6 +2,8 @@ package sessioncontext
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,32 +18,71 @@ var (
 )
 
 const (
-	// SnapshotSchemaV1 is the fully resolved context policy snapshot on agent runs.
+	// SnapshotSchemaV1 is the fully resolved context policy snapshot on agent runs (ZKL-74).
 	SnapshotSchemaV1 = "session-context.v1"
+	// SnapshotSchemaV2 adds LLM compact knobs, AAP disclosure, and compaction gate sources (ZKL-81).
+	SnapshotSchemaV2 = "session-context.v2"
+
+	// Platform-frozen 80%/60% basis points — not configurable by Agent/workspace/request.
+	TriggerBps = int64(8000)
+	TargetBps  = int64(6000)
+
+	// Default delay budgets (T5-A).
+	DefaultTotalTimeoutMs   = int64(45000)
+	DefaultPerPassTimeoutMs = int64(20000)
+	DefaultClaimWaitMs      = int64(1000)
+
+	// Default compact template identity until IC-06 pins content hash.
+	DefaultCompactionTemplateVersion = "context-compaction.v1"
 )
 
-// ResolvedSnapshot is the immutable run-level session-context.v1 document.
+// ResolvedSnapshot is the immutable run-level session-context document (v1 or v2).
 type ResolvedSnapshot struct {
-	SchemaVersion            string          `json:"schemaVersion"`
-	Mode                     string          `json:"mode"`
-	ModelContextWindowTokens int64           `json:"modelContextWindowTokens"`
-	EffectiveMaxInputTokens  int64           `json:"effectiveMaxInputTokens"`
-	OutputReserveTokens      int64           `json:"outputReserveTokens"`
-	SafetyMarginTokens       int64           `json:"safetyMarginTokens"`
-	MaxRecentTurns           int64           `json:"maxRecentTurns"`
-	TokenizerProfile         string          `json:"tokenizerProfile"`
-	TokenizerVersion         string          `json:"tokenizerVersion"`
-	OutputTokenLimitMode     string          `json:"outputTokenLimitMode"`
-	Summary                  json.RawMessage `json:"summary"`
-	Sources                  SnapshotSources `json:"sources"`
+	SchemaVersion            string               `json:"schemaVersion"`
+	Mode                     string               `json:"mode"`
+	ModelContextWindowTokens int64                `json:"modelContextWindowTokens"`
+	EffectiveMaxInputTokens  int64                `json:"effectiveMaxInputTokens"`
+	OutputReserveTokens      int64                `json:"outputReserveTokens"`
+	SafetyMarginTokens       int64                `json:"safetyMarginTokens"`
+	MaxRecentTurns           int64                `json:"maxRecentTurns"`
+	TokenizerProfile         string               `json:"tokenizerProfile"`
+	TokenizerVersion         string               `json:"tokenizerVersion"`
+	OutputTokenLimitMode     string               `json:"outputTokenLimitMode"`
+	Summary                  json.RawMessage      `json:"summary"`
+	// Compaction is present only on v2 (platform-frozen 80/60 + timeouts + template).
+	Compaction *CompactionSnapshot `json:"compaction,omitempty"`
+	// AAP disclosure is present only on v2; default false.
+	AAP *AAPSnapshot `json:"aap,omitempty"`
+	Sources SnapshotSources `json:"sources"`
+}
+
+// CompactionSnapshot freezes compact algorithm and delay budgets for a run.
+type CompactionSnapshot struct {
+	TriggerBps          int64  `json:"triggerBps"`
+	TargetBps           int64  `json:"targetBps"`
+	MaxSummaryTokens    int64  `json:"maxSummaryTokens"`
+	MinEvictedTurns     int64  `json:"minEvictedTurns"`
+	MaxGenerationPasses int64  `json:"maxGenerationPasses"`
+	TemplateVersion     string `json:"templateVersion"`
+	TemplateHash        string `json:"templateHash"`
+	TotalTimeoutMs      int64  `json:"totalTimeoutMs"`
+	PerPassTimeoutMs    int64  `json:"perPassTimeoutMs"`
+	ClaimWaitMs         int64  `json:"claimWaitMs"`
+}
+
+// AAPSnapshot freezes whether successful compact body is dual-written to protocol (T4-B).
+type AAPSnapshot struct {
+	IncludeCompactionSummary bool `json:"includeCompactionSummary"`
 }
 
 // SnapshotSources records which policy layers contributed to the resolved snapshot.
 type SnapshotSources struct {
-	WorkspacePolicyVersion int64  `json:"workspacePolicyVersion,omitempty"`
-	AgentPolicyVersion     int64  `json:"agentPolicyVersion,omitempty"`
-	RolloutVersion         string `json:"rolloutVersion,omitempty"`
-	GateEnabled            bool   `json:"gateEnabled"`
+	WorkspacePolicyVersion   int64  `json:"workspacePolicyVersion,omitempty"`
+	AgentPolicyVersion       int64  `json:"agentPolicyVersion,omitempty"`
+	RolloutVersion           string `json:"rolloutVersion,omitempty"`
+	GateEnabled              bool   `json:"gateEnabled"`
+	CompactionGateEnabled    bool   `json:"compactionGateEnabled,omitempty"`
+	CompactionRolloutVersion string `json:"compactionRolloutVersion,omitempty"`
 }
 
 // Legacy modes for D5-A.
@@ -51,7 +92,7 @@ const (
 
 // ParseResolvedSnapshot classifies a stored context_policy_snapshot.
 // - {} / empty / known legacy placeholders → legacy (ok, ModeLegacy)
-// - session-context.v1 → validated ResolvedSnapshot
+// - session-context.v1 / session-context.v2 → validated ResolvedSnapshot
 // - explicit unknown schemaVersion → ErrUnsupportedSnapshot
 func ParseResolvedSnapshot(raw json.RawMessage) (ResolvedSnapshot, error) {
 	raw = bytes.TrimSpace(raw)
@@ -78,7 +119,9 @@ func ParseResolvedSnapshot(raw json.RawMessage) (ResolvedSnapshot, error) {
 		return ResolvedSnapshot{}, ErrInvalidSnapshot
 	}
 	schema = strings.TrimSpace(schema)
-	if schema != SnapshotSchemaV1 {
+	switch schema {
+	case SnapshotSchemaV1, SnapshotSchemaV2:
+	default:
 		return ResolvedSnapshot{}, fmt.Errorf("%w: %s", ErrUnsupportedSnapshot, schema)
 	}
 	var doc ResolvedSnapshot
@@ -98,6 +141,30 @@ func ParseResolvedSnapshot(raw json.RawMessage) (ResolvedSnapshot, error) {
 	default:
 		return ResolvedSnapshot{}, ErrInvalidSnapshot
 	}
+	if schema == SnapshotSchemaV1 {
+		// v1 must not carry compaction/aap; tolerate omitempty nil.
+		if doc.Compaction != nil || doc.AAP != nil {
+			return ResolvedSnapshot{}, ErrInvalidSnapshot
+		}
+		return doc, nil
+	}
+	// v2: compaction block required with frozen 80/60 and positive timeouts.
+	if doc.Compaction == nil {
+		return ResolvedSnapshot{}, ErrInvalidSnapshot
+	}
+	if doc.Compaction.TriggerBps != TriggerBps || doc.Compaction.TargetBps != TargetBps {
+		return ResolvedSnapshot{}, ErrInvalidSnapshot
+	}
+	if doc.Compaction.TotalTimeoutMs <= 0 || doc.Compaction.PerPassTimeoutMs <= 0 ||
+		doc.Compaction.ClaimWaitMs <= 0 || doc.Compaction.MaxSummaryTokens <= 0 ||
+		doc.Compaction.MaxGenerationPasses <= 0 ||
+		strings.TrimSpace(doc.Compaction.TemplateVersion) == "" ||
+		len(strings.TrimSpace(doc.Compaction.TemplateHash)) != 64 {
+		return ResolvedSnapshot{}, ErrInvalidSnapshot
+	}
+	if doc.AAP == nil {
+		doc.AAP = &AAPSnapshot{IncludeCompactionSummary: false}
+	}
 	return doc, nil
 }
 
@@ -108,6 +175,24 @@ func IsLegacySnapshot(raw json.RawMessage) bool {
 		return false
 	}
 	return doc.Mode == ModeLegacy || doc.SchemaVersion == ""
+}
+
+// IsV2Snapshot reports whether the run freezes LLM compact knobs.
+func IsV2Snapshot(raw json.RawMessage) bool {
+	doc, err := ParseResolvedSnapshot(raw)
+	if err != nil {
+		return false
+	}
+	return doc.SchemaVersion == SnapshotSchemaV2
+}
+
+// IncludeCompactionSummaryFromSnapshot returns frozen T4-B disclosure (false if absent/legacy/v1).
+func IncludeCompactionSummaryFromSnapshot(raw json.RawMessage) bool {
+	doc, err := ParseResolvedSnapshot(raw)
+	if err != nil || doc.AAP == nil {
+		return false
+	}
+	return doc.AAP.IncludeCompactionSummary
 }
 
 func isRecognizedLegacyPlaceholder(top map[string]json.RawMessage) bool {
@@ -156,10 +241,16 @@ type ResolveInput struct {
 	AgentLockVersion           int64
 	RolloutVersion             string
 	GateEnabled                bool
+	// Compaction gate is evaluated only at run creation; when true, emit session-context.v2.
+	CompactionGateEnabled    bool
+	CompactionRolloutVersion string
+	// Optional override for template hash (tests). Empty → derived from template version.
+	CompactionTemplateHash string
 }
 
 // Resolve merges policy layers and clamps against model hard capabilities.
 // Priority: system hard constraints > internal override > agent > workspace > platform default.
+// When CompactionGateEnabled, writes session-context.v2 with frozen 80/60 and delay budgets.
 func Resolve(input ResolveInput) (ResolvedSnapshot, json.RawMessage, error) {
 	if input.ContextWindowTokens <= 0 || input.DefaultOutputReserveTokens <= 0 ||
 		input.DefaultOutputReserveTokens >= input.ContextWindowTokens ||
@@ -170,17 +261,19 @@ func Resolve(input ResolveInput) (ResolvedSnapshot, json.RawMessage, error) {
 	}
 
 	merged := PlatformDefaultPolicy()
-	if patch, err := optionalPolicy(input.WorkspacePolicy); err != nil {
+	var agentDoc *PolicyDocument
+	if patch, err := optionalPolicy(input.WorkspacePolicy, PolicyScopeWorkspace); err != nil {
 		return ResolvedSnapshot{}, nil, err
 	} else if patch != nil {
 		merged = applyPatch(merged, *patch)
 	}
-	if patch, err := optionalPolicy(input.AgentPolicy); err != nil {
+	if patch, err := optionalPolicy(input.AgentPolicy, PolicyScopeAgent); err != nil {
 		return ResolvedSnapshot{}, nil, err
 	} else if patch != nil {
+		agentDoc = patch
 		merged = applyPatch(merged, *patch)
 	}
-	if patch, err := optionalPolicy(input.InternalOverride); err != nil {
+	if patch, err := optionalPolicy(input.InternalOverride, PolicyScopeAgent); err != nil {
 		return ResolvedSnapshot{}, nil, err
 	} else if patch != nil {
 		merged = applyPatch(merged, *patch)
@@ -192,8 +285,7 @@ func Resolve(input ResolveInput) (ResolvedSnapshot, json.RawMessage, error) {
 	}
 	reserve := input.DefaultOutputReserveTokens
 	if merged.OutputReserveTokens != nil && *merged.OutputReserveTokens > 0 {
-		// Policy may only tighten reserve (raise floor), not lower below model default? 
-		// Design: "配置只允许收紧模型硬能力" — for reserve, using max(modelDefault, policy) is safer.
+		// Policy may only tighten reserve (raise floor).
 		if *merged.OutputReserveTokens > reserve {
 			reserve = *merged.OutputReserveTokens
 		}
@@ -231,8 +323,50 @@ func Resolve(input ResolveInput) (ResolvedSnapshot, json.RawMessage, error) {
 		summary = json.RawMessage(`null`)
 	}
 
+	schema := SnapshotSchemaV1
+	var compaction *CompactionSnapshot
+	var aap *AAPSnapshot
+	if input.CompactionGateEnabled {
+		schema = SnapshotSchemaV2
+		maxSummary := int64(2048)
+		minEvicted := int64(4)
+		maxPasses := int64(2)
+		if merged.Summary != nil {
+			if merged.Summary.MaxTokens != nil && *merged.Summary.MaxTokens > 0 {
+				maxSummary = *merged.Summary.MaxTokens
+			}
+			if merged.Summary.MinEvictedTurns != nil && *merged.Summary.MinEvictedTurns >= 0 {
+				minEvicted = *merged.Summary.MinEvictedTurns
+			}
+			if merged.Summary.MaxGenerationPasses != nil && *merged.Summary.MaxGenerationPasses > 0 {
+				maxPasses = *merged.Summary.MaxGenerationPasses
+			}
+		}
+		templateHash := strings.TrimSpace(input.CompactionTemplateHash)
+		if templateHash == "" {
+			templateHash = DefaultCompactionTemplateHash()
+		}
+		compaction = &CompactionSnapshot{
+			TriggerBps:          TriggerBps,
+			TargetBps:           TargetBps,
+			MaxSummaryTokens:    maxSummary,
+			MinEvictedTurns:     minEvicted,
+			MaxGenerationPasses: maxPasses,
+			TemplateVersion:     DefaultCompactionTemplateVersion,
+			TemplateHash:        templateHash,
+			TotalTimeoutMs:      DefaultTotalTimeoutMs,
+			PerPassTimeoutMs:    DefaultPerPassTimeoutMs,
+			ClaimWaitMs:         DefaultClaimWaitMs,
+		}
+		include := false
+		if agentDoc != nil {
+			include = agentDoc.IncludeCompactionSummary()
+		}
+		aap = &AAPSnapshot{IncludeCompactionSummary: include}
+	}
+
 	doc := ResolvedSnapshot{
-		SchemaVersion:            SnapshotSchemaV1,
+		SchemaVersion:            schema,
 		Mode:                     mode,
 		ModelContextWindowTokens: input.ContextWindowTokens,
 		EffectiveMaxInputTokens:  effective,
@@ -243,11 +377,15 @@ func Resolve(input ResolveInput) (ResolvedSnapshot, json.RawMessage, error) {
 		TokenizerVersion:         input.TokenizerVersion,
 		OutputTokenLimitMode:     input.OutputTokenLimitMode,
 		Summary:                  summary,
+		Compaction:               compaction,
+		AAP:                      aap,
 		Sources: SnapshotSources{
-			WorkspacePolicyVersion: input.WorkspaceLockVersion,
-			AgentPolicyVersion:     input.AgentLockVersion,
-			RolloutVersion:         input.RolloutVersion,
-			GateEnabled:            input.GateEnabled,
+			WorkspacePolicyVersion:   input.WorkspaceLockVersion,
+			AgentPolicyVersion:       input.AgentLockVersion,
+			RolloutVersion:           input.RolloutVersion,
+			GateEnabled:              input.GateEnabled,
+			CompactionGateEnabled:    input.CompactionGateEnabled,
+			CompactionRolloutVersion: strings.TrimSpace(input.CompactionRolloutVersion),
 		},
 	}
 	raw, err := json.Marshal(doc)
@@ -257,12 +395,18 @@ func Resolve(input ResolveInput) (ResolvedSnapshot, json.RawMessage, error) {
 	return doc, raw, nil
 }
 
-func optionalPolicy(raw json.RawMessage) (*PolicyDocument, error) {
+// DefaultCompactionTemplateHash is the platform hash of the default template version string.
+func DefaultCompactionTemplateHash() string {
+	sum := sha256.Sum256([]byte(DefaultCompactionTemplateVersion + "|platform"))
+	return hex.EncodeToString(sum[:])
+}
+
+func optionalPolicy(raw json.RawMessage, scope PolicyScope) (*PolicyDocument, error) {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) || bytes.Equal(raw, []byte("{}")) {
 		return nil, nil
 	}
-	doc, _, err := ParsePolicy(raw)
+	doc, _, err := ParsePolicyScoped(raw, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -287,6 +431,13 @@ func applyPatch(base PolicyDocument, patch PolicyDocument) PolicyDocument {
 	}
 	if patch.Summary != nil {
 		base.Summary = patch.Summary
+	}
+	if patch.AAP != nil {
+		base.AAP = patch.AAP
+	}
+	// Prefer higher schema version when patch is explicit v2.
+	if patch.SchemaVersion == PolicySchemaV2 {
+		base.SchemaVersion = PolicySchemaV2
 	}
 	return base
 }

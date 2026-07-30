@@ -126,19 +126,20 @@ type ProtocolError struct {
 type ItemType string
 
 const (
-	ItemTypeMessage          ItemType = "message"
-	ItemTypeToolCall         ItemType = "tool_call"
-	ItemTypeWorkflowStep     ItemType = "workflow_step"
-	ItemTypeInteraction      ItemType = "interaction"
-	ItemTypeArtifact         ItemType = "artifact"
-	ItemTypeReasoningSummary ItemType = "reasoning_summary"
-	ItemTypeNotice           ItemType = "notice"
-	ItemTypeUnknown          ItemType = "unknown"
+	ItemTypeMessage            ItemType = "message"
+	ItemTypeToolCall           ItemType = "tool_call"
+	ItemTypeWorkflowStep       ItemType = "workflow_step"
+	ItemTypeInteraction        ItemType = "interaction"
+	ItemTypeArtifact           ItemType = "artifact"
+	ItemTypeReasoningSummary   ItemType = "reasoning_summary"
+	ItemTypeNotice             ItemType = "notice"
+	ItemTypeContextCompaction  ItemType = "context_compaction"
+	ItemTypeUnknown            ItemType = "unknown"
 )
 
 var knownItemTypes = []ItemType{
 	ItemTypeMessage, ItemTypeToolCall, ItemTypeWorkflowStep, ItemTypeInteraction,
-	ItemTypeArtifact, ItemTypeReasoningSummary, ItemTypeNotice,
+	ItemTypeArtifact, ItemTypeReasoningSummary, ItemTypeNotice, ItemTypeContextCompaction,
 }
 
 func KnownItemTypes() []ItemType { return append([]ItemType(nil), knownItemTypes...) }
@@ -324,6 +325,39 @@ type NoticeItem struct {
 func (item NoticeItem) ItemKind() ItemType          { return ItemTypeNotice }
 func (item NoticeItem) ItemID() string              { return item.ID }
 func (item NoticeItem) ItemStatusValue() ItemStatus { return item.Status }
+
+// ContextCompactionItem is the AAP projection of a run compact attempt (ZKL-81 / T4-B).
+// Summary body is present only when ContentIncluded and status is completed success.
+type ContextCompactionItem struct {
+	ID                   string     `json:"id"`
+	Type                 ItemType   `json:"type"`
+	Status               ItemStatus `json:"status"`
+	Result               string     `json:"result,omitempty"` // completed|fallback|failed
+	TriggerBps           int64      `json:"triggerBps,omitempty"`
+	TargetBps            int64      `json:"targetBps,omitempty"`
+	BeforeTokens         int64      `json:"beforeTokens,omitempty"`
+	AfterTokens          int64      `json:"afterTokens,omitempty"`
+	EffectiveMaxInput    int64      `json:"effectiveMaxInputTokens,omitempty"`
+	CoverageStartID      string     `json:"coverageStartMessageId,omitempty"`
+	CoverageEndID        string     `json:"coverageEndMessageId,omitempty"`
+	SourceMessageCount   int        `json:"sourceMessageCount,omitempty"`
+	Passes               int        `json:"passes,omitempty"`
+	Reused               bool       `json:"reused,omitempty"`
+	SummaryID            string     `json:"summaryId,omitempty"`
+	SummaryDigest        string     `json:"summaryDigest,omitempty"`
+	FallbackFrom         string     `json:"fallbackFrom,omitempty"`
+	FallbackTo           string     `json:"fallbackTo,omitempty"`
+	FallbackStage        string     `json:"fallbackStage,omitempty"`
+	ErrorCode            string     `json:"errorCode,omitempty"`
+	ContentIncluded      bool       `json:"contentIncluded"`
+	// Summary is permanent plaintext only when ContentIncluded=true and result=completed (T4-B).
+	// Never present for building/fallback/failed or snapshot=false.
+	Summary string `json:"summary,omitempty"`
+}
+
+func (item ContextCompactionItem) ItemKind() ItemType          { return ItemTypeContextCompaction }
+func (item ContextCompactionItem) ItemID() string              { return item.ID }
+func (item ContextCompactionItem) ItemStatusValue() ItemStatus { return item.Status }
 
 type UnknownItem struct {
 	ID     string
@@ -793,6 +827,17 @@ func DecodeItem(raw json.RawMessage) (Item, error) {
 		var value NoticeItem
 		err = json.Unmarshal(canonical, &value)
 		return value, modelDecodeError(err)
+	case ItemTypeContextCompaction:
+		var value ContextCompactionItem
+		err = json.Unmarshal(canonical, &value)
+		if err != nil {
+			return nil, modelDecodeError(err)
+		}
+		// T4-B: strip body when content not included or non-completed.
+		if !value.ContentIncluded || value.Result != "completed" || value.Status != ItemStatusCompleted {
+			value.Summary = ""
+		}
+		return value, nil
 	default:
 		if !modelUUID(discriminator.ID) || strings.TrimSpace(discriminator.Type) == "" ||
 			strings.TrimSpace(discriminator.Status) == "" {

@@ -750,7 +750,7 @@ func validUpdateAgent(input UpdateAgent) bool {
 }
 
 func normalizeAgentContextPolicy(raw json.RawMessage) (json.RawMessage, error) {
-	return sessioncontext.NormalizePolicyRaw(raw)
+	return sessioncontext.NormalizeAgentPolicyRaw(raw)
 }
 
 func normalizePromptRun(input NewPromptRun) NewPromptRun {

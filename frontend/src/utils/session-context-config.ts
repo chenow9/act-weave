@@ -82,23 +82,46 @@ export function normalizeRuntimeCapabilities(
   };
 }
 
-/** Build session-context-policy.v1 for API. Empty / inherit → {}. */
+/** Platform-frozen compact waterlines (read-only in UI). */
+export const COMPACTION_TRIGGER_BPS = 8000;
+export const COMPACTION_TARGET_BPS = 6000;
+
+/** Permanent-disclosure warning for Agent setting (T4-B). */
+export const COMPACTION_SUMMARY_PERMANENCE_WARNING =
+  "开启后，成功 Compact 的摘要正文将永久以 PostgreSQL 明文协议投影及备份保留；关闭只影响后续新 run，不会删除既有 run 正文。";
+
+/** Build session-context-policy.v1/v2 for API. Empty / inherit → {}. */
 export function buildContextPolicyPayload(
   policy: SessionContextPolicy | Record<string, unknown> | undefined | null,
 ): SessionContextPolicy | Record<string, never> {
   if (!policy || typeof policy !== "object") return {};
   const p = policy as SessionContextPolicy;
   const mode = String(p.mode || "").trim();
+  const includeSummary = Boolean(p.aap?.includeCompactionSummary);
   if (!mode || mode === "inherit" || mode === "disabled") {
     // disabled still needs schema for explicit product choice
     if (mode === "disabled") {
+      if (includeSummary) {
+        return {
+          schemaVersion: "session-context-policy.v2",
+          mode: "disabled",
+          aap: { includeCompactionSummary: true },
+        };
+      }
       return { schemaVersion: "session-context-policy.v1", mode: "disabled" };
+    }
+    if (includeSummary) {
+      return {
+        schemaVersion: "session-context-policy.v2",
+        aap: { includeCompactionSummary: true },
+      };
     }
     return {};
   }
   if (mode !== "token_window" && mode !== "rolling_summary") return {};
+  const useV2 = includeSummary || p.schemaVersion === "session-context-policy.v2";
   const out: SessionContextPolicy = {
-    schemaVersion: "session-context-policy.v1",
+    schemaVersion: useV2 ? "session-context-policy.v2" : "session-context-policy.v1",
     mode,
   };
   if (p.maxInputTokens != null && Number(p.maxInputTokens) >= 0) {
@@ -120,6 +143,12 @@ export function buildContextPolicyPayload(
       out.maxRecentTurns = DEFAULT_ROLLING_SUMMARY_MAX_RECENT_TURNS;
     }
   }
+  // Agent-only disclosure; default omit/false — never upgrade v1 save without explicit aap.
+  if (includeSummary) {
+    out.aap = { includeCompactionSummary: true };
+  } else if (p.schemaVersion === "session-context-policy.v2" && p.aap) {
+    out.aap = { includeCompactionSummary: false };
+  }
   return out;
 }
 
@@ -131,15 +160,31 @@ export function normalizeContextPolicy(
   }
   const p = policy as SessionContextPolicy;
   const mode = p.mode;
+  const include = Boolean(p.aap?.includeCompactionSummary);
+  const schemaVersion: SessionContextPolicy["schemaVersion"] =
+    include || p.schemaVersion === "session-context-policy.v2"
+      ? "session-context-policy.v2"
+      : "session-context-policy.v1";
   if (mode === "token_window" || mode === "rolling_summary" || mode === "disabled") {
-    return {
-      schemaVersion: "session-context-policy.v1",
+    const out: SessionContextPolicy = {
+      schemaVersion,
       mode,
       maxInputTokens: p.maxInputTokens,
       outputReserveTokens: p.outputReserveTokens,
       safetyMarginTokens: p.safetyMarginTokens,
       maxRecentTurns: p.maxRecentTurns,
       summary: mode === "rolling_summary" ? defaultRollingSummary(p.summary) : p.summary,
+    };
+    if (schemaVersion === "session-context-policy.v2") {
+      out.aap = { includeCompactionSummary: include };
+    }
+    return out;
+  }
+  if (include) {
+    return {
+      schemaVersion: "session-context-policy.v2",
+      mode: undefined,
+      aap: { includeCompactionSummary: true },
     };
   }
   return { mode: undefined };

@@ -40,6 +40,7 @@ export type {
   AgentProfile,
   APIErrorBody,
   APIRun,
+  ContextCompactionItem,
   Conversation,
   CreateConversationResponse,
   CreateRunInputMessage,
@@ -57,7 +58,7 @@ export type {
   RunSummary,
   RunTrigger,
 } from "./models.js";
-export { deepCloneJSON, isTerminalRunStatus } from "./models.js";
+export { deepCloneJSON, isContextCompactionItem, isTerminalRunStatus } from "./models.js";
 
 export { RunReducer } from "./reducer.js";
 

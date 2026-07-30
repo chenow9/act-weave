@@ -452,7 +452,8 @@ func bucketForKind(kind string) (string, error) {
 		return BucketAuditPackages, nil
 	case KindOpenAPISource, KindPromptRunInput, KindPromptRunOutput,
 		KindPromptPreviewInput, KindPromptPreviewOutput, KindModelTurn,
-		KindChatMessage, KindToolInvocationPayload, KindExecutionCheckpoint:
+		KindChatMessage, KindToolInvocationPayload, KindExecutionCheckpoint,
+		KindChatContextSummary:
 		return BucketExecutions, nil
 	default:
 		return "", ErrInvalid

@@ -18,6 +18,9 @@ const (
 	ActionAgentChanged                  = "agent.changed"
 	ActionConfigurationChanged          = "configuration.changed"
 	ActionToolReleasePublished          = "tool.release.published"
+	// ActionToolReleaseForcePublished is the audit action when a PLATFORM_ADMIN
+	// force-publishes without a live invoke test (tools.allowForcePublish).
+	ActionToolReleaseForcePublished = "tool.release.force_published"
 	ActionWorkflowReleasePublished      = "workflow.release.published"
 	ActionWorkflowRevisionActivated     = "workflow.revision.activated"
 	ActionConfirmationRequested         = "execution.confirmation.requested"

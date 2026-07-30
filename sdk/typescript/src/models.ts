@@ -49,6 +49,35 @@ export interface ProtocolItem {
   [key: string]: unknown;
 }
 
+/** AAP context_compaction item (ZKL-81). Additive; old clients ignore unknown type. */
+export interface ContextCompactionItem extends ProtocolItem {
+  type: "context_compaction";
+  result?: "completed" | "fallback" | "failed" | "building" | string;
+  triggerBps?: number;
+  targetBps?: number;
+  beforeTokens?: number;
+  afterTokens?: number;
+  effectiveMaxInputTokens?: number;
+  coverageStartMessageId?: string;
+  coverageEndMessageId?: string;
+  sourceMessageCount?: number;
+  passes?: number;
+  reused?: boolean;
+  summaryId?: string;
+  summaryDigest?: string;
+  fallbackFrom?: string;
+  fallbackTo?: string;
+  fallbackStage?: string;
+  errorCode?: string;
+  contentIncluded: boolean;
+  /** Permanent plaintext only when contentIncluded && result===completed (T4-B). */
+  summary?: string;
+}
+
+export function isContextCompactionItem(item: ProtocolItem): item is ContextCompactionItem {
+  return item?.type === "context_compaction";
+}
+
 export interface ProtocolInteraction {
   id: string;
   kind: string;

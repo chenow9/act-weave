@@ -161,7 +161,7 @@ func TestLoadBoundedHistoryStopsDecryptAfterBudget(t *testing.T) {
 
 	// Override page size effect: with historyPageSize=50, all 41 fit one page.
 	// Decrypt-stop is still proven: only recent messages decrypt, not all 41.
-	current, turns, err := b.loadBoundedHistoryForAssembly(context.Background(), job, "system instruction", policy)
+	current, turns, err := b.loadBoundedHistoryForAssembly(context.Background(), job, "system instruction", policy, nil)
 	if err != nil {
 		t.Fatalf("loadBoundedHistoryForAssembly: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestBuildMessagesTokenWindowUsesBoundedHistory(t *testing.T) {
 	}
 	job := agentrun.Job{WorkspaceID: ws, SessionID: session, UserMessageID: currentID, RunID: run.ID}
 
-	msgs, err := b.buildMessagesTokenWindow(context.Background(), job, run, "sys", policy)
+	msgs, err := b.buildMessagesTokenWindow(context.Background(), job, run, "sys", policy, nil)
 	if err != nil {
 		t.Fatalf("buildMessagesTokenWindow: %v", err)
 	}

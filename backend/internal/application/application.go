@@ -25,6 +25,7 @@ import (
 	"actweave/backend/internal/chatruntimebridge"
 	"actweave/backend/internal/config"
 	"actweave/backend/internal/connection"
+	"actweave/backend/internal/contextsummary"
 	"actweave/backend/internal/einoruntime"
 	"actweave/backend/internal/execution"
 	"actweave/backend/internal/identity"
@@ -74,6 +75,9 @@ type Config struct {
 	MetricsBearerToken string
 	// AgentAuditDebug enables agent full-trace debug audit capture/exposure.
 	AgentAuditDebug bool
+	// ToolsAllowForcePublish enables PLATFORM_ADMIN force-publish without live invoke.
+	// Default false. Wired from config tools.allowForcePublish.
+	ToolsAllowForcePublish bool
 	// Runtime selects agent/workflow engines. After config Load (PR15/PR16/P0),
 	// agent production path is always ADK eino;
 	// workflow defaults to engine=eino (compose). Zero-value RuntimeConfig
@@ -566,6 +570,8 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if err != nil {
 		return nil, err
 	}
+	// PLATFORM_ADMIN force-publish escape hatch (default off; config/env at process start).
+	toolPublisher = toolPublisher.AllowForcePublish(config.ToolsAllowForcePublish)
 	invocationResolver, err := tool.NewInvocationResolver(db)
 	if err != nil {
 		return nil, err
@@ -1067,6 +1073,47 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if assemblyRepoErr != nil {
 		return nil, fmt.Errorf("context assembly repository: %w", assemblyRepoErr)
 	}
+	summaryRepo, summaryRepoErr := contextsummary.NewRepository(db)
+	if summaryRepoErr != nil {
+		return nil, fmt.Errorf("context summary repository: %w", summaryRepoErr)
+	}
+	summaryBodyStore, summaryBodyErr := contextsummary.NewSummaryBodyStore(secureObjects)
+	if summaryBodyErr != nil {
+		return nil, fmt.Errorf("context summary body store: %w", summaryBodyErr)
+	}
+	buildChatModel := func(ctx context.Context, cfg modelconfig.Config) (model.BaseChatModel, error) {
+		return modelapi.NewEinoOpenAIChatModel(ctx, modelHTTP, secretService, cfg)
+	}
+	// Compact DI (ZKL-81): full Coordinator + lifecycle + T4-B projector path.
+	// Production compaction gate remains default-off via runtime.sessionContext.compaction.
+	compactDeps := &chatruntimebridge.CompactDependencies{
+		Summaries: summaryRepo,
+		Runs:      runRepository,
+		Protocol:  protocolUnit,
+		IsShadow:  config.Runtime.SessionContext.Compaction.IsShadow(),
+		PutObject: func(ctx context.Context, workspaceID, objectID string, body []byte) (string, int64, error) {
+			// SYSTEM + deterministic objectID as creator identity (summary id is UUIDv7).
+			res, err := summaryBodyStore.PutOrVerify(ctx, contextsummary.PutInput{
+				ObjectID:      objectID,
+				WorkspaceID:   workspaceID,
+				Body:          body,
+				CreatedByType: "SYSTEM",
+				CreatedByID:   objectID,
+				ActorType:     "SYSTEM",
+				ActorID:       objectID,
+			})
+			if err != nil {
+				return "", 0, err
+			}
+			return res.SHA256, res.Length, nil
+		},
+		OpenSummary: func(ctx context.Context, workspaceID, objectID, actorType, actorID string) ([]byte, error) {
+			return summaryBodyStore.OpenPlaintext(ctx, workspaceID, objectID, actorType, actorID)
+		},
+		NewCompactModel: func(ctx context.Context, run execution.AgentRun) (contextsummary.CompactModel, error) {
+			return chatruntimebridge.NewCompactModelFromSnapshot(ctx, buildChatModel, run)
+		},
+	}
 	bridge, bridgeErr := chatruntimebridge.NewBridge(chatruntimebridge.Dependencies{
 		Sessions: chatRepository, Results: chatService, Content: chatObjects,
 		Agents: agentRepository, Models: modelRepository, Runs: runRepository,
@@ -1081,9 +1128,8 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		MaxToolInvocations: runtimeCfg.Eino.MaxToolInvocations,
 		AgentAuditDebug:    config.AgentAuditDebug,
 		Assemblies:         assemblyRepo,
-		BuildChatModel: func(ctx context.Context, cfg modelconfig.Config) (model.BaseChatModel, error) {
-			return modelapi.NewEinoOpenAIChatModel(ctx, modelHTTP, secretService, cfg)
-		},
+		Compact:            compactDeps,
+		BuildChatModel:     buildChatModel,
 	})
 	if bridgeErr != nil {
 		return nil, fmt.Errorf("eino chat runtime bridge required after PR16: %w", bridgeErr)
@@ -1229,7 +1275,14 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if err != nil {
 		return nil, err
 	}
-	agentAuditService, err := agentaudit.NewService(db, config.AgentAuditDebug)
+	// Reuse summaryRepo created for compact DI when available; rebuild if wiring order differs.
+	agentAuditSummaryReader, agentAuditReaderErr := agentaudit.NewEncryptedSummaryBodyReader(summaryRepo, secureObjects)
+	if agentAuditReaderErr != nil {
+		return nil, fmt.Errorf("agent audit summary body reader: %w", agentAuditReaderErr)
+	}
+	agentAuditService, err := agentaudit.NewService(db, config.AgentAuditDebug,
+		agentaudit.WithSummaryBodyReader(agentAuditSummaryReader),
+	)
 	if err != nil {
 		return nil, err
 	}

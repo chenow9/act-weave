@@ -43,6 +43,33 @@ export type FlowchartEdgePath = {
   labelY: number;
 };
 
+/**
+ * U-turn that approaches the target on a vertical segment (same targetX).
+ * Use for bottom→bottom loops / top→top skips so the arrow points into the port.
+ */
+export function buildVerticalApproachDetour(input: {
+  sourceX: number;
+  sourceY: number;
+  targetX: number;
+  targetY: number;
+  /** +1 rail below, -1 rail above */
+  side: 1 | -1;
+  depth?: number;
+}): FlowchartEdgePath {
+  const depth = input.depth ?? 56;
+  const railY =
+    input.side > 0
+      ? Math.max(input.sourceY, input.targetY) + depth
+      : Math.min(input.sourceY, input.targetY) - depth;
+  return pathFromPoints([
+    { x: input.sourceX, y: input.sourceY },
+    { x: input.sourceX, y: railY },
+    { x: input.targetX, y: railY },
+    // Final segment is vertical → marker points straight into the port.
+    { x: input.targetX, y: input.targetY },
+  ]);
+}
+
 export function buildFlowchartEdgePath(input: FlowchartEdgePathInput): FlowchartEdgePath {
   const sx = input.sourceX;
   const sy = input.sourceY;

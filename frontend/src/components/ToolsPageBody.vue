@@ -24,6 +24,10 @@ const {
   selectedTools,
   batchTesting,
   batchDeleting,
+  batchForcePublishing,
+  forcePublishReason,
+  forcePublishReasonValid,
+  canForcePublishTools,
   batchTestDialogVisible,
   batchTestModalRef,
   batchPassthroughToken,
@@ -65,6 +69,7 @@ const {
   riskConfirmationTargetName,
   riskConfirmationTargetMeta,
   openBatchDeleteConfirmation,
+  openBatchForcePublishConfirmation,
   batchTestSelectedTools,
   closeBatchTestDialog,
   confirmBatchTestSelectedTools,
@@ -167,7 +172,9 @@ void getToolTypeLabel;
             <button
               type="button"
               class="management-list-batch-action is-primary"
-              :disabled="!selectedTools.length || batchTesting || batchDeleting || !canTestWorkspace"
+              :disabled="
+                !selectedTools.length || batchTesting || batchDeleting || batchForcePublishing || !canTestWorkspace
+              "
               :title="
                 batchTesting
                   ? '批量测试进行中'
@@ -181,9 +188,32 @@ void getToolTypeLabel;
               <span>{{ batchTesting ? "测试中…" : "批量测试" }}</span>
             </button>
             <button
+              v-if="canForcePublishTools"
+              type="button"
+              class="management-list-batch-action is-warning"
+              :disabled="
+                !selectedTools.some((t) => t.status !== 'Published') ||
+                batchTesting ||
+                batchDeleting ||
+                batchForcePublishing
+              "
+              :title="
+                batchForcePublishing
+                  ? '强制发布进行中'
+                  : '平台管理员：跳过实调测试，批量强制发布未发布 Tool（需服务端 allowForcePublish）'
+              "
+              @click="openBatchForcePublishConfirmation"
+            >
+              <i
+                :class="['fa-solid', batchForcePublishing ? 'fa-spinner fa-spin' : 'fa-rocket']"
+                aria-hidden="true"
+              />
+              <span>{{ batchForcePublishing ? "发布中…" : "强制发布" }}</span>
+            </button>
+            <button
               type="button"
               class="management-list-batch-action is-danger"
-              :disabled="!selectedTools.length || batchTesting || batchDeleting"
+              :disabled="!selectedTools.length || batchTesting || batchDeleting || batchForcePublishing"
               :title="batchDeleting ? '批量删除进行中' : '批量删除已选 Tool'"
               @click="openBatchDeleteConfirmation"
             >
@@ -351,19 +381,52 @@ void getToolTypeLabel;
               <strong class="tool-impact-value">{{ item.value }}</strong>
             </div>
           </div>
+          <label
+            v-if="pendingRiskAction.type === 'batch-force-publish'"
+            class="tool-force-publish-reason"
+          >
+            <span>强制发布原因（必填，至少 8 个字符）</span>
+            <textarea
+              v-model="forcePublishReason"
+              rows="3"
+              maxlength="500"
+              placeholder="例如：生产环境无法安全实调 DELETE 类接口，已在预发完成契约核对。"
+              :disabled="batchForcePublishing"
+              aria-label="强制发布原因"
+            />
+            <small :class="{ error: forcePublishReason.trim().length > 0 && !forcePublishReasonValid }">
+              {{ forcePublishReason.trim().length }}/500
+              <template v-if="forcePublishReason.trim().length > 0 && !forcePublishReasonValid">
+                · 至少 8 个字符
+              </template>
+            </small>
+          </label>
         </div>
         <div class="tool-editor-actions tool-risk-confirmation-actions">
-          <button class="ghost-button" type="button" :disabled="batchDeleting" @click="closeRiskConfirmation">
+          <button
+            class="ghost-button"
+            type="button"
+            :disabled="batchDeleting || batchForcePublishing"
+            @click="closeRiskConfirmation"
+          >
             取消
           </button>
           <button
             class="primary-button"
             :class="pendingRiskAction.type === 'enable' ? '' : 'danger'"
             type="button"
-            :disabled="batchDeleting"
+            :disabled="
+              batchDeleting ||
+              batchForcePublishing ||
+              (pendingRiskAction.type === 'batch-force-publish' && !forcePublishReasonValid)
+            "
             @click="confirmRiskAction"
           >
-            <i v-if="batchDeleting" class="fa-solid fa-spinner fa-spin" aria-hidden="true" />
+            <i
+              v-if="batchDeleting || batchForcePublishing"
+              class="fa-solid fa-spinner fa-spin"
+              aria-hidden="true"
+            />
             {{ riskConfirmationPrimaryLabel() }}
           </button>
         </div>

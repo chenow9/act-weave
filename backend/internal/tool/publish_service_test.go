@@ -126,6 +126,85 @@ func TestPublishToolRequiresEditorAndRollsBackEventFailure(t *testing.T) {
 	}
 }
 
+func TestForcePublishRequiresGateReasonAndCreatesReleaseWithoutLiveTest(t *testing.T) {
+	repository, db := newRepositoryTest(t)
+	insertToolPublishMembers(t, db)
+	_, version, err := repository.Create(context.Background(), validCreateInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventWriter := newTestPublishEventWriter(t, db)
+	service := newToolPublishService(t, repository, db, eventWriter)
+
+	// Disabled by default.
+	_, err = service.ForcePublish(context.Background(), ForcePublishToolInput{
+		PublishToolInput: PublishToolInput{
+			ReleaseID: toolPublishReleaseID, EventID: toolPublishEventID,
+			WorkspaceID: repositoryWorkspaceID, CapabilityID: repositoryToolID,
+			VersionID: version.ID, CallableName: "orders_get", CallableDescription: "Get an order",
+			PublishedBy: toolPublishEditorID, ExpectedVersionLock: version.LockVersion,
+		},
+		TestID: "098f1f2e-7b5a-7c3d-8e9f-1234567890f1",
+		Reason: "cannot live-test delete APIs in production",
+	})
+	if !errors.Is(err, ErrForcePublishDisabled) {
+		t.Fatalf("expected force publish disabled, got %v", err)
+	}
+
+	service.AllowForcePublish(true)
+	_, err = service.ForcePublish(context.Background(), ForcePublishToolInput{
+		PublishToolInput: PublishToolInput{
+			ReleaseID: toolPublishReleaseID, EventID: toolPublishEventID,
+			WorkspaceID: repositoryWorkspaceID, CapabilityID: repositoryToolID,
+			VersionID: version.ID, CallableName: "orders_get", CallableDescription: "Get an order",
+			PublishedBy: toolPublishEditorID, ExpectedVersionLock: version.LockVersion,
+		},
+		TestID: "098f1f2e-7b5a-7c3d-8e9f-1234567890f1",
+		Reason: "short",
+	})
+	if !errors.Is(err, ErrForceReasonRequired) {
+		t.Fatalf("expected force reason required, got %v", err)
+	}
+
+	result, err := service.ForcePublish(context.Background(), ForcePublishToolInput{
+		PublishToolInput: PublishToolInput{
+			ReleaseID: toolPublishReleaseID, EventID: toolPublishEventID,
+			WorkspaceID: repositoryWorkspaceID, CapabilityID: repositoryToolID,
+			VersionID: version.ID, CallableName: "orders_get", CallableDescription: "Get an order",
+			PublishedBy: toolPublishEditorID, ExpectedVersionLock: version.LockVersion,
+		},
+		TestID: "098f1f2e-7b5a-7c3d-8e9f-1234567890f1",
+		Reason: "cannot live-test delete APIs in production",
+	})
+	if err != nil {
+		t.Fatalf("force publish draft tool: %v", err)
+	}
+	if !result.Event.Force || result.Event.ForceReason == "" {
+		t.Fatalf("expected force flags on event: %+v", result.Event)
+	}
+	if result.Version.LifecycleStatus != "PUBLISHED" || result.Release.ID != toolPublishReleaseID {
+		t.Fatalf("unexpected force publish result: version=%+v release=%+v", result.Version, result.Release)
+	}
+	if result.Test.Status != "SUCCEEDED" || !result.Test.ConnectivityPassed {
+		t.Fatalf("expected synthetic SUCCEEDED attest test, got %+v", result.Test)
+	}
+	// Lock advances twice: TESTED then PUBLISHED.
+	if result.Version.LockVersion != version.LockVersion+2 {
+		t.Fatalf("expected lock +2 after force publish, got %d from %d", result.Version.LockVersion, version.LockVersion)
+	}
+	var eventType string
+	if err := db.QueryRow(`SELECT event_type FROM test_tool_publish_events WHERE id=$1`, toolPublishEventID).Scan(&eventType); err != nil {
+		t.Fatalf("read force publish event: %v", err)
+	}
+	if eventType != "tool.release.published" {
+		t.Fatalf("unexpected event type %q", eventType)
+	}
+	capabilityValue, err := dbCapabilityActiveRelease(db, repositoryToolID)
+	if err != nil || capabilityValue != toolPublishReleaseID {
+		t.Fatalf("capability active release not switched: %q err=%v", capabilityValue, err)
+	}
+}
+
 func TestHTTPToolConcurrentPublishAcceptance(t *testing.T) {
 	repository, db := newRepositoryTest(t)
 	insertToolPublishMembers(t, db)

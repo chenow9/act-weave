@@ -155,6 +155,8 @@ func BuildTimeline(
 
 	for _, step := range steps {
 		switch strings.ToUpper(strings.TrimSpace(step.StepType)) {
+		case "CONTEXT_COMPACTION":
+			out = append(out, compactStep(base, step, debugMode))
 		case "MODEL":
 			out = append(out, modelReasoningStep(base, step, debugMode))
 		case "TOOL", "WORKFLOW":
@@ -174,8 +176,8 @@ func BuildTimeline(
 		})
 	}
 
-	// Stable timeline by time offset then type order.
-	typeOrder := map[string]int{"input": 0, "reasoning": 1, "tool": 2, "output": 3}
+	// Stable timeline by time offset then type order (compact before MODEL).
+	typeOrder := map[string]int{"input": 0, "context_compaction": 1, "reasoning": 2, "tool": 3, "output": 4}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].TimeOffsetMs != out[j].TimeOffsetMs {
 			return out[i].TimeOffsetMs < out[j].TimeOffsetMs
@@ -258,6 +260,75 @@ func modelReasoningStep(base time.Time, step StepFact, debugMode bool) Step {
 	}
 	result.Content = reasoning
 	result.ContentState = ContentPlain
+	return result
+}
+
+// compactStep renders CONTEXT_COMPACTION permanently visible metadata.
+// Summary body is never taken from protocol JSONB or step output_summary text fields.
+// Content stays empty here; Service.hydrateCompactSummaryBodies fills it only when
+// server debugMode=true via SummaryBodyReader(ADMIN_AUDIT) on encrypted objects.
+func compactStep(base time.Time, step StepFact, debugMode bool) Step {
+	const fallbackTitle = "上下文 Compact 失败；已退化为 token_window"
+	_ = debugMode // body hydration is service-layer only (debug gate + reader)
+	result := Step{
+		Type: "context_compaction", Title: "上下文 Compact",
+		TimeOffsetMs: offsetMs(base, step.StartedAt),
+		RunID:        step.RunID, StepID: step.ID,
+		ContentState: ContentRedacted,
+	}
+	if step.FinishedAt != nil {
+		latency := step.FinishedAt.Sub(step.StartedAt).Milliseconds()
+		if latency < 0 {
+			latency = 0
+		}
+		result.LatencyMs = &latency
+	}
+	// Parse body-free output_summary for fixed metadata.
+	var out map[string]any
+	_ = json.Unmarshal(step.OutputSummary, &out)
+	// Protocol canary: even if a buggy writer put "summary" in output_summary, ignore it.
+	delete(out, "summary")
+	delete(out, "injectedSummary")
+	delete(out, "body")
+	resStr, _ := out["result"].(string)
+	switch strings.ToLower(strings.TrimSpace(resStr)) {
+	case "fallback":
+		result.Title = fallbackTitle
+	case "failed":
+		result.Title = "上下文 Compact 失败"
+	case "completed":
+		result.Title = "上下文 Compact 完成"
+	default:
+		if strings.EqualFold(step.Status, "FAILED") {
+			result.Title = fallbackTitle
+		}
+	}
+	// Params always body-free metadata (safe for non-debug and for UI mask).
+	meta := map[string]any{
+		"result": resStr, "status": step.Status,
+	}
+	for _, key := range []string{
+		"fallbackFrom", "fallbackTo", "fallbackStage", "errorCode",
+		"beforeTokens", "afterTokens", "passes", "reused", "summaryId", "summaryDigest",
+	} {
+		if v, ok := out[key]; ok {
+			meta[key] = v
+		}
+	}
+	// Fixed D6-A fields when fallback.
+	if strings.EqualFold(resStr, "fallback") {
+		if meta["fallbackFrom"] == nil {
+			meta["fallbackFrom"] = "rolling_summary"
+		}
+		if meta["fallbackTo"] == nil {
+			meta["fallbackTo"] = "token_window"
+		}
+	}
+	raw, _ := json.Marshal(meta)
+	result.Params = raw
+	result.ParamsState = ContentPlain
+	// Never put summary body into Content from step output (protocol bypass guard).
+	result.Content = ""
 	return result
 }
 

@@ -94,12 +94,41 @@
       },
       "additionalProperties": true
     },
+    "contextCompaction": {
+      "type": "object",
+      "required": ["id", "type", "status", "contentIncluded"],
+      "properties": {
+        "id": {"$ref": "common.schema.json#/$defs/uuid"},
+        "type": {"const": "context_compaction"},
+        "status": {"$ref": "#/$defs/status"},
+        "result": {"type": "string", "enum": ["completed", "fallback", "failed", "building"]},
+        "triggerBps": {"type": "integer", "minimum": 0},
+        "targetBps": {"type": "integer", "minimum": 0},
+        "beforeTokens": {"type": "integer", "minimum": 0},
+        "afterTokens": {"type": "integer", "minimum": 0},
+        "effectiveMaxInputTokens": {"type": "integer", "minimum": 0},
+        "coverageStartMessageId": {"$ref": "common.schema.json#/$defs/uuid"},
+        "coverageEndMessageId": {"$ref": "common.schema.json#/$defs/uuid"},
+        "sourceMessageCount": {"type": "integer", "minimum": 0},
+        "passes": {"type": "integer", "minimum": 0},
+        "reused": {"type": "boolean"},
+        "summaryId": {"$ref": "common.schema.json#/$defs/uuid"},
+        "summaryDigest": {"type": "string", "minLength": 64, "maxLength": 64},
+        "fallbackFrom": {"type": "string"},
+        "fallbackTo": {"type": "string"},
+        "fallbackStage": {"type": "string"},
+        "errorCode": {"type": "string"},
+        "contentIncluded": {"type": "boolean"},
+        "summary": {"type": "string", "maxLength": 65536}
+      },
+      "additionalProperties": true
+    },
     "unknown": {
       "type": "object",
       "required": ["id", "type", "status"],
       "properties": {
         "id": {"$ref": "common.schema.json#/$defs/uuid"},
-        "type": {"type": "string", "not": {"enum": ["message", "tool_call", "workflow_step", "interaction", "artifact", "reasoning_summary", "notice"]}},
+        "type": {"type": "string", "not": {"enum": ["message", "tool_call", "workflow_step", "interaction", "artifact", "reasoning_summary", "notice", "context_compaction"]}},
         "status": {"type": "string", "minLength": 1}
       },
       "additionalProperties": true
@@ -113,6 +142,7 @@
     {"$ref": "#/$defs/artifact"},
     {"$ref": "#/$defs/reasoningSummary"},
     {"$ref": "#/$defs/notice"},
+    {"$ref": "#/$defs/contextCompaction"},
     {"$ref": "#/$defs/unknown"}
   ]
 }

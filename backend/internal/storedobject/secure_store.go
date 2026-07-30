@@ -156,7 +156,8 @@ func validateRetentionPolicy(input PutInput) error {
 func requiresPermanentSensitiveContent(kind string) bool {
 	switch kind {
 	case KindPromptRunInput, KindPromptRunOutput, KindModelTurn, KindChatMessage,
-		KindToolTestPayload, KindToolInvocationPayload, KindExecutionCheckpoint:
+		KindToolTestPayload, KindToolInvocationPayload, KindExecutionCheckpoint,
+		KindChatContextSummary:
 		return true
 	default:
 		return false

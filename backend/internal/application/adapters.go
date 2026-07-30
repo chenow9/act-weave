@@ -1456,6 +1456,7 @@ func (source *agentRunSnapshots) SnapshotAgentRun(
 			workspacePolicy = ws.ContextPolicy
 			workspaceLock = ws.LockVersion
 		}
+		compactionOn := gate.AllowsCompaction(workspaceID)
 		resolved, contextJSON, resolveErr := sessioncontext.Resolve(sessioncontext.ResolveInput{
 			WorkspacePolicy:            workspacePolicy,
 			AgentPolicy:                configuredAgent.ContextPolicy,
@@ -1468,8 +1469,11 @@ func (source *agentRunSnapshots) SnapshotAgentRun(
 			AgentLockVersion:           configuredAgent.LockVersion,
 			RolloutVersion:             gate.RolloutVersion,
 			GateEnabled:                true,
+			CompactionGateEnabled:      compactionOn,
+			CompactionRolloutVersion:   gate.Compaction.Normalized().RolloutVersion,
 		})
-		if resolveErr == nil && resolved.SchemaVersion == sessioncontext.SnapshotSchemaV1 {
+		if resolveErr == nil && (resolved.SchemaVersion == sessioncontext.SnapshotSchemaV1 ||
+			resolved.SchemaVersion == sessioncontext.SnapshotSchemaV2) {
 			revision, revErr := source.agents.GetCurrentPromptRevision(ctx, workspaceID, agentID)
 			if revErr != nil {
 				return execution.AgentRunSnapshots{}, revErr

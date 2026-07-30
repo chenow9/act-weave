@@ -70,8 +70,9 @@ func main() {
 					config.AgentAccess.SigningKeys.MaxTokenTTLSeconds,
 				) * time.Second,
 				AgentAccessFeature: config.AgentAccess.Feature,
-				MetricsBearerToken: config.Server.MetricsBearerToken,
-				AgentAuditDebug:    config.AgentAudit.Debug,
+				MetricsBearerToken:     config.Server.MetricsBearerToken,
+				AgentAuditDebug:        config.AgentAudit.Debug,
+				ToolsAllowForcePublish: config.Tools.AllowForcePublish,
 				// Runtime after Load (PR15): agent engine staged to eino
 				// (enabled+allowAll) unless explicitly disabled.
 				Runtime: config.Runtime,

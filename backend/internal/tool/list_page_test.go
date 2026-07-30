@@ -48,6 +48,9 @@ func TestListPagePaginationAndHeadVersion(t *testing.T) {
 		if item.Head.LifecycleStatus == "" {
 			t.Fatalf("missing lifecycle: %+v", item.Head)
 		}
+		if item.Head.LockVersion < 1 {
+			t.Fatalf("missing head lockVersion (needed for publish CAS): %+v", item.Head)
+		}
 	}
 
 	pageSmall, err := repository.ListPage(ctx, repositoryWorkspaceID, ListQuery{

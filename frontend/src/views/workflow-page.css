@@ -1686,6 +1686,21 @@
 
 .workflow-tool-select {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  display: block;
+}
+
+.workflow-tool-select.app-select-accessibility-shell,
+.workflow-tool-select .app-select,
+.workflow-tool-select .el-select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.workflow-tool-node-editor .drawer-field {
+  min-width: 0;
 }
 
 .workflow-tool-node-editor,

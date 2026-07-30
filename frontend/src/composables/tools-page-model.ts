@@ -10,6 +10,8 @@ import { useModalFocus } from "../composables/useModalFocus";
 import { useToolsStore } from "../stores/tools";
 import { useProvidersStore } from "../stores/providers";
 import { useConnectionsStore } from "../stores/connections";
+import { useAuthStore } from "../stores/auth";
+import { apiErrorMessage } from "../services/api";
 import {
   buildBodyContractFromRequestParams,
   buildRequestParamsFromContracts,
@@ -48,7 +50,7 @@ export function createToolsPageModel() {
   type ToolStatusFilter = "all" | NonNullable<ToolListQuery["status"]>;
   type ToolTypeFilter = "all" | NonNullable<ToolListQuery["type"]>;
   type DetailTabId = "base" | "connection" | "request" | "response" | "runtime" | "test";
-  type RiskActionType = "disable" | "enable" | "delete" | "batch-delete" | "";
+  type RiskActionType = "disable" | "enable" | "delete" | "batch-delete" | "batch-force-publish" | "";
 
   interface ToolDraft {
     id: string;
@@ -74,11 +76,19 @@ export function createToolsPageModel() {
   const providersStore = useProvidersStore();
   const connectionsStore = useConnectionsStore();
   const workspaces = useWorkspaceStore();
+  const auth = useAuthStore();
   const canEditWorkspace = computed(() =>
     workspaces.can(workspaces.activeWorkspaceId || workspaces.items[0]?.id || "", "EDIT"),
   );
   const canTestWorkspace = computed(() =>
     workspaces.can(workspaces.activeWorkspaceId || workspaces.items[0]?.id || "", "TEST"),
+  );
+  const canPublishWorkspace = computed(() =>
+    workspaces.can(workspaces.activeWorkspaceId || workspaces.items[0]?.id || "", "PUBLISH"),
+  );
+  /** Force-publish is PLATFORM_ADMIN only (server also gates tools.allowForcePublish). */
+  const canForcePublishTools = computed(
+    () => auth.user?.platformRole === "PLATFORM_ADMIN" && canPublishWorkspace.value,
   );
   const router = useRouter();
 
@@ -115,6 +125,8 @@ export function createToolsPageModel() {
   });
   const batchTesting = ref(false);
   const batchDeleting = ref(false);
+  const batchForcePublishing = ref(false);
+  const forcePublishReason = ref("");
   const batchTestDialogVisible = ref(false);
   const batchTestModalRef = ref<HTMLElement | null>(null);
   const batchPassthroughToken = ref("");
@@ -801,13 +813,14 @@ export function createToolsPageModel() {
 
   function riskActionTools(): Tool[] {
     const { type, tool, tools } = pendingRiskAction.value;
-    if (type === "batch-delete") return tools;
+    if (type === "batch-delete" || type === "batch-force-publish") return tools;
     return tool ? [tool] : [];
   }
 
   function riskConfirmationEyebrow() {
     const tools = riskActionTools();
     if (!tools.length) return "操作确认";
+    if (pendingRiskAction.value.type === "batch-force-publish") return "平台管理员 · 强制发布";
     if (tools.some((tool) => tool.activeReleaseId)) return "高风险操作";
     return "操作确认";
   }
@@ -817,6 +830,9 @@ export function createToolsPageModel() {
     const tools = riskActionTools();
     if (!tools.length) return "请确认后再继续。";
     const publishedCount = tools.filter((tool) => tool.activeReleaseId).length;
+    if (type === "batch-force-publish") {
+      return `将跳过实调测试，强制发布 ${tools.length} 个未发布 Tool（创建正式 release 并激活）。不会调用上游 DELETE/改写接口，但契约错误会直接进入可被 Agent 调用的状态。请填写原因并确认影响面。`;
+    }
     if (type === "batch-delete") {
       return publishedCount > 0
         ? `将删除已选 ${tools.length} 个 Tool（含 ${publishedCount} 个已发布），删除后不可恢复；已发布项可能影响 Agent 绑定与工作流调用。`
@@ -844,32 +860,40 @@ export function createToolsPageModel() {
     const { type } = pendingRiskAction.value;
     const tools = riskActionTools();
     if (!tools.length) return [];
-    if (type === "batch-delete") {
+    if (type === "batch-delete" || type === "batch-force-publish") {
       const publishedCount = tools.filter((tool) => tool.activeReleaseId).length;
+      const forceTargets = tools.filter((tool) => tool.status !== "Published");
       return [
         {
           key: "count",
-          label: "已选数量",
-          value: `${tools.length} 个 Tool`,
+          label: type === "batch-force-publish" ? "将强制发布" : "已选数量",
+          value:
+            type === "batch-force-publish"
+              ? `${forceTargets.length} 个未发布 Tool（已选 ${tools.length}）`
+              : `${tools.length} 个 Tool`,
           tone: "neutral",
         },
         {
           key: "binding",
           label: "Agent 绑定",
           value:
-            publishedCount > 0
-              ? `${publishedCount} 个已发布，可能存在绑定`
-              : "均未发布，通常无生效绑定",
-          tone: publishedCount > 0 ? "warn" : "ok",
+            type === "batch-force-publish"
+              ? "发布后可被 Agent / Workflow 调用"
+              : publishedCount > 0
+                ? `${publishedCount} 个已发布，可能存在绑定`
+                : "均未发布，通常无生效绑定",
+          tone: type === "batch-force-publish" || publishedCount > 0 ? "warn" : "ok",
         },
         {
           key: "workflow",
-          label: "工作流引用",
+          label: type === "batch-force-publish" ? "测试门禁" : "工作流引用",
           value:
-            publishedCount > 0
-              ? "可能被已发布工作流引用，请抽查核对"
-              : "均未发布，通常无生产引用",
-          tone: publishedCount > 0 ? "warn" : "ok",
+            type === "batch-force-publish"
+              ? "跳过实调测试，写入强制通过 attest 记录"
+              : publishedCount > 0
+                ? "可能被已发布工作流引用，请抽查核对"
+                : "均未发布，通常无生产引用",
+          tone: "warn",
         },
         {
           key: "names",
@@ -913,12 +937,13 @@ export function createToolsPageModel() {
   }
 
   function riskConfirmationToneClass() {
+    if (pendingRiskAction.value.type === "batch-force-publish") return "is-elevated-risk";
     return riskActionTools().some((tool) => tool.activeReleaseId) ? "is-elevated-risk" : "is-standard-risk";
   }
 
   function riskConfirmationTargetName() {
     const { type, tool, tools } = pendingRiskAction.value;
-    if (type === "batch-delete") {
+    if (type === "batch-delete" || type === "batch-force-publish") {
       if (!tools.length) return "未选择 Tool";
       if (tools.length === 1) return tools[0].name;
       return `${tools[0].name} 等 ${tools.length} 个 Tool`;
@@ -928,6 +953,9 @@ export function createToolsPageModel() {
 
   function riskConfirmationTargetMeta() {
     const { type, tool, tools } = pendingRiskAction.value;
+    if (type === "batch-force-publish") {
+      return `跳过实调 · 强制发布 ${tools.length} 个 Tool`;
+    }
     if (type === "batch-delete") {
       const publishedCount = tools.filter((item) => item.activeReleaseId).length;
       return publishedCount > 0
@@ -1137,7 +1165,7 @@ export function createToolsPageModel() {
 
   function openBatchDeleteConfirmation() {
     const tools = selectedTools.value;
-    if (!tools.length || batchDeleting.value || batchTesting.value) return;
+    if (!tools.length || batchDeleting.value || batchTesting.value || batchForcePublishing.value) return;
     closeFloatingMenus();
     pendingRiskAction.value = {
       type: "batch-delete",
@@ -1147,14 +1175,33 @@ export function createToolsPageModel() {
     riskConfirmationVisible.value = true;
   }
 
+  function openBatchForcePublishConfirmation() {
+    if (!canForcePublishTools.value) return;
+    const tools = selectedTools.value.filter((item) => item.status !== "Published");
+    if (!tools.length || batchForcePublishing.value || batchDeleting.value || batchTesting.value) return;
+    closeFloatingMenus();
+    forcePublishReason.value = "";
+    pendingRiskAction.value = {
+      type: "batch-force-publish",
+      tool: tools[0] || null,
+      tools: [...tools],
+    };
+    riskConfirmationVisible.value = true;
+  }
+
   function closeRiskConfirmation() {
-    if (batchDeleting.value) return;
+    if (batchDeleting.value || batchForcePublishing.value) return;
     riskConfirmationVisible.value = false;
+    forcePublishReason.value = "";
     pendingRiskAction.value = { type: "", tool: null, tools: [] };
   }
 
   function riskConfirmationTitle() {
     const action = pendingRiskAction.value.type;
+    if (action === "batch-force-publish") {
+      const count = pendingRiskAction.value.tools.length;
+      return count > 1 ? `强制发布 ${count} 个 Tool` : "强制发布 Tool";
+    }
     if (action === "batch-delete") {
       const count = pendingRiskAction.value.tools.length;
       return count > 1 ? `确认删除 ${count} 个 Tool` : "确认删除 Tool";
@@ -1167,6 +1214,11 @@ export function createToolsPageModel() {
 
   function riskConfirmationPrimaryLabel() {
     const action = pendingRiskAction.value.type;
+    if (action === "batch-force-publish") {
+      return batchForcePublishing.value
+        ? "发布中…"
+        : `确认强制发布${pendingRiskAction.value.tools.length > 1 ? ` ${pendingRiskAction.value.tools.length} 项` : ""}`;
+    }
     if (action === "batch-delete") {
       return batchDeleting.value
         ? "删除中…"
@@ -1178,9 +1230,44 @@ export function createToolsPageModel() {
     return "确认";
   }
 
+  const forcePublishReasonValid = computed(() => forcePublishReason.value.trim().length >= 8);
+
   async function confirmRiskAction() {
     const { type, tool, tools } = pendingRiskAction.value;
     if (!type) return;
+    if (type === "batch-force-publish") {
+      if (!tools.length || batchForcePublishing.value || !forcePublishReasonValid.value) return;
+      batchForcePublishing.value = true;
+      let success = 0;
+      let failed = 0;
+      let lastError = "";
+      const reason = forcePublishReason.value.trim();
+      try {
+        for (const item of tools) {
+          try {
+            await toolsStore.forcePublishTool(item.id, reason);
+            success += 1;
+          } catch (error) {
+            failed += 1;
+            lastError = apiErrorMessage(error, "强制发布失败");
+          }
+        }
+        selectedToolRowKeys.value = [];
+        await loadToolRegistry();
+        if (failed === 0) {
+          setActionFeedback(`已强制发布 ${success} 个 Tool（跳过实调测试）。`);
+        } else {
+          setActionFeedback(
+            `强制发布完成：成功 ${success} 个，失败 ${failed} 个。${lastError ? ` ${lastError}` : ""}`,
+            "error",
+          );
+        }
+      } finally {
+        batchForcePublishing.value = false;
+        closeRiskConfirmation();
+      }
+      return;
+    }
     if (type === "batch-delete") {
       if (!tools.length || batchDeleting.value) return;
       batchDeleting.value = true;
@@ -1952,6 +2039,10 @@ export function createToolsPageModel() {
     selectedTools,
     batchTesting,
     batchDeleting,
+    batchForcePublishing,
+    forcePublishReason,
+    forcePublishReasonValid,
+    canForcePublishTools,
     batchTestDialogVisible,
     batchTestModalRef,
     batchPassthroughToken,
@@ -1960,6 +2051,7 @@ export function createToolsPageModel() {
     batchTestNeedsPassthrough,
     batchTestPassthroughConnectionIds,
     openBatchDeleteConfirmation,
+    openBatchForcePublishConfirmation,
     batchTestSelectedTools,
     closeBatchTestDialog,
     confirmBatchTestSelectedTools,

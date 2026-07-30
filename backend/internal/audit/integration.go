@@ -209,22 +209,34 @@ func (recorder *Recorder) AppendToolReleasePublished(
 	tx *sql.Tx,
 	event tool.ToolReleasePublishedEvent,
 ) error {
+	action := ActionToolReleasePublished
+	actorDisplay := "Tool publisher"
+	metadata := map[string]any{
+		"capabilityId": event.CapabilityID, "toolVersionId": event.ToolVersionID,
+		"toolTestId": event.ToolTestID, "releaseNo": event.ReleaseNo, "checksum": event.Checksum,
+	}
+	outboxPayload := map[string]any{
+		"eventId": event.ID, "workspaceId": event.WorkspaceID,
+		"capabilityId": event.CapabilityID, "toolVersionId": event.ToolVersionID,
+		"toolTestId": event.ToolTestID, "releaseId": event.ReleaseID,
+		"releaseNo": event.ReleaseNo, "checksum": event.Checksum,
+	}
+	if event.Force {
+		action = ActionToolReleaseForcePublished
+		actorDisplay = "Tool force publisher"
+		metadata["force"] = true
+		metadata["forceReason"] = event.ForceReason
+		outboxPayload["force"] = true
+		outboxPayload["forceReason"] = event.ForceReason
+	}
 	_, err := recorder.RecordInTransaction(ctx, tx, ManagementEventInput{
 		EventID: event.ID, OccurredAt: event.OccurredAt, WorkspaceID: event.WorkspaceID,
-		ActorType: "USER", ActorID: event.PublishedBy, ActorDisplay: "Tool publisher",
-		Action: ActionToolReleasePublished, ResourceType: "CAPABILITY_RELEASE", ResourceID: event.ReleaseID,
-		Result: "SUCCESS", Metadata: map[string]any{
-			"capabilityId": event.CapabilityID, "toolVersionId": event.ToolVersionID,
-			"toolTestId": event.ToolTestID, "releaseNo": event.ReleaseNo, "checksum": event.Checksum,
-		},
+		ActorType: "USER", ActorID: event.PublishedBy, ActorDisplay: actorDisplay,
+		Action: action, ResourceType: "CAPABILITY_RELEASE", ResourceID: event.ReleaseID,
+		Result: "SUCCESS", Metadata: metadata,
 		OutboxEventType: event.Type, OutboxSchema: "tool.release.v1",
 		OutboxIdempotency: "tool-release:" + event.ReleaseID,
-		OutboxPayload: map[string]any{
-			"eventId": event.ID, "workspaceId": event.WorkspaceID,
-			"capabilityId": event.CapabilityID, "toolVersionId": event.ToolVersionID,
-			"toolTestId": event.ToolTestID, "releaseId": event.ReleaseID,
-			"releaseNo": event.ReleaseNo, "checksum": event.Checksum,
-		},
+		OutboxPayload: outboxPayload,
 	})
 	return err
 }

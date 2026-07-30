@@ -41,6 +41,9 @@ type HeadVersionSummary struct {
 	// ActionConfig may include method/path for list display; schemas are omitted.
 	ActionConfig        json.RawMessage
 	ActionSchemaVersion string
+	// LockVersion is the tool_versions optimistic lock; required for publish/test CAS
+	// from list rows (must not be hard-coded client-side).
+	LockVersion int64
 }
 
 // ListItem is a tool row with head version summary for management tables.
@@ -132,7 +135,8 @@ func (r *Repository) ListPage(ctx context.Context, workspaceID string, query Lis
 		  ON c.workspace_id = t.workspace_id AND c.id = t.capability_id
 		LEFT JOIN LATERAL (
 			SELECT v.id, v.version_no, v.lifecycle_status, v.executor_type,
-				v.default_connection_id, v.action_config, v.action_schema_version
+				v.default_connection_id, v.action_config, v.action_schema_version,
+				v.lock_version
 			FROM tool_versions v
 			WHERE v.workspace_id = t.workspace_id AND v.capability_id = t.capability_id
 			ORDER BY v.version_no DESC, v.id DESC
@@ -185,7 +189,8 @@ func (r *Repository) ListPage(ctx context.Context, workspaceID string, query Lis
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT `+toolColumns+`,
 			head.id, head.version_no, head.lifecycle_status, head.executor_type,
-			head.default_connection_id, head.action_config, head.action_schema_version
+			head.default_connection_id, head.action_config, head.action_schema_version,
+			head.lock_version
 		`+fromWhere+`
 		ORDER BY `+orderBy+`
 		LIMIT $`+strconv.Itoa(limitArg)+` OFFSET $`+strconv.Itoa(offsetArg), args...)
@@ -254,7 +259,7 @@ func (r *Repository) listSummary(ctx context.Context, workspaceID string) (ListS
 func scanToolListItem(row rowScanner) (ListItem, error) {
 	var value Tool
 	var headID, lifecycle, executor, schemaVersion sql.NullString
-	var versionNo sql.NullInt64
+	var versionNo, headLock sql.NullInt64
 	var defaultConn sql.NullString
 	var actionConfig []byte
 	err := row.Scan(
@@ -264,7 +269,7 @@ func scanToolListItem(row rowScanner) (ListItem, error) {
 		&value.CreatedBy, &value.UpdatedBy, &value.CreatedAt, &value.UpdatedAt,
 		&value.LockVersion, &value.DeletedAt,
 		&headID, &versionNo, &lifecycle, &executor,
-		&defaultConn, &actionConfig, &schemaVersion,
+		&defaultConn, &actionConfig, &schemaVersion, &headLock,
 	)
 	if err != nil {
 		return ListItem{}, err
@@ -278,6 +283,7 @@ func scanToolListItem(row rowScanner) (ListItem, error) {
 			ExecutorType:        executor.String,
 			ActionSchemaVersion: schemaVersion.String,
 			ActionConfig:        append(json.RawMessage(nil), actionConfig...),
+			LockVersion:         headLock.Int64,
 		}
 		if defaultConn.Valid {
 			conn := defaultConn.String

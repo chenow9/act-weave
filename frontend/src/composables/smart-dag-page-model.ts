@@ -4,17 +4,27 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
+import {
+  assignUniqueBranchSides,
+  buildEdgePath,
+  edgeLabelPoint,
+  resolveEdgeAnchors,
+  type EdgeKind,
+  type EdgeSide,
+} from "../components/workflow/workflow-edges";
 import { autoLayoutWorkflowGraph, layoutWorkflowGraphIfNeeded } from "../components/workflow/workflow-layout";
 import { apiErrorMessage } from "../services/api";
 import { useAgentStore } from "../stores/agents";
 import { useModelConfigStore } from "../stores/modelConfigs";
 import { useSmartDagStore, type FailureFeedback, type FailureFeedbackIssue } from "../stores/smartdag";
+import { useToolsStore } from "../stores/tools";
 import { useWorkflowStore } from "../stores/workflow";
 import { useWorkspaceStore } from "../stores/workspaces";
 import type {
   Workflow,
   WorkflowDraftRecord,
   WorkflowGraphDraft,
+  WorkflowGraphNode,
   WorkflowGraphNodeType,
   WorkflowSummary,
 } from "../types/domain";
@@ -29,17 +39,35 @@ export function createSmartDagPageModel() {
     graphType: WorkflowGraphNodeType;
     type: string;
     title: string;
+    /** One-line subtitle (service / role), not a full paragraph. */
     desc: string;
     x: number;
     y: number;
     theme: NodeTheme;
     isAiDraft?: boolean;
     aiReason?: string;
+    toolId?: string;
+    toolName?: string;
+    /** Condition branch keys for multi-port rendering. */
+    branchPorts?: Array<{ key: string; label: string }>;
+    /** Compact footer status, e.g. "配置完整". */
+    statusHint?: string;
+    /** End outcome: success | failure | generic. */
+    endKind?: "success" | "failure" | "generic";
   }
+
+  type SmartEdgeKind = "sequence" | "branch" | "loop";
 
   interface SmartConnection {
     from: string;
     to: string;
+    /** Condition branch raw key from graph edge data. */
+    branch?: string;
+    /** Human label for branch edges. */
+    label?: string;
+    kind: SmartEdgeKind;
+    /** Source port key for condition multi-port layout. */
+    sourcePort?: string;
   }
 
   interface SmartBlueprint {
@@ -61,6 +89,7 @@ export function createSmartDagPageModel() {
   const workspaceStore = useWorkspaceStore();
   const agentStore = useAgentStore();
   const modelConfigStore = useModelConfigStore();
+  const toolsStore = useToolsStore();
   const router = useRouter();
   const route = useRoute();
   /** Seeded FailureFeedback from compile/trial failure CTA (P4.3 / D14). */
@@ -95,6 +124,17 @@ export function createSmartDagPageModel() {
   const canvasZoom = ref(1);
   const canvasPan = ref({ x: 0, y: 0 });
   const canvasPanning = ref({ active: false, pointerId: -1, startX: 0, startY: 0, originX: 0, originY: 0 });
+  const nodeDragging = ref({
+    active: false,
+    nodeId: "",
+    pointerId: -1,
+    startX: 0,
+    startY: 0,
+    originX: 0,
+    originY: 0,
+  });
+  /** Dynamic workspace size so wide auto-layouts are not clipped at 1800×900. */
+  const canvasWorkspaceSize = ref({ width: 2400, height: 1200 });
   const isNarrowViewport = ref(false);
   const blueprintToolbarCompact = ref(false);
   const leftPanelCollapsed = ref(false);
@@ -193,7 +233,8 @@ export function createSmartDagPageModel() {
     "生成画布节点布局与连线",
     "写入正式 Workflow Draft",
   ];
-  const canvasNodeSize = { width: 220, height: 136 };
+  /** Compact card metrics for denser stage layout (readable near 55–70% zoom). */
+  const canvasNodeSize = { width: 180, height: 96 };
   const canvasDesktopMinWidth = 1180;
 
   const filteredBlueprintList = computed(() => {
@@ -357,33 +398,167 @@ export function createSmartDagPageModel() {
     return '{"output":{"kind":"ref","path":"nodeOutputs.result.result"}}';
   }
 
-  function getConnectionPath(conn: SmartConnection) {
+  function resolveToolBinding(node: WorkflowGraphNode): { toolId: string; toolName: string } {
+    const raw = node.data && typeof node.data === "object" ? (node.data as Record<string, unknown>).toolId : undefined;
+    const toolId = typeof raw === "string" ? raw.trim() : "";
+    if (!toolId) return { toolId: "", toolName: "" };
+    const catalog =
+      toolsStore.tools.find((item) => item.id === toolId) ||
+      toolsStore.toolPageItems.find((item) => item.id === toolId);
+    return { toolId, toolName: catalog?.name?.trim() || "" };
+  }
+
+  /** Prefer real tool name; fall back to humanized node id when LLM left label as "Tool". */
+  function displayNodeTitle(node: WorkflowGraphNode, binding: { toolId: string; toolName: string }): string {
+    const label = (node.label || "").trim();
+    const generic = !label || /^(tool|condition|start|end|transform|approval|http)$/i.test(label);
+    if (!generic) return label;
+    if (binding.toolName) return binding.toolName;
+    if (node.type === "Start") return "开始";
+    if (node.type === "End") return "结束";
+    if (node.type === "Condition") return "条件判断";
+    if (node.type === "Transform") return "整理结果";
+    // Humanize id: create_task → 创建 task, get_progress → 获取进度
+    const humanized = node.id
+      .replace(/[_-]+/g, " ")
+      .replace(/\b\w/g, (ch) => ch.toUpperCase())
+      .trim();
+    return humanized || node.id;
+  }
+
+  function humanizeBranchLabel(raw?: string): string {
+    const key = String(raw || "")
+      .trim()
+      .toLowerCase();
+    if (!key) return "";
+    if (["completed", "complete", "success", "succeeded", "true", "ok", "done"].includes(key)) return "已完成";
+    if (["running", "processing", "pending", "in_progress", "in-progress", "wait"].includes(key)) return "处理中";
+    if (["failed", "fail", "error", "timeout", "false", "default", "otherwise", "reject"].includes(key)) {
+      return "失败/其他";
+    }
+    return raw || "";
+  }
+
+  function classifyEdge(
+    fromId: string,
+    toId: string,
+    xOf: Map<string, number>,
+    branch?: string,
+  ): SmartEdgeKind {
+    const fromX = xOf.get(fromId) ?? 0;
+    const toX = xOf.get(toId) ?? 0;
+    // True back-edge: target card is left of source card (poll loop).
+    // Require a clear reverse delta so tight forward gaps never count as loops.
+    if (toX + canvasNodeSize.width * 0.25 < fromX) return "loop";
+    if (branch) return "branch";
+    return "sequence";
+  }
+
+  function nodeBoxSize(_node?: Pick<SmartNode, "graphType">): { width: number; height: number } {
+    // One card size for every node type — keeps ports on the main rail and hover stable.
+    return { width: canvasNodeSize.width, height: canvasNodeSize.height };
+  }
+
+  function connectionRouteInput(conn: SmartConnection) {
     const fromNode = currentBlueprint.value.nodes.find((node) => node.id === conn.from);
     const toNode = currentBlueprint.value.nodes.find((node) => node.id === conn.to);
-    if (!fromNode || !toNode) return "";
-    const startX = fromNode.x + 220;
-    const startY = fromNode.y + 54;
-    const endX = toNode.x;
-    const endY = toNode.y + 54;
-    const dx = Math.abs(endX - startX) * 0.45;
-    return (
-      "M " +
-      startX +
-      " " +
-      startY +
-      " C " +
-      (startX + dx) +
-      " " +
-      startY +
-      ", " +
-      (endX - dx) +
-      " " +
-      endY +
-      ", " +
-      endX +
-      " " +
-      endY
-    );
+    if (!fromNode || !toNode) return null;
+
+    const fromSize = nodeBoxSize(fromNode);
+    const toSize = nodeBoxSize(toNode);
+    let outSide: EdgeSide | undefined;
+
+    // Condition: each branch gets a unique side (one port per side, midpoint only).
+    if (fromNode.graphType === "Condition" && fromNode.branchPorts?.length) {
+      const assigned = assignUniqueBranchSides(fromNode.branchPorts);
+      const match =
+        assigned.find(
+          (p) =>
+            p.key === conn.sourcePort ||
+            p.key === conn.branch ||
+            p.label === conn.label ||
+            p.key === conn.label,
+        ) || assigned[0];
+      outSide = match?.side;
+    }
+
+    return {
+      from: { x: fromNode.x, y: fromNode.y, w: fromSize.width, h: fromSize.height },
+      to: { x: toNode.x, y: toNode.y, w: toSize.width, h: toSize.height },
+      kind: (conn.kind || "sequence") as EdgeKind,
+      label: conn.label || conn.branch || "",
+      outSide,
+    };
+  }
+
+  function getConnectionPath(conn: SmartConnection) {
+    const input = connectionRouteInput(conn);
+    if (!input) return "";
+    return buildEdgePath(input);
+  }
+
+  function getConnectionLabelPoint(conn: SmartConnection): { x: number; y: number } | null {
+    if (!conn.label) return null;
+    const input = connectionRouteInput(conn);
+    if (!input) return null;
+    return edgeLabelPoint(input);
+  }
+
+  /** One port per side, always centred. */
+  function getConditionPortStyle(side: EdgeSide): Record<string, string> {
+    if (side === "bottom") {
+      return { top: "auto", left: "50%", right: "auto", bottom: "0", transform: "translate(-50%, 100%)" };
+    }
+    if (side === "top") {
+      return { top: "0", left: "50%", right: "auto", bottom: "auto", transform: "translate(-50%, -100%)" };
+    }
+    if (side === "left") {
+      return { top: "50%", left: "0", right: "auto", bottom: "auto", transform: "translate(-100%, -50%)" };
+    }
+    return { top: "50%", left: "auto", right: "0", bottom: "auto", transform: "translate(100%, -50%)" };
+  }
+
+  /** Condition branch ports with unique sides for template rendering. */
+  function getConditionBranchPorts(node: SmartNode): Array<{ key: string; label: string; side: EdgeSide }> {
+    if (!node.branchPorts?.length) return [{ key: "out", label: "输出", side: "right" }];
+    return assignUniqueBranchSides(node.branchPorts);
+  }
+
+  /**
+   * Sides that must show a port dot on this node.
+   * Edges always terminate at these centres — only render a side if used.
+   */
+  function getNodePortSides(node: SmartNode): EdgeSide[] {
+    if (node.graphType === "Condition") {
+      const sides = new Set<EdgeSide>(["left"]);
+      for (const p of getConditionBranchPorts(node)) sides.add(p.side);
+      return [...sides];
+    }
+
+    const sides = new Set<EdgeSide>();
+    if (node.graphType !== "Start") sides.add("left");
+    if (node.graphType !== "End") sides.add("right");
+
+    for (const conn of currentBlueprint.value.connections || []) {
+      if (conn.from !== node.id && conn.to !== node.id) continue;
+      const input = connectionRouteInput(conn);
+      if (!input) continue;
+      const anchors = resolveEdgeAnchors(input);
+      if (conn.from === node.id) sides.add(anchors.outSide);
+      if (conn.to === node.id) sides.add(anchors.inSide);
+    }
+    return [...sides];
+  }
+
+  function portSideClass(side: EdgeSide): string {
+    return `is-${side}`;
+  }
+
+  function portTitle(side: EdgeSide): string {
+    if (side === "left") return "输入";
+    if (side === "right") return "输出";
+    if (side === "top") return "上端口";
+    return "下端口";
   }
 
   function calculateGraphBounds(nodes = currentBlueprint.value.nodes) {
@@ -399,9 +574,45 @@ export function createSmartDagPageModel() {
     }
     const minX = Math.min(...nodes.map((node) => node.x));
     const minY = Math.min(...nodes.map((node) => node.y));
-    const maxX = Math.max(...nodes.map((node) => node.x + canvasNodeSize.width));
-    const maxY = Math.max(...nodes.map((node) => node.y + canvasNodeSize.height));
+    const maxX = Math.max(...nodes.map((node) => node.x + nodeBoxSize(node).width));
+    // Leave room for bottom-exit loop troughs under the lowest node.
+    const maxY = Math.max(...nodes.map((node) => node.y + nodeBoxSize(node).height + 80));
     return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+  }
+
+  /** Grow the pan/zoom workspace so nodes and edges are not clipped. */
+  function refreshCanvasWorkspaceSize(nodes = currentBlueprint.value.nodes) {
+    const bounds = calculateGraphBounds(nodes);
+    const pad = 280;
+    canvasWorkspaceSize.value = {
+      width: Math.max(2400, Math.ceil(bounds.maxX + pad)),
+      height: Math.max(1200, Math.ceil(bounds.maxY + pad)),
+    };
+  }
+
+  function replaceBlueprint(blueprint: SmartBlueprint) {
+    const index = blueprints.value.findIndex((item) => item.id === blueprint.id);
+    if (index >= 0) blueprints.value.splice(index, 1, { ...blueprint, nodes: [...blueprint.nodes] });
+    else blueprints.value.unshift({ ...blueprint, nodes: [...blueprint.nodes] });
+  }
+
+  function updateBlueprintNodePosition(nodeId: string, x: number, y: number) {
+    const blueprint = currentBlueprint.value;
+    if (!blueprint.id) return;
+    const nodes = blueprint.nodes.map((node) => (node.id === nodeId ? { ...node, x, y } : node));
+    replaceBlueprint({ ...blueprint, nodes });
+    const draft = blueprintDrafts.get(blueprint.id);
+    if (draft?.graph?.nodes) {
+      blueprintDrafts.set(blueprint.id, {
+        ...draft,
+        graph: {
+          ...draft.graph,
+          nodes: draft.graph.nodes.map((node) =>
+            node.id === nodeId ? { ...node, position: { x, y } } : node,
+          ),
+        },
+      });
+    }
   }
 
   function fitCanvasToVisibleArea() {
@@ -431,10 +642,9 @@ export function createSmartDagPageModel() {
     const safeWidth = Math.max(320, safeRight - safeLeft);
     const safeHeight = Math.max(260, safeBottom - safeTop);
     const bounds = calculateGraphBounds();
-    const nextZoom = Math.min(
-      1,
-      Math.max(0.35, Math.min(safeWidth / (bounds.width + 96), safeHeight / (bounds.height + 96))),
-    );
+    // Prefer readability: floor at 0.55 so 8–10 nodes stay legible; pan for overflow.
+    const fitZoom = Math.min(safeWidth / (bounds.width + 96), safeHeight / (bounds.height + 96));
+    const nextZoom = Math.min(1, Math.max(0.55, fitZoom));
     const safeCenterX = safeLeft - containerRect.left + safeWidth / 2;
     const safeCenterY = safeTop - containerRect.top + safeHeight / 2;
 
@@ -472,10 +682,13 @@ export function createSmartDagPageModel() {
   }
 
   function nodeTypeText(type: WorkflowGraphNodeType) {
-    if (type === "Start") return "START";
-    if (type === "End") return "END";
-    if (type === "Tool") return "TOOL CALL";
-    return type.toUpperCase();
+    if (type === "Start") return "开始";
+    if (type === "End") return "结束";
+    if (type === "Tool") return "工具";
+    if (type === "Condition") return "条件";
+    if (type === "Transform") return "变换";
+    if (type === "Approval") return "审批";
+    return type;
   }
 
   function blueprintFromDraft(
@@ -484,8 +697,134 @@ export function createSmartDagPageModel() {
     confidence = 90,
   ): SmartBlueprint {
     const workspace = workspaces.value.find((item) => item.id === workflow.workspaceId);
-    // Auto-layout when LLM left nodes stacked so canvas is usable.
-    const laidOut = layoutWorkflowGraphIfNeeded(draft.graph);
+    // Always reflow so Smart canvas is readable (stage-compact + branch below).
+    const laidOut = autoLayoutWorkflowGraph(layoutWorkflowGraphIfNeeded(draft.graph));
+    if (draft.graph) {
+      draft.graph = {
+        ...draft.graph,
+        nodes: draft.graph.nodes.map((node) => {
+          const laid = laidOut.nodes.find((item) => item.id === node.id);
+          return laid ? { ...node, position: { ...laid.position } } : node;
+        }),
+      };
+    }
+
+    const xOf = new Map<string, number>();
+    laidOut.nodes.forEach((node) => {
+      xOf.set(node.id, node.position?.x || 0);
+    });
+
+    // Collect condition branches from edges for multi-port UI.
+    const branchesBySource = new Map<string, Array<{ key: string; label: string }>>();
+    for (const edge of laidOut.edges || []) {
+      if (!edge.sourceNodeId || !edge.targetNodeId) continue;
+      const rawBranch =
+        edge.data && typeof edge.data === "object"
+          ? String((edge.data as Record<string, unknown>).branch || "").trim()
+          : "";
+      if (!rawBranch) continue;
+      const label = humanizeBranchLabel(rawBranch);
+      const list = branchesBySource.get(edge.sourceNodeId) || [];
+      if (!list.some((item) => item.key === rawBranch)) {
+        list.push({ key: rawBranch, label: label || rawBranch });
+      }
+      branchesBySource.set(edge.sourceNodeId, list);
+    }
+
+    // Infer end-kind: if all inbound edges are failure-like → failure end.
+    const failureKeys = new Set(["failed", "fail", "error", "timeout", "false", "default", "otherwise", "reject"]);
+    const endKindById = new Map<string, "success" | "failure" | "generic">();
+    for (const node of laidOut.nodes) {
+      if (node.type !== "End") continue;
+      const inbound = (laidOut.edges || []).filter((e) => e.targetNodeId === node.id);
+      if (!inbound.length) {
+        endKindById.set(node.id, "generic");
+        continue;
+      }
+      const branches = inbound.map((e) =>
+        String((e.data as Record<string, unknown> | undefined)?.branch || "").toLowerCase(),
+      );
+      const allFailure = branches.every((b) => b && failureKeys.has(b));
+      const anySuccess = branches.some((b) =>
+        ["completed", "complete", "success", "succeeded", "true", "ok", "done"].includes(b),
+      );
+      if (allFailure) endKindById.set(node.id, "failure");
+      else if (anySuccess || inbound.some((e) => e.sourceNodeId?.includes("report") || e.sourceNodeId?.includes("word")))
+        endKindById.set(node.id, "success");
+      else if (inbound.length === 1 && !branches[0]) endKindById.set(node.id, "success");
+      else endKindById.set(node.id, "generic");
+    }
+
+    const nodes: SmartNode[] = laidOut.nodes.map((node) => {
+      const binding = resolveToolBinding(node);
+      const isTool = node.type === "Tool";
+      const title = displayNodeTitle(node, binding);
+      let desc = "";
+      let statusHint = "";
+      if (isTool) {
+        // Keep canvas cards short — binding details live in the property panel.
+        // Avoid repeating the same string as title (displayNodeTitle often == toolName).
+        const toolLabel = binding.toolName || "";
+        desc = !binding.toolId ? "未绑定工具" : toolLabel && toolLabel !== title ? toolLabel : "";
+        statusHint = binding.toolId ? "" : "缺少 toolId";
+      } else if (node.type === "Condition") {
+        // Branch status is shown only on edge labels (flowing dashed lines).
+        desc = "";
+        statusHint = "";
+      } else if (node.type === "Start") {
+        desc = "流程入口";
+      } else if (node.type === "End") {
+        desc = ""; // title already carries success / failure wording
+      } else if (node.type === "Transform") {
+        desc = "构造返回结果";
+      } else {
+        desc = nodeDescription(node.type);
+      }
+
+      return {
+        id: node.id,
+        graphType: node.type,
+        type: nodeTypeText(node.type),
+        title:
+          node.type === "End"
+            ? endKindById.get(node.id) === "failure"
+              ? "失败结束"
+              : endKindById.get(node.id) === "success"
+                ? "成功结束"
+                : "结束"
+            : title,
+        desc,
+        x: node.position?.x || 0,
+        y: node.position?.y || 0,
+        theme: nodeTheme(node.type),
+        isAiDraft: node.ui?.generated === true,
+        aiReason: typeof node.ui?.reason === "string" ? node.ui.reason : undefined,
+        toolId: binding.toolId || undefined,
+        toolName: binding.toolName || undefined,
+        branchPorts: node.type === "Condition" ? branchesBySource.get(node.id) : undefined,
+        statusHint: statusHint || undefined,
+        endKind: node.type === "End" ? endKindById.get(node.id) : undefined,
+      };
+    });
+
+    const connections: SmartConnection[] = (laidOut.edges || [])
+      .filter((edge) => edge.sourceNodeId && edge.targetNodeId)
+      .map((edge) => {
+        const rawBranch =
+          edge.data && typeof edge.data === "object"
+            ? String((edge.data as Record<string, unknown>).branch || "").trim()
+            : "";
+        const kind = classifyEdge(edge.sourceNodeId, edge.targetNodeId, xOf, rawBranch || undefined);
+        return {
+          from: edge.sourceNodeId,
+          to: edge.targetNodeId,
+          branch: rawBranch || undefined,
+          label: humanizeBranchLabel(rawBranch) || undefined,
+          kind,
+          sourcePort: rawBranch || edge.sourcePort || undefined,
+        };
+      });
+
     return {
       id: workflow.id,
       name: workflow.name,
@@ -496,21 +835,8 @@ export function createSmartDagPageModel() {
       automationMode: "AI 生成 · v1",
       aiScore: confidence,
       status: workflowStatus(workflow),
-      nodes: laidOut.nodes.map((node) => ({
-        id: node.id,
-        graphType: node.type,
-        type: nodeTypeText(node.type),
-        title: node.label || node.id,
-        desc: typeof node.ui?.description === "string" ? node.ui.description : nodeDescription(node.type),
-        x: node.position?.x || 0,
-        y: node.position?.y || 0,
-        theme: nodeTheme(node.type),
-        isAiDraft: node.ui?.generated === true,
-        aiReason: typeof node.ui?.reason === "string" ? node.ui.reason : undefined,
-      })),
-      connections: (laidOut.edges || [])
-        .filter((edge) => edge.sourceNodeId && edge.targetNodeId)
-        .map((edge) => ({ from: edge.sourceNodeId, to: edge.targetNodeId })),
+      nodes,
+      connections,
     };
   }
 
@@ -558,6 +884,7 @@ export function createSmartDagPageModel() {
     copilotPrompt.value = smart.goal;
     compilerIssues.value = [];
     closeBlueprintPicker(false);
+    refreshCanvasWorkspaceSize(workflow.nodes);
     nextTick(() => requestAnimationFrame(fitCanvasToVisibleArea));
   }
 
@@ -602,7 +929,7 @@ export function createSmartDagPageModel() {
           theme: "end",
         },
       ],
-      connections: [{ from: "preview-start", to: "preview-end" }],
+      connections: [{ from: "preview-start", to: "preview-end", kind: "sequence" }],
     };
     blueprints.value = [workflow, ...blueprints.value.filter((item) => !item.id.startsWith("local-smart-draft-"))];
     selectedBlueprintId.value = localID;
@@ -645,6 +972,15 @@ export function createSmartDagPageModel() {
       return;
     }
     syncGenerateContext();
+    // Prefetch full tool catalog so canvas shows real tool names after generation.
+    try {
+      if (workspaceStore.activeWorkspaceId !== workspaceId) {
+        workspaceStore.activeWorkspaceId = workspaceId;
+      }
+      void toolsStore.loadTools({ commit: true });
+    } catch {
+      /* optional */
+    }
     aiStatus.value = { isGenerating: true, activeStep: 0 };
     const stepTimer = window.setInterval(() => {
       aiStatus.value.activeStep = Math.min(aiStatus.value.activeStep + 1, aiSteps.length - 1);
@@ -786,9 +1122,14 @@ export function createSmartDagPageModel() {
   }
 
   function acceptAiDraft() {
-    currentBlueprint.value.nodes = currentBlueprint.value.nodes.map((node) => ({ ...node, isAiDraft: false }));
-    currentBlueprint.value.status = "review";
-    currentBlueprint.value.automationMode = "AI 协同已采纳";
+    const blueprint = currentBlueprint.value;
+    if (!blueprint.id) return;
+    replaceBlueprint({
+      ...blueprint,
+      status: "review",
+      automationMode: "AI 协同已采纳",
+      nodes: blueprint.nodes.map((node) => ({ ...node, isAiDraft: false })),
+    });
     showToast("已采纳当前生成结果；保存后可执行后端编译。", "success");
   }
 
@@ -867,18 +1208,27 @@ export function createSmartDagPageModel() {
 
     const laidOut = autoLayoutWorkflowGraph(graph);
     const positionById = new Map(laidOut.nodes.map((node) => [node.id, node.position]));
-    blueprint.nodes = blueprint.nodes.map((node) => {
+    const nextNodes = blueprint.nodes.map((node) => {
       const position = positionById.get(node.id);
       if (!position) return node;
       return { ...node, x: position.x, y: position.y };
     });
+    replaceBlueprint({ ...blueprint, nodes: nextNodes });
 
-    // Keep list entry in sync (currentBlueprint is a find() reference, but reassignment is safer).
-    const index = blueprints.value.findIndex((item) => item.id === blueprint.id);
-    if (index >= 0) {
-      blueprints.value.splice(index, 1, { ...blueprint, nodes: blueprint.nodes });
+    if (draft?.graph) {
+      blueprintDrafts.set(blueprint.id, {
+        ...draft,
+        graph: {
+          ...draft.graph,
+          nodes: draft.graph.nodes.map((node) => {
+            const position = positionById.get(node.id);
+            return position ? { ...node, position: { ...position } } : node;
+          }),
+        },
+      });
     }
 
+    refreshCanvasWorkspaceSize(nextNodes);
     nextTick(() => requestAnimationFrame(fitCanvasToVisibleArea));
     showToast("已格式化画布布局。", "success");
   }
@@ -1020,19 +1370,66 @@ export function createSmartDagPageModel() {
   }
 
   function deleteNode(nodeId: string) {
-    if (currentBlueprint.value.nodes.length <= 2) {
+    const blueprint = currentBlueprint.value;
+    if (!blueprint.id) return;
+    if (blueprint.nodes.length <= 2) {
       showToast("正式草稿至少保留 Start 和 End 节点。", "error");
       return;
     }
-    currentBlueprint.value.connections = currentBlueprint.value.connections.filter(
-      (conn) => conn.from !== nodeId && conn.to !== nodeId,
-    );
-    currentBlueprint.value.nodes = currentBlueprint.value.nodes.filter((node) => node.id !== nodeId);
-    selectedNodeId.value = currentBlueprint.value.nodes[0]?.id || "";
+    const nodes = blueprint.nodes.filter((node) => node.id !== nodeId);
+    const connections = blueprint.connections.filter((conn) => conn.from !== nodeId && conn.to !== nodeId);
+    replaceBlueprint({ ...blueprint, nodes, connections });
+    selectedNodeId.value = nodes[0]?.id || "";
+  }
+
+  function startNodeDrag(event: PointerEvent, nodeId: string) {
+    if (event.button !== 0) return;
+    const target = event.target instanceof HTMLElement ? event.target : undefined;
+    if (target?.closest("button, input, textarea, select, a")) return;
+    event.stopPropagation();
+    const node = currentBlueprint.value.nodes.find((item) => item.id === nodeId);
+    if (!node) return;
+    selectedNodeId.value = nodeId;
+    nodeDragging.value = {
+      active: true,
+      nodeId,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: node.x,
+      originY: node.y,
+    };
+    (event.currentTarget as HTMLElement | null)?.setPointerCapture?.(event.pointerId);
+  }
+
+  function moveNodeDrag(event: PointerEvent) {
+    const drag = nodeDragging.value;
+    if (!drag.active || drag.pointerId !== event.pointerId) return;
+    const scale = canvasZoom.value || 1;
+    const x = Math.round(drag.originX + (event.clientX - drag.startX) / scale);
+    const y = Math.round(drag.originY + (event.clientY - drag.startY) / scale);
+    updateBlueprintNodePosition(drag.nodeId, x, y);
+  }
+
+  function endNodeDrag(event: PointerEvent) {
+    const drag = nodeDragging.value;
+    if (!drag.active || drag.pointerId !== event.pointerId) return;
+    (event.currentTarget as HTMLElement | null)?.releasePointerCapture?.(event.pointerId);
+    nodeDragging.value = {
+      active: false,
+      nodeId: "",
+      pointerId: -1,
+      startX: 0,
+      startY: 0,
+      originX: 0,
+      originY: 0,
+    };
+    refreshCanvasWorkspaceSize();
   }
 
   function startCanvasPan(event: PointerEvent) {
     if (event.button !== 0) return;
+    if (nodeDragging.value.active) return;
     const target = event.target instanceof HTMLElement ? event.target : undefined;
     if (target?.closest(".smart-canvas-node, button, input, textarea, select, a")) return;
     canvasPanning.value = {
@@ -1047,6 +1444,10 @@ export function createSmartDagPageModel() {
   }
 
   function moveCanvasPan(event: PointerEvent) {
+    if (nodeDragging.value.active) {
+      moveNodeDrag(event);
+      return;
+    }
     const pan = canvasPanning.value;
     if (!pan.active || pan.pointerId !== event.pointerId) return;
     canvasPan.value = {
@@ -1056,6 +1457,10 @@ export function createSmartDagPageModel() {
   }
 
   function endCanvasPan(event: PointerEvent) {
+    if (nodeDragging.value.active) {
+      endNodeDrag(event);
+      return;
+    }
     const pan = canvasPanning.value;
     if (!pan.active || pan.pointerId !== event.pointerId) return;
     (event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId);
@@ -1067,10 +1472,11 @@ export function createSmartDagPageModel() {
   }
 
   function zoomOut() {
-    canvasZoom.value = Math.max(0.35, Number((canvasZoom.value - 0.1).toFixed(1)));
+    canvasZoom.value = Math.max(0.45, Number((canvasZoom.value - 0.1).toFixed(1)));
   }
 
   function resetCanvas() {
+    refreshCanvasWorkspaceSize();
     fitCanvasToVisibleArea();
   }
 
@@ -1163,6 +1569,15 @@ export function createSmartDagPageModel() {
       await agentStore.loadAgents({ workspaceId });
       selectedAgentId.value = workspaceAgents.value[0]?.id || "";
       syncGenerateContext();
+      // Full catalog (paginated) so Tool node titles resolve by data.toolId.
+      try {
+        if (workspaceStore.activeWorkspaceId !== workspaceId) {
+          workspaceStore.activeWorkspaceId = workspaceId;
+        }
+        await toolsStore.loadTools({ commit: true });
+      } catch {
+        // Tool name resolution degrades gracefully without catalog.
+      }
     } catch {
       // ignore
     }
@@ -1176,6 +1591,22 @@ export function createSmartDagPageModel() {
         registerBlueprint(smart.generatedWorkflow, smart.generatedDraft, smart.confidence || 90, false);
         nextTick(() => requestAnimationFrame(fitCanvasToVisibleArea));
       }
+    },
+  );
+
+  // When tool catalog loads after the draft, re-map toolId → display names.
+  watch(
+    () => toolsStore.tools.length,
+    (count, prev) => {
+      if (!count || count === prev) return;
+      const blueprint = currentBlueprint.value;
+      const draft = blueprint.id ? blueprintDrafts.get(blueprint.id) : undefined;
+      if (!blueprint.id || !draft) return;
+      const detail =
+        workflowStore.workflowDetails[blueprint.id] ||
+        workflowStore.workflows.find((item) => item.id === blueprint.id);
+      if (!detail) return;
+      registerBlueprint(detail, draft, blueprint.aiScore, false);
     },
   );
 
@@ -1287,6 +1718,8 @@ export function createSmartDagPageModel() {
     canvasZoom,
     canvasPan,
     canvasPanning,
+    nodeDragging,
+    canvasWorkspaceSize,
     isNarrowViewport,
     blueprintToolbarCompact,
     leftPanelCollapsed,
@@ -1350,7 +1783,14 @@ export function createSmartDagPageModel() {
     getNodeTypeClass,
     getParameterSchema,
     getConnectionPath,
+    getConnectionLabelPoint,
+    getConditionPortStyle,
+    getConditionBranchPorts,
+    getNodePortSides,
+    portSideClass,
+    portTitle,
     calculateGraphBounds,
+    refreshCanvasWorkspaceSize,
     fitCanvasToVisibleArea,
     resetBlueprintFilters,
     setStatusFilter,
@@ -1378,6 +1818,9 @@ export function createSmartDagPageModel() {
     bindPublishedWorkflowToSessionAgent,
     publishWorkflow,
     deleteNode,
+    startNodeDrag,
+    moveNodeDrag,
+    endNodeDrag,
     startCanvasPan,
     moveCanvasPan,
     endCanvasPan,

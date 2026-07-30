@@ -420,7 +420,7 @@ func (r *Repository) Update(
 	}
 	var contextPolicy any
 	if input.ContextPolicySet {
-		normalized, err := sessioncontext.NormalizePolicyRaw(input.ContextPolicy)
+		normalized, err := sessioncontext.NormalizeWorkspacePolicyRaw(input.ContextPolicy)
 		if err != nil {
 			return Workspace{}, ErrInvalid
 		}

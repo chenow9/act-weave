@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"actweave/backend/internal/principal"
 
@@ -351,6 +352,91 @@ func (r *Repository) ListMessagesReversePage(
 		value, scanErr := scanMessage(rows)
 		if scanErr != nil {
 			return MessagePage{}, fmt.Errorf("scan reverse page chat message: %w", scanErr)
+		}
+		values = append(values, value)
+	}
+	if err := rows.Err(); err != nil {
+		return MessagePage{}, err
+	}
+	page := MessagePage{HasMore: len(values) > limit}
+	if page.HasMore {
+		values = values[:limit]
+	}
+	page.Messages = values
+	if page.HasMore && len(values) > 0 {
+		last := values[len(values)-1]
+		page.NextCursor = &MessagePageCursor{CreatedAt: last.CreatedAt, ID: last.ID}
+	}
+	return page, nil
+}
+
+// ListMessagesAfterCoverage returns up to limit messages oldest-first that are
+// strictly after the coverage-end message (or from session start when afterID empty).
+// Used by LLM compact pass input reads (IC-04). No body decrypt. Keyset via cursor.
+func (r *Repository) ListMessagesAfterCoverage(
+	ctx context.Context,
+	workspaceID, sessionID, afterMessageID string,
+	limit int,
+	cursor *MessagePageCursor,
+) (MessagePage, error) {
+	workspaceID, sessionID = strings.TrimSpace(workspaceID), strings.TrimSpace(sessionID)
+	afterMessageID = strings.TrimSpace(afterMessageID)
+	if !validUUID(workspaceID) || !validUUID(sessionID) {
+		return MessagePage{}, ErrInvalid
+	}
+	if afterMessageID != "" && !validUUID(afterMessageID) {
+		return MessagePage{}, ErrInvalid
+	}
+	if limit < 1 || limit > 500 {
+		return MessagePage{}, ErrInvalid
+	}
+
+	args := []any{workspaceID, sessionID}
+	afterClause := ""
+	if afterMessageID != "" {
+		// Resolve coverage end ordering once; fail closed if missing or wrong session.
+		var afterCreated time.Time
+		var afterID string
+		err := r.db.QueryRowContext(ctx, `
+			SELECT created_at, id FROM chat_messages
+			WHERE workspace_id=$1 AND session_id=$2 AND id=$3
+		`, workspaceID, sessionID, afterMessageID).Scan(&afterCreated, &afterID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return MessagePage{}, ErrNotFound
+		}
+		if err != nil {
+			return MessagePage{}, fmt.Errorf("resolve coverage end: %w", err)
+		}
+		args = append(args, afterCreated.UTC(), afterID)
+		afterClause = fmt.Sprintf(
+			` AND (cm.created_at, cm.id) > ($%d::timestamptz, $%d::uuid)`,
+			len(args)-1, len(args),
+		)
+	}
+	if cursor != nil && !cursor.CreatedAt.IsZero() && validUUID(cursor.ID) {
+		args = append(args, cursor.CreatedAt.UTC(), cursor.ID)
+		afterClause += fmt.Sprintf(
+			` AND (cm.created_at, cm.id) > ($%d::timestamptz, $%d::uuid)`,
+			len(args)-1, len(args),
+		)
+	}
+	args = append(args, limit+1)
+	limitArg := len(args)
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT `+messageColumns+` FROM chat_messages cm
+		WHERE cm.workspace_id=$1 AND cm.session_id=$2`+afterClause+`
+		ORDER BY cm.created_at ASC, cm.id ASC
+		LIMIT $`+fmt.Sprintf("%d", limitArg)+`
+	`, args...)
+	if err != nil {
+		return MessagePage{}, fmt.Errorf("list after coverage chat messages: %w", err)
+	}
+	defer rows.Close()
+	values := make([]Message, 0, limit)
+	for rows.Next() {
+		value, scanErr := scanMessage(rows)
+		if scanErr != nil {
+			return MessagePage{}, fmt.Errorf("scan after coverage message: %w", scanErr)
 		}
 		values = append(values, value)
 	}

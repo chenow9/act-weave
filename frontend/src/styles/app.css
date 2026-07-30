@@ -530,6 +530,7 @@ a[href]:focus-visible {
 .app-select-accessibility-shell {
   display: block;
   width: 100%;
+  min-width: 0;
 }
 
 .app-select .el-select__wrapper {
@@ -555,11 +556,77 @@ a[href]:focus-visible {
   outline: none;
 }
 
-.app-select .el-select__placeholder,
-.app-select .el-select__selected-item {
-  color: #64748b;
+.app-select .el-select__selection {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: visible;
+}
+
+/*
+ * EP single+filterable keeps the filter <input> visible (not .is-hidden).
+ * That empty input sits on top of the selected-label placeholder and makes
+ * the field look blank. When the select is NOT focused, hide the filter
+ * input so the selected label shows through.
+ */
+.app-select .el-select__wrapper:not(.is-focused) .el-select__input-wrapper {
+  position: absolute !important;
+  inset: 0;
+  z-index: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.app-select .el-select__wrapper.is-focused .el-select__input-wrapper {
+  position: relative !important;
+  z-index: 2 !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/*
+ * Selected label lives on .el-select__placeholder (EP design uses z-index:-1).
+ * Force it above the hidden filter input and visible inside isolated panels.
+ */
+.app-select .el-select__placeholder {
+  z-index: 1 !important;
+  left: 0;
+  right: 22px;
+  width: auto !important;
+  max-width: 100%;
+  color: #0f172a !important;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Real empty placeholder (no value) stays muted; keep it visible (not transparent). */
+.app-select .el-select__placeholder.is-transparent {
+  color: #94a3b8 !important;
+}
+
+.app-select .el-select__wrapper.is-focused .el-select__placeholder {
+  /* While typing to filter, hide the label under the input */
+  opacity: 0 !important;
+}
+
+.app-select .el-select__selected-item {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.app-select .app-select-label-text {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .app-select .el-select__caret {
@@ -578,19 +645,27 @@ a[href]:focus-visible {
   border: 1px solid var(--aw-border);
   border-radius: 8px;
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+  /* Never grow past the trigger when fit-input-width is on; cap for safety. */
+  max-width: min(100vw - 16px, 420px);
 }
 
 .app-select-popper .el-select-dropdown {
   padding: 4px;
+  min-width: 0 !important;
 }
 
 .app-select-popper .el-select-dropdown__item {
-  height: 32px;
-  padding: 0 10px;
+  height: auto;
+  min-height: 32px;
+  padding: 6px 10px;
   color: #475569;
   border-radius: 6px;
   font-size: 12px;
   font-weight: 700;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app-select-popper .el-select-dropdown__item.hover,

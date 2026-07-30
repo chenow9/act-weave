@@ -4,6 +4,7 @@
 import AppSelect from "./AppSelect.vue";
 import AgentPromptDiffViewer from "./AgentPromptDiffViewer.vue";
 import { useAgentsPageContext } from "../composables/useAgentsPageContext";
+import { COMPACTION_SUMMARY_PERMANENCE_WARNING } from "../utils/session-context-config";
 
 const scp = useAgentsPageContext();
 /* prettier-ignore */
@@ -12,9 +13,10 @@ const {
   agentModelError, agentRoleError, agentPromptError, promptLineCount, promptPreviewText, canSaveAgent, originalPrompt, promptSaveDiff, pendingPromptText, weavePreviewDiff, agentSaveButtonLabel, canEnhanceDraftPrompt, formatSignedDelta, isEnhancing, toggleDraftStatus,
   agentContextMode, agentContextMaxInputTokens, agentContextMaxRecentTurns,
   agentContextSummaryMaxTokens, agentContextSummaryMinEvictedTurns, agentContextSummaryMaxPasses,
-  agentContextAdvancedOpen, toggleAgentContextAdvanced,
+  agentContextIncludeCompactionSummary, agentContextAdvancedOpen, toggleAgentContextAdvanced,
   setAgentContextMode, setAgentContextMaxInput, setAgentContextMaxTurns,
   setAgentContextSummaryMaxTokens, setAgentContextSummaryMinEvictedTurns, setAgentContextSummaryMaxPasses,
+  setAgentContextIncludeCompactionSummary,
   closeStudio,
   requestCloseStudio, trapAgentModalFocus, enhancePrompt, applyWeavePreview, cancelWeavePreview, confirmPromptSaveReview, cancelPromptSaveReview, saveDraftAgent
 } = scp;
@@ -267,6 +269,29 @@ void AgentPromptDiffViewer;
                     <p class="agent-context-policy-hint">
                       0 表示不额外收紧。滚动摘要默认：摘要 2048、淘汰 4 轮、生成 2 轮、最近 20 轮。
                     </p>
+                    <div class="agent-context-aap-disclosure">
+                      <div class="agent-context-aap-toggle">
+                        <div>
+                          <p>AAP 返回 Compact 摘要正文</p>
+                          <small>默认关闭。仅影响本 Agent 新 run 快照；关闭后不会删除既有 run 中已写入的协议明文。</small>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-label="AAP 返回 Compact 摘要正文"
+                          :aria-checked="agentContextIncludeCompactionSummary"
+                          :class="{ active: agentContextIncludeCompactionSummary }"
+                          @click="
+                            setAgentContextIncludeCompactionSummary(!agentContextIncludeCompactionSummary)
+                          "
+                        >
+                          <span />
+                        </button>
+                      </div>
+                      <p class="agent-context-policy-hint agent-context-permanence-warning">
+                        {{ COMPACTION_SUMMARY_PERMANENCE_WARNING }}
+                      </p>
+                    </div>
                   </div>
                 </template>
               </div>

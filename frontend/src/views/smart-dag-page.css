@@ -348,63 +348,322 @@
 
 .smart-canvas-workspace {
   position: absolute;
-  inset: 0;
-  width: 1800px;
-  height: 900px;
+  top: 0;
+  left: 0;
+  /* width/height set inline from graph bounds so wide flows are not clipped */
+  min-width: 2400px;
+  min-height: 1200px;
   transform-origin: top left;
   transition: transform 0.08s ease;
 }
 
+.smart-canvas-workspace.is-node-dragging {
+  transition: none;
+  cursor: grabbing;
+}
+
 .smart-canvas-svg {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
   z-index: 10;
-  width: 100%;
-  height: 100%;
+  overflow: visible;
   pointer-events: none;
 }
 
-.connection-path {
-  stroke-dasharray: 6;
-  animation: smart-flow 35s linear infinite;
+/*
+ * Edge flow: match Vue Flow / 编排 canvas animated edge feel.
+ * stroke-linecap: butt — round caps stick out past the arrow tip.
+ * Path ends at arrow base; marker tip is drawn past the end (see refX).
+ */
+.connection-path-base {
+  stroke: #94a3b8;
+  stroke-width: 2;
+  stroke-linecap: butt;
+  stroke-linejoin: round;
+  opacity: 0.28;
+  fill: none;
+  /* No marker on base — only the dashed layer carries the arrow */
 }
 
-@keyframes smart-flow {
+.connection-path-base.is-loop {
+  stroke: #94a3b8;
+}
+
+.connection-path-base.is-branch,
+.connection-path-base.is-sequence {
+  stroke: #64748b;
+}
+
+.connection-path {
+  stroke: #64748b;
+  stroke-width: 2;
+  stroke-linecap: butt;
+  stroke-linejoin: round;
+  fill: none;
+  /* Vue Flow animated default: dasharray 5, period 10 */
+  stroke-dasharray: 5;
+  stroke-dashoffset: 0;
+}
+
+.connection-path.is-sequence {
+  stroke: #64748b;
+}
+
+.connection-path.is-branch {
+  stroke: #0f766e;
+}
+
+.connection-path.is-loop {
+  stroke: #64748b;
+}
+
+.connection-path.is-flowing {
+  animation: dashdraw 0.5s linear infinite;
+}
+
+/* Same keyframes name/feel as @vue-flow/core animated edges */
+@keyframes dashdraw {
   from {
-    stroke-dashoffset: 400;
+    stroke-dashoffset: 10;
   }
   to {
     stroke-dashoffset: 0;
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .connection-path.is-flowing {
+    animation: none;
+  }
+}
+
+/* Status chip sits on top of the dashed edge */
+.connection-label {
+  pointer-events: none;
+}
+
+/* Match .workflow-flow-edge-label on the 编排 canvas */
+.connection-label-bg {
+  fill: rgb(255 255 255 / 0.96);
+  stroke: rgb(148 163 184 / 0.35);
+  stroke-width: 1;
+  filter: drop-shadow(0 1px 2px rgb(15 23 42 / 0.06));
+}
+
+.connection-label-text {
+  fill: #475569;
+  font-size: 11px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
 .smart-canvas-node {
   position: absolute;
   z-index: 20;
-  width: 220px;
+  /* All node types share one card size (matches canvasNodeSize / edge anchors). */
+  width: 180px;
+  height: 96px;
+  min-width: 180px;
+  min-height: 96px;
+  max-width: 180px;
+  max-height: 96px;
+  box-sizing: border-box;
+  /* Ports sit outside the card — must not clip them */
+  overflow: visible;
   border: 1px solid #e2e8f0;
-  border-radius: 16px;
+  border-radius: 14px;
   background: #fff;
   box-shadow:
-    0 10px 30px -10px rgb(0 0 0 / 0.04),
-    0 1px 3px rgb(0 0 0 / 0.02);
+    0 8px 24px -12px rgb(15 23 42 / 0.08),
+    0 1px 2px rgb(15 23 42 / 0.04);
   cursor: grab;
+  touch-action: none;
+  /* Only color/shadow — never border-width or display toggles that reflow content */
   transition:
-    border-color 0.2s ease,
-    box-shadow 0.2s ease,
-    background-color 0.2s ease;
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background-color 0.15s ease;
+}
+
+/* Condition no longer grows; branch labels live on edges. */
+.smart-canvas-node.is-condition {
+  width: 180px;
+  height: 96px;
+  min-width: 180px;
+  min-height: 96px;
+  max-width: 180px;
+  max-height: 96px;
+}
+
+.smart-canvas-node.is-end-success {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.smart-canvas-node.is-end-failure {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.smart-canvas-node.is-dragging {
+  z-index: 30;
+  cursor: grabbing;
+  box-shadow:
+    0 0 0 3px rgb(13 148 136 / 0.2),
+    0 16px 28px -12px rgb(15 23 42 / 0.2);
+}
+
+.smart-node-body {
+  display: grid;
+  gap: 2px;
+  padding: 4px 12px 10px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.smart-node-status {
+  margin-top: 0;
+  overflow: hidden;
+  color: #0f766e;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.smart-canvas-node.is-end-failure .smart-node-status {
+  color: #b91c1c;
+}
+
+/*
+ * Delete is absolutely positioned so show/hide never reflows the card
+ * (was the cause of “hover 时里面数据抖一下”).
+ */
+.smart-node-delete {
+  position: absolute !important;
+  top: 6px;
+  right: 6px;
+  z-index: 4;
+  display: inline-flex !important;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.smart-canvas-node:hover .smart-node-delete,
+.smart-canvas-node.selected .smart-node-delete {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.smart-condition-ports {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Label only — the port dot itself is positioned like a normal side port */
+.smart-condition-port-label {
+  position: absolute;
+  max-width: 64px;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.smart-condition-port-label.is-right {
+  top: 50%;
+  left: calc(100% + 14px);
+  transform: translateY(-50%);
+}
+
+.smart-condition-port-label.is-left {
+  top: 50%;
+  right: calc(100% + 14px);
+  transform: translateY(-50%);
+  text-align: right;
+}
+
+.smart-condition-port-label.is-bottom {
+  top: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+}
+
+.smart-condition-port-label.is-top {
+  bottom: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+}
+
+.smart-tool-binding-card {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid #ccfbf1;
+  border-radius: 12px;
+  background: #f0fdfa;
+}
+
+.smart-tool-binding-card > span {
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.smart-tool-binding-card > strong {
+  color: #134e4a;
+  font-size: 13px;
+}
+
+.smart-tool-binding-card > strong.is-missing {
+  color: #b45309;
+}
+
+.smart-tool-binding-card > code {
+  display: block;
+  padding: 6px 8px;
+  overflow: auto;
+  color: #334155;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.smart-tool-binding-card > small {
+  color: #b45309;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .smart-canvas-node:hover {
+  /* Ring via outer shadow only — border width stays 1px, no content shift */
+  border-color: #99f6e4;
   box-shadow:
-    0 20px 25px -5px rgb(13 148 136 / 0.06),
-    0 8px 10px -6px rgb(13 148 136 / 0.03);
+    0 0 0 2px rgb(13 148 136 / 0.12),
+    0 12px 20px -10px rgb(13 148 136 / 0.12);
 }
 
 .smart-canvas-node.selected {
-  border-color: transparent;
+  border-color: #5eead4;
   box-shadow:
-    0 0 0 3px rgb(13 148 136 / 0.15),
+    0 0 0 2px rgb(13 148 136 / 0.18),
     0 10px 20px -10px rgb(13 148 136 / 0.12);
 }
 
@@ -417,65 +676,59 @@
 .smart-canvas-node header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 12px;
-  border-bottom: 1px solid #f8fafc;
+  gap: 6px;
+  height: 30px;
+  min-height: 30px;
+  max-height: 30px;
+  padding: 8px 10px 0;
+  /* room for absolute delete without overlapping type chip */
+  padding-right: 32px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
-.smart-canvas-node header button {
-  display: inline-flex;
-  width: 44px;
-  height: 44px;
+.smart-canvas-node header button.smart-node-delete {
+  width: 24px;
+  height: 24px;
   align-items: center;
   justify-content: center;
   border: 0;
   border-radius: 6px;
-  background: transparent;
-  color: #64748b;
-  font-size: 10px;
+  background: rgb(255 255 255 / 0.92);
+  color: #94a3b8;
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
 }
 
-.smart-canvas-node header button:hover {
-  background: #f1f5f9;
+.smart-canvas-node header button.smart-node-delete:hover {
+  background: #fef2f2;
   color: #e11d48;
-}
-
-.smart-canvas-node > div {
-  padding: 16px;
 }
 
 .smart-canvas-node strong,
 .smart-canvas-node small {
   display: block;
+  min-width: 0;
 }
 
 .smart-canvas-node strong {
-  color: #1e293b;
+  color: #0f172a;
   font-size: 12px;
   font-weight: 700;
   line-height: 1.3;
-}
-
-.smart-canvas-node small {
-  margin-top: 3px;
   overflow: hidden;
-  color: #64748b;
-  font-size: 11px;
-  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.smart-canvas-node p {
-  display: -webkit-box;
-  margin: 8px 0 0;
+.smart-canvas-node small {
   overflow: hidden;
-  color: #4f46e5;
+  color: #64748b;
   font-size: 10px;
-  line-height: 1.4;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .smart-node-type,
@@ -536,24 +789,62 @@
   text-transform: none;
 }
 
+/*
+ * Port dots: 12×12, fully outside the card with ~2px air gap.
+ * right/left: -14px → centre is 8px outside the border (6 radius + 2 gap).
+ * Must match PORT_OUTSET in workflow-edges.ts.
+ */
 .smart-node-port {
   position: absolute;
-  top: 50%;
+  z-index: 3;
   width: 12px;
   height: 12px;
+  box-sizing: border-box;
   border: 2px solid #0d9488;
   border-radius: 999px;
   background: #fff;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.9);
+}
+
+/* Main horizontal rail = 48px from card top (mid of 96px tool card). */
+.smart-node-port.output,
+.smart-node-port.is-right {
+  top: 48px;
+  right: -14px;
+  left: auto;
+  bottom: auto;
   transform: translateY(-50%);
 }
 
-.smart-node-port.output {
-  right: -6px;
+.smart-node-port.input,
+.smart-node-port.is-left {
+  top: 48px;
+  left: -14px;
+  right: auto;
+  bottom: auto;
+  transform: translateY(-50%);
+  border-color: #94a3b8;
 }
 
-.smart-node-port.input {
-  left: -6px;
-  border-color: #cbd5e1;
+.smart-node-port.is-top {
+  top: -14px;
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  transform: translateX(-50%);
+}
+
+.smart-node-port.is-bottom {
+  top: auto;
+  left: 50%;
+  right: auto;
+  bottom: -14px;
+  transform: translateX(-50%);
+}
+
+.smart-node-port.is-branch {
+  border-color: #0d9488;
 }
 
 .smart-copilot-panel,

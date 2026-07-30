@@ -310,6 +310,7 @@ function stepIcon(type: string) {
   if (type === "reasoning") return "fa-solid fa-brain";
   if (type === "tool") return "fa-solid fa-screwdriver-wrench";
   if (type === "output") return "fa-solid fa-circle-check";
+  if (type === "context_compaction") return "fa-solid fa-compress";
   return "fa-solid fa-terminal";
 }
 
@@ -467,6 +468,22 @@ async function runAction(action: () => Promise<void>, fallback: string) {
               <div>
                 <div class="json-label"><i class="fa-solid fa-wave-square"></i> 返回结果 (Result)</div>
                 <pre class="json-view">{{ JSON.stringify(displayJson(step.result, step.resultState), null, 2) }}</pre>
+              </div>
+            </div>
+            <div v-else-if="step.type === 'context_compaction'" class="tool-grid">
+              <div>
+                <div class="json-label"><i class="fa-solid fa-compress"></i> Compact 元数据</div>
+                <pre class="json-view">{{ JSON.stringify(displayJson(step.params, step.paramsState), null, 2) }}</pre>
+              </div>
+              <div v-if="step.content && step.contentState === 'plain' && !agentAudit.isMasked">
+                <div class="json-label"><i class="fa-solid fa-file-lines"></i> 摘要正文（受控）</div>
+                <pre class="json-view">{{ step.content }}</pre>
+              </div>
+              <div v-else>
+                <div class="json-label"><i class="fa-solid fa-shield-halved"></i> 摘要正文</div>
+                <p class="step-content muted">
+                  默认脱敏。仅在全局 debug 开启、平台管理员且关闭页面遮罩时从加密对象展示。
+                </p>
               </div>
             </div>
           </div>

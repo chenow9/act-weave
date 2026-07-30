@@ -95,17 +95,19 @@ describe("autoLayoutWorkflowGraph", () => {
     const spineY = [p.cond.y, p.reserve.y, p.qc.y, p.approval.y, p.approve.y, p.end.y];
     expect(Math.max(...spineY) - Math.min(...spineY)).toBeLessThanOrEqual(1);
 
-    // Reject sits on a parallel track with uniform row gap.
-    expect(Math.abs(p.reject.y - p.reserve.y)).toBeGreaterThanOrEqual(180);
+    // Reject sits on a parallel track BELOW the success rail.
+    expect(p.reject.y).toBeGreaterThan(p.reserve.y);
+    expect(Math.abs(p.reject.y - p.reserve.y)).toBeGreaterThanOrEqual(160);
 
-    // Even column spacing along the long chain.
+    // Column pitch is stable; fork/stage columns may be slightly wider (≤ 40).
     const chainX = [p.cond.x, p.reserve.x, p.qc.x, p.approval.x, p.approve.x, p.end.x];
     const gaps = chainX.slice(1).map((x, i) => x - chainX[i]);
-    expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThanOrEqual(1);
+    expect(Math.min(...gaps)).toBeGreaterThanOrEqual(200);
+    expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThanOrEqual(50);
   });
 
-  it("lays out a condition→end skip on one spine with even column gaps", () => {
-    // Matches the screenshot: long “跳过到结束” edge, no intermediate reject node.
+  it("lays out a condition→end skip with even columns and branched vertical fan-out", () => {
+    // Long “跳过到结束” edge + happy path; Dify-style: not forced onto one Y line.
     const input = graph(
       [
         { id: "start", type: "Start", label: "Start" },
@@ -131,12 +133,70 @@ describe("autoLayoutWorkflowGraph", () => {
 
     const laid = autoLayoutWorkflowGraph(input);
     const p = Object.fromEntries(laid.nodes.map((n) => [n.id, n.position]));
-    const ys = laid.nodes.map((n) => n.position.y);
-    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThanOrEqual(1);
 
+    // Happy path left→right; stage/fork columns may use a wider pitch (≤ 40 delta).
     const xs = ["start", "dup", "cond", "reserve", "qc", "approval", "release", "end"].map((id) => p[id].x);
     const gaps = xs.slice(1).map((x, i) => x - xs[i]);
-    expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThanOrEqual(1);
+    expect(Math.min(...gaps)).toBeGreaterThanOrEqual(200);
+    expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThanOrEqual(50);
+    expect(p.end.x).toBeGreaterThan(p.release.x);
+  });
+
+  it("places Start left and End right even with a progress poll cycle", () => {
+    // Real smart-dag shape: tools → get_progress ⇄ condition → report → end
+    // (running loops back; failed goes to end; completed continues to report)
+    const input = graph(
+      [
+        { id: "start", type: "Start", label: "Start" },
+        { id: "create_task", type: "Tool", label: "Tool" },
+        { id: "upload_image", type: "Tool", label: "Tool" },
+        { id: "start_analysis", type: "Tool", label: "Tool" },
+        { id: "get_progress", type: "Tool", label: "Tool" },
+        { id: "progress_check", type: "Condition", label: "Condition" },
+        { id: "create_word_report", type: "Tool", label: "Tool" },
+        { id: "end", type: "End", label: "End" },
+      ],
+      [
+        { id: "e1", sourceNodeId: "start", targetNodeId: "create_task" },
+        { id: "e2", sourceNodeId: "create_task", targetNodeId: "upload_image" },
+        { id: "e3", sourceNodeId: "upload_image", targetNodeId: "start_analysis" },
+        { id: "e4", sourceNodeId: "start_analysis", targetNodeId: "get_progress" },
+        { id: "e5", sourceNodeId: "get_progress", targetNodeId: "progress_check" },
+        { id: "e6", sourceNodeId: "progress_check", targetNodeId: "create_word_report", data: { branch: "completed" } },
+        { id: "e7", sourceNodeId: "progress_check", targetNodeId: "get_progress", data: { branch: "running" } },
+        { id: "e8", sourceNodeId: "progress_check", targetNodeId: "end", data: { branch: "failed" } },
+        { id: "e9", sourceNodeId: "create_word_report", targetNodeId: "end" },
+      ],
+    );
+
+    const laid = autoLayoutWorkflowGraph(input);
+    const p = Object.fromEntries(laid.nodes.map((n) => [n.id, n.position]));
+
+    expect(p.start.x).toBeLessThan(p.create_task.x);
+    expect(p.create_task.x).toBeLessThan(p.upload_image.x);
+    expect(p.upload_image.x).toBeLessThan(p.start_analysis.x);
+    expect(p.start_analysis.x).toBeLessThan(p.get_progress.x);
+    expect(p.get_progress.x).toBeLessThan(p.progress_check.x);
+    expect(p.progress_check.x).toBeLessThan(p.create_word_report.x);
+    expect(p.create_word_report.x).toBeLessThan(p.end.x);
+
+    // End is the rightmost node — never sandwiched between tools.
+    const maxToolX = Math.max(
+      p.create_task.x,
+      p.upload_image.x,
+      p.start_analysis.x,
+      p.get_progress.x,
+      p.progress_check.x,
+      p.create_word_report.x,
+    );
+    expect(p.end.x).toBeGreaterThan(maxToolX);
+    expect(p.start.x).toBeLessThanOrEqual(
+      Math.min(p.create_task.x, p.progress_check.x, p.end.x),
+    );
+
+    // Success report continues on/near main rail; failure end may sit below.
+    // Poll loop routing is handled in canvas path drawing (below rail).
+    expect(p.end.x).toBeGreaterThan(p.progress_check.x);
   });
 
   it("detects stacked nodes and layoutWorkflowGraphIfNeeded unstacks them", () => {

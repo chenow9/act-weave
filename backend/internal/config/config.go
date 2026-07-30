@@ -33,6 +33,9 @@ type Config struct {
 	// AgentAudit controls the platform-admin agent full-trace debug audit surface.
 	// Loaded once at process start; changing it requires a restart.
 	AgentAudit AgentAuditConfig `yaml:"agentAudit"`
+	// Tools holds management-plane tool lifecycle escape hatches (force publish).
+	// Loaded once at process start; changing requires a restart.
+	Tools ToolsConfig `yaml:"tools"`
 	// AgentPrompt holds create-preview retention/purge worker knobs (ZKL-69).
 	// Business TTL (30 days) and purge SLA (24 hours) are not configurable.
 	AgentPrompt AgentPromptConfig `yaml:"agentPrompt"`
@@ -44,6 +47,14 @@ type Config struct {
 	Encryption     EncryptionConfig     `yaml:"encryption"`
 	Storage        StorageConfig        `yaml:"storage"`
 	BootstrapAdmin BootstrapAdminConfig `yaml:"bootstrapAdmin"`
+}
+
+// ToolsConfig gates high-risk tool management operations.
+// Zero value keeps AllowForcePublish=false (production-safe default).
+type ToolsConfig struct {
+	// AllowForcePublish enables PLATFORM_ADMIN force-publish without live invoke.
+	// Env: ACTWEAVE_TOOLS_ALLOW_FORCE_PUBLISH. Default false.
+	AllowForcePublish bool `yaml:"allowForcePublish"`
 }
 
 // AgentPromptConfig configures create-preview purge worker pacing only.
@@ -400,6 +411,13 @@ func (config *Config) applyEnvironment(lookup LookupEnv) error {
 			return errors.New("ACTWEAVE_AGENT_AUDIT_DEBUG must be a boolean")
 		}
 		config.AgentAudit.Debug = value
+	}
+	if raw, ok := lookup("ACTWEAVE_TOOLS_ALLOW_FORCE_PUBLISH"); ok {
+		value, err := strconv.ParseBool(strings.TrimSpace(raw))
+		if err != nil {
+			return errors.New("ACTWEAVE_TOOLS_ALLOW_FORCE_PUBLISH must be a boolean")
+		}
+		config.Tools.AllowForcePublish = value
 	}
 	if err := config.applyRuntimeEnvironment(lookup); err != nil {
 		return err

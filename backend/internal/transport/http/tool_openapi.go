@@ -44,6 +44,8 @@ type ToolTestConnectionResolver interface {
 }
 type ToolPublisher interface {
 	Publish(context.Context, tool.PublishToolInput) (tool.PublishToolResult, error)
+	// ForcePublish is optional at the interface for compile-time; concrete service implements it.
+	ForcePublish(context.Context, tool.ForcePublishToolInput) (tool.PublishToolResult, error)
 }
 type ToolInvoker interface {
 	Invoke(context.Context, execution.InvokeRequest) (execution.PipelineResult, error)
@@ -112,6 +114,7 @@ func (r *ToolOpenAPIRoutes) RegisterV1(v1 V1Routes) {
 	g.PATCH("/workspaces/:wid/tools/:id/versions/:vid", r.updateVersion)
 	g.POST("/workspaces/:wid/tools/:id/versions/:vid/__command/test", r.testVersion)
 	g.POST("/workspaces/:wid/tools/:id/versions/:vid/__command/publish", r.publishVersion)
+	g.POST("/workspaces/:wid/tools/:id/versions/:vid/__command/force-publish", r.forcePublishVersion)
 	g.POST("/workspaces/:wid/tools/:id/__command/invoke", r.invokeTool)
 	g.GET("/workspaces/:wid/openapi-imports", r.listImports)
 	g.POST("/workspaces/:wid/openapi-imports", r.createImport)
@@ -160,6 +163,8 @@ type headVersionDTO struct {
 	DefaultConnectionID *string         `json:"defaultConnectionId,omitempty"`
 	ActionSchemaVersion string          `json:"actionSchemaVersion,omitempty"`
 	ActionConfig        json.RawMessage `json:"actionConfig,omitempty"`
+	// LockVersion is the tool_versions CAS token for test/publish from list rows.
+	LockVersion int64 `json:"lockVersion"`
 }
 
 type latestTestDTO struct {
@@ -313,6 +318,7 @@ func (r *ToolOpenAPIRoutes) listTools(c *gin.Context) {
 				DefaultConnectionID: item.Head.DefaultConnectionID,
 				ActionSchemaVersion: item.Head.ActionSchemaVersion,
 				ActionConfig:        item.Head.ActionConfig,
+				LockVersion:         item.Head.LockVersion,
 			}
 			// Prefer head version connection for list display binding.
 			if dto.DefaultConnectionID == nil && item.Head.DefaultConnectionID != nil {
@@ -603,6 +609,13 @@ type publishVersionRequest struct {
 	LockVersion         int64  `json:"lockVersion"`
 }
 
+type forcePublishVersionRequest struct {
+	CallableName        string `json:"callableName"`
+	CallableDescription string `json:"callableDescription"`
+	LockVersion         int64  `json:"lockVersion"`
+	Reason              string `json:"reason"`
+}
+
 func (r *ToolOpenAPIRoutes) publishVersion(c *gin.Context) {
 	if !r.authorize(c, authz.ActionPublish) {
 		return
@@ -628,6 +641,55 @@ func (r *ToolOpenAPIRoutes) publishVersion(c *gin.Context) {
 		return
 	}
 	c.JSON(200, gin.H{"releaseId": v.Release.ID, "releaseNo": v.Release.ReleaseNo, "version": versionDTOFor(v.Version), "testId": v.Test.ID})
+}
+
+// forcePublishVersion is a PLATFORM_ADMIN escape hatch: skips live invoke test,
+// still freezes capability_releases + activation. Requires tools.allowForcePublish.
+func (r *ToolOpenAPIRoutes) forcePublishVersion(c *gin.Context) {
+	if !platformAdmin(c) {
+		RespondError(c, authz.ErrDenied)
+		return
+	}
+	if !r.authorize(c, authz.ActionPublish) {
+		return
+	}
+	var q forcePublishVersionRequest
+	if decodeJSON(c, &q) != nil {
+		RespondError(c, tool.ErrInvalid)
+		return
+	}
+	rid, e := newV7()
+	if e != nil {
+		RespondError(c, e)
+		return
+	}
+	eid, e := newV7()
+	if e != nil {
+		RespondError(c, e)
+		return
+	}
+	tid, e := newV7()
+	if e != nil {
+		RespondError(c, e)
+		return
+	}
+	v, e := r.publisher.ForcePublish(c.Request.Context(), tool.ForcePublishToolInput{
+		PublishToolInput: tool.PublishToolInput{
+			ReleaseID: rid, EventID: eid, WorkspaceID: c.Param("wid"), CapabilityID: c.Param("id"),
+			VersionID: c.Param("vid"), CallableName: q.CallableName, CallableDescription: q.CallableDescription,
+			PublishedBy: actor(c), ExpectedVersionLock: q.LockVersion,
+		},
+		TestID: tid, Reason: q.Reason,
+	})
+	if e != nil {
+		RespondError(c, e)
+		return
+	}
+	c.JSON(200, gin.H{
+		"releaseId": v.Release.ID, "releaseNo": v.Release.ReleaseNo,
+		"version": versionDTOFor(v.Version), "testId": v.Test.ID,
+		"force": true, "forceReason": v.Event.ForceReason,
+	})
 }
 
 type invokeToolRequest struct {

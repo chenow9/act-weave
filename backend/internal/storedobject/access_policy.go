@@ -34,12 +34,21 @@ func (authorizer *WorkspaceReadAuthorizer) AuthorizeStoredObjectRead(
 	request.ActorID = strings.TrimSpace(request.ActorID)
 	request.WorkspaceID = strings.TrimSpace(request.WorkspaceID)
 	request.Kind = strings.ToUpper(strings.TrimSpace(request.Kind))
-	if request.ActorType != CreatorUser || !validUUID(request.ActorID) ||
-		!validUUID(request.WorkspaceID) || !validClassification(request.Classification) {
+	if !validUUID(request.ActorID) || !validUUID(request.WorkspaceID) ||
+		!validClassification(request.Classification) {
 		return authz.ErrDenied
 	}
 	// Preview kinds are never authorized through the general Workspace read path.
 	if IsPromptPreview(request.Kind) {
+		return authz.ErrDenied
+	}
+	// ZKL-81: runtime compact inject/PutOrVerify-retry opens permanent
+	// CHAT_CONTEXT_SUMMARY bodies as SYSTEM. User audit still uses CreatorUser
+	// + platform-admin gates; this path does not grant Console/AAP object download.
+	if request.ActorType == CreatorSystem && request.Kind == KindChatContextSummary {
+		return nil
+	}
+	if request.ActorType != CreatorUser {
 		return authz.ErrDenied
 	}
 	action := authz.ActionView

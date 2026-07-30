@@ -1463,6 +1463,21 @@
   box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
 }
 
+.tool-management-list .management-list-batch-action.is-warning {
+  border-color: rgba(217, 119, 6, 0.4) !important;
+  background: #fff !important;
+  color: #b45309 !important;
+}
+
+.tool-management-list .management-list-batch-action.is-warning:hover:not(:disabled),
+.tool-management-list .management-list-batch-action.is-warning:focus-visible:not(:disabled) {
+  outline: 0;
+  border-color: rgba(217, 119, 6, 0.55) !important;
+  background: #fffbeb !important;
+  color: #92400e !important;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
+}
+
 .tool-management-list .management-list-batch-action.is-danger {
   border-color: #fecaca !important;
   background: #fff !important;
@@ -1629,6 +1644,47 @@
   color: #475569;
   font-size: 13px;
   line-height: 1.6;
+}
+
+.tool-force-publish-reason {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.tool-force-publish-reason > span {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tool-force-publish-reason textarea {
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 12px;
+  color: #0f172a;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.tool-force-publish-reason textarea:focus {
+  outline: 0;
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+}
+
+.tool-force-publish-reason small {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.tool-force-publish-reason small.error {
+  color: #b91c1c;
+  font-weight: 600;
 }
 
 .tool-impact-summary {

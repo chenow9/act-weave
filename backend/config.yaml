@@ -53,6 +53,12 @@ outboundIdentity:
 agentAudit:
   debug: true
 
+# Tool management escape hatches. Production should keep allowForcePublish=false
+# unless operators explicitly need PLATFORM_ADMIN bulk force-publish without live test.
+# Env: ACTWEAVE_TOOLS_ALLOW_FORCE_PUBLISH. Restart required.
+tools:
+  allowForcePublish: true
+
 encryption:
   masterKey: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
 
@@ -95,3 +101,11 @@ runtime:
   sessionContext:
     enabled: true
     allowAllWorkspaces: true
+    # ZKL-81 independent LLM compact gate (T6-A). Default OFF — do not enable in prod
+    # via this commit. shadow = plan only; enforced = full compact path (later ICs).
+    compaction:
+      enabled: false
+      mode: disabled
+      allowAllWorkspaces: false
+      workspaceIds: []
+      rolloutVersion: context-compaction-default

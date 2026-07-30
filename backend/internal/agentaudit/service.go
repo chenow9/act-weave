@@ -20,13 +20,34 @@ var (
 type Service struct {
 	db        *sql.DB
 	debugMode bool
+	// summaryBodies opens encrypted compact summary bodies when debugMode=true.
+	// Nil or debug=false → zero opens (AC-08 / IC-11).
+	summaryBodies SummaryBodyReader
 }
 
-func NewService(db *sql.DB, debugMode bool) (*Service, error) {
+// ServiceOption configures optional audit dependencies.
+type ServiceOption func(*Service)
+
+// WithSummaryBodyReader enables ADMIN_AUDIT hydration from encrypted summary objects.
+func WithSummaryBodyReader(reader SummaryBodyReader) ServiceOption {
+	return func(s *Service) {
+		if s != nil {
+			s.summaryBodies = reader
+		}
+	}
+}
+
+func NewService(db *sql.DB, debugMode bool, opts ...ServiceOption) (*Service, error) {
 	if db == nil {
 		return nil, errors.New("agent audit database is required")
 	}
-	return &Service{db: db, debugMode: debugMode}, nil
+	s := &Service{db: db, debugMode: debugMode}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(s)
+		}
+	}
+	return s, nil
 }
 
 func (s *Service) DebugMode() bool {
@@ -239,7 +260,86 @@ func (s *Service) GetTrace(ctx context.Context, workspaceID, traceID string, fil
 	}
 	// Build full ordered timeline, then page the presentation slice so the
 	// audit UI can infinite-scroll without shipping every tool body at once.
-	return PageTimelineSteps(BuildTimeline(runs, messages, steps, s.debugMode), filter), nil
+	detail := PageTimelineSteps(BuildTimeline(runs, messages, steps, s.debugMode), filter)
+	// AC-08 / IC-11: only when server debug is on, hydrate completed compact
+	// bodies from encrypted objects — never from protocol JSONB (T4-B).
+	// debug=false must perform zero SummaryBodyReader opens.
+	if s.debugMode {
+		s.hydrateCompactSummaryBodies(ctx, workspaceID, detail.Steps)
+	}
+	return detail, nil
+}
+
+// hydrateCompactSummaryBodies fills context_compaction Content from encrypted objects.
+// Caller must ensure platform-admin route gate and debugMode=true.
+func (s *Service) hydrateCompactSummaryBodies(ctx context.Context, workspaceID string, steps []Step) {
+	if s == nil || s.summaryBodies == nil || !s.debugMode {
+		return
+	}
+	for i := range steps {
+		if steps[i].Type != "context_compaction" {
+			continue
+		}
+		summaryID, digest := compactSummaryRefFromParams(steps[i].Params)
+		if summaryID == "" {
+			// Completed without summary id → leave redacted/empty (no protocol fallback).
+			if steps[i].ContentState == "" {
+				steps[i].ContentState = ContentRedacted
+			}
+			continue
+		}
+		// Only hydrate successful completed compact (fallback/failed stay metadata-only).
+		if !compactParamsCompleted(steps[i].Params) {
+			continue
+		}
+		got, err := s.summaryBodies.Open(ctx, PurposeAdminAudit, SummaryBodyReadRequest{
+			WorkspaceID:    workspaceID,
+			RunID:          steps[i].RunID,
+			StepID:         steps[i].StepID,
+			SummaryID:      summaryID,
+			ExpectedDigest: digest,
+		})
+		if err != nil {
+			steps[i].Content = ""
+			steps[i].ContentState = ContentCipher
+			continue
+		}
+		steps[i].Content = got.Body
+		if got.State == "" {
+			steps[i].ContentState = ContentRedacted
+		} else {
+			steps[i].ContentState = got.State
+		}
+	}
+}
+
+func compactSummaryRefFromParams(params json.RawMessage) (summaryID, digest string) {
+	if len(params) == 0 {
+		return "", ""
+	}
+	var meta map[string]any
+	if json.Unmarshal(params, &meta) != nil {
+		return "", ""
+	}
+	if v, ok := meta["summaryId"].(string); ok {
+		summaryID = strings.TrimSpace(v)
+	}
+	if v, ok := meta["summaryDigest"].(string); ok {
+		digest = strings.TrimSpace(v)
+	}
+	return summaryID, digest
+}
+
+func compactParamsCompleted(params json.RawMessage) bool {
+	if len(params) == 0 {
+		return false
+	}
+	var meta map[string]any
+	if json.Unmarshal(params, &meta) != nil {
+		return false
+	}
+	res, _ := meta["result"].(string)
+	return strings.EqualFold(strings.TrimSpace(res), "completed")
 }
 
 func (s *Service) loadMessages(ctx context.Context, workspaceID string, runIDs []string) ([]MessageFact, error) {

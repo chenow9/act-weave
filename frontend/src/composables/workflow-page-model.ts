@@ -281,7 +281,8 @@ export function createWorkflowPageModel() {
     return workflowToolCatalog.value
       .filter((tool) => (!workspaceId || tool.workspaceId === workspaceId) && tool.status === "Published")
       .map((tool) => ({
-        label: `${tool.name} · ${tool.id}`,
+        // Short label keeps the inspector menu under the trigger (no full UUID).
+        label: tool.name?.trim() || tool.id,
         value: tool.id,
       }));
   });

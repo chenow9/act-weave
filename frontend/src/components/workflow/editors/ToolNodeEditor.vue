@@ -18,15 +18,48 @@ const emit = defineEmits<{
   (event: "update-node-data", payload: { key: string; value: unknown }): void;
 }>();
 
-const selectedToolId = computed(() => (typeof props.node.data.toolId === "string" ? props.node.data.toolId : ""));
+const selectedToolId = computed(() => {
+  const raw = props.node.data?.toolId;
+  return typeof raw === "string" ? raw.trim() : "";
+});
 const publishedTools = computed(() => props.tools.filter((tool) => tool.status === "Published"));
-const selectedTool = computed(() => publishedTools.value.find((tool) => tool.id === selectedToolId.value));
+const selectedTool = computed(
+  () =>
+    props.tools.find((tool) => tool.id === selectedToolId.value) ||
+    publishedTools.value.find((tool) => tool.id === selectedToolId.value),
+);
 const toolSelectOptions = computed(() => {
+  const byId = new Map<string, { label: string; value: string }>();
+
+  const addOption = (value: string, label?: string) => {
+    const id = value?.trim();
+    if (!id) return;
+    const text = (label || "").trim() || id;
+    // Prefer a human name if we already stored a bare id as label.
+    const existing = byId.get(id);
+    if (!existing || existing.label === id) {
+      byId.set(id, { label: text, value: id });
+    }
+  };
+
+  for (const tool of publishedTools.value) {
+    addOption(tool.id, tool.name);
+  }
   if (props.toolOptions?.length) {
     const publishedIds = new Set(publishedTools.value.map((tool) => tool.id));
-    return props.toolOptions.filter((option) => publishedIds.has(option.value));
+    for (const option of props.toolOptions) {
+      // Keep published catalog options; also keep the currently bound tool.
+      if (publishedIds.has(option.value) || option.value === selectedToolId.value) {
+        addOption(option.value, option.label);
+      }
+    }
   }
-  return publishedTools.value.map((tool) => ({ label: `${tool.name} · ${tool.id}`, value: tool.id }));
+  // Always surface the currently bound tool so el-select can resolve a label.
+  if (selectedToolId.value) {
+    addOption(selectedToolId.value, selectedTool.value?.name);
+  }
+
+  return [...byId.values()].sort((a, b) => a.label.localeCompare(b.label, "zh-CN"));
 });
 const hasPublishedTools = computed(() => toolSelectOptions.value.length > 0);
 const requiredUserParams = computed(() =>
@@ -154,7 +187,11 @@ function paramSummary(param: ToolRequestParam) {
         :model-value="selectedToolId"
         :options="toolSelectOptions"
         placeholder="选择已发布工具"
-        @update:model-value="updateTool(String($event))"
+        filterable
+        :fit-input-width="true"
+        placement="bottom-start"
+        aria-label="选择已发布工具"
+        @update:model-value="updateTool(String($event || ''))"
       />
     </label>
 
