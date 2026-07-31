@@ -1334,7 +1334,12 @@
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
-  font-family: Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family:
+    Inter,
+    "Segoe UI",
+    system-ui,
+    -apple-system,
+    sans-serif;
   font-size: 13px;
   line-height: 1.65;
   white-space: normal;

@@ -58,9 +58,7 @@ export function buildVerticalApproachDetour(input: {
 }): FlowchartEdgePath {
   const depth = input.depth ?? 56;
   const railY =
-    input.side > 0
-      ? Math.max(input.sourceY, input.targetY) + depth
-      : Math.min(input.sourceY, input.targetY) - depth;
+    input.side > 0 ? Math.max(input.sourceY, input.targetY) + depth : Math.min(input.sourceY, input.targetY) - depth;
   return pathFromPoints([
     { x: input.sourceX, y: input.sourceY },
     { x: input.sourceX, y: railY },

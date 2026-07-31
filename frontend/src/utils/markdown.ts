@@ -10,8 +10,7 @@ const markdown = new MarkdownIt({
 markdown.renderer.rules.image = () => "";
 
 const defaultLinkOpen =
-  markdown.renderer.rules.link_open ||
-  ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options));
+  markdown.renderer.rules.link_open || ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options));
 
 markdown.renderer.rules.link_open = (tokens, idx, options, env, self) => {
   const token = tokens[idx];
@@ -34,8 +33,7 @@ markdown.renderer.rules.link_open = (tokens, idx, options, env, self) => {
 };
 
 const defaultLinkClose =
-  markdown.renderer.rules.link_close ||
-  ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options));
+  markdown.renderer.rules.link_close || ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options));
 
 markdown.renderer.rules.link_close = (tokens, idx, options, env, self) => {
   // If the matching open was blocked, skip close tag.
@@ -88,7 +86,7 @@ export function renderMarkdown(source: string, emptyFallback = "暂无内容。"
     ALLOWED_TAGS: allowedTags,
     ALLOWED_ATTR: ["href", "target", "rel", "title", "class"],
     ALLOW_DATA_ATTR: false,
-    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i,
   });
 }
 

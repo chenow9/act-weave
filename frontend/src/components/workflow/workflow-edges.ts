@@ -69,11 +69,7 @@ export const PORT_RADIUS = 6;
  */
 export const ARROW_TIP_EXTENT = 6;
 
-export function nodeRectFromSize(
-  x: number,
-  y: number,
-  size: { width: number; height: number },
-): NodeRect {
+export function nodeRectFromSize(x: number, y: number, size: { width: number; height: number }): NodeRect {
   return { x, y, w: size.width, h: size.height };
 }
 
@@ -140,25 +136,17 @@ function branchRank(label: string): number {
  * Assign each condition branch a unique exit side.
  * Left is reserved for the single input port.
  */
-export function assignUniqueBranchSides(
-  ports: Array<{ key: string; label: string }>,
-): BranchPortSpec[] {
+export function assignUniqueBranchSides(ports: Array<{ key: string; label: string }>): BranchPortSpec[] {
   const free: EdgeSide[] = ["right", "bottom", "top"];
   const used = new Set<EdgeSide>();
   const ranked = ports
     .map((p, index) => ({ ...p, index }))
-    .sort(
-      (a, b) =>
-        branchRank(a.label) - branchRank(b.label) || a.index - b.index || a.key.localeCompare(b.key),
-    );
+    .sort((a, b) => branchRank(a.label) - branchRank(b.label) || a.index - b.index || a.key.localeCompare(b.key));
 
   const byKey = new Map<string, EdgeSide>();
   for (const p of ranked) {
     const preferred = branchPreferSides(p.label);
-    const side =
-      preferred.find((s) => !used.has(s) && free.includes(s)) ||
-      free.find((s) => !used.has(s)) ||
-      "right";
+    const side = preferred.find((s) => !used.has(s) && free.includes(s)) || free.find((s) => !used.has(s)) || "right";
     used.add(side);
     byKey.set(p.key, side);
   }
@@ -282,11 +270,7 @@ export function routeEdge(input: EdgeRouteInput): FlowchartEdgePath {
     });
   }
 
-  if (
-    sameLayoutLane &&
-    (outSide === "right" || outSide === "left") &&
-    (inSide === "left" || inSide === "right")
-  ) {
+  if (sameLayoutLane && (outSide === "right" || outSide === "left") && (inSide === "left" || inSide === "right")) {
     return buildFlowchartEdgePath({
       sourceX: start.x,
       sourceY: start.y,
@@ -317,11 +301,7 @@ export function edgeLabelPoint(input: EdgeRouteInput): { x: number; y: number } 
 /**
  * @deprecated Prefer assignUniqueBranchSides for multi-branch nodes.
  */
-export function conditionPortSide(
-  label: string,
-  _index = 0,
-  _total = 1,
-): { side: EdgeSide; t: number } {
+export function conditionPortSide(label: string, _index = 0, _total = 1): { side: EdgeSide; t: number } {
   if (isLoopLabel(label)) return { side: "bottom", t: PORT_T };
   if (isFailureLabel(label)) return { side: "top", t: PORT_T };
   if (isSuccessLabel(label)) return { side: "right", t: PORT_T };

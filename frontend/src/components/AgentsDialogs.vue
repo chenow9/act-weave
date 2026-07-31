@@ -9,7 +9,7 @@ const scp = useAgentsPageContext();
 /* prettier-ignore */
 const {
   agentActionNote, agentActionTone, promptDetailAgent, agentDeleting, agentDeleteTarget, agentDeleteConfirmName, promptDetailDialogRef, agentDeleteDialogRef, agentDeleteInputRef, capabilityAgent, capabilityLoading, capabilitySavingId, capabilityBatchBusy, capabilityDrafts, promptDetailVisible, capabilityCatalog, canConfirmAgentDelete,
-  capabilitySelectedCount, capabilityUnboundCount, capabilityBindableUnboundCount, capabilitySelectedBoundCount, capabilitySelectedUnboundCount, capabilityActionsBusy,
+  capabilitySelectedCount, capabilityUnboundCount, capabilityBindableUnboundCount, capabilitySelectedBoundCount, capabilityActionsBusy,
   agentDeleteNameError, closePromptDetail, trapAgentModalFocus, clearAgentToast, closeAgentDeleteConfirm, requestCloseAgentDeleteConfirm, confirmDeleteAgent, closeCapabilityBindings, currentCapabilityBinding, setCapabilityVersionPolicy, capabilityVersionPolicyOptions, saveCapabilityBinding, removeCapabilityBinding,
   isCapabilitySelected, toggleCapabilitySelection, clearCapabilitySelection, selectUnboundCapabilities, selectAllCapabilities, batchBindCapabilities, batchUnbindCapabilities,
   currentPromptBody, currentPromptMeta, currentPromptLoading, currentPromptError, promptDetailHTML
@@ -109,11 +109,7 @@ async function copyPromptRaw() {
               <button type="button" class="text-button" @click="copyPromptRaw">复制原文</button>
               <span v-if="copyFeedback" class="agent-prompt-copy-feedback" aria-live="polite">{{ copyFeedback }}</span>
             </div>
-            <div
-              v-if="promptTab === 'render'"
-              class="agent-prompt-markdown"
-              v-html="promptDetailHTML"
-            />
+            <div v-if="promptTab === 'render'" class="agent-prompt-markdown" v-html="promptDetailHTML" />
             <pre v-else class="agent-prompt-raw"><code>{{ currentPromptBody }}</code></pre>
           </template>
           <div v-else class="agent-prompt-state">当前没有可显示的系统提示词。</div>
@@ -159,7 +155,8 @@ async function copyPromptRaw() {
         </header>
         <div class="agent-capability-body">
           <p>
-            Tool 与 Workflow 是 Workspace 级能力；此处只管理 Agent 的跟随/固定版本、连接选择和启用状态。支持勾选后批量绑定或解绑。
+            Tool 与 Workflow 是 Workspace 级能力；此处只管理 Agent
+            的跟随/固定版本、连接选择和启用状态。支持勾选后批量绑定或解绑。
           </p>
 
           <div v-if="!capabilityLoading && capabilityCatalog.length" class="agent-capability-batch-bar">
@@ -223,9 +220,7 @@ async function copyPromptRaw() {
                 @click="batchBindCapabilities({ mode: 'all-unbound' })"
               >
                 <i v-if="capabilityBatchBusy" class="fa-solid fa-spinner fa-spin" />
-                绑定全部未绑定{{
-                  capabilityBindableUnboundCount ? ` (${capabilityBindableUnboundCount})` : ""
-                }}
+                绑定全部未绑定{{ capabilityBindableUnboundCount ? ` (${capabilityBindableUnboundCount})` : "" }}
               </button>
             </div>
           </div>
@@ -251,12 +246,7 @@ async function copyPromptRaw() {
                   :checked="isCapabilitySelected(capability.id)"
                   :disabled="capabilityActionsBusy"
                   :aria-label="`选择 ${capability.name}`"
-                  @change="
-                    toggleCapabilitySelection(
-                      capability.id,
-                      ($event.target as HTMLInputElement).checked,
-                    )
-                  "
+                  @change="toggleCapabilitySelection(capability.id, ($event.target as HTMLInputElement).checked)"
                 />
                 <div>
                   <span>{{ capability.kind }}</span
@@ -329,12 +319,7 @@ async function copyPromptRaw() {
           </article>
         </div>
         <footer class="agent-prompt-detail-footer">
-          <button
-            class="ghost-button"
-            type="button"
-            :disabled="capabilityActionsBusy"
-            @click="closeCapabilityBindings"
-          >
+          <button class="ghost-button" type="button" :disabled="capabilityActionsBusy" @click="closeCapabilityBindings">
             关闭
           </button>
         </footer>

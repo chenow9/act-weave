@@ -92,10 +92,7 @@ export type MergeListQueryInput<T extends PaginatedListParams> = T & {
 };
 
 /** Merge override query with previous list query (shared by page models / stores). */
-export function mergeListQuery<T extends PaginatedListParams>(
-  previous: T,
-  overrides: Partial<T> = {},
-): T {
+export function mergeListQuery<T extends PaginatedListParams>(previous: T, overrides: Partial<T> = {}): T {
   return {
     ...previous,
     ...overrides,

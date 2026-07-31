@@ -1,7 +1,7 @@
 {
   "protocolVersion": "2026-07-20",
   "specVersion": "1.0",
-  "schemaSetSha256": "10f0fe5fdc198f2f2c8babaca738ca5322d4121374b7aca812b4064752e00e94",
+  "schemaSetSha256": "7fd946170432d088c260a0abef59f2fa45a74145b54d641d48c73f12104a58db",
   "documents": {
     "common.schema.json": {
       "path": "common.schema.json",
@@ -660,6 +660,7 @@
       "path": "item.schema.json",
       "types": [
         "$ref:#/$defs/artifact",
+        "$ref:#/$defs/contextCompaction",
         "$ref:#/$defs/interactionItem",
         "$ref:#/$defs/message",
         "$ref:#/$defs/notice",
@@ -715,6 +716,165 @@
           ],
           "required": true,
           "const": "artifact"
+        }
+      },
+      "additionalProperties": true
+    },
+    "item.schema.json#/$defs/contextCompaction": {
+      "path": "item.schema.json#/$defs/contextCompaction",
+      "types": [
+        "object"
+      ],
+      "required": [
+        "contentIncluded",
+        "id",
+        "status",
+        "type"
+      ],
+      "properties": {
+        "afterTokens": {
+          "types": [
+            "integer"
+          ],
+          "required": false
+        },
+        "beforeTokens": {
+          "types": [
+            "integer"
+          ],
+          "required": false
+        },
+        "contentIncluded": {
+          "types": [
+            "boolean"
+          ],
+          "required": true
+        },
+        "coverageEndMessageId": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": false,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "coverageStartMessageId": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": false,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "effectiveMaxInputTokens": {
+          "types": [
+            "integer"
+          ],
+          "required": false
+        },
+        "errorCode": {
+          "types": [
+            "string"
+          ],
+          "required": false
+        },
+        "fallbackFrom": {
+          "types": [
+            "string"
+          ],
+          "required": false
+        },
+        "fallbackStage": {
+          "types": [
+            "string"
+          ],
+          "required": false
+        },
+        "fallbackTo": {
+          "types": [
+            "string"
+          ],
+          "required": false
+        },
+        "id": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": true,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "passes": {
+          "types": [
+            "integer"
+          ],
+          "required": false
+        },
+        "result": {
+          "types": [
+            "string"
+          ],
+          "required": false,
+          "enum": [
+            "building",
+            "completed",
+            "failed",
+            "fallback"
+          ]
+        },
+        "reused": {
+          "types": [
+            "boolean"
+          ],
+          "required": false
+        },
+        "sourceMessageCount": {
+          "types": [
+            "integer"
+          ],
+          "required": false
+        },
+        "status": {
+          "types": [
+            "$ref:#/$defs/status"
+          ],
+          "required": true,
+          "ref": "#/$defs/status"
+        },
+        "summary": {
+          "types": [
+            "string"
+          ],
+          "required": false
+        },
+        "summaryDigest": {
+          "types": [
+            "string"
+          ],
+          "required": false
+        },
+        "summaryId": {
+          "types": [
+            "$ref:common.schema.json#/$defs/uuid"
+          ],
+          "required": false,
+          "ref": "common.schema.json#/$defs/uuid"
+        },
+        "targetBps": {
+          "types": [
+            "integer"
+          ],
+          "required": false
+        },
+        "triggerBps": {
+          "types": [
+            "integer"
+          ],
+          "required": false
+        },
+        "type": {
+          "types": [
+            "const"
+          ],
+          "required": true,
+          "const": "context_compaction"
         }
       },
       "additionalProperties": true

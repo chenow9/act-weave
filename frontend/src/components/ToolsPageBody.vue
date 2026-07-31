@@ -74,7 +74,6 @@ const {
   closeBatchTestDialog,
   confirmBatchTestSelectedTools,
   confirmRiskAction,
-  agentImpactLabel,
   toolVersionLabel,
   toolEndpointSummary,
   methodOf,
@@ -168,167 +167,159 @@ void getToolTypeLabel;
         @page-change="changeToolPage"
         @sort-change="changeToolSort"
       >
-          <template #batch-actions>
-            <button
-              type="button"
-              class="management-list-batch-action is-primary"
-              :disabled="
-                !selectedTools.length || batchTesting || batchDeleting || batchForcePublishing || !canTestWorkspace
-              "
-              :title="
-                batchTesting
-                  ? '批量测试进行中'
-                  : !canTestWorkspace
-                    ? '当前空间无测试权限'
-                    : '使用默认入参批量测试已选 Tool'
-              "
-              @click="batchTestSelectedTools"
-            >
-              <i :class="['fa-solid', batchTesting ? 'fa-spinner fa-spin' : 'fa-vial']" aria-hidden="true" />
-              <span>{{ batchTesting ? "测试中…" : "批量测试" }}</span>
-            </button>
-            <button
-              v-if="canForcePublishTools"
-              type="button"
-              class="management-list-batch-action is-warning"
-              :disabled="
-                !selectedTools.some((t) => t.status !== 'Published') ||
-                batchTesting ||
-                batchDeleting ||
-                batchForcePublishing
-              "
-              :title="
-                batchForcePublishing
-                  ? '强制发布进行中'
-                  : '平台管理员：跳过实调测试，批量强制发布未发布 Tool（需服务端 allowForcePublish）'
-              "
-              @click="openBatchForcePublishConfirmation"
-            >
-              <i
-                :class="['fa-solid', batchForcePublishing ? 'fa-spinner fa-spin' : 'fa-rocket']"
-                aria-hidden="true"
-              />
-              <span>{{ batchForcePublishing ? "发布中…" : "强制发布" }}</span>
-            </button>
-            <button
-              type="button"
-              class="management-list-batch-action is-danger"
-              :disabled="!selectedTools.length || batchTesting || batchDeleting || batchForcePublishing"
-              :title="batchDeleting ? '批量删除进行中' : '批量删除已选 Tool'"
-              @click="openBatchDeleteConfirmation"
-            >
-              <i :class="['fa-solid', batchDeleting ? 'fa-spinner fa-spin' : 'fa-trash']" aria-hidden="true" />
-              <span>批量删除</span>
-            </button>
-          </template>
-          <template #filters>
-            <ManagementSegmentedFilter
-              :model-value="selectedStatusFilter"
-              :options="statusTabs"
-              ariaLabel="工具状态筛选"
-              @update:model-value="selectStatusFilter($event as ToolStatusFilter)"
-            />
-            <ManagementSegmentedFilter
-              :model-value="selectedToolTypeFilter"
-              :options="toolTypeTabs"
-              ariaLabel="工具类型筛选"
-              @update:model-value="selectToolTypeFilter($event as ToolTypeFilter)"
-            />
-          </template>
-          <template #cell-tool="{ row: tool }">
-            <div class="tool-entity-cell">
-              <span class="tool-entity-icon" aria-hidden="true"><i class="fa-solid fa-screwdriver-wrench" /></span>
-              <span class="tool-entity-copy">
-                <strong class="aw-table-title" :title="tool.name">{{ tool.name }}</strong>
-                <small class="aw-table-subtitle" :title="tool.description">{{ tool.description || "暂无描述" }}</small>
-              </span>
-            </div>
-          </template>
-          <template #cell-type="{ row: tool }"
-            ><span class="tool-type-tag aw-table-pill">{{ getToolTypeLabel(tool) }}</span></template
+        <template #batch-actions>
+          <button
+            type="button"
+            class="management-list-batch-action is-primary"
+            :disabled="
+              !selectedTools.length || batchTesting || batchDeleting || batchForcePublishing || !canTestWorkspace
+            "
+            :title="
+              batchTesting
+                ? '批量测试进行中'
+                : !canTestWorkspace
+                  ? '当前空间无测试权限'
+                  : '使用默认入参批量测试已选 Tool'
+            "
+            @click="batchTestSelectedTools"
           >
-          <template #cell-protocol="{ row: tool }"
-            ><span class="tool-protocol-cell aw-table-meta">{{ toolProtocolLabel(tool) }}</span></template
+            <i :class="['fa-solid', batchTesting ? 'fa-spinner fa-spin' : 'fa-vial']" aria-hidden="true" />
+            <span>{{ batchTesting ? "测试中…" : "批量测试" }}</span>
+          </button>
+          <button
+            v-if="canForcePublishTools"
+            type="button"
+            class="management-list-batch-action is-warning"
+            :disabled="
+              !selectedTools.some((t) => t.status !== 'Published') ||
+              batchTesting ||
+              batchDeleting ||
+              batchForcePublishing
+            "
+            :title="
+              batchForcePublishing
+                ? '强制发布进行中'
+                : '平台管理员：跳过实调测试，批量强制发布未发布 Tool（需服务端 allowForcePublish）'
+            "
+            @click="openBatchForcePublishConfirmation"
           >
-          <template #cell-method="{ row: tool }"
-            ><span class="tool-method-badge aw-table-pill" :class="methodClass(tool)">{{
-              methodOf(tool)
-            }}</span></template
+            <i :class="['fa-solid', batchForcePublishing ? 'fa-spinner fa-spin' : 'fa-rocket']" aria-hidden="true" />
+            <span>{{ batchForcePublishing ? "发布中…" : "强制发布" }}</span>
+          </button>
+          <button
+            type="button"
+            class="management-list-batch-action is-danger"
+            :disabled="!selectedTools.length || batchTesting || batchDeleting || batchForcePublishing"
+            :title="batchDeleting ? '批量删除进行中' : '批量删除已选 Tool'"
+            @click="openBatchDeleteConfirmation"
           >
-          <template #cell-path="{ row: tool }">
-            <code class="tool-endpoint-summary aw-table-mono" :title="toolEndpointSummary(tool)">{{
-              pathOf(tool)
-            }}</code>
-          </template>
-          <template #cell-connection="{ row: tool }">
-            <span class="tool-provider-connection" :title="toolProviderConnectionLabel(tool)">
-              <strong class="aw-table-title">{{ providerForTool(tool)?.name || tool.providerId || "-" }}</strong>
-              <small class="aw-table-subtitle">{{ connectionForTool(tool)?.name || "连接缺失" }}</small>
+            <i :class="['fa-solid', batchDeleting ? 'fa-spinner fa-spin' : 'fa-trash']" aria-hidden="true" />
+            <span>批量删除</span>
+          </button>
+        </template>
+        <template #filters>
+          <ManagementSegmentedFilter
+            :model-value="selectedStatusFilter"
+            :options="statusTabs"
+            ariaLabel="工具状态筛选"
+            @update:model-value="selectStatusFilter($event as ToolStatusFilter)"
+          />
+          <ManagementSegmentedFilter
+            :model-value="selectedToolTypeFilter"
+            :options="toolTypeTabs"
+            ariaLabel="工具类型筛选"
+            @update:model-value="selectToolTypeFilter($event as ToolTypeFilter)"
+          />
+        </template>
+        <template #cell-tool="{ row: tool }">
+          <div class="tool-entity-cell">
+            <span class="tool-entity-icon" aria-hidden="true"><i class="fa-solid fa-screwdriver-wrench" /></span>
+            <span class="tool-entity-copy">
+              <strong class="aw-table-title" :title="tool.name">{{ tool.name }}</strong>
+              <small class="aw-table-subtitle" :title="tool.description">{{ tool.description || "暂无描述" }}</small>
             </span>
-          </template>
-          <template #cell-status="{ row: tool }">
-            <div
-              class="tool-unified-status-cell"
-              :title="toolUnifiedStatus(tool).description"
-              :aria-label="toolUnifiedStatus(tool).description"
-            >
-              <span
-                class="tool-status-pill aw-table-pill"
-                :class="[statusClass(tool.status), governanceToneClass(lifecycleStatus(tool).tone)]"
-              >
-                <i aria-hidden="true" />{{ toolUnifiedStatus(tool).lifecycleLabel }}
-              </span>
-              <small
-                v-if="toolUnifiedStatus(tool).runLabel"
-                class="tool-status-attention"
-                :class="governanceToneClass(toolUnifiedStatus(tool).tone)"
-              >
-                {{ toolUnifiedStatus(tool).runLabel }}
-              </small>
-            </div>
-          </template>
-          <template #cell-version="{ row: tool }"
-            ><code class="tool-version-cell aw-table-mono">{{ toolVersionLabel(tool) }}</code></template
+          </div>
+        </template>
+        <template #cell-type="{ row: tool }"
+          ><span class="tool-type-tag aw-table-pill">{{ getToolTypeLabel(tool) }}</span></template
+        >
+        <template #cell-protocol="{ row: tool }"
+          ><span class="tool-protocol-cell aw-table-meta">{{ toolProtocolLabel(tool) }}</span></template
+        >
+        <template #cell-method="{ row: tool }"
+          ><span class="tool-method-badge aw-table-pill" :class="methodClass(tool)">{{
+            methodOf(tool)
+          }}</span></template
+        >
+        <template #cell-path="{ row: tool }">
+          <code class="tool-endpoint-summary aw-table-mono" :title="toolEndpointSummary(tool)">{{ pathOf(tool) }}</code>
+        </template>
+        <template #cell-connection="{ row: tool }">
+          <span class="tool-provider-connection" :title="toolProviderConnectionLabel(tool)">
+            <strong class="aw-table-title">{{ providerForTool(tool)?.name || tool.providerId || "-" }}</strong>
+            <small class="aw-table-subtitle">{{ connectionForTool(tool)?.name || "连接缺失" }}</small>
+          </span>
+        </template>
+        <template #cell-status="{ row: tool }">
+          <div
+            class="tool-unified-status-cell"
+            :title="toolUnifiedStatus(tool).description"
+            :aria-label="toolUnifiedStatus(tool).description"
           >
-          <template #cell-updatedAt="{ row: tool }"
-            ><span class="tool-updated-cell aw-table-meta">{{ formatToolTableUpdatedAt(tool) }}</span></template
-          >
-          <template #cell-actions="{ row: tool }">
-            <ManagementRowActions
-              :menu-actions="toolMenuActions(tool)"
-              menu-label="更多工具操作"
-              @action="handleToolRowAction($event, tool)"
-            />
-          </template>
-          <template #empty>
-            <WorkspaceContextState
-              v-if="!hasWorkspaceContext"
-              embedded-in-list
-              feature="工具管理"
-              icon="fa-solid fa-screwdriver-wrench"
-              @retry="loadToolPageAssets"
-            />
-            <div
-              v-else-if="!hasToolRecords"
-              class="empty-state registry-empty-state management-registry-empty-state"
+            <span
+              class="tool-status-pill aw-table-pill"
+              :class="[statusClass(tool.status), governanceToneClass(lifecycleStatus(tool).tone)]"
             >
-              <div class="management-empty-state-icon"><i class="fa-solid fa-box-open" /></div>
-              <h2>暂无工具</h2>
-              <p>可以注册 Tool，或者从 OpenAPI 导入生成草稿。</p>
-              <div class="registry-empty-actions">
-                <button class="primary-button" type="button" @click="openCreateTool">新建 Tool</button
-                ><button class="ghost-button" type="button" @click="router.push('/openapi-imports')">
-                  从 OpenAPI 生成
-                </button>
-              </div>
+              <i aria-hidden="true" />{{ toolUnifiedStatus(tool).lifecycleLabel }}
+            </span>
+            <small
+              v-if="toolUnifiedStatus(tool).runLabel"
+              class="tool-status-attention"
+              :class="governanceToneClass(toolUnifiedStatus(tool).tone)"
+            >
+              {{ toolUnifiedStatus(tool).runLabel }}
+            </small>
+          </div>
+        </template>
+        <template #cell-version="{ row: tool }"
+          ><code class="tool-version-cell aw-table-mono">{{ toolVersionLabel(tool) }}</code></template
+        >
+        <template #cell-updatedAt="{ row: tool }"
+          ><span class="tool-updated-cell aw-table-meta">{{ formatToolTableUpdatedAt(tool) }}</span></template
+        >
+        <template #cell-actions="{ row: tool }">
+          <ManagementRowActions
+            :menu-actions="toolMenuActions(tool)"
+            menu-label="更多工具操作"
+            @action="handleToolRowAction($event, tool)"
+          />
+        </template>
+        <template #empty>
+          <WorkspaceContextState
+            v-if="!hasWorkspaceContext"
+            embedded-in-list
+            feature="工具管理"
+            icon="fa-solid fa-screwdriver-wrench"
+            @retry="loadToolPageAssets"
+          />
+          <div v-else-if="!hasToolRecords" class="empty-state registry-empty-state management-registry-empty-state">
+            <div class="management-empty-state-icon"><i class="fa-solid fa-box-open" /></div>
+            <h2>暂无工具</h2>
+            <p>可以注册 Tool，或者从 OpenAPI 导入生成草稿。</p>
+            <div class="registry-empty-actions">
+              <button class="primary-button" type="button" @click="openCreateTool">新建 Tool</button
+              ><button class="ghost-button" type="button" @click="router.push('/openapi-imports')">
+                从 OpenAPI 生成
+              </button>
             </div>
-            <div v-else class="empty-state registry-empty-state management-registry-empty-state">
-              <div class="management-empty-state-icon"><i class="fa-solid fa-magnifying-glass" /></div>
-              <h2>没有匹配的工具</h2>
-              <p>调整工具名称、状态或路径关键词后再试。</p>
-            </div>
-          </template>
-        </ManagementList>
+          </div>
+          <div v-else class="empty-state registry-empty-state management-registry-empty-state">
+            <div class="management-empty-state-icon"><i class="fa-solid fa-magnifying-glass" /></div>
+            <h2>没有匹配的工具</h2>
+            <p>调整工具名称、状态或路径关键词后再试。</p>
+          </div>
+        </template>
+      </ManagementList>
     </section>
 
     <ToolDetailPanel />
@@ -381,10 +372,7 @@ void getToolTypeLabel;
               <strong class="tool-impact-value">{{ item.value }}</strong>
             </div>
           </div>
-          <label
-            v-if="pendingRiskAction.type === 'batch-force-publish'"
-            class="tool-force-publish-reason"
-          >
+          <label v-if="pendingRiskAction.type === 'batch-force-publish'" class="tool-force-publish-reason">
             <span>强制发布原因（必填，至少 8 个字符）</span>
             <textarea
               v-model="forcePublishReason"
@@ -422,11 +410,7 @@ void getToolTypeLabel;
             "
             @click="confirmRiskAction"
           >
-            <i
-              v-if="batchDeleting || batchForcePublishing"
-              class="fa-solid fa-spinner fa-spin"
-              aria-hidden="true"
-            />
+            <i v-if="batchDeleting || batchForcePublishing" class="fa-solid fa-spinner fa-spin" aria-hidden="true" />
             {{ riskConfirmationPrimaryLabel() }}
           </button>
         </div>
@@ -458,8 +442,8 @@ void getToolTypeLabel;
         </div>
         <div class="tool-risk-confirmation-body">
           <p class="tool-risk-description">
-            将对 <strong>{{ selectedTools.length }}</strong> 个已选 Tool 顺序执行测试：自动补全 Path/Query
-            默认参数（如 pageNum=1、pageSize=10），结果仅汇总通过/失败数量。
+            将对 <strong>{{ selectedTools.length }}</strong> 个已选 Tool 顺序执行测试：自动补全 Path/Query 默认参数（如
+            pageNum=1、pageSize=10），结果仅汇总通过/失败数量。
           </p>
           <ul class="tool-batch-test-notes">
             <li>仅测试可编辑草稿（已发布且无新草稿的会跳过）</li>

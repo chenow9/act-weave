@@ -439,12 +439,7 @@ export function createSmartDagPageModel() {
     return raw || "";
   }
 
-  function classifyEdge(
-    fromId: string,
-    toId: string,
-    xOf: Map<string, number>,
-    branch?: string,
-  ): SmartEdgeKind {
+  function classifyEdge(fromId: string, toId: string, xOf: Map<string, number>, branch?: string): SmartEdgeKind {
     const fromX = xOf.get(fromId) ?? 0;
     const toX = xOf.get(toId) ?? 0;
     // True back-edge: target card is left of source card (poll loop).
@@ -473,11 +468,7 @@ export function createSmartDagPageModel() {
       const assigned = assignUniqueBranchSides(fromNode.branchPorts);
       const match =
         assigned.find(
-          (p) =>
-            p.key === conn.sourcePort ||
-            p.key === conn.branch ||
-            p.label === conn.label ||
-            p.key === conn.label,
+          (p) => p.key === conn.sourcePort || p.key === conn.branch || p.label === conn.label || p.key === conn.label,
         ) || assigned[0];
       outSide = match?.side;
     }
@@ -607,9 +598,7 @@ export function createSmartDagPageModel() {
         ...draft,
         graph: {
           ...draft.graph,
-          nodes: draft.graph.nodes.map((node) =>
-            node.id === nodeId ? { ...node, position: { x, y } } : node,
-          ),
+          nodes: draft.graph.nodes.map((node) => (node.id === nodeId ? { ...node, position: { x, y } } : node)),
         },
       });
     }
@@ -749,7 +738,10 @@ export function createSmartDagPageModel() {
         ["completed", "complete", "success", "succeeded", "true", "ok", "done"].includes(b),
       );
       if (allFailure) endKindById.set(node.id, "failure");
-      else if (anySuccess || inbound.some((e) => e.sourceNodeId?.includes("report") || e.sourceNodeId?.includes("word")))
+      else if (
+        anySuccess ||
+        inbound.some((e) => e.sourceNodeId?.includes("report") || e.sourceNodeId?.includes("word"))
+      )
         endKindById.set(node.id, "success");
       else if (inbound.length === 1 && !branches[0]) endKindById.set(node.id, "success");
       else endKindById.set(node.id, "generic");
@@ -1603,8 +1595,7 @@ export function createSmartDagPageModel() {
       const draft = blueprint.id ? blueprintDrafts.get(blueprint.id) : undefined;
       if (!blueprint.id || !draft) return;
       const detail =
-        workflowStore.workflowDetails[blueprint.id] ||
-        workflowStore.workflows.find((item) => item.id === blueprint.id);
+        workflowStore.workflowDetails[blueprint.id] || workflowStore.workflows.find((item) => item.id === blueprint.id);
       if (!detail) return;
       registerBlueprint(detail, draft, blueprint.aiScore, false);
     },

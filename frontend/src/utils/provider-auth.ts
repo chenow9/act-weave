@@ -161,4 +161,3 @@ export function isProviderReadyForConnections(provider: CapabilityProvider) {
   // Dual-mode hard-cutover: outbound-identity.v1 is preferred; legacy auth contract still counts for migration UIs.
   return hasEndpoint && (providerHasOutboundIdentity(provider) || Boolean(providerAuthContract(provider)));
 }
-

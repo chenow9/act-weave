@@ -190,9 +190,7 @@ describe("autoLayoutWorkflowGraph", () => {
       p.create_word_report.x,
     );
     expect(p.end.x).toBeGreaterThan(maxToolX);
-    expect(p.start.x).toBeLessThanOrEqual(
-      Math.min(p.create_task.x, p.progress_check.x, p.end.x),
-    );
+    expect(p.start.x).toBeLessThanOrEqual(Math.min(p.create_task.x, p.progress_check.x, p.end.x));
 
     // Success report continues on/near main rail; failure end may sit below.
     // Poll loop routing is handled in canvas path drawing (below rail).

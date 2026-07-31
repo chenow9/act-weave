@@ -73,9 +73,7 @@ const topWorkspaces = computed(() => overview.metrics?.topWorkspaces || []);
 /** Keep legend short so donut cards never need internal scroll on one screen. */
 const DONUT_TOP_N = 4;
 
-function toDonutSlices(
-  items: Array<{ id: string; name: string; value: number; meta?: string }>,
-): DonutSlice[] {
+function toDonutSlices(items: Array<{ id: string; name: string; value: number; meta?: string }>): DonutSlice[] {
   const positive = items.filter((x) => x.value > 0);
   if (!positive.length) return [];
   const head = positive.slice(0, DONUT_TOP_N);
@@ -188,17 +186,7 @@ function formatPct(rate: number | null) {
 
 function exportCsv() {
   if (!dailyRows.value.length) return;
-  const header = [
-    "日期",
-    "会话",
-    "Run总计",
-    "Run成功",
-    "Run失败",
-    "链路成功率",
-    "工具调用",
-    "工具失败",
-    "工具成功率",
-  ];
+  const header = ["日期", "会话", "Run总计", "Run成功", "Run失败", "链路成功率", "工具调用", "工具失败", "工具成功率"];
   const lines = dailyRows.value.map((row) =>
     [
       row.date,
@@ -247,13 +235,7 @@ function exportCsv() {
             </label>
             <span class="overview-glass-sep" aria-hidden="true">–</span>
             <label class="overview-glass-field">
-              <input
-                v-model="draftTo"
-                type="date"
-                :min="draftFrom || undefined"
-                :max="maxDate"
-                aria-label="结束日期"
-              />
+              <input v-model="draftTo" type="date" :min="draftFrom || undefined" :max="maxDate" aria-label="结束日期" />
             </label>
             <button class="overview-glass-query" type="button" :disabled="overview.loading" @click="applyRange">
               查询
@@ -461,7 +443,11 @@ function exportCsv() {
             <strong>
               {{ inventory ? `${inventory.modelConfigVerified}/${inventory.modelConfigTotal}` : "—" }}
               <i
-                v-if="inventory && inventory.modelConfigVerified >= inventory.modelConfigTotal && inventory.modelConfigTotal > 0"
+                v-if="
+                  inventory &&
+                  inventory.modelConfigVerified >= inventory.modelConfigTotal &&
+                  inventory.modelConfigTotal > 0
+                "
                 class="fa-solid fa-circle-check is-ok"
                 aria-hidden="true"
               />
@@ -473,7 +459,11 @@ function exportCsv() {
             <strong>
               {{ inventory ? `${inventory.connectionVerified}/${inventory.connectionTotal}` : "—" }}
               <i
-                v-if="inventory && inventory.connectionVerified >= inventory.connectionTotal && inventory.connectionTotal > 0"
+                v-if="
+                  inventory &&
+                  inventory.connectionVerified >= inventory.connectionTotal &&
+                  inventory.connectionTotal > 0
+                "
                 class="fa-solid fa-circle-check is-ok"
                 aria-hidden="true"
               />

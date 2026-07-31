@@ -11,10 +11,7 @@ import WorkspaceContextState from "../components/WorkspaceContextState.vue";
 import { useModelConfigStore } from "../stores/modelConfigs";
 import { useWorkspaceStore } from "../stores/workspaces";
 import type { ModelApiConfig, ModelApiConfigListQuery, ModelRuntimeCapabilities } from "../types/domain";
-import {
-  buildRuntimeCapabilitiesPayload,
-  normalizeRuntimeCapabilities,
-} from "../utils/session-context-config";
+import { normalizeRuntimeCapabilities } from "../utils/session-context-config";
 
 const OPENAI_COMPATIBLE_PROVIDER = "OpenAI Compatible";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -251,10 +248,7 @@ function draftRuntimeCaps(): ModelRuntimeCapabilities {
   return draft.runtimeCapabilities as ModelRuntimeCapabilities;
 }
 
-function setDraftRuntimeCap<K extends keyof ModelRuntimeCapabilities>(
-  key: K,
-  value: ModelRuntimeCapabilities[K],
-) {
+function setDraftRuntimeCap<K extends keyof ModelRuntimeCapabilities>(key: K, value: ModelRuntimeCapabilities[K]) {
   const draft = activeModelDraft.value;
   if (!draft) return;
   draft.runtimeCapabilities = {
@@ -1180,15 +1174,10 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                   <i class="fa-solid fa-chevron-down model-runtime-section-chevron" aria-hidden="true" />
                 </span>
               </button>
-              <div
-                v-show="modelRuntimeSectionOpen"
-                id="model-runtime-section-body"
-                class="model-runtime-section-body"
-              >
+              <div v-show="modelRuntimeSectionOpen" id="model-runtime-section-body" class="model-runtime-section-body">
                 <p class="model-modal-fieldset-help">
                   告诉平台「这个模型一次大概能看多少内容」。不知道厂商精确规格时，点下方
-                  <strong>128K（推荐）</strong>即可。仅用于会话裁剪预算，不会改模型本身，也不会写入上游
-                  Options。
+                  <strong>128K（推荐）</strong>即可。仅用于会话裁剪预算，不会改模型本身，也不会写入上游 Options。
                 </p>
                 <div class="model-context-presets" role="group" aria-label="上下文窗口快捷预设">
                   <button
@@ -1220,8 +1209,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                     "
                   />
                   <small class="model-modal-field-hint">
-                    一次请求里历史+提示的大致上限。常见：Grok / GPT-4o 系可先用 128000；特别长上下文可试
-                    200000。
+                    一次请求里历史+提示的大致上限。常见：Grok / GPT-4o 系可先用 128000；特别长上下文可试 200000。
                   </small>
                 </label>
                 <label class="model-modal-field">
@@ -1280,7 +1268,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                       @update:model-value="
                         setDraftRuntimeCap(
                           'outputTokenLimitMode',
-                          (String($event ?? 'max_tokens') as ModelRuntimeCapabilities['outputTokenLimitMode']),
+                          String($event ?? 'max_tokens') as ModelRuntimeCapabilities['outputTokenLimitMode'],
                         )
                       "
                     />
@@ -2178,7 +2166,9 @@ function handleModelModalKeydown(event: KeyboardEvent) {
 .model-runtime-section-chevron {
   color: #94a3b8;
   font-size: 11px;
-  transition: transform 0.18s ease, color 0.15s ease;
+  transition:
+    transform 0.18s ease,
+    color 0.15s ease;
 }
 
 .model-runtime-section.open .model-runtime-section-chevron {

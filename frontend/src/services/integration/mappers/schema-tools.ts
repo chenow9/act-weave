@@ -209,8 +209,7 @@ export function toolFromListDTO(tool: ToolDTO, workspaceId: string): Tool {
   const head = tool.headVersion;
   // Prefer head.lockVersion from API. Never hard-code 1: successful tests bump
   // tool_versions.lock_version, and publish CAS fails with 409 on a stale lock.
-  const headLock =
-    typeof head?.lockVersion === "number" && head.lockVersion > 0 ? head.lockVersion : 1;
+  const headLock = typeof head?.lockVersion === "number" && head.lockVersion > 0 ? head.lockVersion : 1;
   const syntheticVersions: ToolVersionDTO[] = head
     ? [
         {

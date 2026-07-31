@@ -1030,17 +1030,13 @@ function reconcileWorkspaceListContext() {
           </template>
 
           <template #empty>
-            <div
-              v-if="!hasWorkspaceRecords"
-              class="empty-state registry-empty-state management-registry-empty-state"
-            >
+            <div v-if="!hasWorkspaceRecords" class="empty-state registry-empty-state management-registry-empty-state">
               <div class="management-empty-state-icon">
                 <i class="fa-solid fa-layer-group" aria-hidden="true" />
               </div>
               <h2>暂无业务空间</h2>
               <p>
-                业务空间用于隔离 Agent、工具与模型配置。模型 API 归属业务空间，请先创建空间，再配置模型网关与
-                Agent。
+                业务空间用于隔离 Agent、工具与模型配置。模型 API 归属业务空间，请先创建空间，再配置模型网关与 Agent。
               </p>
               <button class="primary-button" type="button" @click="openCreateWorkspace">创建业务空间</button>
             </div>
@@ -1210,7 +1206,6 @@ function reconcileWorkspaceListContext() {
                   </div>
                 </dl>
               </article>
-
             </div>
           </section>
 

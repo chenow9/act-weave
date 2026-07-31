@@ -401,7 +401,9 @@ void ToolSchemaTreeView;
               <div>
                 <strong>接口明细</strong>
                 <span
-                  >共 {{ selectedImportDetail.endpoints.length }} 个接口；默认折叠，点击展开查看契约（避免一次渲染过多表格导致卡顿）。</span
+                  >共
+                  {{ selectedImportDetail.endpoints.length }}
+                  个接口；默认折叠，点击展开查看契约（避免一次渲染过多表格导致卡顿）。</span
                 >
               </div>
               <label class="openapi-endpoint-search">
@@ -433,10 +435,7 @@ void ToolSchemaTreeView;
                   >
                   <span>{{ endpoint.summary || endpoint.operationId || endpoint.status }}</span>
                 </span>
-                <i
-                  class="fa-solid fa-chevron-down tool-schema-endpoint-chevron"
-                  aria-hidden="true"
-                />
+                <i class="fa-solid fa-chevron-down tool-schema-endpoint-chevron" aria-hidden="true" />
               </button>
               <div v-if="isEndpointDetailExpanded(endpoint)" class="tool-schema-endpoint-body">
                 <ToolSchemaTreeView

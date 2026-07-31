@@ -77,9 +77,7 @@ void AgentPromptDiffViewer;
         <div class="agent-studio-body">
           <section class="agent-studio-section agent-parameters-panel">
             <header>
-              <span
-                ><i class="fa-solid fa-sliders" aria-hidden="true" /> Agent 参数</span
-              >
+              <span><i class="fa-solid fa-sliders" aria-hidden="true" /> Agent 参数</span>
             </header>
             <div class="agent-studio-fields">
               <label class="modal-field">
@@ -232,9 +230,7 @@ void AgentPromptDiffViewer;
                           step="1"
                           class="mono"
                           :value="agentContextSummaryMaxTokens"
-                          @input="
-                            setAgentContextSummaryMaxTokens(Number(($event.target as HTMLInputElement).value))
-                          "
+                          @input="setAgentContextSummaryMaxTokens(Number(($event.target as HTMLInputElement).value))"
                         />
                       </label>
                       <label class="modal-field">
@@ -246,9 +242,7 @@ void AgentPromptDiffViewer;
                           class="mono"
                           :value="agentContextSummaryMinEvictedTurns"
                           @input="
-                            setAgentContextSummaryMinEvictedTurns(
-                              Number(($event.target as HTMLInputElement).value),
-                            )
+                            setAgentContextSummaryMinEvictedTurns(Number(($event.target as HTMLInputElement).value))
                           "
                         />
                       </label>
@@ -260,9 +254,7 @@ void AgentPromptDiffViewer;
                           step="1"
                           class="mono"
                           :value="agentContextSummaryMaxPasses"
-                          @input="
-                            setAgentContextSummaryMaxPasses(Number(($event.target as HTMLInputElement).value))
-                          "
+                          @input="setAgentContextSummaryMaxPasses(Number(($event.target as HTMLInputElement).value))"
                         />
                       </label>
                     </div>
@@ -273,7 +265,9 @@ void AgentPromptDiffViewer;
                       <div class="agent-context-aap-toggle">
                         <div>
                           <p>AAP 返回 Compact 摘要正文</p>
-                          <small>默认关闭。仅影响本 Agent 新 run 快照；关闭后不会删除既有 run 中已写入的协议明文。</small>
+                          <small
+                            >默认关闭。仅影响本 Agent 新 run 快照；关闭后不会删除既有 run 中已写入的协议明文。</small
+                          >
                         </div>
                         <button
                           type="button"
@@ -281,9 +275,7 @@ void AgentPromptDiffViewer;
                           aria-label="AAP 返回 Compact 摘要正文"
                           :aria-checked="agentContextIncludeCompactionSummary"
                           :class="{ active: agentContextIncludeCompactionSummary }"
-                          @click="
-                            setAgentContextIncludeCompactionSummary(!agentContextIncludeCompactionSummary)
-                          "
+                          @click="setAgentContextIncludeCompactionSummary(!agentContextIncludeCompactionSummary)"
                         >
                           <span />
                         </button>

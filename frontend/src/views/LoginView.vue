@@ -75,12 +75,7 @@ async function submit() {
           <span>用户名</span>
           <div class="login-field-shell">
             <i class="login-field-icon fa-regular fa-user" aria-hidden="true" />
-            <input
-              v-model="form.username"
-              autocomplete="username"
-              required
-              :disabled="auth.loading || loginSuccess"
-            />
+            <input v-model="form.username" autocomplete="username" required :disabled="auth.loading || loginSuccess" />
           </div>
         </label>
 

@@ -22,9 +22,7 @@ describe("content-area scrollport contract", () => {
   it("pins body overflow and shell height so document does not scroll", () => {
     expect(css).toMatch(/html\s*,\s*body\s*,\s*#app\s*\{[^}]*height:\s*100%/s);
     // Prototype body block must lock document scroll (content-area is the scrollport).
-    expect(css).toMatch(
-      /body\s*\{[^}]*Keep document from gaining a second scrollbar[^}]*overflow:\s*hidden/s,
-    );
+    expect(css).toMatch(/body\s*\{[^}]*Keep document from gaining a second scrollbar[^}]*overflow:\s*hidden/s);
     // Final app-shell containment must not re-open overflow:visible.
     const shellMatches = [...css.matchAll(/\.app-shell\s*\{([^}]+)\}/g)].map((m) => m[1]);
     expect(shellMatches.length).toBeGreaterThan(0);
@@ -49,9 +47,7 @@ describe("content-area scrollport contract", () => {
   });
 
   it("keeps management grids centered with stable rail comments", () => {
-    expect(css).toMatch(
-      /\.app-shell \.content-area > \.page-grid\.management-page-grid\s*\{[^}]*max-width:\s*1344px/s,
-    );
+    expect(css).toMatch(/\.app-shell \.content-area > \.page-grid\.management-page-grid\s*\{[^}]*max-width:\s*1344px/s);
     expect(css).toMatch(/margin:\s*0 auto/);
     expect(css).toMatch(/scrollbar-gutter:\s*stable/);
   });

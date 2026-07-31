@@ -130,9 +130,7 @@ void WorkspaceContextState;
               class="prompt-preview-trigger"
               :title="agent.currentPromptRevisionId ? '查看系统提示词' : '该 Agent 尚无系统提示词'"
               :aria-label="
-                agent.currentPromptRevisionId
-                  ? `查看 ${agent.name} 系统提示词`
-                  : `${agent.name} 暂无系统提示词`
+                agent.currentPromptRevisionId ? `查看 ${agent.name} 系统提示词` : `${agent.name} 暂无系统提示词`
               "
               :disabled="!agent.currentPromptRevisionId"
               :aria-disabled="!agent.currentPromptRevisionId"

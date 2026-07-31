@@ -7,7 +7,6 @@ import { defineStore } from "pinia";
 import { apiClient } from "../services/api";
 import {
   DEFAULT_PAGE_SIZE,
-  PAGE_SIZE_OPTIONS,
   buildListQueryString,
   emptyListPagination,
   mergeListQuery,
@@ -215,7 +214,9 @@ export const useToolsStore = defineStore("tools", {
         this.toolPageItems = visible;
         // Keep tools as the current page working set (plus any detail-hydrated rows).
         const pageIds = new Set(visible.map((t) => t.id));
-        const retained = this.tools.filter((t) => !pageIds.has(t.id) && t.versions.some((v) => v.inputSchema && Object.keys(v.inputSchema).length));
+        const retained = this.tools.filter(
+          (t) => !pageIds.has(t.id) && t.versions.some((v) => v.inputSchema && Object.keys(v.inputSchema).length),
+        );
         this.tools = [...visible, ...retained];
         this.toolPagination = normalizeListPagination(response.data.pagination, requestQuery, visible.length);
         const summary = response.data.summary;
@@ -421,8 +422,7 @@ export const useToolsStore = defineStore("tools", {
       inputParams: Record<string, unknown>,
       outboundCredentials?: import("../types/domain").OutboundCredentialsEnvelope,
     ) {
-      let tool =
-        this.tools.find((item) => item.id === toolId) || this.toolPageItems.find((item) => item.id === toolId);
+      let tool = this.tools.find((item) => item.id === toolId) || this.toolPageItems.find((item) => item.id === toolId);
       // List rows only have headVersion summary; hydrate full versions before test.
       if (tool && !(tool.versions || []).some((version) => Boolean(version.checksum))) {
         tool = await this.loadToolVersions(toolId, tool.workspaceId);
@@ -469,8 +469,7 @@ export const useToolsStore = defineStore("tools", {
     },
 
     async publishTool(toolId: string) {
-      let tool =
-        this.tools.find((item) => item.id === toolId) || this.toolPageItems.find((item) => item.id === toolId);
+      let tool = this.tools.find((item) => item.id === toolId) || this.toolPageItems.find((item) => item.id === toolId);
       if (!tool) throw new Error("Tool not found.");
       // Always refresh versions so lockVersion matches DB after tests (list used to hard-code 1).
       tool = await this.loadToolVersions(toolId, tool.workspaceId);
@@ -502,16 +501,13 @@ export const useToolsStore = defineStore("tools", {
      * Server requires tools.allowForcePublish + platform admin + workspace PUBLISH.
      */
     async forcePublishTool(toolId: string, reason: string) {
-      let tool =
-        this.tools.find((item) => item.id === toolId) || this.toolPageItems.find((item) => item.id === toolId);
+      let tool = this.tools.find((item) => item.id === toolId) || this.toolPageItems.find((item) => item.id === toolId);
       if (!tool) throw new Error("Tool not found.");
       // Prefer head version summary; load full versions when draftVersion is missing.
       let version = tool.draftVersion;
       if (!version || version.lifecycleStatus === "PUBLISHED") {
         tool = await this.loadToolVersions(toolId, tool.workspaceId);
-        version =
-          tool.draftVersion ||
-          [...tool.versions].sort((left, right) => right.versionNo - left.versionNo)[0];
+        version = tool.draftVersion || [...tool.versions].sort((left, right) => right.versionNo - left.versionNo)[0];
       }
       if (!version || version.lifecycleStatus === "PUBLISHED") {
         throw new Error("No unpublished version available to force-publish.");

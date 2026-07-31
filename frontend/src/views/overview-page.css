@@ -888,7 +888,9 @@
 /* Soft vertical column highlight on hover (ECharts axisPointer shadow style) */
 .overview-composite-band {
   fill: rgba(148, 163, 184, 0.12);
-  transition: x 0.08s ease-out, width 0.08s ease-out;
+  transition:
+    x 0.08s ease-out,
+    width 0.08s ease-out;
 }
 
 .overview-composite-bar--dim {

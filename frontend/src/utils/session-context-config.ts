@@ -43,10 +43,8 @@ export function buildRuntimeCapabilitiesPayload(
   return {
     schemaVersion: "model-runtime.v1",
     contextWindowTokens: Math.floor(windowTokens),
-    defaultOutputReserveTokens:
-      Number.isFinite(reserve) && reserve > 0 ? Math.floor(reserve) : 4096,
-    outputTokenLimitMode:
-      limitMode === "max_completion_tokens" ? "max_completion_tokens" : "max_tokens",
+    defaultOutputReserveTokens: Number.isFinite(reserve) && reserve > 0 ? Math.floor(reserve) : 4096,
+    outputTokenLimitMode: limitMode === "max_completion_tokens" ? "max_completion_tokens" : "max_tokens",
     tokenizerProfile: profile || "o200k_base",
     tokenizerVersion: version || "2026-01",
   };
@@ -70,13 +68,8 @@ export function normalizeRuntimeCapabilities(
   return {
     schemaVersion: "model-runtime.v1",
     contextWindowTokens: c.contextWindowTokens ? Number(c.contextWindowTokens) : undefined,
-    defaultOutputReserveTokens: c.defaultOutputReserveTokens
-      ? Number(c.defaultOutputReserveTokens)
-      : 4096,
-    outputTokenLimitMode:
-      c.outputTokenLimitMode === "max_completion_tokens"
-        ? "max_completion_tokens"
-        : "max_tokens",
+    defaultOutputReserveTokens: c.defaultOutputReserveTokens ? Number(c.defaultOutputReserveTokens) : 4096,
+    outputTokenLimitMode: c.outputTokenLimitMode === "max_completion_tokens" ? "max_completion_tokens" : "max_tokens",
     tokenizerProfile: String(c.tokenizerProfile || "o200k_base"),
     tokenizerVersion: String(c.tokenizerVersion || "2026-01"),
   };

@@ -86,7 +86,9 @@ function pathPlaceholders(path: string): string[] {
 }
 
 function normalizeLocation(value: unknown): string {
-  const raw = String(value || "").trim().toLowerCase();
+  const raw = String(value || "")
+    .trim()
+    .toLowerCase();
   if (raw === "path") return "Path";
   if (raw === "query") return "Query";
   if (raw === "header") return "Header";
@@ -164,9 +166,7 @@ export function collectToolTestParams(tool: Pick<Tool, "requestParams" | "action
 export function buildDefaultToolTestInput(
   paramsOrTool: ToolRequestParam[] | Pick<Tool, "requestParams" | "actionConfig">,
 ): Record<string, unknown> {
-  const params = Array.isArray(paramsOrTool)
-    ? paramsOrTool
-    : collectToolTestParams(paramsOrTool);
+  const params = Array.isArray(paramsOrTool) ? paramsOrTool : collectToolTestParams(paramsOrTool);
 
   const entries = params.filter(shouldIncludeParam).map((param) => [param.name, fallbackValueForParam(param)] as const);
 

@@ -36,7 +36,7 @@ func TestAgentGrantMigration(t *testing.T) {
 	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 3 || version.Dirty {
+	if !version.Applied || version.Number != 5 || version.Dirty {
 		t.Fatalf("expected clean Agent Grant migration version 43, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -141,7 +141,7 @@ func TestSubjectOwnershipPolicyMigration(t *testing.T) {
 	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 3 || version.Dirty {
+	if !version.Applied || version.Number != 5 || version.Dirty {
 		t.Fatalf("migration 51=%+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -152,7 +152,7 @@ func TestSubjectOwnershipPolicyMigration(t *testing.T) {
 		t.Fatalf("migration 51 unexpectedly accepted Subject Sharing: valid=%v err=%v", valid, err)
 	}
 	version = testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 3 || version.Dirty {
+	if !version.Applied || version.Number != 5 || version.Dirty {
 		t.Fatalf("migration 52=%+v", version)
 	}
 	for document, expected := range map[string]bool{

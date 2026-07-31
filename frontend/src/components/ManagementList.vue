@@ -398,12 +398,7 @@ onBeforeUnmount(() => {
             <i class="fa-solid fa-circle-xmark" aria-hidden="true" />
           </button>
         </label>
-        <div
-          v-if="checkedRowKeys.length"
-          class="management-list-batch-bar"
-          role="status"
-          aria-live="polite"
-        >
+        <div v-if="checkedRowKeys.length" class="management-list-batch-bar" role="status" aria-live="polite">
           <span>已选 {{ checkedRowKeys.length }} 项</span>
           <slot name="batch-actions" :checked-row-keys="checkedRowKeys" />
           <button type="button" aria-label="取消选择" @click="emit('update:checked-row-keys', [])">取消选择</button>

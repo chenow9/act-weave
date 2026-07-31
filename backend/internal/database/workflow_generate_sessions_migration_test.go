@@ -15,20 +15,20 @@ func TestWorkflowGenerateSessionsMigration(t *testing.T) {
 	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 4 || version.Dirty {
+	if !version.Applied || version.Number != 5 || version.Dirty {
 		t.Fatalf("expected clean workflow generate sessions migration version 59, got %+v", version)
 	}
 	db := testDatabase.Open(t)
 	assertWorkflowGenerateSessionsSchema(t, db, true)
 
 	version = testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 4 || version.Dirty {
+	if !version.Applied || version.Number != 5 || version.Dirty {
 		t.Fatalf("expected clean rollback to version 58, got %+v", version)
 	}
 	assertWorkflowGenerateSessionsSchema(t, db, false)
 
 	version = testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 4 || version.Dirty {
+	if !version.Applied || version.Number != 5 || version.Dirty {
 		t.Fatalf("expected clean reapply version 59, got %+v", version)
 	}
 	assertWorkflowGenerateSessionsSchema(t, db, true)

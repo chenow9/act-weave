@@ -155,9 +155,7 @@ export const useAgentStore = defineStore("agents", {
           modelConfigId: agent.modelConfigId,
           isDefault: agent.isDefault,
           systemPrompt: agent.systemPrompt,
-          ...(options.sourcePromptPreviewRunId
-            ? { sourcePromptPreviewRunId: options.sourcePromptPreviewRunId }
-            : {}),
+          ...(options.sourcePromptPreviewRunId ? { sourcePromptPreviewRunId: options.sourcePromptPreviewRunId } : {}),
         },
       );
       const created = agentFromDTO(response.data, agent.workspaceId);

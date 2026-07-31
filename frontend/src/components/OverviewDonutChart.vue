@@ -21,16 +21,7 @@ const props = withDefaults(
     size: 112,
     emptyText: "暂无数据",
     valueLabel: "合计",
-    colors: () => [
-      "#0f9f6e",
-      "#14b8a6",
-      "#3b82f6",
-      "#6366f1",
-      "#8b5cf6",
-      "#f59e0b",
-      "#f43f5e",
-      "#64748b",
-    ],
+    colors: () => ["#0f9f6e", "#14b8a6", "#3b82f6", "#6366f1", "#8b5cf6", "#f59e0b", "#f43f5e", "#64748b"],
   },
 );
 
@@ -111,13 +102,7 @@ const centerSub = computed(() => {
   <div class="overview-donut">
     <div v-if="!segments.length" class="overview-empty compact">{{ emptyText }}</div>
     <template v-else>
-      <svg
-        class="overview-donut-svg"
-        :viewBox="`0 0 ${size} ${size}`"
-        :width="size"
-        :height="size"
-        role="img"
-      >
+      <svg class="overview-donut-svg" :viewBox="`0 0 ${size} ${size}`" :width="size" :height="size" role="img">
         <path
           v-for="seg in segments"
           :key="seg.id"
@@ -127,7 +112,9 @@ const centerSub = computed(() => {
           @mouseenter="hoverId = seg.id"
           @mouseleave="hoverId = null"
         >
-          <title>{{ seg.name }}{{ seg.meta ? ` · ${seg.meta}` : "" }} · {{ seg.value }} ({{ seg.pct.toFixed(1) }}%)</title>
+          <title>
+            {{ seg.name }}{{ seg.meta ? ` · ${seg.meta}` : "" }} · {{ seg.value }} ({{ seg.pct.toFixed(1) }}%)
+          </title>
         </path>
         <circle :cx="cx" :cy="cy" :r="innerR - 1" fill="#fff" pointer-events="none" />
         <text :x="cx" :y="cy - 5" text-anchor="middle" class="overview-donut-center-value">

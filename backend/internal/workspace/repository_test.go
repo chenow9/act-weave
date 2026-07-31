@@ -231,7 +231,7 @@ func newWorkspaceRepositoryDatabase(t *testing.T) *sql.DB {
 	t.Helper()
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 3 || version.Dirty {
+	if !version.Applied || version.Number != 5 || version.Dirty {
 		t.Fatalf("expected clean workspace repository migration version 5, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -248,7 +248,7 @@ func newWorkspaceRepositoryDatabaseAtLatestMigration(t *testing.T) *sql.DB {
 	t.Helper()
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 3 || version.Dirty {
+	if !version.Applied || version.Number != 5 || version.Dirty {
 		t.Fatalf("expected clean latest workspace migration version 35, got %+v", version)
 	}
 	db := testDatabase.Open(t)

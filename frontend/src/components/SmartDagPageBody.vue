@@ -26,8 +26,6 @@ const {
   compilerIssues,
   toast,
   canvasContainerRef,
-  workspaces,
-  workspaceAgents,
   workspaceSelectOptions,
   agentSelectOptions,
   agentHasUsableModel,
@@ -395,10 +393,7 @@ void SmartDagModals;
                 v-for="side in getNodePortSides(node)"
                 :key="`${node.id}-${side}`"
                 class="smart-node-port"
-                :class="[
-                  `is-${side}`,
-                  side === 'left' ? 'input' : 'output',
-                ]"
+                :class="[`is-${side}`, side === 'left' ? 'input' : 'output']"
                 :title="portTitle(side)"
               />
             </template>
@@ -408,10 +403,7 @@ void SmartDagModals;
                 v-for="side in getNodePortSides(node)"
                 :key="`${node.id}-${side}`"
                 class="smart-node-port"
-                :class="[
-                  `is-${side}`,
-                  side === 'left' ? 'input' : 'output is-branch',
-                ]"
+                :class="[`is-${side}`, side === 'left' ? 'input' : 'output is-branch']"
                 :title="portTitle(side)"
               />
             </template>
@@ -709,7 +701,10 @@ void SmartDagModals;
               <span>说明备注</span>
               <textarea v-model="selectedNode.desc" rows="2" />
             </label>
-            <div v-if="selectedNode.graphType === 'Tool' || selectedNode.type === 'TOOL CALL'" class="smart-tool-binding-card">
+            <div
+              v-if="selectedNode.graphType === 'Tool' || selectedNode.type === 'TOOL CALL'"
+              class="smart-tool-binding-card"
+            >
               <span>绑定工具</span>
               <strong v-if="selectedNode.toolName">{{ selectedNode.toolName }}</strong>
               <strong v-else class="is-missing">未解析到工具名称</strong>

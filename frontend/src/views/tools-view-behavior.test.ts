@@ -28,7 +28,10 @@ const integrationState = {
   loading: false,
   loadM2Assets: loadM2AssetsMock,
   loadToolPage: loadToolPageMock,
-  loadToolVersions: vi.fn(async (id: string) => integrationState.tools.find((t) => t.id === id) || integrationState.toolPageItems.find((t) => t.id === id)),
+  loadToolVersions: vi.fn(
+    async (id: string) =>
+      integrationState.tools.find((t) => t.id === id) || integrationState.toolPageItems.find((t) => t.id === id),
+  ),
   connectionForTool: vi.fn((tool: Tool) => {
     const list = integrationState.toolConnectionsByWorkspace[tool.workspaceId] || integrationState.serviceConnections;
     return list.find((c) => c.id === tool.connectionId);
@@ -329,7 +332,9 @@ describe("tools view detail behavior", () => {
     // Scheme A: lifecycle pill stays short; connection problem is a secondary line.
     const statusCells = wrapper.findAll('td[data-column-key="status"] .tool-unified-status-cell');
     expect(statusCells.length).toBeGreaterThan(0);
-    const brokenCell = statusCells.find((cell) => cell.text().includes("连接缺失") || cell.text().includes("连接需处理"));
+    const brokenCell = statusCells.find(
+      (cell) => cell.text().includes("连接缺失") || cell.text().includes("连接需处理"),
+    );
     expect(brokenCell).toBeTruthy();
     expect(brokenCell!.find(".tool-status-pill").text()).toContain("已发布");
     expect(brokenCell!.find(".tool-status-attention").text()).toMatch(/连接/);

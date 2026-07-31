@@ -97,7 +97,8 @@ function trapDialogFocus(event: KeyboardEvent) {
           <span>平台管理员 · 强制发布</span>
           <h4 id="workflow-force-publish-title">{{ workflowName || "当前流程" }}</h4>
           <p>
-            将<strong>跳过试运行</strong>，把当前 VALID 编译直接冻结为已发布版本。不会调用真实业务链路做验证，请确认影响面后继续。
+            将<strong>跳过试运行</strong>，把当前 VALID
+            编译直接冻结为已发布版本。不会调用真实业务链路做验证，请确认影响面后继续。
           </p>
         </div>
         <button class="ghost-button" type="button" :disabled="submitting" aria-label="关闭" @click="closeIfIdle">

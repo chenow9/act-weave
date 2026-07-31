@@ -284,11 +284,9 @@ function maxDepth(nodes: ToolSchemaNode[], depth = 1): number {
           :min-width="variantMode === 'spec' ? 220 : 240"
         >
           <template #default="{ row }">
-            <span
-              class="tool-schema-view-description"
-              :class="{ 'is-empty': !String(row.description || '').trim() }"
-              >{{ descriptionDisplay(row.description, variantMode) }}</span
-            >
+            <span class="tool-schema-view-description" :class="{ 'is-empty': !String(row.description || '').trim() }">{{
+              descriptionDisplay(row.description, variantMode)
+            }}</span>
           </template>
         </vxe-column>
       </vxe-table>

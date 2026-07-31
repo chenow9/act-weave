@@ -76,7 +76,10 @@ function toDatetimeLocalValue(date: Date) {
 
 /** Strip accidental "Bearer " prefix — connection inject already adds it. */
 function normalizePassthroughToken(raw: string) {
-  return raw.trim().replace(/^Bearer\s+/i, "").trim();
+  return raw
+    .trim()
+    .replace(/^Bearer\s+/i, "")
+    .trim();
 }
 
 useModalFocus({
@@ -168,8 +171,8 @@ async function runTest() {
 }
 
 function toolTestActionError(error: unknown) {
-  const payload = (error as { response?: { data?: { error?: string | { message?: string; code?: string } } } })
-    .response?.data?.error;
+  const payload = (error as { response?: { data?: { error?: string | { message?: string; code?: string } } } }).response
+    ?.data?.error;
   const code = typeof payload === "object" && payload ? payload.code : undefined;
   const message = typeof payload === "string" ? payload : payload?.message;
   if (code === "OUTBOUND_CREDENTIAL_EXPIRED" || /no longer available|expired/i.test(message || "")) {

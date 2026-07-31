@@ -18,9 +18,7 @@ const COLUMN_GAP_TIGHT = 240; // 180 card + 60 clear gap
 /** Wider pitch after a fork / stage boundary. */
 const COLUMN_GAP_STAGE = 280;
 const ROW_GAP = 176;
-const NODE_MIN_WIDTH = 180;
 const NODE_MIN_HEIGHT = 92;
-const BOX_GAP_X = 28;
 const BOX_GAP_Y = 28;
 const OVERLAP_THRESHOLD = 80;
 
@@ -98,9 +96,7 @@ function assignBranchTracks(
 
   for (const node of byLayerAsc) {
     if (track.has(node.id)) continue;
-    const preds = (incoming.get(node.id) || []).filter(
-      (p) => (layerById.get(p) ?? 0) < (layerById.get(node.id) ?? 0),
-    );
+    const preds = (incoming.get(node.id) || []).filter((p) => (layerById.get(p) ?? 0) < (layerById.get(node.id) ?? 0));
     if (!preds.length || node.type === "Start") {
       track.set(node.id, 0);
       continue;
@@ -114,11 +110,7 @@ function assignBranchTracks(
     const parentId = node.id;
     const forwardChildren = (outgoing.get(node.id) || [])
       .filter((c) => (layerById.get(c) ?? 0) > parentLayer)
-      .sort(
-        (a, b) =>
-          branchPriority(graph, a, parentId) - branchPriority(graph, b, parentId) ||
-          a.localeCompare(b),
-      );
+      .sort((a, b) => branchPriority(graph, a, parentId) - branchPriority(graph, b, parentId) || a.localeCompare(b));
     if (forwardChildren.length < 2) continue;
 
     const parentTrack = track.get(node.id) ?? 0;
@@ -139,9 +131,7 @@ function assignBranchTracks(
       track.set(node.id, 0);
       continue;
     }
-    const preds = (incoming.get(node.id) || []).filter(
-      (p) => (layerById.get(p) ?? 0) < (layerById.get(node.id) ?? 0),
-    );
+    const preds = (incoming.get(node.id) || []).filter((p) => (layerById.get(p) ?? 0) < (layerById.get(node.id) ?? 0));
     if (preds.length < 2) continue;
     const ts = preds.map((p) => track.get(p) ?? 0).sort((a, b) => a - b);
     track.set(node.id, ts[Math.floor(ts.length / 2)] ?? 0);
@@ -160,16 +150,14 @@ function branchPriority(graph: WorkflowGraphDraft, nodeId: string, parentId?: st
   if (parentId) {
     const edge = graph.edges.find((e) => e.sourceNodeId === parentId && e.targetNodeId === nodeId);
     const raw = edge?.data && typeof edge.data === "object" ? (edge.data as Record<string, unknown>) : {};
-    const branch = String(raw.branch ?? raw.label ?? "").toLowerCase().trim();
+    const branch = String(raw.branch ?? raw.label ?? "")
+      .toLowerCase()
+      .trim();
     if (branch) {
       if (/^(true|completed|success|ok|yes|pass|done|已完成|成功)/.test(branch) || branch === "true") {
         return 0;
       }
-      if (
-        /^(false|default|reject|fail|failed|running|timeout|error|no|else|其他|失败|超时|处理中|驳回)/.test(
-          branch,
-        )
-      ) {
+      if (/^(false|default|reject|fail|failed|running|timeout|error|no|else|其他|失败|超时|处理中|驳回)/.test(branch)) {
         return 40;
       }
     }
@@ -404,10 +392,7 @@ function buildLayers(
   for (const node of graph.nodes) {
     if (node.type === "Start") layer.set(node.id, 0);
   }
-  const nonEndMax = Math.max(
-    0,
-    ...graph.nodes.filter((n) => n.type !== "End").map((n) => layer.get(n.id) || 0),
-  );
+  const nonEndMax = Math.max(0, ...graph.nodes.filter((n) => n.type !== "End").map((n) => layer.get(n.id) || 0));
   for (const node of graph.nodes) {
     if (node.type === "End") layer.set(node.id, nonEndMax + 1);
   }
@@ -457,7 +442,7 @@ function separateOverlapsInColumns(
     if (ids.length < 2) continue;
     for (let sweep = 0; sweep < 6; sweep += 1) {
       let moved = false;
-      const sorted = [...ids].sort((a, b) => (next.get(a)!.y - next.get(b)!.y) || a.localeCompare(b));
+      const sorted = [...ids].sort((a, b) => next.get(a)!.y - next.get(b)!.y || a.localeCompare(b));
       for (let i = 0; i < sorted.length - 1; i += 1) {
         const a = next.get(sorted[i])!;
         const b = next.get(sorted[i + 1])!;

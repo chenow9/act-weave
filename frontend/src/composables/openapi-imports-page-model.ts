@@ -228,13 +228,7 @@ export function createOpenAPIImportsPageModel() {
     const needle = endpointDetailQuery.value.trim().toLowerCase();
     if (!needle) return endpoints;
     return endpoints.filter((endpoint) => {
-      const haystack = [
-        endpoint.method,
-        endpoint.path,
-        endpoint.summary,
-        endpoint.operationId,
-        endpoint.status,
-      ]
+      const haystack = [endpoint.method, endpoint.path, endpoint.summary, endpoint.operationId, endpoint.status]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();

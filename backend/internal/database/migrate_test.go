@@ -44,8 +44,15 @@ func TestEmbeddedMigrationSetStartsWithBaselineThenSessionContext(t *testing.T) 
 	if fourth != 4 {
 		t.Fatalf("expected fourth migration version 4, got %d", fourth)
 	}
-	if _, err := source.Next(fourth); err == nil {
-		t.Fatal("expected only four embedded migrations")
+	fifth, err := source.Next(fourth)
+	if err != nil {
+		t.Fatalf("expected agent access cors loopback migration: %v", err)
+	}
+	if fifth != 5 {
+		t.Fatalf("expected fifth migration version 5, got %d", fifth)
+	}
+	if _, err := source.Next(fifth); err == nil {
+		t.Fatal("expected only five embedded migrations")
 	}
 
 	for _, item := range []struct {
@@ -56,6 +63,7 @@ func TestEmbeddedMigrationSetStartsWithBaselineThenSessionContext(t *testing.T) 
 		{version: 2, identifier: "session_context_contracts"},
 		{version: 3, identifier: "chat_context_summaries"},
 		{version: 4, identifier: "agent_context_llm_compaction"},
+		{version: 5, identifier: "agent_access_cors_loopback"},
 	} {
 		for _, direction := range []struct {
 			name string

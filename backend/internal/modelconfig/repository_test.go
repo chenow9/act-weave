@@ -196,7 +196,7 @@ func newModelConfigRepositoryTest(t *testing.T, checker UsageChecker) (*Reposito
 	t.Helper()
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 3 || version.Dirty {
+	if !version.Applied || version.Number != 5 || version.Dirty {
 		t.Fatalf("expected clean model config repository migration version 7, got %+v", version)
 	}
 	db := testDatabase.Open(t)

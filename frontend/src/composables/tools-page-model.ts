@@ -898,10 +898,11 @@ export function createToolsPageModel() {
         {
           key: "names",
           label: "示例名称",
-          value: tools
-            .slice(0, 3)
-            .map((tool) => tool.name)
-            .join("、") + (tools.length > 3 ? ` 等 ${tools.length} 个` : ""),
+          value:
+            tools
+              .slice(0, 3)
+              .map((tool) => tool.name)
+              .join("、") + (tools.length > 3 ? ` 等 ${tools.length} 个` : ""),
           tone: "neutral",
         },
       ];
@@ -1334,7 +1335,10 @@ export function createToolsPageModel() {
   }
 
   function normalizePassthroughToken(raw: string) {
-    return raw.trim().replace(/^Bearer\s+/i, "").trim();
+    return raw
+      .trim()
+      .replace(/^Bearer\s+/i, "")
+      .trim();
   }
 
   function buildBatchOutboundEnvelope(
@@ -1422,18 +1426,12 @@ export function createToolsPageModel() {
             failureHints.push(`${tool.name}: 缺少透传 Token`);
             continue;
           }
-          const result = await toolsStore.testTool(
-            target.id,
-            buildDefaultToolTestInput(target),
-            envelope,
-          );
+          const result = await toolsStore.testTool(target.id, buildDefaultToolTestInput(target), envelope);
           if (result.passed) passed += 1;
           else {
             failed += 1;
             if (failureHints.length < 5) {
-              failureHints.push(
-                `${tool.name}: ${result.errorMessage || `HTTP ${result.responseStatus}` || "失败"}`,
-              );
+              failureHints.push(`${tool.name}: ${result.errorMessage || `HTTP ${result.responseStatus}` || "失败"}`);
             }
           }
         } catch (error) {
@@ -1447,8 +1445,7 @@ export function createToolsPageModel() {
       await loadToolRegistry();
       const parts = [`通过 ${passed}`, `失败 ${failed}`];
       if (skipped) parts.push(`跳过 ${skipped}`);
-      const hint =
-        failureHints.length > 0 ? ` 示例：${failureHints.slice(0, 3).join("；")}` : "";
+      const hint = failureHints.length > 0 ? ` 示例：${failureHints.slice(0, 3).join("；")}` : "";
       setActionFeedback(
         `批量测试完成（${tools.length} 个）：${parts.join("，")}。` +
           (skipped ? " 跳过项多为仅有已发布版本或缺少连接。" : "") +

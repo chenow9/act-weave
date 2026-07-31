@@ -5,7 +5,6 @@ on:
     paths:
       - "backend/**"
       - "sdk/typescript/**"
-      - "examples/agent-access/**"
       - "frontend/**"
       - "docs/openapi/**"
       - "docs/verification/**"
@@ -16,7 +15,6 @@ on:
     paths:
       - "backend/**"
       - "sdk/typescript/**"
-      - "examples/agent-access/**"
       - "frontend/**"
       - "docs/openapi/**"
       - "docs/verification/**"
@@ -174,24 +172,6 @@ jobs:
             frontend/playwright-report/
           if-no-files-found: ignore
 
-  examples:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: examples/agent-access
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - name: install (workspace + local SDK)
-        run: |
-          (cd ../../sdk/typescript && npm ci && npm run build)
-          npm ci
-      - name: test + security scan
-        run: |
-          npm test
-          npm run security-scan
 
   protocol-compat:
     runs-on: ubuntu-latest

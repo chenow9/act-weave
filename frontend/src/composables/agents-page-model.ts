@@ -256,8 +256,8 @@ export function createAgentsPageModel() {
     if (studioMode.value === "edit") return Boolean(draftAgent.value.id);
     return Boolean(
       draftAgent.value.workspaceId &&
-        draftAgent.value.modelConfigId &&
-        modelConfigs.items.some((item) => item.id === draftAgent.value.modelConfigId),
+      draftAgent.value.modelConfigId &&
+      modelConfigs.items.some((item) => item.id === draftAgent.value.modelConfigId),
     );
   });
   const canConfirmAgentDelete = computed(() => {
@@ -458,13 +458,10 @@ export function createAgentsPageModel() {
     () => draftContextPolicy().summary?.minEvictedTurns ?? defaultRollingSummary().minEvictedTurns ?? 4,
   );
   const agentContextSummaryMaxPasses = computed(
-    () =>
-      draftContextPolicy().summary?.maxGenerationPasses ??
-      defaultRollingSummary().maxGenerationPasses ??
-      2,
+    () => draftContextPolicy().summary?.maxGenerationPasses ?? defaultRollingSummary().maxGenerationPasses ?? 2,
   );
-  const agentContextIncludeCompactionSummary = computed(
-    () => Boolean(draftContextPolicy().aap?.includeCompactionSummary),
+  const agentContextIncludeCompactionSummary = computed(() =>
+    Boolean(draftContextPolicy().aap?.includeCompactionSummary),
   );
   const agentContextAdvancedOpen = ref(false);
 
@@ -586,8 +583,7 @@ export function createAgentsPageModel() {
       schemaVersion: "session-context-policy.v1",
       summary: {
         ...summary,
-        maxGenerationPasses:
-          Number.isFinite(value) && value > 0 ? Math.floor(value) : summary.maxGenerationPasses,
+        maxGenerationPasses: Number.isFinite(value) && value > 0 ? Math.floor(value) : summary.maxGenerationPasses,
       },
     };
   }
@@ -1212,15 +1208,12 @@ export function createAgentsPageModel() {
       ).length,
   );
   const capabilitySelectedBoundCount = computed(
-    () =>
-      capabilitySelectedIds.value.filter((id) => Boolean(currentCapabilityBinding(id))).length,
+    () => capabilitySelectedIds.value.filter((id) => Boolean(currentCapabilityBinding(id))).length,
   );
   const capabilitySelectedUnboundCount = computed(
     () => capabilitySelectedIds.value.filter((id) => !currentCapabilityBinding(id)).length,
   );
-  const capabilityActionsBusy = computed(
-    () => Boolean(capabilitySavingId.value) || capabilityBatchBusy.value,
-  );
+  const capabilityActionsBusy = computed(() => Boolean(capabilitySavingId.value) || capabilityBatchBusy.value);
 
   async function saveCapabilityBinding(capability: CapabilityCatalogItem) {
     const agent = capabilityAgent.value;
@@ -1297,10 +1290,7 @@ export function createAgentsPageModel() {
           });
 
     if (!targets.length) {
-      showAgentToast(
-        options.mode === "all-unbound" ? "没有可绑定的未绑定能力。" : "请先勾选可绑定的能力。",
-        "error",
-      );
+      showAgentToast(options.mode === "all-unbound" ? "没有可绑定的未绑定能力。" : "请先勾选可绑定的能力。", "error");
       return;
     }
 

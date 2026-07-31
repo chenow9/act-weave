@@ -82,7 +82,6 @@ watch(
 );
 
 function shortLabel(label: string) {
-  const n = props.labels.length;
   // Dense ranges: show MM-DD only; very dense: every other / every third label handled in template.
   return label.length >= 10 ? label.slice(5) : label;
 }
@@ -357,9 +356,15 @@ function formatPct(rate: number) {
       role="tooltip"
     >
       <strong>{{ tooltip.label }}</strong>
-      <p><i style="background: #0d9488" /><span>Agent Run</span><b>{{ tooltip.runs }}</b></p>
-      <p><i style="background: #4f46e5" /><span>工具调用</span><b>{{ tooltip.tools }}</b></p>
-      <p><i style="background: #fb7185" /><span>链路成功率</span><b>{{ formatPct(tooltip.rate) }}</b></p>
+      <p>
+        <i style="background: #0d9488" /><span>Agent Run</span><b>{{ tooltip.runs }}</b>
+      </p>
+      <p>
+        <i style="background: #4f46e5" /><span>工具调用</span><b>{{ tooltip.tools }}</b>
+      </p>
+      <p>
+        <i style="background: #fb7185" /><span>链路成功率</span><b>{{ formatPct(tooltip.rate) }}</b>
+      </p>
     </div>
   </div>
 </template>

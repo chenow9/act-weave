@@ -30,7 +30,7 @@ const credential = {
 const access = reactive({
   clients: [client],
   selectedClientId: "" as string,
-  credentials: [] as typeof credential[],
+  credentials: [] as (typeof credential)[],
   grants: [] as unknown[],
   loading: false,
   detailLoading: false,

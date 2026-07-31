@@ -264,7 +264,12 @@ export function createWorkflowPageModel() {
     // Need a current VALID compilation; trial optional.
     if (readiness.stage === "Disabled" || readiness.stage === "DraftMissing") return false;
     if (readiness.stage === "CompileRequired" || readiness.stage === "CompileFailed") return false;
-    return Boolean(readiness.compilationValid || readiness.canPublish || readiness.stage === "TrialRequired" || readiness.stage === "PublishReady");
+    return Boolean(
+      readiness.compilationValid ||
+      readiness.canPublish ||
+      readiness.stage === "TrialRequired" ||
+      readiness.stage === "PublishReady",
+    );
   });
   const workflowEditorReadinessSteps = computed(() =>
     buildWorkflowEditorReadinessSteps(selectedWorkflowReadiness.value),

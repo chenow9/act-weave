@@ -1671,10 +1671,7 @@ export function createServiceConnectionsPageModel() {
         showActionNote(`${connection.name} 已通过连接验证。`);
         return;
       }
-      showActionNote(
-        `${connection.name} 验证后仍需处理：${formatVerificationFailure(verification)}`,
-        "warning",
-      );
+      showActionNote(`${connection.name} 验证后仍需处理：${formatVerificationFailure(verification)}`, "warning");
     } finally {
       removeVerifyingConnection(connection.id);
     }
@@ -1851,10 +1848,7 @@ export function createServiceConnectionsPageModel() {
     );
   }
 
-  function formatVerificationFailure(verification: {
-    diagnostics?: Record<string, string>;
-    status?: string;
-  }) {
+  function formatVerificationFailure(verification: { diagnostics?: Record<string, string>; status?: string }) {
     const code = verification.diagnostics?.code?.trim();
     const detail = verification.diagnostics?.detail?.trim();
     if (code && detail) return `${code}（${detail}）`;

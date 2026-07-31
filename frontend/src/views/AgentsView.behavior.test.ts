@@ -574,10 +574,7 @@ describe("agents view behavior", () => {
     bindCapabilityMock.mockImplementation(async (agent, capabilityId, input) => {
       const saved = { ...input, capabilityId, lockVersion: 1 };
       const list = agentStoreState.bindingsByAgent[agent.id] || [];
-      agentStoreState.bindingsByAgent[agent.id] = [
-        ...list.filter((item) => item.capabilityId !== capabilityId),
-        saved,
-      ];
+      agentStoreState.bindingsByAgent[agent.id] = [...list.filter((item) => item.capabilityId !== capabilityId), saved];
       return saved;
     });
 

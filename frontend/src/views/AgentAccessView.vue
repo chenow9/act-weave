@@ -500,10 +500,7 @@ function authMethodShort(method: string) {
 
     <!-- List: Client table (always keep list chrome; no-workspace empty sits inside) -->
     <template v-if="viewMode === 'list' || !hasWorkspaceContext">
-      <section
-        class="span-12 management-list-card access-list-card"
-        :aria-busy="hasWorkspaceContext && access.loading"
-      >
+      <section class="span-12 management-list-card access-list-card" :aria-busy="hasWorkspaceContext && access.loading">
         <ManagementList
           class="access-client-management-list"
           :rows="hasWorkspaceContext ? filteredClients : []"
@@ -629,9 +626,7 @@ function authMethodShort(method: string) {
           </div>
           <div class="identity-chip">
             <span>Service Principal</span>
-            <strong :title="selectedClient.servicePrincipalId">{{
-              shortID(selectedClient.servicePrincipalId)
-            }}</strong>
+            <strong :title="selectedClient.servicePrincipalId">{{ shortID(selectedClient.servicePrincipalId) }}</strong>
           </div>
           <div class="identity-chip">
             <span>最近更新</span>
@@ -646,11 +641,7 @@ function authMethodShort(method: string) {
           <button type="button" :class="{ active: activeTab === 'grants' }" @click="activeTab = 'grants'">
             Agent 授权 <span>{{ access.grants.length }}</span>
           </button>
-          <button
-            type="button"
-            :class="{ active: activeTab === 'configuration' }"
-            @click="activeTab = 'configuration'"
-          >
+          <button type="button" :class="{ active: activeTab === 'configuration' }" @click="activeTab = 'configuration'">
             接入配置
           </button>
         </nav>
@@ -682,12 +673,15 @@ function authMethodShort(method: string) {
                   <tr v-for="credential in access.credentials" :key="credential.id">
                     <td>
                       <strong class="aw-table-title"
-                        >{{ credential.type === "jwk" ? "JWK" : "Client Secret" }} ·
-                        {{ credential.publicHint }}</strong
+                        >{{ credential.type === "jwk" ? "JWK" : "Client Secret" }} · {{ credential.publicHint }}</strong
                       >
                     </td>
-                    <td><span class="aw-table-meta">{{ formatTime(credential.createdAt) }}</span></td>
-                    <td><span class="aw-table-meta">{{ formatTime(credential.lastUsedAt) }}</span></td>
+                    <td>
+                      <span class="aw-table-meta">{{ formatTime(credential.createdAt) }}</span>
+                    </td>
+                    <td>
+                      <span class="aw-table-meta">{{ formatTime(credential.lastUsedAt) }}</span>
+                    </td>
                     <td>
                       <span class="aw-table-meta">{{
                         credential.expiresAt ? formatTime(credential.expiresAt) : "—"
@@ -1972,5 +1966,4 @@ function authMethodShort(method: string) {
   background: #f1f5f9;
   font-size: var(--aw-table-mono-size);
 }
-
 </style>
