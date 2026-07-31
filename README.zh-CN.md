@@ -1,34 +1,144 @@
-# ACTWEAVE
+# ACTWEAVE 织行
 
 [English](./README.md)
 
-ActWeave 是面向业务操作编排的控制台型产品，核心对象包括 Agent、Tool、Workflow 与可审计执行。**第三方平台通过 Agent Access Protocol（AAP）对接 Agent**，不要使用管理控制台的用户 Session API。
+**ActWeave（织行）** 是一套面向企业业务系统的 **Agent 编排与执行控制台**。  
+它把外部业务 API 变成可治理的 **Tool**，配置可决策的 **Agent**，必要时用 **Workflow / 智能编排** 把多步业务串起来，并通过 **运行调试台与审计日志** 保证每次调用可追溯。
+
+第三方业务系统 **不通过管理后台 Session** 调 Agent，而是走标准化的 **Agent Access Protocol（AAP）** 接入。
+
+---
+
+## 这个项目解决什么问题？
+
+传统「业务系统 + 大模型」常见痛点：
+
+| 痛点 | ActWeave 的做法 |
+| --- | --- |
+| 模型直接乱调 HTTP，缺权限与契约 | 业务 API 先注册为 **Tool**（契约 / 连接 / 版本 / 发布） |
+| 多系统凭证散落在前端 | **Service Connection + 出站身份**（含 REQUEST_PASSTHROUGH） |
+| 编排不可见、难回放 | **Workflow 图编排** + 试跑 / 发布 / 审计 |
+| 合作方无法安全接入 | **AAP**：OAuth 客户端、Scope、Conversation / Run、SSE |
+| 出了问题说不清 | **Agent 审计中心 / 运行日志**，链路可追踪 |
+
+一句话：**ActWeave = 业务 Tool 治理 + Agent 配置 + 编排 + 可审计执行 + 对外 AAP 协议。**
+
+---
+
+## 产品能力一览
+
+```text
+┌─────────────┐     ┌──────────────┐     ┌────────────────┐
+│  管理控制台  │────▶│  Agent 运行时 │────▶│  业务系统 API   │
+│  配置与发布  │     │  Tool/Workflow│     │  (出站凭证)     │
+└─────────────┘     └──────┬───────┘     └────────────────┘
+                           │
+                    ┌──────▼───────┐
+                    │  AAP 数据面   │  ← 第三方 App / BFF / 合作方
+                    │  Conversation │
+                    │  Run + SSE    │
+                    └──────────────┘
+```
+
+| 能力 | 说明 |
+| --- | --- |
+| **业务空间 (Workspace)** | 租户 / 项目边界，隔离配置与运行数据 |
+| **Provider / 连接** | 外部系统与凭证、出站身份策略 |
+| **Tool** | OpenAPI 导入或手工创建；版本、测试、发布 |
+| **Agent** | 绑定模型、提示词、Tool / Workflow 能力 |
+| **Workflow** | 可视化图编排，试跑与发布 |
+| **智能编排 (Smart DAG)** | 用自然语言生成业务流程图草案 |
+| **运行调试台** | 控制台内对话试跑 Agent（非生产入口） |
+| **Agent Access** | 对外 Client、授权与协议配置 |
+| **审计日志** | 运行轨迹与操作审计 |
+
+---
+
+## 界面预览
+
+以下截图来自本地控制台演示环境（数据仅为开发示例）。
+
+### 登录
+
+进入控制台前的账户登录。
+
+![登录页](./docs/images/readme/01-login.png)
+
+### 空间总览
+
+聚合 Agent 运行、工具调用成功率、会话量与风险提示，便于运维一眼看到健康度。
+
+![空间总览](./docs/images/readme/02-overview.png)
+
+### Agent 管理
+
+维护 Agent 职责、绑定空间、决策模型与系统提示词。
+
+![Agent 管理](./docs/images/readme/03-agents.png)
+
+### 工具管理
+
+管理从 OpenAPI 导入或手工创建的业务 Tool：契约、HTTP 方法路径、服务连接、发布状态与版本。
+
+![工具管理](./docs/images/readme/04-tools.png)
+
+### 编排（Workflow）
+
+设计、校验、试跑并发布业务流程；支持节点图与版本化发布。
+
+![编排列表](./docs/images/readme/05-workflow.png)
+
+### 智能编排（Smart DAG）
+
+用业务目标描述生成流程图草案，再进入编排编辑与发布。
+
+![智能编排](./docs/images/readme/06-smart-dag.png)
+
+### 运行调试台（控制台对话）
+
+在控制台内试跑 Agent：绑定业务出站凭证后，可对真实 Tool 做联调（标注为内部调试、非生产）。
+
+![运行调试台](./docs/images/readme/07-chat.png)
+
+### Agent Access（对外接入）
+
+管理第三方 AAP Client、授权与协议相关配置，供合作方以 OAuth + Scope 调用 Agent。
+
+![Agent Access](./docs/images/readme/08-agent-access.png)
+
+### Provider 与服务连接
+
+配置上游业务系统提供方与连接（含出站身份模式）。
+
+![Provider](./docs/images/readme/09-providers.png)
+
+![服务连接](./docs/images/readme/10-connections.png)
+
+### 审计日志
+
+查看运行与操作审计，支持按链路回溯。
+
+![审计日志](./docs/images/readme/11-logs.png)
+
+> 重新截图：在前后端已启动时执行  
+> `node scripts/capture-readme-screenshots.mjs`  
+> 输出目录：`docs/images/readme/`。
+
+---
 
 ## 文档
 
 | 文档 | 读者 | 说明 |
 | --- | --- | --- |
-| **[AAP 对接指南（中文）](./docs/aap-integration-guide.zh-CN.md)** | 第三方对接 | 完整协议：认证、Scope、HTTP/SSE、错误码、SDK、上线清单 |
+| **[AAP 对接指南（中文）](./docs/aap-integration-guide.zh-CN.md)** | 第三方对接 | 认证、Scope、HTTP/SSE、错误码、SDK、上线清单 |
 | **[AAP Integration Guide (EN)](./docs/aap-integration-guide.md)** | Third-party integrators | Same content in English |
 | [OpenAPI — Agent Access v1](./docs/openapi/agent-access-v1.yaml) | 机器 / 代码生成 | HTTP 权威契约 |
 | [TypeScript SDK](./sdk/typescript/) | 集成方 | `@actweave/agent-client` |
+| [AAP Chat Demo](./demos/aap-chat/) | 本地演示 | 浏览器对话 + BFF 持有 Client Secret / 业务 Token |
 
 给外部合作方时，交付 **AAP 对接指南 + OpenAPI** 即可。第三方 Agent 访问请勿走 `/api/v1` 管理面。
 
-## 产品域
-
-| 域 | 作用 |
-| --- | --- |
-| **Workspace** | 业务空间 / 租户边界 |
-| **Agent** | 默认执行代理与提示词配置 |
-| **ServiceConnection** | 外部系统连接 |
-| **Tool** | 可被 Agent / Workflow 调用的业务能力 |
-| **Workflow** | 显式图编排与审批 |
-| **Execution / AuditLog** | 执行记录与审计 |
-| **ChatSession** | 控制台对话入口（内部 UI） |
-| **AAP Conversation / Run** | 对外协议中的对话与执行 |
-
-业务对象与链路由实际配置决定，仓库启动后**不**预置业务示例数据。
+---
 
 ## 仓库结构
 
@@ -36,8 +146,10 @@ ActWeave 是面向业务操作编排的控制台型产品，核心对象包括 A
 .
 ├── frontend/           # Vue 3 + TypeScript + Vite 控制台
 ├── backend/            # Go + Gin API
-├── docs/               # AAP 对接指南与 OpenAPI
+├── docs/               # AAP 对接指南、OpenAPI、README 截图
+├── demos/aap-chat/     # AAP 对接演示（BFF + 聊天 UI）
 ├── sdk/typescript/     # @actweave/agent-client
+├── scripts/            # 运维 / 截图等辅助脚本
 └── docker-compose.yml  # 本地依赖与整栈启动
 ```
 
@@ -49,9 +161,11 @@ ActWeave 是面向业务操作编排的控制台型产品，核心对象包括 A
 | 后端 | Go 1.25、Gin、JWT、kin-openapi；编排内核（Agent = Eino ADK；Workflow = Eino compose） |
 | 数据 | PostgreSQL（事实来源）、MinIO（加密永久对象）、Redis（仅可重建扇出） |
 
-- PostgreSQL 保存身份、配置、版本、运行记录与审计元数据；不存在全量 JSONB 状态快照库。  
-- MinIO 保存加密永久业务原文；元数据、分类、hash、retention 仍由 PostgreSQL 约束。  
+- PostgreSQL 保存身份、配置、版本、运行记录与审计元数据。  
+- MinIO 保存加密永久业务原文；元数据与 retention 由 PostgreSQL 约束。  
 - Redis 故障不得导致事实丢失；运行事件真相与 `Last-Event-ID` 回放来自 PostgreSQL。  
+
+---
 
 ## 快速启动
 
@@ -100,7 +214,7 @@ cd backend
 go run ./cmd/server
 ```
 
-默认读取 [`backend/config.yaml`](./backend/config.yaml)。配置优先级：**YAML 文件 &lt; 环境变量**。可用 `ACTWEAVE_CONFIG_FILE` 指定其他文件。未知字段、多文档 YAML、非法布尔值会导致启动失败。
+默认读取 [`backend/config.yaml`](./backend/config.yaml)。配置优先级：**YAML 文件 &lt; 环境变量**。可用 `ACTWEAVE_CONFIG_FILE` 指定其他文件。
 
 生产环境应将配置复制到受保护路径，通过 Secret Manager / KMS 注入密钥，不要直接使用仓库中的开发值。
 
@@ -125,18 +239,18 @@ go run ./cmd/server
 | 数据 / 加密 | `ACTWEAVE_POSTGRES_DSN`、`ACTWEAVE_JWT_SECRET`、`ACTWEAVE_SECRET_MASTER_KEY` |
 | AAP 签名 | `ACTWEAVE_AAP_TOKEN_ENDPOINT`、`ACTWEAVE_AAP_SIGNING_ACTIVE_KID`、`ACTWEAVE_AAP_SIGNING_PRIVATE_KEY_FILE`、`ACTWEAVE_AAP_SIGNING_GENERATE_IF_MISSING`、`ACTWEAVE_AAP_SIGNING_MAX_TOKEN_TTL_SECONDS` |
 | MinIO | `ACTWEAVE_MINIO_ENDPOINT`、`ACTWEAVE_MINIO_ACCESS_KEY`、`ACTWEAVE_MINIO_SECRET_KEY`、`ACTWEAVE_MINIO_USE_SSL`、`ACTWEAVE_MINIO_REGION` |
-| 初始管理员 | `ACTWEAVE_BOOTSTRAP_ADMIN_USERNAME`、`ACTWEAVE_BOOTSTRAP_ADMIN_PASSWORD`、`ACTWEAVE_BOOTSTRAP_ADMIN_DISPLAY_NAME`、`ACTWEAVE_BOOTSTRAP_ADMIN_LOCALE`、`ACTWEAVE_BOOTSTRAP_ADMIN_TIMEZONE` |
+| 初始管理员 | `ACTWEAVE_BOOTSTRAP_ADMIN_*` |
 
 说明：
 
 - `encryption.masterKey` 必须是 Base64 编码的 32 字节主密钥。  
-- Bootstrap 用户名与至少 12 位密码必须成对提供；仅在 `users` 为空时创建第一个 `PLATFORM_ADMIN`，之后修改 bootstrap 配置**不会**更新已有用户。  
-- 运行期用户通过前端「用户与权限」或 `/api/v1/admin/users` 管理。Workspace 角色在 `workspace_members`，与平台角色独立。  
-- 系统始终保留至少一个 `ACTIVE + PLATFORM_ADMIN`。  
-- AAP Access Token 使用 **EdDSA/Ed25519**，不复用用户 Session 的 HS256 Secret。本地开发可在缺失时生成 `backend/.local/` 下权限 `0600` 的密钥；生产必须 `generateIfMissing=false` 并挂载稳定的 PKCS#8 PEM。  
+- Bootstrap 仅在 `users` 为空时创建第一个 `PLATFORM_ADMIN`。  
+- AAP Access Token 使用 **EdDSA/Ed25519**，不复用用户 Session 的 HS256 Secret。  
 - 公钥 JWKS：`GET /api/agent-access/v1/.well-known/jwks.json`  
 
 AAP 客户端认证、Scope、SSE、错误码等详见 **[AAP 对接指南](./docs/aap-integration-guide.zh-CN.md)**。
+
+---
 
 ## 常用命令
 
@@ -166,29 +280,31 @@ go test ./...
 
 数据库迁移：
 
-- API 服务在监听端口前会自动执行嵌入的待处理迁移；dirty 或失败会阻止启动。  
+- API 服务在监听端口前会自动执行嵌入的待处理迁移。  
 - 多实例启动时由 PostgreSQL advisory lock 串行化迁移。  
-- 手工：`go run ./cmd/migrate version`、`go run ./cmd/migrate down 1`（镜像内：`/app/actweave-migrate`）。  
+- 手工：`go run ./cmd/migrate version`、`go run ./cmd/migrate down 1`。  
 - 需要 Go `1.25.x`。  
 
-Compose 数据卷：`postgres-data`、`redis-data`、`minio-data`。`docker compose down` 保留数据；`docker compose down -v` 会**永久删除**本地卷。生产恢复需要 PostgreSQL、MinIO 与对应加密密钥同时可用。
+Compose 数据卷：`postgres-data`、`redis-data`、`minio-data`。`docker compose down -v` 会**永久删除**本地卷。
 
-## 控制台能力（概要）
+---
 
-- 总览、业务空间、Agent、服务连接、OpenAPI 导入、模型 API 配置、工具、编排、智能编排、对话控制台、审计日志，以及平台管理员可见的用户与权限。  
-- Workflow 主线：`WorkflowGraphDraft` → 编译 → `CompiledExecutionPlan` → `WorkflowRevision` → 运行时。旧 `Workflow.dsl` / canvas 写路径已删除。  
-- Tool 经受 SSRF、Secret 注入、响应上限与幂等策略约束的 HTTP Executor 调用；一期不提供 Internal/MCP/Connector/Shell executor。  
-- 智能编排主路径为多轮 Generate Session（`smart-dag.v2`），从属于已配置可用 LLM 的 Agent，不降级为无模型规则假生成。  
+## 架构与实现要点
+
+- **Workflow 主线**：`WorkflowGraphDraft` → 编译 → `CompiledExecutionPlan` → `WorkflowRevision` → 运行时。  
+- **Tool**：经 SSRF 防护、Secret 注入、响应上限与幂等策略约束的 HTTP Executor 调用。  
+- **智能编排**：多轮 Generate Session（`smart-dag.v2`），从属于已配置可用 LLM 的 Agent。  
+- **AAP**：与控制台 `/api/v1` 管理面分离；第三方只使用 `/api/agent-access/v1`。  
 
 ## 已知限制
 
 - UI 以桌面端为主（约 `min-width: 1180px`）。  
 - 后端暂无统一 lint/format 脚本，以 `go test` / `go vet` 为主。  
-- CI 工作流可能仍较精简。  
 - 部分高级 Workflow 节点后端已支持，前端编辑器尚未完整暴露。  
 
 ## 第三方对接入口
 
 1. [docs/aap-integration-guide.zh-CN.md](./docs/aap-integration-guide.zh-CN.md)  
 2. [docs/openapi/agent-access-v1.yaml](./docs/openapi/agent-access-v1.yaml)  
-3. [sdk/typescript](./sdk/typescript/)（可选客户端库）
+3. [sdk/typescript](./sdk/typescript/)（可选客户端库）  
+4. [demos/aap-chat](./demos/aap-chat/)（本地 AAP 对话演示）

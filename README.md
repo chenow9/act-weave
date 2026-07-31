@@ -2,33 +2,140 @@
 
 [中文文档](./README.zh-CN.md)
 
-ActWeave is a console for orchestrating business operations with Agents, Tools, Workflows, and audited executions. Third-party platforms integrate through the **Agent Access Protocol (AAP)** — not the management console session API.
+**ActWeave** is an **Agent orchestration and execution console** for enterprise business systems.
+
+It turns external business APIs into governed **Tools**, configures decision-making **Agents**, optionally wires multi-step processes with **Workflow / Smart DAG**, and keeps every invocation **auditable**. Third-party platforms integrate through the **Agent Access Protocol (AAP)** — not the management console session API.
+
+---
+
+## What problem does it solve?
+
+| Pain | ActWeave approach |
+| --- | --- |
+| Models call HTTP ad hoc, without contracts or ACL | Register APIs as versioned **Tools** (schema, connection, publish) |
+| Credentials scattered in frontends | **Service Connection** + outbound identity (incl. REQUEST_PASSTHROUGH) |
+| Opaque multi-step flows | **Workflow** graphs with trial run, publish, and audit |
+| Partners cannot integrate safely | **AAP**: OAuth clients, scopes, Conversation / Run, SSE |
+| Incidents hard to explain | **Agent audit / logs** with full run traces |
+
+In one line: **ActWeave = Tool governance + Agent config + orchestration + audited execution + external AAP.**
+
+---
+
+## Product surface
+
+```text
+┌─────────────┐     ┌──────────────┐     ┌────────────────┐
+│  Console UI │────▶│ Agent runtime│────▶│ Business APIs  │
+│  configure  │     │ Tool/Workflow│     │ (outbound auth)│
+└─────────────┘     └──────┬───────┘     └────────────────┘
+                           │
+                    ┌──────▼───────┐
+                    │  AAP plane   │  ← partner apps / BFF
+                    │ Conversation │
+                    │ Run + SSE    │
+                    └──────────────┘
+```
+
+| Capability | Role |
+| --- | --- |
+| **Workspace** | Tenant / project boundary |
+| **Provider / Connection** | Upstream systems and credentials |
+| **Tool** | OpenAPI import or hand-authored callable |
+| **Agent** | Model, prompt, bound Tools / Workflows |
+| **Workflow** | Visual graph, trial, publish |
+| **Smart DAG** | NL → draft business graph |
+| **Console chat** | Internal Agent trial (not production AAP) |
+| **Agent Access** | External AAP clients and grants |
+| **Audit logs** | Run and admin audit trail |
+
+Business objects come from configuration. The repository does **not** ship sample business data.
+
+---
+
+## Screenshots
+
+Captured from a local development console (sample data only).
+
+### Login
+
+![Login](./docs/images/readme/01-login.png)
+
+### Workspace overview
+
+Agent run health, tool success rate, sessions, and risk signals.
+
+![Overview](./docs/images/readme/02-overview.png)
+
+### Agents
+
+Duties, workspace binding, decision model, and system prompt.
+
+![Agents](./docs/images/readme/03-agents.png)
+
+### Tools
+
+HTTP tools from OpenAPI: contracts, method/path, connection, publish status, versions.
+
+![Tools](./docs/images/readme/04-tools.png)
+
+### Workflow
+
+Design, validate, trial-run, and publish business flows.
+
+![Workflow](./docs/images/readme/05-workflow.png)
+
+### Smart DAG
+
+Generate a draft graph from a business goal, then edit and publish.
+
+![Smart DAG](./docs/images/readme/06-smart-dag.png)
+
+### Console run / chat
+
+Internal Agent trial with optional outbound business credentials (debug, not production AAP).
+
+![Chat](./docs/images/readme/07-chat.png)
+
+### Agent Access
+
+Third-party AAP clients, grants, and protocol configuration.
+
+![Agent Access](./docs/images/readme/08-agent-access.png)
+
+### Providers & connections
+
+Upstream providers and service connections (outbound identity modes).
+
+![Providers](./docs/images/readme/09-providers.png)
+
+![Connections](./docs/images/readme/10-connections.png)
+
+### Audit logs
+
+Run and admin audit for forensics and compliance.
+
+![Logs](./docs/images/readme/11-logs.png)
+
+> Regenerate screenshots (frontend + backend running):  
+> `node scripts/capture-readme-screenshots.mjs`  
+> Output: `docs/images/readme/`.
+
+---
 
 ## Documentation
 
 | Document | Audience | Description |
 | --- | --- | --- |
-| **[AAP Integration Guide (EN)](./docs/aap-integration-guide.md)** | Third-party integrators | Full protocol handoff: auth, scopes, HTTP/SSE, errors, SDK, production checklist |
-| **[AAP 对接指南（中文）](./docs/aap-integration-guide.zh-CN.md)** | 第三方对接 | 与英文版同等内容 |
+| **[AAP Integration Guide (EN)](./docs/aap-integration-guide.md)** | Third-party integrators | Auth, scopes, HTTP/SSE, errors, SDK, production checklist |
+| **[AAP 对接指南（中文）](./docs/aap-integration-guide.zh-CN.md)** | 第三方对接 | Same content in Chinese |
 | [OpenAPI — Agent Access v1](./docs/openapi/agent-access-v1.yaml) | Machines / codegen | Authoritative HTTP contract |
 | [TypeScript SDK](./sdk/typescript/) | Integrators | `@actweave/agent-client` |
+| [AAP Chat Demo](./demos/aap-chat/) | Local demo | Browser chat + BFF for secrets |
 
 Hand the **AAP Integration Guide** plus the OpenAPI file to external partners. Do not use `/api/v1` management routes for third-party Agent access.
 
-## Product domains
-
-| Domain | Role |
-| --- | --- |
-| **Workspace** | Tenant / business space boundary |
-| **Agent** | Default executor and prompt configuration |
-| **ServiceConnection** | External system credentials |
-| **Tool** | Callable business capability |
-| **Workflow** | Explicit graph orchestration and approvals |
-| **Execution / AuditLog** | Run history and audit trail |
-| **ChatSession** | Console conversational entry (internal UI) |
-| **AAP Conversation / Run** | External protocol conversation and execution |
-
-Business objects are defined by configuration. The repository does **not** ship sample business data.
+---
 
 ## Repository layout
 
@@ -36,8 +143,10 @@ Business objects are defined by configuration. The repository does **not** ship 
 .
 ├── frontend/           # Vue 3 + TypeScript + Vite console
 ├── backend/            # Go + Gin API server
-├── docs/               # AAP integration guide + OpenAPI
+├── docs/               # AAP guide, OpenAPI, README screenshots
+├── demos/aap-chat/     # AAP integration demo (BFF + chat UI)
 ├── sdk/typescript/     # @actweave/agent-client
+├── scripts/            # Ops / screenshot helpers
 └── docker-compose.yml  # Local dependencies and full stack
 ```
 
@@ -46,12 +155,14 @@ Business objects are defined by configuration. The repository does **not** ship 
 | Layer | Choices |
 | --- | --- |
 | Frontend | Vue 3.5, TypeScript, Vite 7, Pinia, Vue Router, Element Plus, Vue Flow, Axios, VXE Table |
-| Backend | Go 1.25, Gin, JWT, kin-openapi; workflow/tool runtimes (Agent via Eino ADK; Workflow via Eino compose) |
+| Backend | Go 1.25, Gin, JWT, kin-openapi; runtimes (Agent via Eino ADK; Workflow via Eino compose) |
 | Data | PostgreSQL (system of record), MinIO (encrypted durable objects), Redis (rebuildable fan-out only) |
 
-- PostgreSQL stores identity, configuration, versions, run records, and audit metadata. There is no full-state JSONB snapshot store.
-- MinIO holds encrypted permanent business payloads; metadata, classification, hash, and retention stay in PostgreSQL.
+- PostgreSQL stores identity, configuration, versions, run records, and audit metadata.
+- MinIO holds encrypted permanent business payloads; metadata and retention stay in PostgreSQL.
 - Redis must not be treated as a durable fact source. Run event truth and `Last-Event-ID` replay come from PostgreSQL.
+
+---
 
 ## Quick start
 
@@ -100,7 +211,7 @@ cd backend
 go run ./cmd/server
 ```
 
-The server reads [`backend/config.yaml`](./backend/config.yaml) by default. Configuration priority: **YAML file &lt; environment variables**. Set `ACTWEAVE_CONFIG_FILE` to load another file. Unknown YAML fields, multi-document YAML, and invalid booleans fail startup.
+The server reads [`backend/config.yaml`](./backend/config.yaml) by default. Configuration priority: **YAML file &lt; environment variables**. Set `ACTWEAVE_CONFIG_FILE` to load another file.
 
 Production: copy config out of the tree, inject secrets via Secret Manager / KMS, and never reuse repository development values.
 
@@ -123,20 +234,20 @@ Useful environment variables:
 | --- | --- |
 | Service | `ACTWEAVE_API_ADDR`, `ACTWEAVE_LOG_LEVEL`, `ACTWEAVE_LOG_FORMAT` (`text` \| `json`) |
 | Data / crypto | `ACTWEAVE_POSTGRES_DSN`, `ACTWEAVE_JWT_SECRET`, `ACTWEAVE_SECRET_MASTER_KEY` |
-| AAP signing | `ACTWEAVE_AAP_TOKEN_ENDPOINT`, `ACTWEAVE_AAP_SIGNING_ACTIVE_KID`, `ACTWEAVE_AAP_SIGNING_PRIVATE_KEY_FILE`, `ACTWEAVE_AAP_SIGNING_GENERATE_IF_MISSING`, `ACTWEAVE_AAP_SIGNING_MAX_TOKEN_TTL_SECONDS` |
-| MinIO | `ACTWEAVE_MINIO_ENDPOINT`, `ACTWEAVE_MINIO_ACCESS_KEY`, `ACTWEAVE_MINIO_SECRET_KEY`, `ACTWEAVE_MINIO_USE_SSL`, `ACTWEAVE_MINIO_REGION` |
-| Bootstrap admin | `ACTWEAVE_BOOTSTRAP_ADMIN_USERNAME`, `ACTWEAVE_BOOTSTRAP_ADMIN_PASSWORD`, `ACTWEAVE_BOOTSTRAP_ADMIN_DISPLAY_NAME`, `ACTWEAVE_BOOTSTRAP_ADMIN_LOCALE`, `ACTWEAVE_BOOTSTRAP_ADMIN_TIMEZONE` |
+| AAP signing | `ACTWEAVE_AAP_TOKEN_ENDPOINT`, `ACTWEAVE_AAP_SIGNING_*` |
+| MinIO | `ACTWEAVE_MINIO_*` |
+| Bootstrap admin | `ACTWEAVE_BOOTSTRAP_ADMIN_*` |
 
 Notes:
 
 - `encryption.masterKey` must be a Base64-encoded 32-byte key.
-- Bootstrap username + password (≥ 12 chars) must be provided as a pair. They create the first `PLATFORM_ADMIN` only when `users` is empty; later changes to bootstrap config do **not** update existing users.
-- Platform users are managed at runtime via the UI or `/api/v1/admin/users`. Workspace roles live in `workspace_members` and are separate from platform roles.
-- At least one `ACTIVE` + `PLATFORM_ADMIN` is always retained.
-- AAP Access Tokens use **EdDSA/Ed25519**, not the HS256 user session secret. Local dev may generate keys under `backend/.local/` with mode `0600` when missing; production must set `generateIfMissing=false` and mount a stable PKCS#8 PEM.
+- Bootstrap creates the first `PLATFORM_ADMIN` only when `users` is empty.
+- AAP Access Tokens use **EdDSA/Ed25519**, not the HS256 user session secret.
 - Public JWKS: `GET /api/agent-access/v1/.well-known/jwks.json`
 
 For AAP client authentication, scopes, SSE, and errors, see the **[AAP Integration Guide](./docs/aap-integration-guide.md)**.
+
+---
 
 ## Common commands
 
@@ -166,31 +277,31 @@ go test ./...
 
 Migrations:
 
-- The API server applies embedded pending migrations before listening. Dirty or failed migration state prevents startup.
+- The API server applies embedded pending migrations before listening.
 - Concurrent instances serialize migrations with a PostgreSQL advisory lock.
-- Manual ops: `go run ./cmd/migrate version`, `go run ./cmd/migrate down 1` (image binary: `/app/actweave-migrate`).
+- Manual ops: `go run ./cmd/migrate version`, `go run ./cmd/migrate down 1`.
 - Requires Go `1.25.x`.
 
-Data volumes (Compose): `postgres-data`, `redis-data`, `minio-data`. `docker compose down` keeps data; `docker compose down -v` **destroys** local volumes. Production restore needs PostgreSQL **and** MinIO **and** the matching encryption keys.
+Data volumes (Compose): `postgres-data`, `redis-data`, `minio-data`. `docker compose down -v` **destroys** local volumes.
 
-## Console capabilities (high level)
+---
 
-- Overview, Workspaces, Agents, Service Connections, OpenAPI import, model API config, Tools, Workflow editor, intelligent orchestration, conversational console, audit log, and platform user admin (admins only).
-- Workflow mainline: `WorkflowGraphDraft` → compilation → `CompiledExecutionPlan` → `WorkflowRevision` → runtime. Legacy `Workflow.dsl` / canvas write paths are removed.
-- Tool calls go through an HTTP executor with SSRF guards, secret injection rules, response limits, and idempotency. Phase-1 does not ship Internal/MCP/Connector/Shell executors.
-- Intelligent orchestration uses multi-turn generate sessions (`smart-dag.v2`) bound to an Agent with a usable model config — not a model-free rule fake path.
+## Implementation notes
+
+- Workflow mainline: `WorkflowGraphDraft` → compilation → `CompiledExecutionPlan` → `WorkflowRevision` → runtime.
+- Tools run through an HTTP executor with SSRF guards, secret injection, response limits, and idempotency.
+- Smart DAG uses multi-turn generate sessions (`smart-dag.v2`) bound to an Agent with a usable model config.
+- AAP is separated from console `/api/v1` management routes; partners use `/api/agent-access/v1` only.
 
 ## Known limitations
 
 - Frontend targets desktop layouts (`min-width` around 1180px).
 - No unified backend lint/format scripts; rely on `go test` / `go vet`.
-- CI workflows may still be minimal in this tree.
 - Some advanced Workflow node types are supported in the backend but not fully exposed in the editor UI.
 
-## License / contact
-
-For third-party Agent integration, start with:
+## Third-party integration entry points
 
 1. [docs/aap-integration-guide.md](./docs/aap-integration-guide.md)  
 2. [docs/openapi/agent-access-v1.yaml](./docs/openapi/agent-access-v1.yaml)  
-3. [sdk/typescript](./sdk/typescript/) (optional client)
+3. [sdk/typescript](./sdk/typescript/) (optional client)  
+4. [demos/aap-chat](./demos/aap-chat/) (local AAP chat demo)
