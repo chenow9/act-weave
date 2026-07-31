@@ -179,6 +179,10 @@ function configureAPI() {
     if (url.endsWith("/readiness")) return { data: readiness() };
     if (url.endsWith("/draft")) return { data: draft(), headers: { etag: '"draft-1-1"' } };
     if (url.endsWith("/workflow-ai-1")) return { data: workflow };
+    // Workflow tool catalog may prefetch paginated tools when inspectors open.
+    if (url.includes("/tools?") || url.endsWith("/tools")) {
+      return { data: { items: [], pagination: { page: 1, pageSize: 50, total: 0 } } };
+    }
     throw new Error("Unexpected GET " + url);
   });
   vi.mocked(apiClient.post).mockImplementation(async (url: string) => {

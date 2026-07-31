@@ -59,9 +59,16 @@ func TestStoredObjectRepositoryWorkspaceIsolationAndRetention(t *testing.T) {
 	expiringInput.RetentionMode = storedobject.RetentionExpiring
 	expiringInput.RetentionUntil = &retentionUntil
 	expiring, err := repository.Create(ctx, expiringInput)
-	if err != nil || expiring.RetentionUntil == nil ||
-		!expiring.RetentionUntil.Equal(retentionUntil.Truncate(time.Microsecond)) {
+	if err != nil || expiring.RetentionUntil == nil {
 		t.Fatalf("create expiring object metadata: %+v err=%v", expiring, err)
+	}
+	// Postgres timestamptz may round to microsecond; allow small skew under -race timing.
+	delta := expiring.RetentionUntil.Sub(retentionUntil)
+	if delta < 0 {
+		delta = -delta
+	}
+	if delta > time.Millisecond {
+		t.Fatalf("retention until mismatch: got %v want ~%v (delta %v)", expiring.RetentionUntil, retentionUntil, delta)
 	}
 
 	if _, err := repository.Get(ctx, storedObjectOtherWorkspaceID, permanent.ID); !errors.Is(err, storedobject.ErrNotFound) {
