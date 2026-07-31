@@ -50,6 +50,4 @@ When Agent policy `aap.includeCompactionSummary=true` (default false) is snapsho
 
 ## Related docs
 
-- Product: `docs/design/agent-context-llm-compaction-product-design.md` v0.2
-- Tech: `docs/design/agent-context-llm-compaction-technical-design.md` v0.1
-- Checklist: `docs/design/agent-context-llm-compaction-implementation-checklist.md`
+Design baselines (product / technical / checklist) are kept **locally** under `docs/design/` and are not published in this repository.

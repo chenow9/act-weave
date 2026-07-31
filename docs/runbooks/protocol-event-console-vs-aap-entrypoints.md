@@ -62,4 +62,4 @@ Legacy `RUN_*` frames are **secondary thin-compat only** (one-release residual/t
 | Console events route | `backend/internal/transport/http` chat agent-run events |
 | AAP OpenAPI | `docs/openapi/agent-access-v1.yaml` |
 | SDK client | `sdk/typescript/` (`AgentAccessClient`, `followRun`) |
-| Implementation checklist | `docs/design/protocol-event-unification-console-aap-checklist.md` |
+| Implementation checklist | (local only; not in public tree) |

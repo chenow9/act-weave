@@ -20,3 +20,5 @@ screenshots/
 .multica
 .agent_context
 docs/verification
+# Local design docs (not published)
+docs/design/
