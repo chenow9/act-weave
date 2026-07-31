@@ -1972,17 +1972,27 @@ describe("workflow graph editor", () => {
       .mockResolvedValueOnce({
         data: {
           items: [
-            toolDTO("order.status.query", "查询订单状态"),
-            toolDTO("order.cancel.submit", "提交取消申请"),
-            toolDTO("order.shared", "共享工具"),
-            toolDTO("order.disabled", "已停用工具", "DISABLED"),
+            {
+              ...toolDTO("order.status.query", "查询订单状态"),
+              headVersion: toolVersionDTO("order.status.query"),
+            },
+            {
+              // DRAFT head is not published → excluded from inspector options
+              ...toolDTO("order.cancel.submit", "提交取消申请"),
+              headVersion: toolVersionDTO("order.cancel.submit", { lifecycleStatus: "DRAFT" }),
+            },
+            {
+              ...toolDTO("order.shared", "共享工具"),
+              headVersion: toolVersionDTO("order.shared"),
+            },
+            {
+              ...toolDTO("order.disabled", "已停用工具", "DISABLED"),
+              headVersion: toolVersionDTO("order.disabled"),
+            },
           ],
+          pagination: { page: 1, pageSize: 50, total: 4 },
         },
-      })
-      .mockResolvedValueOnce({ data: { items: [toolVersionDTO("order.status.query")] } })
-      .mockResolvedValueOnce({ data: { items: [toolVersionDTO("order.cancel.submit", { lifecycleStatus: "DRAFT" })] } })
-      .mockResolvedValueOnce({ data: { items: [toolVersionDTO("order.shared")] } })
-      .mockResolvedValueOnce({ data: { items: [toolVersionDTO("order.disabled")] } });
+      });
 
     const wrapper = mount(WorkflowView, {
       global: {
@@ -2010,7 +2020,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    expect(vi.mocked(apiClient.get)).toHaveBeenCalledWith("/workspaces/order/tools");
+    expect(vi.mocked(apiClient.get)).toHaveBeenCalledWith("/workspaces/order/tools?page=1&pageSize=50");
     expect(wrapper.find('input[name="node-tool-id"]').exists()).toBe(false);
     const toolSelect = wrapper.get(".workflow-tool-select");
     expect(toolSelect.attributes("data-model-value")).toBe("order.status.query");
@@ -2116,36 +2126,37 @@ describe("workflow graph editor", () => {
       })
       .mockResolvedValueOnce({ data: { approvals: [] } })
       .mockResolvedValueOnce({
-        data: { items: [toolDTO("order.cancel.submit", "提交取消申请")] },
-      })
-      .mockResolvedValueOnce({
         data: {
           items: [
-            toolVersionDTO("order.cancel.submit", {
-              inputSchema: {
-                type: "object",
-                required: ["orderId", "reason"],
-                properties: {
-                  orderId: { type: "string", description: "订单 ID", location: "Body" },
-                  reason: { type: "string", description: "取消原因", location: "Body" },
-                  pageSize: {
-                    type: "integer",
-                    description: "分页大小",
-                    location: "Query",
-                    valueSource: "SystemDefault",
-                    default: 20,
+            {
+              ...toolDTO("order.cancel.submit", "提交取消申请"),
+              headVersion: toolVersionDTO("order.cancel.submit", {
+                inputSchema: {
+                  type: "object",
+                  required: ["orderId", "reason"],
+                  properties: {
+                    orderId: { type: "string", description: "订单 ID", location: "Body" },
+                    reason: { type: "string", description: "取消原因", location: "Body" },
+                    pageSize: {
+                      type: "integer",
+                      description: "分页大小",
+                      location: "Query",
+                      valueSource: "SystemDefault",
+                      default: 20,
+                    },
                   },
                 },
-              },
-              outputSchema: {
-                type: "object",
-                properties: {
-                  cancelId: { type: "string", description: "取消单 ID" },
-                  status: { type: "string", description: "处理状态" },
+                outputSchema: {
+                  type: "object",
+                  properties: {
+                    cancelId: { type: "string", description: "取消单 ID" },
+                    status: { type: "string", description: "处理状态" },
+                  },
                 },
-              },
-            }),
+              }),
+            },
           ],
+          pagination: { page: 1, pageSize: 50, total: 1 },
         },
       });
     vi.mocked(apiClient.put).mockResolvedValueOnce({

@@ -210,6 +210,9 @@ export function toolFromListDTO(tool: ToolDTO, workspaceId: string): Tool {
   // Prefer head.lockVersion from API. Never hard-code 1: successful tests bump
   // tool_versions.lock_version, and publish CAS fails with 409 on a stale lock.
   const headLock = typeof head?.lockVersion === "number" && head.lockVersion > 0 ? head.lockVersion : 1;
+  // Prefer head schemas when the list API embeds them (tests / rich list rows).
+  // Default remains empty objects so list responses stay lightweight.
+  const headRecord = head as ToolVersionDTO & Record<string, unknown>;
   const syntheticVersions: ToolVersionDTO[] = head
     ? [
         {
@@ -220,8 +223,8 @@ export function toolFromListDTO(tool: ToolDTO, workspaceId: string): Tool {
           defaultConnectionId: head.defaultConnectionId,
           actionSchemaVersion: head.actionSchemaVersion || "http.v1",
           actionConfig: head.actionConfig || {},
-          inputSchema: {},
-          outputSchema: {},
+          inputSchema: (headRecord.inputSchema as ToolVersionDTO["inputSchema"]) || {},
+          outputSchema: (headRecord.outputSchema as ToolVersionDTO["outputSchema"]) || {},
           errorMappings: {},
           runtimePolicy: {},
           riskLevel: "LOW",

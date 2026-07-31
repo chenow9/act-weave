@@ -79,6 +79,7 @@ describe("v1 Agent, Capability, and Binding store", () => {
       roleDescription: "Assistant",
       modelConfigId: "model-1",
       status: "ACTIVE",
+      contextPolicy: {},
       lockVersion: 1,
     });
   });

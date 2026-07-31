@@ -111,6 +111,13 @@ vi.mock("../stores/agents", () => ({
   useAgentStore: () => agentState,
 }));
 
+vi.mock("../stores/auth", () => ({
+  useAuthStore: () => ({
+    user: { id: "user-1", platformRole: "PLATFORM_ADMIN", username: "admin" },
+    loading: false,
+  }),
+}));
+
 vi.mock("../composables/useModalFocus", () => ({
   useModalFocus: () => undefined,
 }));
