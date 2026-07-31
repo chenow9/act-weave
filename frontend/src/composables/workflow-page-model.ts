@@ -68,7 +68,7 @@ export function createWorkflowPageModel() {
   }
 
   type EditorDraftLoadStatus = "loaded" | "failed" | "stale";
-  type EditorActionKind = "save" | "validate" | "trial-run" | "publish";
+  type EditorActionKind = "save" | "validate" | "trial-run" | "publish" | "force-publish";
   type EditorDraftLoadState = "idle" | "loading" | "loaded" | "failed";
   type GraphMutationOptions = {
     recordHistory?: boolean;
@@ -117,6 +117,8 @@ export function createWorkflowPageModel() {
   const trialRunVisible = ref(false);
   const trialRunTargetWorkflowId = ref("");
   const trialRunTargetWorkflowName = ref("");
+  const forcePublishDialogVisible = ref(false);
+  const forcePublishReasonDraft = ref("local-dev skip trial");
   const activeTraceExecutionId = ref("");
   const workflowDetailModalRef = ref<HTMLElement>();
   const workflowMetadataModalRef = ref<HTMLElement>();
@@ -251,6 +253,19 @@ export function createWorkflowPageModel() {
   );
   const workflowEditorBusy = computed(() => Boolean(pendingEditorAction.value));
   const selectedWorkflowCanPublish = computed(() => Boolean(selectedWorkflowReadiness.value?.canPublish));
+  /** PLATFORM_ADMIN force-publish: VALID compile enough; skips real trial. Server also gates. */
+  const canForcePublishWorkflow = computed(
+    () => auth.user?.platformRole === "PLATFORM_ADMIN" && Boolean(selectedWorkflow.value),
+  );
+  const selectedWorkflowCanForcePublish = computed(() => {
+    if (!canForcePublishWorkflow.value) return false;
+    const readiness = selectedWorkflowReadiness.value;
+    if (!readiness) return false;
+    // Need a current VALID compilation; trial optional.
+    if (readiness.stage === "Disabled" || readiness.stage === "DraftMissing") return false;
+    if (readiness.stage === "CompileRequired" || readiness.stage === "CompileFailed") return false;
+    return Boolean(readiness.compilationValid || readiness.canPublish || readiness.stage === "TrialRequired" || readiness.stage === "PublishReady");
+  });
   const workflowEditorReadinessSteps = computed(() =>
     buildWorkflowEditorReadinessSteps(selectedWorkflowReadiness.value),
   );
@@ -259,6 +274,15 @@ export function createWorkflowPageModel() {
       return "发布上线";
     }
     return workflowPublishBlockedTitle(selectedWorkflowReadiness.value?.stage);
+  });
+  const workflowEditorForcePublishTitle = computed(() => {
+    if (!canForcePublishWorkflow.value) {
+      return "仅平台管理员可强制发布";
+    }
+    if (selectedWorkflowCanForcePublish.value) {
+      return "跳过试运行，强制发布当前有效编译（需填写原因）";
+    }
+    return "需先有 VALID 编译结果，才能强制发布";
   });
   const selectedGraphNode = computed(() => editorGraph.value.nodes.find((node) => node.id === selectedNodeId.value));
   const selectedGraphEdge = computed(() => editorGraph.value.edges.find((edge) => edge.id === selectedEdgeId.value));
@@ -318,6 +342,7 @@ export function createWorkflowPageModel() {
     if (pendingEditorAction.value === "validate") return "正在检查节点配置和连线问题，请稍候…";
     if (pendingEditorAction.value === "trial-run") return "正在准备模拟运行，请稍候…";
     if (pendingEditorAction.value === "publish") return "正在发布当前草稿，请稍候…";
+    if (pendingEditorAction.value === "force-publish") return "正在强制发布（跳过试运行），请稍候…";
     if (workflowActionNote.value.trim()) return workflowActionNote.value;
     return "保存画布会更新节点和连线；检查问题会重新编译；模拟运行只做测试；发布上线后 Agent 才能调用。";
   });
@@ -1717,6 +1742,59 @@ export function createWorkflowPageModel() {
     }
   }
 
+  function openForcePublishDialog() {
+    if (workflowEditorBusy.value) return;
+    if (!selectedWorkflow.value) return;
+    if (!canForcePublishWorkflow.value) {
+      workflowActionNote.value = "仅平台管理员可强制发布。";
+      return;
+    }
+    if (!selectedWorkflowCanForcePublish.value) {
+      workflowActionNote.value = "需先检查问题得到 VALID 编译，再强制发布。";
+      return;
+    }
+    forcePublishReasonDraft.value = "local-dev skip trial";
+    forcePublishDialogVisible.value = true;
+  }
+
+  function closeForcePublishDialog() {
+    if (pendingEditorAction.value === "force-publish") return;
+    forcePublishDialogVisible.value = false;
+  }
+
+  /** Open styled force-publish dialog (replaces native window.prompt). */
+  function forcePublishEditorWorkflow() {
+    openForcePublishDialog();
+  }
+
+  async function confirmForcePublishEditorWorkflow(reason: string) {
+    if (workflowEditorBusy.value) return;
+    if (!selectedWorkflow.value) return;
+    const trimmed = reason.trim();
+    if (trimmed.length < 8) {
+      workflowActionNote.value = "强制发布已取消：原因至少 8 个字符。";
+      return;
+    }
+    pendingEditorAction.value = "force-publish";
+    try {
+      if (isEditorDraftDirty()) {
+        const saved = await persistEditorDraft();
+        if (!saved) return;
+        forcePublishDialogVisible.value = false;
+        // Dirty save invalidates compilation — force user to re-check before force publish.
+        workflowActionNote.value = "草稿已保存，请先「检查问题」生成 VALID 编译后再强制发布。";
+        return;
+      }
+      const published = await workflowStore.forcePublishWorkflow(selectedWorkflow.value.id, trimmed);
+      forcePublishDialogVisible.value = false;
+      workflowActionNote.value = `${published.workflow.name} 已强制发布（跳过试运行）。`;
+    } catch (error) {
+      workflowActionNote.value = actionErrorMessage(error, "强制发布失败，请稍后重试。");
+    } finally {
+      pendingEditorAction.value = undefined;
+    }
+  }
+
   async function submitTrialRun(payload: {
     input: Record<string, unknown>;
     outboundCredentials?: import("../types/domain").OutboundCredentialsEnvelope;
@@ -2001,6 +2079,8 @@ export function createWorkflowPageModel() {
     trialRunVisible,
     trialRunTargetWorkflowId,
     trialRunTargetWorkflowName,
+    forcePublishDialogVisible,
+    forcePublishReasonDraft,
     activeTraceExecutionId,
     workflowDetailModalRef,
     workflowMetadataModalRef,
@@ -2024,8 +2104,11 @@ export function createWorkflowPageModel() {
     selectedWorkflowDraft,
     workflowEditorBusy,
     selectedWorkflowCanPublish,
+    canForcePublishWorkflow,
+    selectedWorkflowCanForcePublish,
     workflowEditorReadinessSteps,
     workflowEditorPublishTitle,
+    workflowEditorForcePublishTitle,
     selectedGraphNode,
     selectedGraphEdge,
     canUndoEditorChange,
@@ -2145,6 +2228,10 @@ export function createWorkflowPageModel() {
     compareRevision,
     disableWorkflowRuns,
     publishEditorWorkflow,
+    forcePublishEditorWorkflow,
+    openForcePublishDialog,
+    closeForcePublishDialog,
+    confirmForcePublishEditorWorkflow,
     submitTrialRun,
     closeTrialRunDialog,
     compilationForWorkflow,

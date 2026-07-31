@@ -1,0 +1,33 @@
+{
+  "name": "@actweave/aap-chat-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ActWeave AAP chat dialog demo — Markdown, math, code, images",
+  "scripts": {
+    "dev": "concurrently -k -n bff,ui -c cyan,teal \"npm:dev:bff\" \"npm:dev:ui\"",
+    "dev:ui": "vite --config vite.config.ts",
+    "dev:bff": "node ./server/index.mjs",
+    "dev:mock": "VITE_DEMO_MODE=mock vite --config vite.config.ts",
+    "build": "vite build --config vite.config.ts",
+    "preview": "vite preview --config vite.config.ts"
+  },
+  "dependencies": {
+    "@actweave/agent-client": "file:../../sdk/typescript",
+    "dompurify": "3.2.6",
+    "highlight.js": "11.11.1",
+    "katex": "0.16.22",
+    "markdown-it": "14.1.0",
+    "markdown-it-texmath": "1.0.0"
+  },
+  "devDependencies": {
+    "@types/dompurify": "3.2.0",
+    "@types/markdown-it": "14.1.2",
+    "concurrently": "9.2.0",
+    "typescript": "5.9.3",
+    "vite": "7.3.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

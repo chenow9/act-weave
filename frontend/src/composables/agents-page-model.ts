@@ -87,7 +87,11 @@ export function createAgentsPageModel() {
   const capabilityAgent = ref<Agent | null>(null);
   const capabilityLoading = ref(false);
   const capabilitySavingId = ref("");
+  /** When non-empty, batch bind/unbind is in progress (disables per-row actions too). */
+  const capabilityBatchBusy = ref(false);
   const capabilityDrafts = ref<Record<string, AgentCapabilityBinding>>({});
+  /** Selected capability IDs for batch bind/unbind in the capability dialog. */
+  const capabilitySelectedIds = ref<string[]>([]);
 
   const statusSourceText = "状态由 Agent 配置维护；Tool/Workflow 数量从当前启用的能力绑定只读派生。";
 
@@ -1091,6 +1095,8 @@ export function createAgentsPageModel() {
     capabilityAgent.value = agent;
     capabilityLoading.value = true;
     capabilityDrafts.value = {};
+    capabilitySelectedIds.value = [];
+    capabilityBatchBusy.value = false;
     try {
       const [catalog, bindings] = await Promise.all([
         agents.loadCapabilities(agent.workspaceId),
@@ -1126,9 +1132,10 @@ export function createAgentsPageModel() {
   }
 
   function closeCapabilityBindings() {
-    if (capabilitySavingId.value) return;
+    if (capabilitySavingId.value || capabilityBatchBusy.value) return;
     capabilityAgent.value = null;
     capabilityDrafts.value = {};
+    capabilitySelectedIds.value = [];
   }
 
   function currentCapabilityBinding(capabilityId: string) {
@@ -1152,17 +1159,80 @@ export function createAgentsPageModel() {
     ];
   }
 
-  async function saveCapabilityBinding(capability: CapabilityCatalogItem) {
-    const agent = capabilityAgent.value;
-    const draft = capabilityDrafts.value[capability.id];
-    if (!agent || !draft || capabilitySavingId.value) return;
-    if (draft.versionPolicy === "PINNED" && !capability.activeReleaseId) {
-      showAgentToast("该能力没有可固定的当前生效版本。", "error");
+  function isCapabilitySelected(capabilityId: string) {
+    return capabilitySelectedIds.value.includes(capabilityId);
+  }
+
+  function toggleCapabilitySelection(capabilityId: string, checked?: boolean) {
+    const next = checked ?? !isCapabilitySelected(capabilityId);
+    if (next) {
+      if (!capabilitySelectedIds.value.includes(capabilityId)) {
+        capabilitySelectedIds.value = [...capabilitySelectedIds.value, capabilityId];
+      }
       return;
+    }
+    capabilitySelectedIds.value = capabilitySelectedIds.value.filter((id) => id !== capabilityId);
+  }
+
+  function clearCapabilitySelection() {
+    capabilitySelectedIds.value = [];
+  }
+
+  function selectUnboundCapabilities() {
+    capabilitySelectedIds.value = capabilityCatalog.value
+      .filter((capability) => !currentCapabilityBinding(capability.id) && canBindCapability(capability).ok)
+      .map((capability) => capability.id);
+  }
+
+  function selectAllCapabilities() {
+    capabilitySelectedIds.value = capabilityCatalog.value.map((capability) => capability.id);
+  }
+
+  function canBindCapability(capability: CapabilityCatalogItem): { ok: true } | { ok: false; reason: string } {
+    const draft = capabilityDrafts.value[capability.id];
+    if (!draft) return { ok: false, reason: "无草稿" };
+    if (draft.versionPolicy === "PINNED" && !capability.activeReleaseId) {
+      return { ok: false, reason: "无固定版本" };
     }
     // P3.3 FE guard: unpublished WORKFLOW (no active release) cannot form a binding.
     if (capability.kind === "WORKFLOW" && !capability.activeReleaseId) {
-      showAgentToast("该 Workflow 尚未发布，无法绑定。请先完成编译 → 试运行 → 发布。", "error");
+      return { ok: false, reason: "Workflow 未发布" };
+    }
+    return { ok: true };
+  }
+
+  const capabilitySelectedCount = computed(() => capabilitySelectedIds.value.length);
+  const capabilityUnboundCount = computed(
+    () => capabilityCatalog.value.filter((capability) => !currentCapabilityBinding(capability.id)).length,
+  );
+  const capabilityBindableUnboundCount = computed(
+    () =>
+      capabilityCatalog.value.filter(
+        (capability) => !currentCapabilityBinding(capability.id) && canBindCapability(capability).ok,
+      ).length,
+  );
+  const capabilitySelectedBoundCount = computed(
+    () =>
+      capabilitySelectedIds.value.filter((id) => Boolean(currentCapabilityBinding(id))).length,
+  );
+  const capabilitySelectedUnboundCount = computed(
+    () => capabilitySelectedIds.value.filter((id) => !currentCapabilityBinding(id)).length,
+  );
+  const capabilityActionsBusy = computed(
+    () => Boolean(capabilitySavingId.value) || capabilityBatchBusy.value,
+  );
+
+  async function saveCapabilityBinding(capability: CapabilityCatalogItem) {
+    const agent = capabilityAgent.value;
+    const draft = capabilityDrafts.value[capability.id];
+    if (!agent || !draft || capabilityActionsBusy.value) return;
+    const gate = canBindCapability(capability);
+    if (!gate.ok) {
+      if (capability.kind === "WORKFLOW" && !capability.activeReleaseId) {
+        showAgentToast("该 Workflow 尚未发布，无法绑定。请先完成编译 → 试运行 → 发布。", "error");
+      } else {
+        showAgentToast(`无法绑定：${gate.reason}。`, "error");
+      }
       return;
     }
     capabilitySavingId.value = capability.id;
@@ -1184,7 +1254,7 @@ export function createAgentsPageModel() {
   async function removeCapabilityBinding(capability: CapabilityCatalogItem) {
     const agent = capabilityAgent.value;
     const binding = currentCapabilityBinding(capability.id);
-    if (!agent || !binding || capabilitySavingId.value) return;
+    if (!agent || !binding || capabilityActionsBusy.value) return;
     capabilitySavingId.value = capability.id;
     try {
       await agents.unbindCapability(agent, binding);
@@ -1204,6 +1274,129 @@ export function createAgentsPageModel() {
       showAgentToast(`${capability.name} 解绑失败，请刷新后重试。`, "error");
     } finally {
       capabilitySavingId.value = "";
+    }
+  }
+
+  /**
+   * Batch-bind selected (or all unbound) capabilities using each row's draft settings.
+   * Sequential PUTs so lockVersion stays consistent; reports success/skip/fail counts.
+   */
+  async function batchBindCapabilities(options: { mode: "selected" | "all-unbound" }) {
+    const agent = capabilityAgent.value;
+    if (!agent || capabilityActionsBusy.value) return;
+
+    const targets =
+      options.mode === "all-unbound"
+        ? capabilityCatalog.value.filter(
+            (capability) => !currentCapabilityBinding(capability.id) && canBindCapability(capability).ok,
+          )
+        : capabilityCatalog.value.filter((capability) => {
+            if (!capabilitySelectedIds.value.includes(capability.id)) return false;
+            // Allow re-bind (update) for selected already-bound items too.
+            return canBindCapability(capability).ok;
+          });
+
+    if (!targets.length) {
+      showAgentToast(
+        options.mode === "all-unbound" ? "没有可绑定的未绑定能力。" : "请先勾选可绑定的能力。",
+        "error",
+      );
+      return;
+    }
+
+    capabilityBatchBusy.value = true;
+    let success = 0;
+    let failed = 0;
+    let lastError = "";
+    try {
+      for (const capability of targets) {
+        const draft = capabilityDrafts.value[capability.id];
+        if (!draft) {
+          failed += 1;
+          continue;
+        }
+        capabilitySavingId.value = capability.id;
+        try {
+          const saved = await agents.bindCapability(agent, capability.id, {
+            ...draft,
+            pinnedReleaseId: draft.versionPolicy === "PINNED" ? capability.activeReleaseId : undefined,
+          });
+          capabilityDrafts.value = { ...capabilityDrafts.value, [capability.id]: saved };
+          success += 1;
+        } catch (error) {
+          failed += 1;
+          lastError = error instanceof Error ? error.message : String(error);
+        }
+      }
+      await Promise.all([agents.loadCapabilities(agent.workspaceId), loadAgentRegistry()]);
+      if (failed === 0) {
+        showAgentToast(`已批量绑定 ${success} 个能力。`);
+        if (options.mode === "selected") {
+          capabilitySelectedIds.value = [];
+        }
+      } else {
+        showAgentToast(
+          `批量绑定完成：成功 ${success}，失败 ${failed}${lastError ? `。${lastError}` : ""}`,
+          success > 0 ? "success" : "error",
+        );
+      }
+    } finally {
+      capabilitySavingId.value = "";
+      capabilityBatchBusy.value = false;
+    }
+  }
+
+  async function batchUnbindCapabilities() {
+    const agent = capabilityAgent.value;
+    if (!agent || capabilityActionsBusy.value) return;
+
+    const targets = capabilityCatalog.value.filter((capability) => {
+      if (!capabilitySelectedIds.value.includes(capability.id)) return false;
+      return Boolean(currentCapabilityBinding(capability.id));
+    });
+    if (!targets.length) {
+      showAgentToast("请先勾选已绑定的能力。", "error");
+      return;
+    }
+
+    capabilityBatchBusy.value = true;
+    let success = 0;
+    let failed = 0;
+    try {
+      for (const capability of targets) {
+        const binding = currentCapabilityBinding(capability.id);
+        if (!binding) continue;
+        capabilitySavingId.value = capability.id;
+        try {
+          await agents.unbindCapability(agent, binding);
+          capabilityDrafts.value = {
+            ...capabilityDrafts.value,
+            [capability.id]: {
+              capabilityId: capability.id,
+              versionPolicy: "FOLLOW_ACTIVE",
+              enabled: true,
+              configOverrides: {},
+              lockVersion: 0,
+            },
+          };
+          success += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      await Promise.all([agents.loadCapabilities(agent.workspaceId), loadAgentRegistry()]);
+      capabilitySelectedIds.value = capabilitySelectedIds.value.filter(
+        (id) => !targets.some((capability) => capability.id === id) || Boolean(currentCapabilityBinding(id)),
+      );
+      if (failed === 0) {
+        showAgentToast(`已批量解绑 ${success} 个能力。`);
+        capabilitySelectedIds.value = [];
+      } else {
+        showAgentToast(`批量解绑完成：成功 ${success}，失败 ${failed}`, success > 0 ? "success" : "error");
+      }
+    } finally {
+      capabilitySavingId.value = "";
+      capabilityBatchBusy.value = false;
     }
   }
 
@@ -1304,6 +1497,14 @@ export function createAgentsPageModel() {
     pendingPromptText,
     weavePreviewDiff,
     capabilityCatalog,
+    capabilityBatchBusy,
+    capabilitySelectedIds,
+    capabilitySelectedCount,
+    capabilityUnboundCount,
+    capabilityBindableUnboundCount,
+    capabilitySelectedBoundCount,
+    capabilitySelectedUnboundCount,
+    capabilityActionsBusy,
     agentSaveButtonLabel,
     canEnhanceDraftPrompt,
     canConfirmAgentDelete,
@@ -1380,8 +1581,16 @@ export function createAgentsPageModel() {
     currentCapabilityBinding,
     setCapabilityVersionPolicy,
     capabilityVersionPolicyOptions,
+    isCapabilitySelected,
+    toggleCapabilitySelection,
+    clearCapabilitySelection,
+    selectUnboundCapabilities,
+    selectAllCapabilities,
+    canBindCapability,
     saveCapabilityBinding,
     removeCapabilityBinding,
+    batchBindCapabilities,
+    batchUnbindCapabilities,
     loadAgentRegistry,
     setAgentSearch,
     changeAgentPage,

@@ -3,6 +3,7 @@ package smartdag
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -16,8 +17,14 @@ func TestDefaultSystemPromptActiveAndStableHash(t *testing.T) {
 	if active.ID != DefaultSystemPromptID || active.Version != DefaultSystemPromptVersion {
 		t.Fatalf("unexpected active prompt identity: %+v", active)
 	}
+	if active.Version != 2 {
+		t.Fatalf("default prompt version want 2 (DAG-only), got %d", active.Version)
+	}
 	if active.Content == "" {
 		t.Fatal("active prompt content must be non-empty")
+	}
+	if !strings.Contains(active.Content, "acyclic DAG") && !strings.Contains(active.Content, "directed acyclic") {
+		t.Fatalf("default prompt must forbid cycles for Eino DAG runtime, content=%q", active.Content)
 	}
 	wantHash := PromptHash(active.Content)
 	if active.Hash != wantHash {

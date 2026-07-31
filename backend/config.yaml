@@ -53,9 +53,10 @@ outboundIdentity:
 agentAudit:
   debug: true
 
-# Tool management escape hatches. Production should keep allowForcePublish=false
-# unless operators explicitly need PLATFORM_ADMIN bulk force-publish without live test.
-# Env: ACTWEAVE_TOOLS_ALLOW_FORCE_PUBLISH. Restart required.
+# Tool/Workflow management escape hatches. Production should keep allowForcePublish=false
+# unless operators explicitly need PLATFORM_ADMIN force-publish without live trial/test.
+# Also gates workflow compilation force-publish (skip trial). Env: ACTWEAVE_TOOLS_ALLOW_FORCE_PUBLISH.
+# Restart required.
 tools:
   allowForcePublish: true
 

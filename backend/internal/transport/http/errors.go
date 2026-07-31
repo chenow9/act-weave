@@ -402,6 +402,15 @@ func mapError(err error) mappedError {
 	case errors.Is(err, tool.ErrForceReasonRequired):
 		return mappedError{http.StatusUnprocessableEntity, "TOOL_FORCE_REASON_REQUIRED",
 			"Force publish requires a reason of at least 8 characters."}
+	case errors.Is(err, workflow.ErrForcePublishDisabled):
+		return mappedError{http.StatusForbidden, "WORKFLOW_FORCE_PUBLISH_DISABLED",
+			"Workflow force publish is disabled on this server."}
+	case errors.Is(err, workflow.ErrForceReasonRequired):
+		return mappedError{http.StatusUnprocessableEntity, "WORKFLOW_FORCE_REASON_REQUIRED",
+			"Force publish requires a reason of at least 8 characters."}
+	case errors.Is(err, workflow.ErrNoSuccessfulTrial):
+		return mappedError{http.StatusConflict, "WORKFLOW_TRIAL_REQUIRED",
+			"Workflow must pass trial before publish (or use force-publish)."}
 	case errors.Is(err, tool.ErrNoPassingTest):
 		return mappedError{http.StatusConflict, "TOOL_TEST_REQUIRED",
 			"tool must pass test before publish"}

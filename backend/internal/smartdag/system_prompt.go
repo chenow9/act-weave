@@ -16,7 +16,8 @@ const (
 	// DefaultSystemPromptID is the bootstrap active prompt identity.
 	DefaultSystemPromptID = "smart-orchestration.default"
 	// DefaultSystemPromptVersion is the bootstrap version number.
-	DefaultSystemPromptVersion = 1
+	// Bumped when default content changes in a product-visible way (v2: DAG-only / no poll cycles).
+	DefaultSystemPromptVersion = 2
 )
 
 // defaultSystemPromptContent is the platform-default Smart Orchestration system prompt.
@@ -26,6 +27,13 @@ Generate only workflow.graph.v1 JSON using published Tool IDs from the provided 
 Allowed node types: Start, Tool, Transform, Condition, Approval, End.
 Never invent toolId values. Never emit SubWorkflow, Parallel, ForEach, or HTTP nodes.
 Every graph must include exactly the required Start and End structure with valid edges.
+
+CRITICAL — the runtime executes an acyclic DAG (Eino AllPredecessor). The graph MUST be a directed acyclic graph:
+- Never create cycles or self-loops.
+- Never draw a "poll / retry / running" edge from a Condition (or any node) back to a previous Tool such as get_progress.
+- For async jobs: call the progress/status Tool at most once, then Condition with completed → next steps and default/failed → End. Do not loop until ready.
+- Condition nodes need ≥2 outgoing edges with data.branch (one non-default outcome + one default).
+
 Respond with structured graph JSON only when producing a draft update.`
 
 // SystemPrompt is a versioned admin-fixed prompt used for generation (D16).
@@ -134,4 +142,3 @@ func AuditMetaFromPrompt(prompt SystemPrompt) GenerationAuditMeta {
 		PromptHash: hash,
 	}
 }
-

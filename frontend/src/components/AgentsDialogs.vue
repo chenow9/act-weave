@@ -8,8 +8,10 @@ import { useAgentsPageContext } from "../composables/useAgentsPageContext";
 const scp = useAgentsPageContext();
 /* prettier-ignore */
 const {
-  agentActionNote, agentActionTone, promptDetailAgent, agentDeleting, agentDeleteTarget, agentDeleteConfirmName, promptDetailDialogRef, agentDeleteDialogRef, agentDeleteInputRef, capabilityAgent, capabilityLoading, capabilitySavingId, capabilityDrafts, promptDetailVisible, capabilityCatalog, canConfirmAgentDelete,
+  agentActionNote, agentActionTone, promptDetailAgent, agentDeleting, agentDeleteTarget, agentDeleteConfirmName, promptDetailDialogRef, agentDeleteDialogRef, agentDeleteInputRef, capabilityAgent, capabilityLoading, capabilitySavingId, capabilityBatchBusy, capabilityDrafts, promptDetailVisible, capabilityCatalog, canConfirmAgentDelete,
+  capabilitySelectedCount, capabilityUnboundCount, capabilityBindableUnboundCount, capabilitySelectedBoundCount, capabilitySelectedUnboundCount, capabilityActionsBusy,
   agentDeleteNameError, closePromptDetail, trapAgentModalFocus, clearAgentToast, closeAgentDeleteConfirm, requestCloseAgentDeleteConfirm, confirmDeleteAgent, closeCapabilityBindings, currentCapabilityBinding, setCapabilityVersionPolicy, capabilityVersionPolicyOptions, saveCapabilityBinding, removeCapabilityBinding,
+  isCapabilitySelected, toggleCapabilitySelection, clearCapabilitySelection, selectUnboundCapabilities, selectAllCapabilities, batchBindCapabilities, batchUnbindCapabilities,
   currentPromptBody, currentPromptMeta, currentPromptLoading, currentPromptError, promptDetailHTML
 } = scp;
 
@@ -149,7 +151,7 @@ async function copyPromptRaw() {
             class="icon-action-button"
             type="button"
             aria-label="关闭能力绑定"
-            :disabled="Boolean(capabilitySavingId)"
+            :disabled="capabilityActionsBusy"
             @click="closeCapabilityBindings"
           >
             <i class="fa-solid fa-xmark" />
@@ -157,19 +159,111 @@ async function copyPromptRaw() {
         </header>
         <div class="agent-capability-body">
           <p>
-            Tool 与 Workflow 是 Workspace 级能力；此处只管理 Agent 的跟随/固定版本、连接选择和启用状态。
+            Tool 与 Workflow 是 Workspace 级能力；此处只管理 Agent 的跟随/固定版本、连接选择和启用状态。支持勾选后批量绑定或解绑。
           </p>
+
+          <div v-if="!capabilityLoading && capabilityCatalog.length" class="agent-capability-batch-bar">
+            <div class="agent-capability-batch-meta">
+              <span>未绑定 {{ capabilityUnboundCount }} · 可绑定 {{ capabilityBindableUnboundCount }}</span>
+              <span v-if="capabilitySelectedCount">已选 {{ capabilitySelectedCount }}</span>
+            </div>
+            <div class="agent-capability-batch-actions">
+              <button
+                class="ghost-button"
+                type="button"
+                data-action="select-unbound-capabilities"
+                :disabled="capabilityActionsBusy || capabilityBindableUnboundCount === 0"
+                @click="selectUnboundCapabilities"
+              >
+                全选未绑定
+              </button>
+              <button
+                class="ghost-button"
+                type="button"
+                data-action="select-all-capabilities"
+                :disabled="capabilityActionsBusy || !capabilityCatalog.length"
+                @click="selectAllCapabilities"
+              >
+                全选
+              </button>
+              <button
+                class="ghost-button"
+                type="button"
+                data-action="clear-capability-selection"
+                :disabled="capabilityActionsBusy || capabilitySelectedCount === 0"
+                @click="clearCapabilitySelection"
+              >
+                清空
+              </button>
+              <button
+                class="ghost-button"
+                type="button"
+                data-action="batch-unbind-capabilities"
+                :disabled="capabilityActionsBusy || capabilitySelectedBoundCount === 0"
+                @click="batchUnbindCapabilities"
+              >
+                批量解绑{{ capabilitySelectedBoundCount ? ` (${capabilitySelectedBoundCount})` : "" }}
+              </button>
+              <button
+                class="primary-button"
+                type="button"
+                data-action="batch-bind-selected-capabilities"
+                :disabled="capabilityActionsBusy || capabilitySelectedCount === 0"
+                @click="batchBindCapabilities({ mode: 'selected' })"
+              >
+                <i v-if="capabilityBatchBusy" class="fa-solid fa-spinner fa-spin" />
+                批量绑定选中{{ capabilitySelectedCount ? ` (${capabilitySelectedCount})` : "" }}
+              </button>
+              <button
+                class="primary-button agent-capability-batch-bind-all"
+                type="button"
+                data-action="batch-bind-all-unbound"
+                :disabled="capabilityActionsBusy || capabilityBindableUnboundCount === 0"
+                title="将所有可绑定且尚未绑定的能力一次性绑定到此 Agent"
+                @click="batchBindCapabilities({ mode: 'all-unbound' })"
+              >
+                <i v-if="capabilityBatchBusy" class="fa-solid fa-spinner fa-spin" />
+                绑定全部未绑定{{
+                  capabilityBindableUnboundCount ? ` (${capabilityBindableUnboundCount})` : ""
+                }}
+              </button>
+            </div>
+          </div>
+
           <div v-if="capabilityLoading" class="agent-capability-empty">正在加载能力目录…</div>
           <div v-else-if="!capabilityCatalog.length" class="agent-capability-empty">
             当前 Workspace 尚无已发布能力。
           </div>
-          <article v-for="capability in capabilityCatalog" v-else :key="capability.id" class="agent-capability-item">
+          <article
+            v-for="capability in capabilityCatalog"
+            v-else
+            :key="capability.id"
+            class="agent-capability-item"
+            :class="{
+              'is-selected': isCapabilitySelected(capability.id),
+              'is-bound': Boolean(currentCapabilityBinding(capability.id)),
+            }"
+          >
             <header>
-              <div>
-                <span>{{ capability.kind }}</span
-                ><strong>{{ capability.name }}</strong
-                ><small>{{ capability.description }}</small>
-              </div>
+              <label class="agent-capability-select">
+                <input
+                  type="checkbox"
+                  :checked="isCapabilitySelected(capability.id)"
+                  :disabled="capabilityActionsBusy"
+                  :aria-label="`选择 ${capability.name}`"
+                  @change="
+                    toggleCapabilitySelection(
+                      capability.id,
+                      ($event.target as HTMLInputElement).checked,
+                    )
+                  "
+                />
+                <div>
+                  <span>{{ capability.kind }}</span
+                  ><strong>{{ capability.name }}</strong
+                  ><small>{{ capability.description }}</small>
+                </div>
+              </label>
               <em>{{ currentCapabilityBinding(capability.id) ? "已绑定" : "未绑定" }}</em>
             </header>
             <div v-if="capabilityDrafts[capability.id]" class="agent-capability-fields">
@@ -216,7 +310,7 @@ async function copyPromptRaw() {
                 v-if="currentCapabilityBinding(capability.id)"
                 class="ghost-button danger"
                 type="button"
-                :disabled="Boolean(capabilitySavingId)"
+                :disabled="capabilityActionsBusy"
                 @click="removeCapabilityBinding(capability)"
               >
                 解绑
@@ -224,7 +318,7 @@ async function copyPromptRaw() {
               <button
                 class="primary-button"
                 type="button"
-                :disabled="Boolean(capabilitySavingId)"
+                :disabled="capabilityActionsBusy"
                 @click="saveCapabilityBinding(capability)"
               >
                 <i v-if="capabilitySavingId === capability.id" class="fa-solid fa-spinner fa-spin" />{{
@@ -238,7 +332,7 @@ async function copyPromptRaw() {
           <button
             class="ghost-button"
             type="button"
-            :disabled="Boolean(capabilitySavingId)"
+            :disabled="capabilityActionsBusy"
             @click="closeCapabilityBindings"
           >
             关闭

@@ -247,9 +247,16 @@ func prepareHTTPInvocation(request execution.InvocationRequest) (
 		return action, policy, nil, nil, nil,
 			execution.NewError(execution.ErrorCodeInvalidSnapshot, "VALIDATION", false, 0, nil)
 	}
+	// Apply InputSchema defaults when the model/user omits optional params
+	// (e.g. pageNum/pageSize). Mirrors execution.normalizeToolInput so HTTP
+	// tools stay seamless for end users who never know upstream API params.
+	inputPayload := append(json.RawMessage(nil), request.Input...)
+	if normalized, ok := execution.NormalizeToolInput(snapshot.InputSchema, inputPayload); ok {
+		inputPayload = normalized
+	}
 	input := make(map[string]any)
-	if len(request.Input) > 0 {
-		if json.Unmarshal(append(json.RawMessage(nil), request.Input...), &input) != nil || input == nil {
+	if len(inputPayload) > 0 {
+		if json.Unmarshal(inputPayload, &input) != nil || input == nil {
 			return action, policy, nil, nil, nil,
 				execution.NewError(execution.ErrorCodeInvalidRequest, "VALIDATION", false, 0, nil)
 		}

@@ -1098,6 +1098,7 @@
 .workflow-editor-actions .primary-button,
 .workflow-editor-actions .ghost-button,
 .workflow-editor-publish-button,
+.workflow-editor-force-publish-button,
 .workflow-editor-close-button {
   min-height: 40px;
   border-radius: 10px;
@@ -1168,6 +1169,39 @@
   color: #b9b9b9;
   background: #f1f1f1;
   border-color: #f1f1f1;
+  cursor: not-allowed;
+}
+
+/* Small PLATFORM_ADMIN escape hatch next to normal publish. */
+.workflow-editor-force-publish-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #9a3412;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-radius: 8px;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.workflow-editor-force-publish-button:hover:not(:disabled),
+.workflow-editor-force-publish-button:focus-visible:not(:disabled) {
+  color: #7c2d12;
+  background: #ffedd5;
+  border-color: #fb923c;
+}
+
+.workflow-editor-force-publish-button:disabled {
+  color: #c4b5a5;
+  background: #fafaf9;
+  border-color: #e7e5e4;
   cursor: not-allowed;
 }
 

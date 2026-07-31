@@ -720,8 +720,10 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	}
 	workflowPublisher, err := workflow.NewPublishService(workflowRepository, authorizer, auditRecorder)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("initialize workflow publish service: %w", err)
 	}
+	// Shared gate with tool force-publish (config tools.allowForcePublish).
+	workflowPublisher = workflowPublisher.AllowForcePublish(config.ToolsAllowForcePublish)
 	workflowActivator, err := workflow.NewActivationService(workflowRepository, authorizer, auditRecorder)
 	if err != nil {
 		return nil, err

@@ -8,6 +8,7 @@ import WorkflowInspector from "./workflow/WorkflowInspector.vue";
 import WorkflowIssuesPanel from "./workflow/WorkflowIssuesPanel.vue";
 import WorkflowNodePalette from "./workflow/WorkflowNodePalette.vue";
 import WorkflowReadinessPanel from "./workflow/WorkflowReadinessPanel.vue";
+import WorkflowForcePublishDialog from "./workflow/WorkflowForcePublishDialog.vue";
 import WorkflowTrialRunDialog from "./workflow/WorkflowTrialRunDialog.vue";
 import { useWorkflowPageContext } from "../composables/useWorkflowPageContext";
 
@@ -25,6 +26,7 @@ const {
   editorDraftLoadState,
   trialRunVisible,
   trialRunTargetWorkflowName,
+  forcePublishDialogVisible,
   workflowEditorShellRef,
   workflowEditorHelpText,
   selectedWorkflow,
@@ -69,12 +71,19 @@ const {
   validateEditorWorkflow,
   trialRunEditorWorkflow,
   publishEditorWorkflow,
+  forcePublishEditorWorkflow,
+  closeForcePublishDialog,
+  confirmForcePublishEditorWorkflow,
   submitTrialRun,
   closeTrialRunDialog,
   selectTraceNode,
+  canForcePublishWorkflow,
+  selectedWorkflowCanForcePublish,
+  workflowEditorForcePublishTitle,
 } = scp;
 void WorkflowEdgeInspector;
 void WorkflowExecutionTracePanel;
+void WorkflowForcePublishDialog;
 void WorkflowGraphCanvas;
 void WorkflowInspector;
 void WorkflowIssuesPanel;
@@ -233,6 +242,17 @@ void WorkflowTrialRunDialog;
               {{ pendingEditorAction === "publish" ? "正在发布…" : "发布上线" }}
             </button>
             <button
+              v-if="canForcePublishWorkflow"
+              data-action="force-publish-editor-workflow"
+              class="workflow-editor-force-publish-button"
+              type="button"
+              :title="workflowEditorForcePublishTitle"
+              :disabled="!selectedWorkflow || workflowEditorBusy || !selectedWorkflowCanForcePublish"
+              @click="forcePublishEditorWorkflow"
+            >
+              {{ pendingEditorAction === "force-publish" ? "强制发布中…" : "强制发布" }}
+            </button>
+            <button
               class="workflow-editor-close-button"
               type="button"
               aria-label="退出编辑"
@@ -345,6 +365,14 @@ void WorkflowTrialRunDialog;
       :submitting="pendingTrialRun"
       @close="closeTrialRunDialog"
       @submit="submitTrialRun"
+    />
+
+    <WorkflowForcePublishDialog
+      :visible="forcePublishDialogVisible"
+      :workflow-name="selectedWorkflow?.name"
+      :submitting="pendingEditorAction === 'force-publish'"
+      @close="closeForcePublishDialog"
+      @submit="confirmForcePublishEditorWorkflow"
     />
   </div>
 </template>

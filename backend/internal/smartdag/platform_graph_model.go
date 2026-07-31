@@ -200,6 +200,7 @@ func (m *PlatformChatGraphModel) structuredContext(ctx context.Context, input Gr
 			"maxNodes":         DefaultMaxNodes,
 			"toolIdRule":       "Tool nodes must set data.toolId to a catalog id exactly; never invent ids.",
 			"edgeRule":         "Every edge MUST set sourceNodeId and targetNodeId to existing node ids (not empty). Condition needs ≥2 out-edges with data.branch.",
+			"dagRule":          "Graph MUST be a directed acyclic graph (DAG). No cycles, no self-loops, no Condition→earlier Tool poll/retry back-edges (e.g. running→get_progress). Async: check status once, completed→next, default/failed→End.",
 			"layoutRule":       "Assign distinct position.x/y so nodes do not stack at 0,0; prefer left-to-right columns.",
 		},
 		"agent": map[string]any{

@@ -172,6 +172,125 @@ func validPipelineSnapshot() ReleaseSnapshot {
 	}
 }
 
+func TestValidateInvocationSchemaCoercesStringIDsAndNullTimestamps(t *testing.T) {
+	schema := json.RawMessage(`{
+		"type":"object",
+		"properties":{
+			"code":{"type":"string"},
+			"data":{"type":"object","properties":{
+				"list":{"type":"array","items":{"type":"object","properties":{
+					"id":{"type":"string"},
+					"createBy":{"type":"integer"},
+					"startedAt":{"type":"string"},
+					"progress":{"type":"integer"}
+				}}},
+				"total":{"type":"integer"}
+			}}
+		}
+	}`)
+	// Mirrors recognition tasks API: createBy as string, startedAt null.
+	body := json.RawMessage(`{"code":"00000","data":{"list":[{"id":"110","createBy":"735","startedAt":null,"progress":0}],"total":1}}`)
+	if !validateInvocationSchema(context.Background(), schema, body, true) {
+		t.Fatal("expected coerced recognition-task shaped response to pass")
+	}
+}
+
+func TestValidateInvocationSchemaAllowsNullListOnResponse(t *testing.T) {
+	schema := json.RawMessage(`{
+		"type":"object",
+		"properties":{
+			"code":{"type":"string"},
+			"msg":{"type":"string"},
+			"data":{"type":"object","properties":{
+				"list":{"type":"array","items":{"type":"object"}},
+				"total":{"type":"integer"}
+			}}
+		}
+	}`)
+	// Chinese paginated APIs return list:null for empty pages.
+	body := json.RawMessage(`{"code":"00000","msg":"成功","data":{"list":null,"total":0}}`)
+	if !validateInvocationSchema(context.Background(), schema, body, true) {
+		t.Fatal("expected null list response to pass after coercion")
+	}
+	// Real list still validates.
+	withItems := json.RawMessage(`{"code":"00000","msg":"成功","data":{"list":[{"id":"1"}],"total":1}}`)
+	if !validateInvocationSchema(context.Background(), schema, withItems, true) {
+		t.Fatal("expected non-empty list response to pass")
+	}
+}
+
+func TestApplyInputSchemaDefaultsFillsMissingPagination(t *testing.T) {
+	schema := json.RawMessage(`{
+		"type":"object",
+		"properties":{
+			"pageNum":{"type":"integer","default":1},
+			"pageSize":{"type":"integer","default":20},
+			"keywords":{"type":"string"}
+		},
+		"additionalProperties":false
+	}`)
+	// Empty object from agent tool call — user never provides API params.
+	got, ok := applyInputSchemaDefaults(schema, json.RawMessage(`{}`))
+	if !ok {
+		t.Fatal("expected defaults to apply")
+	}
+	var out map[string]any
+	if err := json.Unmarshal(got, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["pageNum"] != float64(1) && out["pageNum"] != json.Number("1") {
+		// json.Unmarshal into map uses float64 for numbers
+		if v, ok := out["pageNum"].(float64); !ok || v != 1 {
+			t.Fatalf("pageNum default missing: %#v", out["pageNum"])
+		}
+	}
+	if v, ok := out["pageSize"].(float64); !ok || v != 20 {
+		t.Fatalf("pageSize default missing: %#v", out["pageSize"])
+	}
+	// Explicit values must win over defaults.
+	got2, ok := applyInputSchemaDefaults(schema, json.RawMessage(`{"pageSize":50}`))
+	if !ok {
+		t.Fatal("expected pageNum default while keeping pageSize")
+	}
+	var out2 map[string]any
+	_ = json.Unmarshal(got2, &out2)
+	if v, ok := out2["pageSize"].(float64); !ok || v != 50 {
+		t.Fatalf("explicit pageSize overwritten: %#v", out2)
+	}
+	if v, ok := out2["pageNum"].(float64); !ok || v != 1 {
+		t.Fatalf("pageNum not defaulted: %#v", out2)
+	}
+}
+
+func TestNormalizeToolInputProjectsAndDefaults(t *testing.T) {
+	schema := json.RawMessage(`{
+		"type":"object",
+		"properties":{
+			"pageNum":{"type":"integer","default":1},
+			"pageSize":{"type":"integer","default":20}
+		},
+		"additionalProperties":false
+	}`)
+	// Agent bag may include unrelated workflow keys.
+	got, ok := normalizeToolInput(schema, json.RawMessage(`{"orderId":"x","pageNum":null}`))
+	if !ok {
+		t.Fatal("expected normalize to change input")
+	}
+	var out map[string]any
+	if err := json.Unmarshal(got, &out); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := out["orderId"]; has {
+		t.Fatalf("extra keys should be projected away: %v", out)
+	}
+	if v, ok := out["pageNum"].(float64); !ok || v != 1 {
+		t.Fatalf("null pageNum should use default: %#v", out["pageNum"])
+	}
+	if v, ok := out["pageSize"].(float64); !ok || v != 20 {
+		t.Fatalf("pageSize default missing: %#v", out["pageSize"])
+	}
+}
+
 func validPipelineConnection() ConnectionSnapshot {
 	return ConnectionSnapshot{ID: "connection-one", WorkspaceID: "workspace-one", ProviderID: "provider-one"}
 }

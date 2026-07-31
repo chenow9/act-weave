@@ -550,6 +550,60 @@ describe("agents view behavior", () => {
     wrapper.unmount();
   });
 
+  it("batch-binds all unbound catalog capabilities", async () => {
+    agentStoreState.capabilitiesByWorkspace["workspace-1"] = [
+      {
+        id: "capability-1",
+        kind: "TOOL",
+        name: "查询订单",
+        description: "按订单号查询",
+        activeReleaseId: "release-1",
+        activeRelease: { releaseId: "release-1", releaseNo: 1 },
+      },
+      {
+        id: "capability-2",
+        kind: "TOOL",
+        name: "创建任务",
+        description: "创建识别任务",
+        activeReleaseId: "release-2",
+        activeRelease: { releaseId: "release-2", releaseNo: 1 },
+      },
+    ];
+    loadCapabilitiesMock.mockResolvedValue(agentStoreState.capabilitiesByWorkspace["workspace-1"]);
+    loadAgentCapabilitiesMock.mockResolvedValue([]);
+    bindCapabilityMock.mockImplementation(async (agent, capabilityId, input) => {
+      const saved = { ...input, capabilityId, lockVersion: 1 };
+      const list = agentStoreState.bindingsByAgent[agent.id] || [];
+      agentStoreState.bindingsByAgent[agent.id] = [
+        ...list.filter((item) => item.capabilityId !== capabilityId),
+        saved,
+      ];
+      return saved;
+    });
+
+    const wrapper = mountAgentsView();
+    await flushPromises();
+    await selectAgentMenuAction(wrapper, "capabilities");
+    await flushPromises();
+
+    expect(wrapper.find("[data-action='batch-bind-all-unbound']").exists()).toBe(true);
+    await wrapper.get("[data-action='batch-bind-all-unbound']").trigger("click");
+    await flushPromises();
+
+    expect(bindCapabilityMock).toHaveBeenCalledTimes(2);
+    expect(bindCapabilityMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "agent-1" }),
+      "capability-1",
+      expect.objectContaining({ versionPolicy: "FOLLOW_ACTIVE" }),
+    );
+    expect(bindCapabilityMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "agent-1" }),
+      "capability-2",
+      expect.objectContaining({ versionPolicy: "FOLLOW_ACTIVE" }),
+    );
+    wrapper.unmount();
+  });
+
   it("opens a Weaving preview instead of directly applying enhanced prompt text", async () => {
     const wrapper = mountAgentsView();
 

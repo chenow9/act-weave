@@ -285,11 +285,12 @@ func (pipeline *InvocationPipeline) invokeResolved(
 		resolved.RetryCount < 0 || resolved.RetryCount > 10 {
 		return PipelineResult{}, NewError(ErrorCodeResolve, "RESOLUTION", false, 0, nil)
 	}
-	// Project workflow/agent bag onto tool inputSchema when additionalProperties
-	// is false so multi-Tool smart-dag.v2 graphs can share trial/execute input
-	// without INVOCATION_INPUT_SCHEMA_FAILED on downstream tools.
-	if projected, ok := projectInputOntoSchema(resolved.Snapshot.InputSchema, request.Input); ok {
-		request.Input = projected
+	// Normalize tool input for agent/workflow callers who omit optional params:
+	// 1) project bag onto schema.properties when additionalProperties=false
+	// 2) fill JSON Schema "default" values for missing/null keys (e.g. pageNum/pageSize)
+	// so end users never need to know upstream API parameter names.
+	if normalized, ok := normalizeToolInput(resolved.Snapshot.InputSchema, request.Input); ok {
+		request.Input = normalized
 	}
 	inputHash := invocationInputHash(request, resolved.Connection.ID)
 	if !validateInvocationSchema(ctx, resolved.Snapshot.InputSchema, request.Input, false) {
@@ -511,6 +512,11 @@ func ProjectToolInputOntoSchema(schemaJSON, inputJSON json.RawMessage) (json.Raw
 	return projectInputOntoSchema(schemaJSON, inputJSON)
 }
 
+// NormalizeToolInput applies projection + JSON Schema defaults used by InvocationPipeline.
+func NormalizeToolInput(schemaJSON, inputJSON json.RawMessage) (json.RawMessage, bool) {
+	return normalizeToolInput(schemaJSON, inputJSON)
+}
+
 func validateInvocationSchema(ctx context.Context, schemaJSON, valueJSON json.RawMessage, response bool) bool {
 	var schema openapi3.Schema
 	if json.Unmarshal(schemaJSON, &schema) != nil || schema.Validate(ctx) != nil {
@@ -522,10 +528,202 @@ func validateInvocationSchema(ctx context.Context, schemaJSON, valueJSON json.Ra
 	if decoder.Decode(&value) != nil {
 		return false
 	}
+	// Real business APIs often drift from imported OpenAPI:
+	// - list:null for empty pages
+	// - id/createBy as string while schema says integer (or the reverse)
+	// - optional string timestamps as null
+	// Coerce common response shapes before VisitJSON so tools can return real data.
+	if response {
+		value = coerceResponseValueToSchema(value, &schema)
+	}
 	if response {
 		return schema.VisitJSON(value, openapi3.VisitAsResponse()) == nil
 	}
 	return schema.VisitJSON(value, openapi3.VisitAsRequest()) == nil
+}
+
+// coerceResponseValueToSchema walks value with schema guidance and applies
+// tolerant coercions used by many enterprise HTTP APIs.
+func coerceResponseValueToSchema(value any, schema *openapi3.Schema) any {
+	if schema == nil {
+		return coerceNullCollectionFields(value)
+	}
+	// allOf: apply each branch in order (later properties win for objects).
+	if len(schema.AllOf) > 0 {
+		coerced := value
+		for _, ref := range schema.AllOf {
+			if ref != nil && ref.Value != nil {
+				coerced = coerceResponseValueToSchema(coerced, ref.Value)
+			}
+		}
+		return coerced
+	}
+	// oneOf/anyOf: try each; return first that becomes schema-valid after coerce.
+	for _, group := range []openapi3.SchemaRefs{schema.OneOf, schema.AnyOf} {
+		if len(group) == 0 {
+			continue
+		}
+		for _, ref := range group {
+			if ref == nil || ref.Value == nil {
+				continue
+			}
+			candidate := coerceResponseValueToSchema(value, ref.Value)
+			if ref.Value.VisitJSON(candidate, openapi3.VisitAsResponse()) == nil {
+				return candidate
+			}
+		}
+	}
+
+	schemaTypes := schemaTypeSet(schema)
+	// null handling for declared scalar/array types.
+	if value == nil {
+		if schema.Nullable {
+			return nil
+		}
+		if schemaTypes["array"] {
+			return []any{}
+		}
+		if schemaTypes["string"] {
+			return ""
+		}
+		if schemaTypes["object"] {
+			return map[string]any{}
+		}
+		return nil
+	}
+
+	switch typed := value.(type) {
+	case map[string]any:
+		if !schemaTypes["object"] && len(schemaTypes) > 0 && !schemaTypes[""] {
+			// Not an object schema — still walk known collection nulls.
+			return coerceNullCollectionFields(typed)
+		}
+		props := schema.Properties
+		for key, child := range typed {
+			if prop, ok := props[key]; ok && prop != nil && prop.Value != nil {
+				typed[key] = coerceResponseValueToSchema(child, prop.Value)
+				continue
+			}
+			// Undeclared keys: still coerce nested null lists.
+			typed[key] = coerceNullCollectionFields(child)
+		}
+		return typed
+	case []any:
+		itemSchema := (*openapi3.Schema)(nil)
+		if schema.Items != nil {
+			itemSchema = schema.Items.Value
+		}
+		for index, child := range typed {
+			if itemSchema != nil {
+				typed[index] = coerceResponseValueToSchema(child, itemSchema)
+			} else {
+				typed[index] = coerceNullCollectionFields(child)
+			}
+		}
+		return typed
+	case string:
+		if schemaTypes["integer"] || schemaTypes["number"] {
+			if number, err := strconv.ParseFloat(strings.TrimSpace(typed), 64); err == nil {
+				if schemaTypes["integer"] {
+					return json.Number(strconv.FormatInt(int64(number), 10))
+				}
+				return json.Number(strconv.FormatFloat(number, 'f', -1, 64))
+			}
+		}
+		return typed
+	case json.Number:
+		if schemaTypes["string"] && !schemaTypes["integer"] && !schemaTypes["number"] {
+			return typed.String()
+		}
+		return typed
+	case float64:
+		// Decoder uses UseNumber, but keep float path for safety.
+		if schemaTypes["string"] && !schemaTypes["integer"] && !schemaTypes["number"] {
+			return strconv.FormatFloat(typed, 'f', -1, 64)
+		}
+		if schemaTypes["integer"] {
+			return json.Number(strconv.FormatInt(int64(typed), 10))
+		}
+		return typed
+	case bool:
+		if schemaTypes["string"] && !schemaTypes["boolean"] {
+			if typed {
+				return "true"
+			}
+			return "false"
+		}
+		return typed
+	default:
+		return typed
+	}
+}
+
+func schemaTypeSet(schema *openapi3.Schema) map[string]bool {
+	out := map[string]bool{}
+	if schema == nil {
+		return out
+	}
+	// kin-openapi stores Type as *openapi3.Types (string set).
+	if schema.Type != nil {
+		for _, t := range schema.Type.Slice() {
+			out[strings.ToLower(strings.TrimSpace(t))] = true
+		}
+	}
+	if len(out) == 0 {
+		// Untyped schema: allow all structural walks.
+		out[""] = true
+	}
+	return out
+}
+
+// coerceNullCollectionFields replaces null values of well-known collection keys
+// (list/records/items/rows) with empty arrays. Nested objects are walked.
+// This matches common Chinese paginated APIs that return "list": null when empty.
+func coerceNullCollectionFields(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			lower := strings.ToLower(strings.TrimSpace(key))
+			if child == nil && (lower == "list" || lower == "records" || lower == "items" || lower == "rows") {
+				typed[key] = []any{}
+				continue
+			}
+			typed[key] = coerceNullCollectionFields(child)
+		}
+		return typed
+	case []any:
+		for index, child := range typed {
+			typed[index] = coerceNullCollectionFields(child)
+		}
+		return typed
+	default:
+		return value
+	}
+}
+
+// normalizeToolInput prepares caller-provided tool arguments for execution:
+// project onto schema when additionalProperties=false, then fill property
+// defaults for missing/null keys so agents need not invent upstream API params.
+func normalizeToolInput(schemaJSON, inputJSON json.RawMessage) (json.RawMessage, bool) {
+	if len(schemaJSON) == 0 {
+		return nil, false
+	}
+	if len(inputJSON) == 0 {
+		inputJSON = json.RawMessage(`{}`)
+	}
+	changed := false
+	if projected, ok := projectInputOntoSchema(schemaJSON, inputJSON); ok {
+		inputJSON = projected
+		changed = true
+	}
+	if withDefaults, ok := applyInputSchemaDefaults(schemaJSON, inputJSON); ok {
+		inputJSON = withDefaults
+		changed = true
+	}
+	if !changed {
+		return nil, false
+	}
+	return inputJSON, true
 }
 
 // projectInputOntoSchema drops keys not declared in schema.properties when the
@@ -564,6 +762,54 @@ func projectInputOntoSchema(schemaJSON, inputJSON json.RawMessage) (json.RawMess
 		return nil, false
 	}
 	encoded, err := json.Marshal(projected)
+	if err != nil {
+		return nil, false
+	}
+	return encoded, true
+}
+
+// applyInputSchemaDefaults fills missing/null properties from JSON Schema
+// "default" so list-style tools (pageNum/pageSize) work when the model omits them.
+func applyInputSchemaDefaults(schemaJSON, inputJSON json.RawMessage) (json.RawMessage, bool) {
+	if len(schemaJSON) == 0 {
+		return nil, false
+	}
+	if len(inputJSON) == 0 {
+		inputJSON = json.RawMessage(`{}`)
+	}
+	var schema map[string]any
+	if json.Unmarshal(schemaJSON, &schema) != nil {
+		return nil, false
+	}
+	properties, _ := schema["properties"].(map[string]any)
+	if len(properties) == 0 {
+		return nil, false
+	}
+	var input map[string]any
+	if json.Unmarshal(inputJSON, &input) != nil || input == nil {
+		return nil, false
+	}
+	changed := false
+	for name, rawProp := range properties {
+		prop, ok := rawProp.(map[string]any)
+		if !ok {
+			continue
+		}
+		def, hasDefault := prop["default"]
+		if !hasDefault {
+			continue
+		}
+		cur, exists := input[name]
+		if exists && cur != nil {
+			continue
+		}
+		input[name] = def
+		changed = true
+	}
+	if !changed {
+		return nil, false
+	}
+	encoded, err := json.Marshal(input)
 	if err != nil {
 		return nil, false
 	}

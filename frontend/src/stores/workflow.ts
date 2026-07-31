@@ -400,6 +400,48 @@ export const useWorkflowStore = defineStore("workflow", {
       this.upsertWorkflow(normalized);
       return { workflow: normalized, revisionId: revision.revisionId, revision, releaseId: response.data.releaseId };
     },
+    /**
+     * PLATFORM_ADMIN escape hatch: publish VALID compilation without a real trial.
+     * Requires server tools.allowForcePublish and reason ≥ 8 chars.
+     */
+    async forcePublishWorkflow(workflowId: string, reason: string) {
+      const workflow = this.requireWorkflow(workflowId);
+      const readiness = this.readinessByWorkflowId[workflowId] || (await this.loadWorkflowReadiness(workflowId));
+      const compilationID =
+        this.activeCompilation?.workflowId === workflowId
+          ? this.activeCompilation.id
+          : readiness.compilationId || workflow.latestCompilationId;
+      if (!compilationID) throw new Error("Compile the current Workflow Draft before force-publishing.");
+      const trimmed = reason.trim();
+      if (trimmed.length < 8) throw new Error("强制发布原因至少 8 个字符。");
+      const response = await apiClient.post<WorkflowPublishDTO & { force?: boolean }>(
+        `/workspaces/${workflow.workspaceId}/workflows/${workflowId}/compilations/${compilationID}:force-publish`,
+        {
+          callableName: (workflow.slug || slugify(workflow.name)).replace(/-/g, "_"),
+          callableDescription: workflow.description,
+          riskLevel: "MEDIUM",
+          sideEffectLevel: "WRITE",
+          requiresConfirmation: true,
+          publishNote: `Force publish ${workflow.name}`,
+          reason: trimmed,
+        },
+      );
+      const revision = revisionFromDTO(response.data.revision, workflowId);
+      this.revisionsByWorkflowId[workflowId] = upsertRevision(this.revisionsByWorkflowId[workflowId] || [], revision);
+      const [updated, nextReadiness] = await Promise.all([
+        apiClient.get<WorkflowDTO>(`/workspaces/${workflow.workspaceId}/workflows/${workflowId}`),
+        this.loadWorkflowReadiness(workflowId),
+      ]);
+      const normalized = workflowFromDTO(updated.data, workflow.workspaceId, nextReadiness);
+      this.upsertWorkflow(normalized);
+      return {
+        workflow: normalized,
+        revisionId: revision.revisionId,
+        revision,
+        releaseId: response.data.releaseId,
+        force: true as const,
+      };
+    },
     async loadWorkflowRevisions(workflowId: string) {
       const workspaceID = this.workspaceIDFor(workflowId);
       const response = await apiClient.get<{ items: WorkflowRevisionDTO[] }>(

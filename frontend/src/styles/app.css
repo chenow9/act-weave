@@ -567,8 +567,12 @@ a[href]:focus-visible {
  * That empty input sits on top of the selected-label placeholder and makes
  * the field look blank. When the select is NOT focused, hide the filter
  * input so the selected label shows through.
+ *
+ * Scope only to .is-filterable: non-filterable selects (e.g. auth method in
+ * Agent Access create modal) must keep the selected label visible when open;
+ * otherwise the trigger becomes an empty box while the dropdown is expanded.
  */
-.app-select .el-select__wrapper:not(.is-focused) .el-select__input-wrapper {
+.app-select .el-select__wrapper.is-filterable:not(.is-focused) .el-select__input-wrapper {
   position: absolute !important;
   inset: 0;
   z-index: 0 !important;
@@ -576,7 +580,7 @@ a[href]:focus-visible {
   pointer-events: none !important;
 }
 
-.app-select .el-select__wrapper.is-focused .el-select__input-wrapper {
+.app-select .el-select__wrapper.is-filterable.is-focused .el-select__input-wrapper {
   position: relative !important;
   z-index: 2 !important;
   opacity: 1 !important;
@@ -607,8 +611,8 @@ a[href]:focus-visible {
   color: #94a3b8 !important;
 }
 
-.app-select .el-select__wrapper.is-focused .el-select__placeholder {
-  /* While typing to filter, hide the label under the input */
+/* Only hide selected label while a filterable select is focused for typing. */
+.app-select .el-select__wrapper.is-filterable.is-focused .el-select__placeholder {
   opacity: 0 !important;
 }
 

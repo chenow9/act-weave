@@ -58,6 +58,11 @@ type WorkflowPublisher interface {
 	Publish(context.Context, workflow.PublishWorkflowInput) (workflow.PublishWorkflowResult, error)
 }
 
+// WorkflowForcePublisher optionally skips trial (PLATFORM_ADMIN + config gate).
+type WorkflowForcePublisher interface {
+	ForcePublish(context.Context, workflow.ForcePublishWorkflowInput) (workflow.PublishWorkflowResult, error)
+}
+
 type WorkflowActivator interface {
 	Activate(context.Context, workflow.ActivateRevisionInput) (workflow.ActivateRevisionResult, error)
 }
@@ -154,6 +159,7 @@ func (r *WorkflowRoutes) RegisterV1(v1 V1Routes) {
 	group.POST("/workspaces/:wid/workflows/:id/draft/__command/compile", r.compileDraft)
 	group.POST("/workspaces/:wid/workflows/:id/compilations/:cid/__command/trial", r.trialCompilation)
 	group.POST("/workspaces/:wid/workflows/:id/compilations/:cid/__command/publish", r.publishCompilation)
+	group.POST("/workspaces/:wid/workflows/:id/compilations/:cid/__command/force-publish", r.forcePublishCompilation)
 	group.GET("/workspaces/:wid/workflows/:id/revisions", r.listRevisions)
 	group.GET("/workspaces/:wid/workflows/:id/revisions/__command/diff", r.diffRevisions)
 	group.POST("/workspaces/:wid/workflows/:id/revisions/:rid/__command/activate", r.activateRevision)
@@ -762,6 +768,79 @@ func (r *WorkflowRoutes) publishCompilation(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"revision": revisionDTOFor(value.Revision), "releaseId": value.Release.ID,
 		"releaseNo": value.Release.ReleaseNo, "trialId": value.Trial.ID,
+	})
+}
+
+type forcePublishWorkflowRequest struct {
+	publishWorkflowRequest
+	Reason string `json:"reason"`
+}
+
+// forcePublishCompilation is a PLATFORM_ADMIN escape hatch: skips real trial run,
+// still freezes revision + capability_release. Requires tools.allowForcePublish
+// (shared gate with tool force-publish) and a non-empty reason (≥8 chars).
+func (r *WorkflowRoutes) forcePublishCompilation(c *gin.Context) {
+	if !platformAdmin(c) {
+		RespondError(c, authz.ErrDenied)
+		return
+	}
+	if !r.authorize(c, authz.ActionPublish) {
+		return
+	}
+	forcer, ok := r.publisher.(WorkflowForcePublisher)
+	if !ok {
+		RespondError(c, workflow.ErrForcePublishDisabled)
+		return
+	}
+	var request forcePublishWorkflowRequest
+	if decodeJSON(c, &request) != nil {
+		RespondError(c, workflow.ErrInvalid)
+		return
+	}
+	revisionID, err := newV7()
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+	releaseID, err := newV7()
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+	eventID, err := newV7()
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+	trialID, err := newV7()
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+	executionID, err := newV7()
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+	value, err := forcer.ForcePublish(c.Request.Context(), workflow.ForcePublishWorkflowInput{
+		PublishWorkflowInput: workflow.PublishWorkflowInput{
+			RevisionID: revisionID, ReleaseID: releaseID, EventID: eventID,
+			WorkspaceID: c.Param("wid"), CapabilityID: c.Param("id"), CompilationID: c.Param("cid"),
+			CallableName: request.CallableName, CallableDescription: request.CallableDescription,
+			RiskLevel: request.RiskLevel, SideEffectLevel: request.SideEffectLevel,
+			RequiresConfirmation: request.RequiresConfirmation, PublishNote: request.PublishNote,
+			PublishedBy: actor(c),
+		},
+		TrialID: trialID, ExecutionID: executionID, Reason: request.Reason,
+	})
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{
+		"revision": revisionDTOFor(value.Revision), "releaseId": value.Release.ID,
+		"releaseNo": value.Release.ReleaseNo, "trialId": value.Trial.ID,
+		"force": true, "forceReason": request.Reason,
 	})
 }
 

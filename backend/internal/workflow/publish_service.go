@@ -2,7 +2,9 @@ package workflow
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"actweave/backend/internal/authz"
 	"actweave/backend/internal/capability"
@@ -17,6 +20,18 @@ import (
 )
 
 var workflowCallableNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)
+
+var (
+	// ErrForcePublishDisabled is returned when workflow force-publish is gated off.
+	ErrForcePublishDisabled = errors.New("workflow force publish is disabled")
+	// ErrForceReasonRequired is returned when force-publish reason is missing/too short.
+	ErrForceReasonRequired = errors.New("workflow force publish reason is required")
+)
+
+const (
+	forcePublishReasonMinRunes = 8
+	forcePublishReasonMaxRunes = 500
+)
 
 type PublishAuthorizer interface {
 	AuthorizeWorkspace(context.Context, string, string, authz.Action) (authz.WorkspaceContext, error)
@@ -66,10 +81,21 @@ type PublishWorkflowResult struct {
 	Event    WorkflowReleasePublishedEvent
 }
 
+// ForcePublishWorkflowInput publishes a VALID compilation without a real trial run.
+// HTTP edge must enforce PLATFORM_ADMIN; service still requires workspace PUBLISH.
+type ForcePublishWorkflowInput struct {
+	PublishWorkflowInput
+	// TrialID / ExecutionID are used only when a synthetic SUCCEEDED trial must be created.
+	TrialID     string
+	ExecutionID string
+	Reason      string
+}
+
 type PublishService struct {
-	repository *Repository
-	authorizer PublishAuthorizer
-	events     PublishEventWriter
+	repository        *Repository
+	authorizer        PublishAuthorizer
+	events            PublishEventWriter
+	allowForcePublish bool
 }
 
 func NewPublishService(
@@ -81,6 +107,15 @@ func NewPublishService(
 		return nil, errors.New("workflow publish service dependencies are required")
 	}
 	return &PublishService{repository: repository, authorizer: authorizer, events: events}, nil
+}
+
+// AllowForcePublish enables the platform-admin force-publish escape hatch
+// (skip successful trial). Default false.
+func (s *PublishService) AllowForcePublish(enabled bool) *PublishService {
+	if s != nil {
+		s.allowForcePublish = enabled
+	}
+	return s
 }
 
 func (s *PublishService) Publish(
@@ -266,6 +301,68 @@ func (s *PublishService) Publish(
 		return PublishWorkflowResult{}, mapWrite("commit workflow publish transaction", err)
 	}
 	return PublishWorkflowResult{Revision: revision, Release: release, Trial: trial, Event: event}, nil
+}
+
+// ForcePublish freezes a VALID compilation into an active release without requiring
+// a real successful trial. When no SUCCEEDED trial exists for the compilation, a
+// synthetic trial is recorded (no tool invoke). Still requires workspace PUBLISH.
+func (s *PublishService) ForcePublish(
+	ctx context.Context,
+	input ForcePublishWorkflowInput,
+) (PublishWorkflowResult, error) {
+	if s == nil || !s.allowForcePublish {
+		return PublishWorkflowResult{}, ErrForcePublishDisabled
+	}
+	input.PublishWorkflowInput = normalizePublishWorkflow(input.PublishWorkflowInput)
+	input.TrialID = strings.TrimSpace(input.TrialID)
+	input.ExecutionID = strings.TrimSpace(input.ExecutionID)
+	input.Reason = strings.TrimSpace(input.Reason)
+	if !validPublishWorkflow(input.PublishWorkflowInput) {
+		return PublishWorkflowResult{}, ErrInvalid
+	}
+	reasonRunes := utf8.RuneCountInString(input.Reason)
+	if reasonRunes < forcePublishReasonMinRunes || reasonRunes > forcePublishReasonMaxRunes {
+		return PublishWorkflowResult{}, ErrForceReasonRequired
+	}
+	if !validUUID(input.TrialID) || !validUUID(input.ExecutionID) {
+		return PublishWorkflowResult{}, ErrInvalid
+	}
+
+	// Append force reason into publish note for audit (keep operator note if any).
+	note := input.PublishNote
+	if note == "" {
+		note = "force-publish (skip trial)"
+	}
+	input.PublishNote = note + " | forceReason=" + input.Reason
+
+	// If a real SUCCEEDED trial already exists, publish normally (still audits via note).
+	if _, err := s.repository.GetLatestSuccessfulTrialRun(
+		ctx, input.WorkspaceID, input.CapabilityID, input.CompilationID,
+	); err == nil {
+		return s.Publish(ctx, input.PublishWorkflowInput)
+	} else if err != nil && !errors.Is(err, ErrNotFound) {
+		return PublishWorkflowResult{}, err
+	}
+
+	// Synthetic trial attestation — no runner invoke.
+	inputHash := forcePublishInputHash(input.Reason, input.CompilationID)
+	if _, err := s.repository.CreateTrialRun(ctx, input.WorkspaceID, input.CapabilityID, input.CompilationID, TrialRunCreate{
+		ID: input.TrialID, ExecutionID: input.ExecutionID, InputHash: inputHash, StartedBy: input.PublishedBy,
+	}); err != nil {
+		return PublishWorkflowResult{}, fmt.Errorf("create synthetic force-publish trial: %w", err)
+	}
+	if _, err := s.repository.CompleteTrialRun(
+		ctx, input.WorkspaceID, input.CapabilityID, input.TrialID, "SUCCEEDED",
+	); err != nil {
+		return PublishWorkflowResult{}, fmt.Errorf("complete synthetic force-publish trial: %w", err)
+	}
+	return s.Publish(ctx, input.PublishWorkflowInput)
+}
+
+func forcePublishInputHash(reason, compilationID string) string {
+	// workflow_trial_runs.input_hash is validated as 64-char sha256 hex.
+	sum := sha256.Sum256([]byte("workflow-force-publish|" + compilationID + "|" + reason))
+	return hex.EncodeToString(sum[:])
 }
 
 func workflowReleaseSchemas(specPayload json.RawMessage) (json.RawMessage, json.RawMessage, error) {

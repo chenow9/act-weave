@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -148,6 +149,54 @@ func TestPublishWorkflowRequiresEditorTrialAndAtomicEvent(t *testing.T) {
 		t.Fatalf("expected stale compilation publish conflict, got %v", err)
 	}
 	assertNoWorkflowPublishState(t, db)
+}
+
+func TestForcePublishWorkflowSkipsTrialWhenGateEnabled(t *testing.T) {
+	repository, db, _, compilation := prepareWorkflowPublish(t, false)
+	events := newWorkflowPublishEventWriter(t, db)
+	service := newWorkflowPublishService(t, repository, db, events)
+
+	// Gate off → disabled.
+	input := ForcePublishWorkflowInput{
+		PublishWorkflowInput: validWorkflowPublishInput(compilation.ID),
+		TrialID:              "308f1f2e-7b5a-7c3d-8e9f-1234567890a1",
+		ExecutionID:          "308f1f2e-7b5a-7c3d-8e9f-1234567890a2",
+		Reason:               "local-dev skip trial for AI pipeline",
+	}
+	if _, err := service.ForcePublish(context.Background(), input); !errors.Is(err, ErrForcePublishDisabled) {
+		t.Fatalf("expected ErrForcePublishDisabled, got %v", err)
+	}
+	assertNoWorkflowPublishState(t, db)
+
+	service.AllowForcePublish(true)
+
+	// Short reason → rejected.
+	short := input
+	short.Reason = "short"
+	if _, err := service.ForcePublish(context.Background(), short); !errors.Is(err, ErrForceReasonRequired) {
+		t.Fatalf("expected ErrForceReasonRequired, got %v", err)
+	}
+	assertNoWorkflowPublishState(t, db)
+
+	// Happy path: no real trial, force publish succeeds.
+	result, err := service.ForcePublish(context.Background(), input)
+	if err != nil {
+		t.Fatalf("force publish: %v", err)
+	}
+	if result.Revision.Status != "PUBLISHED" || result.Release.ID == "" || result.Trial.Status != "SUCCEEDED" {
+		t.Fatalf("unexpected force publish result: revision=%+v release=%+v trial=%+v",
+			result.Revision, result.Release, result.Trial)
+	}
+	if !strings.Contains(result.Revision.PublishNote, "forceReason=") {
+		t.Fatalf("publish note should carry force reason, got %q", result.Revision.PublishNote)
+	}
+	// Synthetic trial input hash is a full sha256 of force reason.
+	if len(result.Trial.InputHash) != 64 {
+		t.Fatalf("expected 64-char synthetic trial hash, got %q", result.Trial.InputHash)
+	}
+	if result.Trial.InputHash != forcePublishInputHash(input.Reason, compilation.ID) {
+		t.Fatalf("trial hash mismatch: got %s", result.Trial.InputHash)
+	}
 }
 
 func TestPublishWorkflowConcurrentPublicationHasSingleWinner(t *testing.T) {

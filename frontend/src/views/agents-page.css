@@ -1697,6 +1697,55 @@
   background: #f8fafc;
 }
 
+.agent-capability-batch-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #dbe3ec;
+  border-radius: 12px;
+  background: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+}
+
+.agent-capability-batch-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.agent-capability-batch-meta span:last-child:not(:only-child) {
+  color: #0f766e;
+}
+
+.agent-capability-batch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.agent-capability-batch-actions .ghost-button,
+.agent-capability-batch-actions .primary-button {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.agent-capability-batch-bind-all {
+  background: #0f766e;
+  border-color: #0f766e;
+}
+
 .agent-capability-item {
   display: grid;
   gap: 14px;
@@ -1704,6 +1753,18 @@
   border: 1px solid #dbe3ec;
   border-radius: 12px;
   background: #fff;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.agent-capability-item.is-selected {
+  border-color: rgba(13, 148, 136, 0.45);
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
+}
+
+.agent-capability-item.is-bound:not(.is-selected) {
+  border-color: #e2e8f0;
 }
 
 .agent-capability-item > header,
@@ -1715,17 +1776,44 @@
   gap: 10px;
 }
 
-.agent-capability-item > header div {
+.agent-capability-select {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.agent-capability-select input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin-top: 4px;
+  flex: 0 0 auto;
+  accent-color: #0f766e;
+  cursor: pointer;
+}
+
+.agent-capability-item > header div,
+.agent-capability-select > div {
   display: grid;
   gap: 3px;
+  min-width: 0;
 }
 
 .agent-capability-item > header span,
 .agent-capability-item > header small,
-.agent-capability-item > header em {
+.agent-capability-item > header em,
+.agent-capability-select span,
+.agent-capability-select small {
   color: #64748b;
   font-size: 11px;
   font-style: normal;
+}
+
+.agent-capability-select strong {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 800;
 }
 
 .agent-capability-fields {

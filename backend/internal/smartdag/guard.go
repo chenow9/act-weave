@@ -2,6 +2,7 @@ package smartdag
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"actweave/backend/internal/domain"
@@ -242,10 +243,88 @@ func GuardGraph(graph domain.WorkflowGraphDraft, opts GuardOptions) GuardReport 
 		}
 	}
 
+	// Runtime is Eino DAG (AllPredecessor); cycles cannot be compiled or published.
+	if cycleNodes := detectCycleNodeIDs(graph); len(cycleNodes) > 0 {
+		violations = append(violations, GuardViolation{
+			Code:      "GRAPH_CYCLE",
+			Message:   fmt.Sprintf("graph has a directed cycle involving nodes %s; runtime requires a DAG (no poll/retry back-edges)", strings.Join(cycleNodes, ", ")),
+			FieldPath: "edges",
+		})
+	}
+
 	return GuardReport{
 		OK:         len(violations) == 0,
 		Violations: violations,
 	}
+}
+
+// detectCycleNodeIDs returns a sorted sample of node IDs that remain after Kahn topo
+// fails (i.e. members of at least one directed cycle). Empty when acyclic.
+func detectCycleNodeIDs(graph domain.WorkflowGraphDraft) []string {
+	inDegree := make(map[string]int, len(graph.Nodes))
+	outgoing := make(map[string][]string, len(graph.Nodes))
+	for _, node := range graph.Nodes {
+		id := strings.TrimSpace(node.ID)
+		if id == "" {
+			continue
+		}
+		inDegree[id] = 0
+		outgoing[id] = nil
+	}
+	for _, edge := range graph.Edges {
+		src := strings.TrimSpace(edge.SourceNodeID)
+		tgt := strings.TrimSpace(edge.TargetNodeID)
+		if src == "" || tgt == "" {
+			continue
+		}
+		if _, ok := inDegree[src]; !ok {
+			continue
+		}
+		if _, ok := inDegree[tgt]; !ok {
+			continue
+		}
+		if src == tgt {
+			// Self-loop is a cycle involving that node.
+			return []string{src}
+		}
+		outgoing[src] = append(outgoing[src], tgt)
+		inDegree[tgt]++
+	}
+	queue := make([]string, 0, len(inDegree))
+	for id, deg := range inDegree {
+		if deg == 0 {
+			queue = append(queue, id)
+		}
+	}
+	sort.Strings(queue)
+	seen := 0
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		seen++
+		for _, next := range outgoing[id] {
+			inDegree[next]--
+			if inDegree[next] == 0 {
+				queue = append(queue, next)
+				sort.Strings(queue)
+			}
+		}
+	}
+	if seen == len(inDegree) {
+		return nil
+	}
+	leftover := make([]string, 0)
+	for id, deg := range inDegree {
+		if deg > 0 {
+			leftover = append(leftover, id)
+		}
+	}
+	sort.Strings(leftover)
+	// Cap message size.
+	if len(leftover) > 8 {
+		leftover = leftover[:8]
+	}
+	return leftover
 }
 
 // CatalogToolIDSet builds a set from published tool capability IDs.

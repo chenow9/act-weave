@@ -4113,7 +4113,10 @@ AS $$
                    OR length(element.value #>> '{}') = 0
                    OR length(element.value #>> '{}') > 2048
                    OR btrim(element.value #>> '{}') <> element.value #>> '{}'
-                   OR element.value #>> '{}' !~ '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$'
+                   OR NOT (
+                        element.value #>> '{}' ~ '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$'
+                        OR element.value #>> '{}' ~ '^http://(localhost|127\.0\.0\.1)(:[0-9]{1,5})?$'
+                   )
             )
             AND jsonb_array_length(origins) = (
                 SELECT count(DISTINCT element.value #>> '{}')

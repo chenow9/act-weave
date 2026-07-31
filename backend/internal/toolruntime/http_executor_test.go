@@ -131,6 +131,46 @@ func TestHTTPExecutorTimeoutCancellationAndResponseLimit(t *testing.T) {
 	})
 }
 
+func TestHTTPExecutorAppliesInputSchemaDefaultsWhenAgentOmitsParams(t *testing.T) {
+	// Mirrors recognition-scenes: model calls tool with {} but schema has page defaults.
+	var gotQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		gotQuery = request.URL.RawQuery
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"code":"00000","data":{"list":[]}}`))
+	}))
+	defer server.Close()
+
+	request := validExecutorRequest(server.URL)
+	request.Input = json.RawMessage(`{}`)
+	request.Snapshot.ActionConfig = json.RawMessage(`{
+		"method":"GET","path":"/api/v1/recognition/scenes",
+		"parameters":[
+			{"name":"pageNum","in":"query","input":"pageNum"},
+			{"name":"pageSize","in":"query","input":"pageSize"}
+		]
+	}`)
+	request.Snapshot.InputSchema = json.RawMessage(`{
+		"type":"object",
+		"properties":{
+			"pageNum":{"type":"integer","default":1},
+			"pageSize":{"type":"integer","default":20}
+		},
+		"additionalProperties":false
+	}`)
+
+	result, err := NewHTTPExecutor(server.Client()).Invoke(context.Background(), request, nil)
+	if err != nil {
+		t.Fatalf("invoke with empty input: %v", err)
+	}
+	if result.HTTPStatus != http.StatusOK {
+		t.Fatalf("status=%d", result.HTTPStatus)
+	}
+	if !strings.Contains(gotQuery, "pageNum=1") || !strings.Contains(gotQuery, "pageSize=20") {
+		t.Fatalf("expected default query params on wire, got %q", gotQuery)
+	}
+}
+
 func TestHTTPExecutorNormalizesUpstreamErrorsWithoutBodyLeak(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusBadGateway)
