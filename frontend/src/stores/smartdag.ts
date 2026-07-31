@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 
-import { apiClient } from "../services/api";
+import { apiClient, toAPIError } from "../services/api";
+import { postLlmJobSse } from "../services/llm-job-sse";
 import type {
   FailureFeedback,
   SmartDAGGuardReport,
@@ -255,13 +256,12 @@ export const useSmartDagStore = defineStore("smartdag", {
         if (request.feedback) {
           body.feedback = request.feedback;
         }
-        // LLM graph generation routinely exceeds the default 12s API timeout.
-        const response = await apiClient.post<SmartDAGTurnHTTPResponse>(
-          `/workspaces/${this.workspaceId}/workflow-generate-sessions/${this.sessionId}/turns`,
+        // SSE + heartbeat: avoid gateway idle timeout while model generates the graph.
+        const data = await postLlmJobSse<SmartDAGTurnHTTPResponse & { etag?: string }>({
+          path: `/workspaces/${this.workspaceId}/workflow-generate-sessions/${this.sessionId}/turns`,
           body,
-          { timeout: 210_000 },
-        );
-        return this.applyTurnResponse(response.data, response.headers?.etag);
+        });
+        return this.applyTurnResponse(data, data.etag);
       } catch (error) {
         this.captureTurnError(error);
         throw error;
@@ -332,6 +332,7 @@ export const useSmartDagStore = defineStore("smartdag", {
     },
 
     captureTurnError(error: unknown) {
+      const apiErr = toAPIError(error);
       const anyErr = error as {
         code?: string;
         message?: string;
@@ -355,8 +356,17 @@ export const useSmartDagStore = defineStore("smartdag", {
           };
         };
       };
-      const body = anyErr?.response?.data;
-      const errDTO = body?.error;
+      // SSE failed events put the turn body on APIError.response.data.
+      const body = (anyErr?.response?.data || (apiErr.response?.data as typeof anyErr.response.data)) as
+        | NonNullable<typeof anyErr.response>["data"]
+        | undefined;
+      const errDTO = body?.error || {
+        code: apiErr.code,
+        message: apiErr.message,
+        requestId: apiErr.requestId,
+        traceId: apiErr.traceId,
+        details: apiErr.details as Array<Record<string, unknown>>,
+      };
       const code = errDTO?.code || anyErr?.code || "";
       this.lastErrorCode = code;
       // ZKL-56: parse standard SMART_DAG_TURN_FAILURE detail (+ legacy Guard fields).

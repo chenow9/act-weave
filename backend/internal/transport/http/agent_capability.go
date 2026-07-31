@@ -280,14 +280,50 @@ func (r *AgentCapabilityRoutes) previewCreatePromptEnhancement(c *gin.Context) {
 		return
 	}
 	requestContext, _ := RequestContextFrom(c.Request.Context())
-	run, output, err := r.prompts.RunCreatePreview(c.Request.Context(), c.Param("wid"),
-		request.ModelConfigID, request.Input, requestContext.TraceID, actor(c))
+	workspaceID := c.Param("wid")
+	modelConfigID := request.ModelConfigID
+	input := request.Input
+	traceID := requestContext.TraceID
+	createdBy := actor(c)
 	request.Input = ""
+
+	// Minimal SSE path: keep the connection warm with heartbeats while the
+	// model runs on a context that is not cancelled by client/gateway disconnect.
+	if wantsConsoleLLMSSE(c) {
+		type previewOutcome struct {
+			run    agent.PromptRun
+			output string
+		}
+		streamConsoleLLMJob(c,
+			func(ctx context.Context) (previewOutcome, error) {
+				run, output, err := r.prompts.RunCreatePreview(ctx, workspaceID, modelConfigID, input, traceID, createdBy)
+				return previewOutcome{run: run, output: output}, err
+			},
+			func(stream *consoleSSEWriter) error {
+				return stream.Event("started", gin.H{"status": "RUNNING", "preview": true})
+			},
+			func(stream *consoleSSEWriter, value previewOutcome, err error) error {
+				if err != nil {
+					return stream.Event("failed", consoleMappedErrorBody(c, err))
+				}
+				payload := createPreviewResponseDTO(value.run, value.output)
+				return stream.Event("completed", payload)
+			},
+		)
+		return
+	}
+
+	run, output, err := r.prompts.RunCreatePreview(c.Request.Context(), workspaceID,
+		modelConfigID, input, traceID, createdBy)
 	if err != nil {
 		RespondError(c, err)
 		return
 	}
 	setNoStoreHeaders(c)
+	c.JSON(http.StatusOK, createPreviewResponseDTO(run, output))
+}
+
+func createPreviewResponseDTO(run agent.PromptRun, output string) gin.H {
 	response := gin.H{
 		"runId": run.ID, "status": run.Status, "preview": true, "output": output,
 		"createdAt": run.CreatedAt,
@@ -295,7 +331,7 @@ func (r *AgentCapabilityRoutes) previewCreatePromptEnhancement(c *gin.Context) {
 	if run.ExpiresAt != nil {
 		response["expiresAt"] = *run.ExpiresAt
 	}
-	c.JSON(http.StatusOK, response)
+	return response
 }
 
 func setNoStoreHeaders(c *gin.Context) {

@@ -10,6 +10,9 @@ export default defineConfig({
       "/api": {
         target: "http://127.0.0.1:8082",
         changeOrigin: true,
+        // Long LLM SSE jobs (prompt enhance / smart-dag turns) need no proxy idle cut-off.
+        timeout: 0,
+        proxyTimeout: 0,
       },
     },
   },

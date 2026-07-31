@@ -118,10 +118,9 @@ func (r *GenerateSessionRoutes) applyTurn(c *gin.Context) {
 		RespondError(c, smartdag.ErrInvalid)
 		return
 	}
-	startedAt := time.Now()
 	requestContext, _ := RequestContextFrom(c.Request.Context())
 	traceID := requestContext.TraceID
-	result, err := r.sessions.ApplySessionTurn(c.Request.Context(), smartdag.ApplySessionTurnRequest{
+	turnRequest := smartdag.ApplySessionTurnRequest{
 		WorkspaceID:                c.Param("wid"),
 		SessionID:                  c.Param("sid"),
 		Message:                    request.Message,
@@ -130,24 +129,50 @@ func (r *GenerateSessionRoutes) applyTurn(c *gin.Context) {
 		TraceID:                    traceID,
 		Feedback:                   request.Feedback,
 		ExpectedSessionLockVersion: request.ExpectedSessionLockVersion,
-	})
+	}
+
+	// Minimal SSE path: heartbeats keep proxies from idle-timing out while the
+	// model/guard work runs on a detachable context.
+	if wantsConsoleLLMSSE(c) {
+		streamConsoleLLMJob(c,
+			func(ctx context.Context) (smartdag.ApplySessionTurnResult, error) {
+				return r.sessions.ApplySessionTurn(ctx, turnRequest)
+			},
+			func(stream *consoleSSEWriter) error {
+				return stream.Event("started", gin.H{
+					"status":    "RUNNING",
+					"sessionId": c.Param("sid"),
+				})
+			},
+			func(stream *consoleSSEWriter, result smartdag.ApplySessionTurnResult, err error) error {
+				if err != nil {
+					r.observeTurnFailure(c, result, err, traceID, 0)
+					return stream.Event("failed", smartDagTurnErrorBody(c, err, smartDagTurnErrorContext{
+						SessionID:    firstNonEmpty(result.SessionID, c.Param("sid")),
+						TurnID:       result.TurnID,
+						GenerationID: result.GenerationID,
+						AgentID:      result.AgentID,
+						PromptHash:   result.Audit.PromptHash,
+						TraceID:      traceID,
+						GuardReport:  smartDagGuardReportPtr(err),
+					}))
+				}
+				r.observeTurnSuccess(c, result, traceID, 0)
+				payload := applyTurnSuccessPayload(result, traceID)
+				payload["etag"] = workflowDraftETag(result.Draft)
+				return stream.Event("completed", payload)
+			},
+		)
+		return
+	}
+
+	startedAt := time.Now()
+	result, err := r.sessions.ApplySessionTurn(c.Request.Context(), turnRequest)
 	latency := time.Since(startedAt)
 	if err != nil {
-		// Attach guardReport when available for GUARD_REJECTED responses.
-		// Legacy top-level guard fields are retained; standard details also include stage.
+		r.observeTurnFailure(c, result, err, traceID, latency)
 		var guardErr *smartdag.GuardError
 		if errors.As(err, &guardErr) {
-			metrics.SmartDag().ObserveGenerate("guard_rejected", latency)
-			slog.Info("smart-dag generate guard rejected",
-				"event", "smartdag.generate.guard_rejected",
-				"workspace_id", c.Param("wid"),
-				"session_id", result.SessionID,
-				"agent_id", result.AgentID,
-				"generation_id", result.GenerationID,
-				"prompt_hash", result.Audit.PromptHash,
-				"trace_id", traceID,
-				"duration_ms", latency.Milliseconds(),
-			)
 			RespondSmartDagTurnError(c, err, smartDagTurnErrorContext{
 				SessionID:    result.SessionID,
 				TurnID:       result.TurnID,
@@ -159,21 +184,6 @@ func (r *GenerateSessionRoutes) applyTurn(c *gin.Context) {
 			})
 			return
 		}
-		resultCode := "failed"
-		if tf, ok := smartdag.AsTurnFailure(err); ok && tf != nil {
-			resultCode = strings.ToLower(tf.Code)
-		} else if errors.Is(err, smartdag.ErrAgentModelRequired) {
-			resultCode = "agent_model_required"
-		}
-		metrics.SmartDag().ObserveGenerate(resultCode, latency)
-		slog.Warn("smart-dag generate turn failed",
-			"event", "smartdag.generate.failed",
-			"workspace_id", c.Param("wid"),
-			"session_id", c.Param("sid"),
-			"result", resultCode,
-			"trace_id", traceID,
-			"duration_ms", latency.Milliseconds(),
-		)
 		RespondSmartDagTurnError(c, err, smartDagTurnErrorContext{
 			SessionID:    firstNonEmpty(result.SessionID, c.Param("sid")),
 			TurnID:       result.TurnID,
@@ -184,25 +194,18 @@ func (r *GenerateSessionRoutes) applyTurn(c *gin.Context) {
 		return
 	}
 
-	metrics.SmartDag().ObserveGenerate("succeeded", latency)
-	workflowID := result.Workflow.CapabilityID
-	slog.Info("smart-dag generate turn succeeded",
-		"event", "smartdag.generate.succeeded",
-		"workspace_id", c.Param("wid"),
-		"session_id", result.SessionID,
-		"turn_id", result.TurnID,
-		"generation_id", result.GenerationID,
-		"workflow_id", workflowID,
-		"agent_id", result.AgentID,
-		"model_config_id", result.ModelConfigID,
-		"prompt_id", result.Audit.PromptID,
-		"prompt_hash", result.Audit.PromptHash,
-		"draft_version", result.DraftVersion,
-		"trace_id", traceID,
-		"duration_ms", latency.Milliseconds(),
-	)
+	r.observeTurnSuccess(c, result, traceID, latency)
+	payload := applyTurnSuccessPayload(result, traceID)
+	c.Header("ETag", workflowDraftETag(result.Draft))
+	status := http.StatusOK
+	if result.DraftVersion == 1 {
+		status = http.StatusCreated
+	}
+	c.JSON(status, payload)
+}
 
-	payload := gin.H{
+func applyTurnSuccessPayload(result smartdag.ApplySessionTurnResult, traceID string) gin.H {
+	return gin.H{
 		"sessionId":           result.SessionID,
 		"turnId":              result.TurnID,
 		"generationId":        result.GenerationID,
@@ -224,12 +227,70 @@ func (r *GenerateSessionRoutes) applyTurn(c *gin.Context) {
 		"generatedBy":         result.GeneratedBy,
 		"traceId":             traceID,
 	}
-	c.Header("ETag", workflowDraftETag(result.Draft))
-	status := http.StatusOK
-	if result.DraftVersion == 1 {
-		status = http.StatusCreated
+}
+
+func (r *GenerateSessionRoutes) observeTurnSuccess(
+	c *gin.Context, result smartdag.ApplySessionTurnResult, traceID string, latency time.Duration,
+) {
+	metrics.SmartDag().ObserveGenerate("succeeded", latency)
+	slog.Info("smart-dag generate turn succeeded",
+		"event", "smartdag.generate.succeeded",
+		"workspace_id", c.Param("wid"),
+		"session_id", result.SessionID,
+		"turn_id", result.TurnID,
+		"generation_id", result.GenerationID,
+		"workflow_id", result.Workflow.CapabilityID,
+		"agent_id", result.AgentID,
+		"model_config_id", result.ModelConfigID,
+		"prompt_id", result.Audit.PromptID,
+		"prompt_hash", result.Audit.PromptHash,
+		"draft_version", result.DraftVersion,
+		"trace_id", traceID,
+		"duration_ms", latency.Milliseconds(),
+	)
+}
+
+func (r *GenerateSessionRoutes) observeTurnFailure(
+	c *gin.Context, result smartdag.ApplySessionTurnResult, err error, traceID string, latency time.Duration,
+) {
+	var guardErr *smartdag.GuardError
+	if errors.As(err, &guardErr) {
+		metrics.SmartDag().ObserveGenerate("guard_rejected", latency)
+		slog.Info("smart-dag generate guard rejected",
+			"event", "smartdag.generate.guard_rejected",
+			"workspace_id", c.Param("wid"),
+			"session_id", result.SessionID,
+			"agent_id", result.AgentID,
+			"generation_id", result.GenerationID,
+			"prompt_hash", result.Audit.PromptHash,
+			"trace_id", traceID,
+			"duration_ms", latency.Milliseconds(),
+		)
+		return
 	}
-	c.JSON(status, payload)
+	resultCode := "failed"
+	if tf, ok := smartdag.AsTurnFailure(err); ok && tf != nil {
+		resultCode = strings.ToLower(tf.Code)
+	} else if errors.Is(err, smartdag.ErrAgentModelRequired) {
+		resultCode = "agent_model_required"
+	}
+	metrics.SmartDag().ObserveGenerate(resultCode, latency)
+	slog.Warn("smart-dag generate turn failed",
+		"event", "smartdag.generate.failed",
+		"workspace_id", c.Param("wid"),
+		"session_id", c.Param("sid"),
+		"result", resultCode,
+		"trace_id", traceID,
+		"duration_ms", latency.Milliseconds(),
+	)
+}
+
+func smartDagGuardReportPtr(err error) *smartdag.GuardReport {
+	var guardErr *smartdag.GuardError
+	if errors.As(err, &guardErr) && guardErr != nil {
+		return &guardErr.Report
+	}
+	return nil
 }
 
 func (r *GenerateSessionRoutes) getSession(c *gin.Context) {
@@ -389,12 +450,9 @@ type smartDagTurnErrorContext struct {
 	GuardReport        *smartdag.GuardReport
 }
 
-// RespondSmartDagTurnError writes a standard ErrorDTO with SMART_DAG_TURN_FAILURE
-// details, while retaining legacy Guard top-level fields for one compatibility version.
-func RespondSmartDagTurnError(c *gin.Context, err error, ctx smartDagTurnErrorContext) {
+// smartDagTurnErrorBody builds the standard turn failure payload (JSON or SSE failed data).
+func smartDagTurnErrorBody(c *gin.Context, err error, ctx smartDagTurnErrorContext) gin.H {
 	mapped := mapError(err)
-	_, file, line, _ := runtime.Caller(1)
-	c.Set(requestFailureKey, newRequestFailure(err, mapped, file, line))
 	request, _ := RequestContextFrom(c.Request.Context())
 	retryable := mappedRetryable(mapped)
 	stage := string(smartdag.FailureStageUnknown)
@@ -462,7 +520,16 @@ func RespondSmartDagTurnError(c *gin.Context, err error, ctx smartDagTurnErrorCo
 	if strings.TrimSpace(ctx.TraceID) != "" {
 		body["traceId"] = ctx.TraceID
 	}
-	c.AbortWithStatusJSON(mapped.status, body)
+	return body
+}
+
+// RespondSmartDagTurnError writes a standard ErrorDTO with SMART_DAG_TURN_FAILURE
+// details, while retaining legacy Guard top-level fields for one compatibility version.
+func RespondSmartDagTurnError(c *gin.Context, err error, ctx smartDagTurnErrorContext) {
+	mapped := mapError(err)
+	_, file, line, _ := runtime.Caller(1)
+	c.Set(requestFailureKey, newRequestFailure(err, mapped, file, line))
+	c.AbortWithStatusJSON(mapped.status, smartDagTurnErrorBody(c, err, ctx))
 }
 
 // RespondErrorWithDetails maps err and merges extra top-level fields into the error response.

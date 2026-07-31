@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 
 import { apiClient } from "../services/api";
+import { postLlmJobSse } from "../services/llm-job-sse";
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, type ListPagination } from "../services/paginated-list";
 import type {
   Agent,
@@ -180,12 +181,12 @@ export const useAgentStore = defineStore("agents", {
       input: string,
       signal?: AbortSignal,
     ) {
-      const response = await apiClient.post<CreatePreviewEnhancementDTO>(
-        `/workspaces/${workspaceId}/agents:preview-prompt-enhancement`,
-        { modelConfigId, input },
-        { timeout: 210_000, signal },
-      );
-      return response.data;
+      // SSE + heartbeat avoids gateway idle timeout on 1–2 minute LLM calls.
+      return postLlmJobSse<CreatePreviewEnhancementDTO>({
+        path: `/workspaces/${workspaceId}/agents:preview-prompt-enhancement`,
+        body: { modelConfigId, input },
+        signal,
+      });
     },
     async updateAgent(agentId: string, agent: Agent) {
       const contextPolicy = buildContextPolicyPayload(agent.contextPolicy);
