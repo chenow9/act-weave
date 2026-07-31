@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ElOption, ElSelect } from "element-plus";
+import type { Placement } from "element-plus";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 
 type AppSelectValue = string | number | boolean;
@@ -20,7 +21,8 @@ const props = withDefaults(
     filterable?: boolean;
     /** Keep dropdown width equal to the trigger (avoids wide menus shifting left over the canvas). */
     fitInputWidth?: boolean;
-    placement?: string;
+    /** Popper placement; must match Element Plus Placement (not a free-form string). */
+    placement?: Placement;
     ariaLabel?: string;
     ariaRequired?: boolean;
     ariaInvalid?: boolean;
