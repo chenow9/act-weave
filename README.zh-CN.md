@@ -56,73 +56,102 @@
 
 ## 界面预览
 
-以下截图来自本地控制台演示环境（数据仅为开发示例）。
+以下截图来自**虚构演示空间** `Acme Commerce Demo`（电商导购场景的 mock 数据：商品 / 订单 / 库存 / 退款等 Tool），**不包含真实业务租户数据**。
+
+重新生成（会先依赖已 seed 的演示空间）：
+
+```bash
+node scripts/seed-readme-demo-workspace.mjs   # 创建/刷新 Acme Commerce Demo
+node scripts/capture-readme-screenshots.mjs   # 截图到 docs/images/readme/
+```
+
+### 主导航菜单
+
+顶部「导航中心」：按 **空间 → 构建 → 接入 → 运行 → 治理** 组织全部模块，并提供常用快捷入口。
+
+![主导航菜单](./docs/images/readme/00-navigation-menu.png)
+
+### 业务空间切换
+
+在模块页右上角切换当前 Workspace；演示空间为 `Acme Commerce Demo`。
+
+![业务空间切换](./docs/images/readme/00-workspace-switcher.png)
 
 ### 登录
-
-进入控制台前的账户登录。
 
 ![登录页](./docs/images/readme/01-login.png)
 
 ### 空间总览
 
-聚合 Agent 运行、工具调用成功率、会话量与风险提示，便于运维一眼看到健康度。
+平台级运行健康度（会话、工具成功率、风险提示）。总览为跨空间聚合视图。
 
 ![空间总览](./docs/images/readme/02-overview.png)
 
+### 业务空间列表
+
+管理 Workspace 边界、模式（生产 / 沙箱）与状态。
+
+![业务空间](./docs/images/readme/03-workspaces.png)
+
 ### Agent 管理
 
-维护 Agent 职责、绑定空间、决策模型与系统提示词。
+维护职责、绑定空间、决策模型与系统提示词。演示 Agent：`Acme 导购助手`。
 
-![Agent 管理](./docs/images/readme/03-agents.png)
+![Agent 管理](./docs/images/readme/04-agents.png)
 
 ### 工具管理
 
-管理从 OpenAPI 导入或手工创建的业务 Tool：契约、HTTP 方法路径、服务连接、发布状态与版本。
+演示空间中的电商 Tool（商品列表、创建订单、库存、退款等）：契约、HTTP 路径、连接与发布状态。
 
-![工具管理](./docs/images/readme/04-tools.png)
+![工具管理](./docs/images/readme/05-tools.png)
 
 ### 编排（Workflow）
 
-设计、校验、试跑并发布业务流程；支持节点图与版本化发布。
+设计、校验、试跑并发布业务流程。
 
-![编排列表](./docs/images/readme/05-workflow.png)
+![编排](./docs/images/readme/06-workflow.png)
 
 ### 智能编排（Smart DAG）
 
-用业务目标描述生成流程图草案，再进入编排编辑与发布。
+用业务目标描述生成流程图草案。
 
-![智能编排](./docs/images/readme/06-smart-dag.png)
+![智能编排](./docs/images/readme/07-smart-dag.png)
 
-### 运行调试台（控制台对话）
+### 服务 Provider
 
-在控制台内试跑 Agent：绑定业务出站凭证后，可对真实 Tool 做联调（标注为内部调试、非生产）。
+注册上游业务系统（演示：`Acme Commerce API`）。
 
-![运行调试台](./docs/images/readme/07-chat.png)
+![服务 Provider](./docs/images/readme/08-providers.png)
+
+### 服务连接
+
+连接与出站身份（如 REQUEST_PASSTHROUGH）。
+
+![服务连接](./docs/images/readme/09-connections.png)
+
+### 模型 API 配置
+
+绑定 Agent 使用的 LLM 接入点。
+
+![模型 API](./docs/images/readme/10-model-apis.png)
 
 ### Agent Access（对外接入）
 
-管理第三方 AAP Client、授权与协议相关配置，供合作方以 OAuth + Scope 调用 Agent。
+第三方 AAP Client 与授权配置。
 
-![Agent Access](./docs/images/readme/08-agent-access.png)
+![Agent Access](./docs/images/readme/11-agent-access.png)
 
-### Provider 与服务连接
+### 运行调试台
 
-配置上游业务系统提供方与连接（含出站身份模式）。
+控制台内试跑 Agent（内部调试，非生产 AAP 入口）。
 
-![Provider](./docs/images/readme/09-providers.png)
+![运行调试台](./docs/images/readme/12-chat.png)
 
-![服务连接](./docs/images/readme/10-connections.png)
+### Agent 审计中心
 
-### 审计日志
+运行与操作审计，支持链路回溯。
 
-查看运行与操作审计，支持按链路回溯。
-
-![审计日志](./docs/images/readme/11-logs.png)
-
-> 重新截图：在前后端已启动时执行  
-> `node scripts/capture-readme-screenshots.mjs`  
-> 输出目录：`docs/images/readme/`。
+![审计日志](./docs/images/readme/13-logs.png)
 
 ---
 

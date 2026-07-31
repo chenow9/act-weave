@@ -55,7 +55,26 @@ Business objects come from configuration. The repository does **not** ship sampl
 
 ## Screenshots
 
-Captured from a local development console (sample data only).
+Captured against a **fictional demo workspace** `Acme Commerce Demo` (mock ecommerce tools: products, orders, inventory, refunds). **No real tenant data.**
+
+Regenerate:
+
+```bash
+node scripts/seed-readme-demo-workspace.mjs   # create/refresh Acme Commerce Demo
+node scripts/capture-readme-screenshots.mjs   # write docs/images/readme/
+```
+
+### Navigation menu
+
+Top “navigation island” groups modules: **Space → Build → Integrate → Run → Govern**, plus primary shortcuts.
+
+![Navigation menu](./docs/images/readme/00-navigation-menu.png)
+
+### Workspace switcher
+
+Switch the active workspace from the top bar (demo space selected).
+
+![Workspace switcher](./docs/images/readme/00-workspace-switcher.png)
 
 ### Login
 
@@ -63,63 +82,75 @@ Captured from a local development console (sample data only).
 
 ### Workspace overview
 
-Agent run health, tool success rate, sessions, and risk signals.
+Platform-level health (sessions, tool success rate, risks). Overview is cross-workspace.
 
 ![Overview](./docs/images/readme/02-overview.png)
 
+### Workspaces
+
+Tenant / project boundaries, mode (production / sandbox), status.
+
+![Workspaces](./docs/images/readme/03-workspaces.png)
+
 ### Agents
 
-Duties, workspace binding, decision model, and system prompt.
+Demo agent: `Acme 导购助手` with model binding and prompt.
 
-![Agents](./docs/images/readme/03-agents.png)
+![Agents](./docs/images/readme/04-agents.png)
 
 ### Tools
 
-HTTP tools from OpenAPI: contracts, method/path, connection, publish status, versions.
+Mock ecommerce tools (list products, create order, inventory, refunds) with HTTP contracts and publish state.
 
-![Tools](./docs/images/readme/04-tools.png)
+![Tools](./docs/images/readme/05-tools.png)
 
 ### Workflow
 
-Design, validate, trial-run, and publish business flows.
+Design, validate, trial-run, and publish flows.
 
-![Workflow](./docs/images/readme/05-workflow.png)
+![Workflow](./docs/images/readme/06-workflow.png)
 
 ### Smart DAG
 
-Generate a draft graph from a business goal, then edit and publish.
+NL → draft graph generation.
 
-![Smart DAG](./docs/images/readme/06-smart-dag.png)
+![Smart DAG](./docs/images/readme/07-smart-dag.png)
 
-### Console run / chat
+### Providers
 
-Internal Agent trial with optional outbound business credentials (debug, not production AAP).
+Upstream business systems (demo: `Acme Commerce API`).
 
-![Chat](./docs/images/readme/07-chat.png)
+![Providers](./docs/images/readme/08-providers.png)
+
+### Connections
+
+Service connections and outbound identity (e.g. REQUEST_PASSTHROUGH).
+
+![Connections](./docs/images/readme/09-connections.png)
+
+### Model API configs
+
+LLM endpoints bound to Agents.
+
+![Model APIs](./docs/images/readme/10-model-apis.png)
 
 ### Agent Access
 
-Third-party AAP clients, grants, and protocol configuration.
+Third-party AAP clients and grants.
 
-![Agent Access](./docs/images/readme/08-agent-access.png)
+![Agent Access](./docs/images/readme/11-agent-access.png)
 
-### Providers & connections
+### Console run / chat
 
-Upstream providers and service connections (outbound identity modes).
+Internal Agent trial (not production AAP).
 
-![Providers](./docs/images/readme/09-providers.png)
-
-![Connections](./docs/images/readme/10-connections.png)
+![Chat](./docs/images/readme/12-chat.png)
 
 ### Audit logs
 
-Run and admin audit for forensics and compliance.
+Run and admin audit trail.
 
-![Logs](./docs/images/readme/11-logs.png)
-
-> Regenerate screenshots (frontend + backend running):  
-> `node scripts/capture-readme-screenshots.mjs`  
-> Output: `docs/images/readme/`.
+![Logs](./docs/images/readme/13-logs.png)
 
 ---
 
