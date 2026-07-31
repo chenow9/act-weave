@@ -278,22 +278,28 @@ async function mockApiV1(page: Page, options?: { workspaceRoleForAdmin?: string 
   };
 }
 
+async function expectLoginPage(page: Page) {
+  // LoginView: brand "ACTWEAVE 织行" + heading "登录" (not the legacy "登录 ActWeave").
+  await expect(page.getByRole("heading", { name: "登录", exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("ACTWEAVE 织行").first()).toBeVisible();
+}
+
 async function loginAs(page: Page, username: string, password = "Password-123456") {
   await page.goto("/login");
-  await expect(page.getByRole("heading", { name: /登录 ActWeave/i })).toBeVisible({ timeout: 15_000 });
+  await expectLoginPage(page);
   await page.locator('input[autocomplete="username"]').fill(username);
   await page.locator('input[autocomplete="current-password"]').fill(password);
-  await page.getByRole("button", { name: /登录/ }).click();
+  await page.getByRole("button", { name: /^登录$/ }).click();
 }
 
 test.describe("console smoke (mocked API)", () => {
   test("login page renders core affordances", async ({ page }) => {
     await mockApiV1(page);
     await page.goto("/login");
-    await expect(page.getByRole("heading", { name: /登录 ActWeave/i })).toBeVisible({ timeout: 15_000 });
+    await expectLoginPage(page);
     await expect(page.locator('input[autocomplete="username"]')).toBeVisible();
     await expect(page.locator('input[autocomplete="current-password"]')).toBeVisible();
-    await expect(page.getByRole("button", { name: /登录/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^登录$/ })).toBeVisible();
   });
 
   test("normal login reaches app shell and can switch workspace", async ({ page }) => {
