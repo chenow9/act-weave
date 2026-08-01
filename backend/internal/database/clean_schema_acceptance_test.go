@@ -29,8 +29,8 @@ const (
 func TestCleanSchemaAcceptance(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 5 || version.Dirty {
-		t.Fatalf("expected clean latest migration 3, got %+v", version)
+	if !version.Applied || version.Number != 6 || version.Dirty {
+		t.Fatalf("expected clean latest migration 6, got %+v", version)
 	}
 	db := testDatabase.Open(t)
 	config := cleanSchemaApplicationConfig(testDatabase.DSN())

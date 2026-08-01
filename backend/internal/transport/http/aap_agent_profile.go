@@ -10,9 +10,11 @@ import (
 	"sort"
 	"strings"
 
+	"actweave/backend/internal/aapfile"
 	"actweave/backend/internal/agent"
 	"actweave/backend/internal/agentaccessauth"
 	"actweave/backend/internal/capability"
+	"actweave/backend/internal/config"
 
 	"github.com/gin-gonic/gin"
 )
@@ -31,6 +33,8 @@ type AAPAgentProfileRoutes struct {
 	authorizer AAPDataPlaneAuthorizer
 	agents     AAPAgentProfileStore
 	catalog    AAPAgentProfileCatalog
+	// filesGate optionally extends supportedContent with input_file (KD-14).
+	filesGate *config.AgentAccessFilesConfig
 }
 
 func NewAAPAgentProfileRoutes(
@@ -42,6 +46,14 @@ func NewAAPAgentProfileRoutes(
 		return nil, errors.New("AAP Agent Profile route dependencies are required")
 	}
 	return &AAPAgentProfileRoutes{authorizer: authorizer, agents: agents, catalog: catalog}, nil
+}
+
+// ConfigureFiles enables additive profile parts for input_file when files are enabled
+// for the workspace (KD-14). When nil/off, profile remains parts:["text"] only.
+func (routes *AAPAgentProfileRoutes) ConfigureFiles(gate *config.AgentAccessFilesConfig) {
+	if routes != nil {
+		routes.filesGate = gate
+	}
 }
 
 func (routes *AAPAgentProfileRoutes) RegisterAgentAccessV1(v1 AgentAccessV1Routes) {
@@ -60,8 +72,10 @@ type aapAgentProfileDTO struct {
 }
 
 type aapSupportedContentDTO struct {
-	Type  string   `json:"type"`
-	Parts []string `json:"parts"`
+	Type       string   `json:"type"`
+	Parts      []string `json:"parts,omitempty"`
+	MediaTypes []string `json:"mediaTypes,omitempty"`
+	MaxBytes   int64    `json:"maxBytes,omitempty"`
 }
 
 type aapCapabilitySummaryDTO struct {
@@ -82,13 +96,14 @@ type aapApprovalRequirementDTO struct {
 }
 
 type aapAgentProfileVersionSeed struct {
-	Schema                  string                 `json:"schema"`
-	AgentID                 string                 `json:"agentId"`
-	Name                    string                 `json:"name"`
-	Description             string                 `json:"description"`
-	AgentLockVersion        int64                  `json:"agentLockVersion"`
-	CurrentPromptRevisionID string                 `json:"currentPromptRevisionId"`
-	Capabilities            []aapCapabilityVersion `json:"capabilities"`
+	Schema                  string                   `json:"schema"`
+	AgentID                 string                   `json:"agentId"`
+	Name                    string                   `json:"name"`
+	Description             string                   `json:"description"`
+	AgentLockVersion        int64                    `json:"agentLockVersion"`
+	CurrentPromptRevisionID string                   `json:"currentPromptRevisionId"`
+	Capabilities            []aapCapabilityVersion   `json:"capabilities"`
+	SupportedContent        []aapSupportedContentDTO `json:"supportedContent,omitempty"`
 }
 
 type aapCapabilityVersion struct {
@@ -123,7 +138,8 @@ func (routes *AAPAgentProfileRoutes) getProfile(c *gin.Context) {
 		RespondError(c, err)
 		return
 	}
-	profile, etag, err := projectAAPAgentProfile(value, descriptors)
+	filesEnabled := routes.filesGate != nil && routes.filesGate.AllowsWorkspace(c.Param("wid"))
+	profile, etag, err := projectAAPAgentProfile(value, descriptors, filesEnabled, routes.filesGate)
 	if err != nil {
 		RespondError(c, err)
 		return
@@ -140,6 +156,8 @@ func (routes *AAPAgentProfileRoutes) getProfile(c *gin.Context) {
 func projectAAPAgentProfile(
 	value agent.Summary,
 	descriptors []capability.Descriptor,
+	filesEnabled bool,
+	filesGate *config.AgentAccessFilesConfig,
 ) (aapAgentProfileDTO, string, error) {
 	counts := map[string]*aapCapabilitySummaryDTO{
 		"tool":     {Kind: "tool"},
@@ -175,12 +193,15 @@ func projectAAPAgentProfile(
 			capabilities = append(capabilities, *counts[kind])
 		}
 	}
+	supportedContent := aapSupportedContentForFiles(filesEnabled, filesGate)
 	seed := aapAgentProfileVersionSeed{
 		Schema: "aap.agent-profile.v1", AgentID: value.ID,
 		Name: value.Name, Description: value.RoleDescription,
 		AgentLockVersion:        value.LockVersion,
 		CurrentPromptRevisionID: *value.CurrentPromptRevisionID,
 		Capabilities:            versions,
+		// Content support changes must flip ETag (KD-14).
+		SupportedContent: supportedContent,
 	}
 	canonical, err := json.Marshal(seed)
 	if err != nil {
@@ -191,7 +212,7 @@ func projectAAPAgentProfile(
 	profile := aapAgentProfileDTO{
 		Object: "agent_profile", ID: value.ID, Name: value.Name,
 		Description: value.RoleDescription, Version: version,
-		SupportedContent: []aapSupportedContentDTO{{Type: "message", Parts: []string{"text"}}},
+		SupportedContent: supportedContent,
 		Capabilities:     capabilities,
 		InteractionRequirements: aapInteractionRequirementsDTO{
 			Approval: aapApprovalRequirementDTO{
@@ -201,6 +222,34 @@ func projectAAPAgentProfile(
 		},
 	}
 	return profile, `"` + version + `"`, nil
+}
+
+func aapSupportedContentForFiles(
+	filesEnabled bool,
+	filesGate *config.AgentAccessFilesConfig,
+) []aapSupportedContentDTO {
+	// When files gate is closed for the workspace, advertise text only (KD-14).
+	if !filesEnabled {
+		return []aapSupportedContentDTO{{Type: "message", Parts: []string{"text"}}}
+	}
+	maxBytes := aapfile.DefaultMaxBytes
+	mediaTypes := []string{
+		"image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf",
+	}
+	if filesGate != nil {
+		if filesGate.MaxBytes > 0 {
+			maxBytes = filesGate.MaxBytes
+		}
+		if len(filesGate.AllowedMediaTypes) > 0 {
+			mediaTypes = append([]string(nil), filesGate.AllowedMediaTypes...)
+		}
+	}
+	return []aapSupportedContentDTO{
+		{Type: "message", Parts: []string{"text", "input_file"}},
+		{
+			Type: "input_file_constraints", MediaTypes: mediaTypes, MaxBytes: maxBytes,
+		},
+	}
 }
 
 func ifNoneMatch(value, etag string) bool {

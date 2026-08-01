@@ -35,6 +35,7 @@ func TestAAPDataPlaneAcceptanceOpenAPIContract(t *testing.T) {
 	registrars := []AgentAccessV1RouteRegistrar{
 		&AgentAccessTokenRoutes{}, &AAPAgentProfileRoutes{}, &AAPConversationRoutes{},
 		&AAPRunRoutes{canceller: &aapCancelRunApplication{}, decider: &aapInteractionDecisionApplication{}},
+		&AAPFileRoutes{},
 	}
 	for _, registrar := range registrars {
 		registrar.RegisterAgentAccessV1(routes)
@@ -72,6 +73,15 @@ func TestAAPDataPlaneAcceptanceOpenAPIContract(t *testing.T) {
 			"agentId", "completedAt", "conversationId", "error", "id", "items", "links", "object", "startedAt", "status", "version",
 		}},
 		"interaction decide": {aapInteractionDecisionRequest{}, []string{"decision"}},
+		"file create request": {aapCreateFileRequest{}, []string{"filename", "mediaType", "sizeBytes", "sha256", "purpose"}},
+		"file resource": {aapFileDTO{}, []string{
+			"object", "id", "agentId", "status", "filename", "mediaType", "detectedMediaType",
+			"sizeBytes", "sha256", "purpose", "error", "processing", "artifacts", "links",
+			"createdAt", "updatedAt", "readyAt",
+		}},
+		"file create response": {aapCreateFileResponse{}, []string{"file", "upload", "idempotent"}},
+		"file get response": {aapGetFileResponse{}, []string{"file"}},
+		"file mint download": {aapMintDownloadResponse{}, []string{"token", "expiresAt", "url"}},
 	}
 	for name, contract := range allowlists {
 		actual := make([]string, 0)
@@ -104,6 +114,7 @@ func aapOpenAPIRegisteredPath(path string) string {
 	replacements := map[string]string{
 		"{workspaceId}": ":wid", "{agentId}": ":aid", "{conversationId}": ":cid",
 		"{runId}": ":rid", "{interactionId}": ":iid",
+		"{fileId}": ":fid", "{tokenId}": ":tid",
 	}
 	for source, target := range replacements {
 		path = strings.ReplaceAll(path, source, target)

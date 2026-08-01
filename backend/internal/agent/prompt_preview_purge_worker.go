@@ -171,9 +171,13 @@ func (w *PreviewPurgeWorker) claimBatch(ctx context.Context) ([]purgeClaim, erro
 	}
 	defer tx.Rollback()
 
+	// Prompt preview + AAP permanent file bodies share EXPIRING purge hooks (IC-11).
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id, workspace_id FROM stored_objects
-		WHERE kind IN ('PROMPT_PREVIEW_INPUT','PROMPT_PREVIEW_OUTPUT')
+		WHERE kind IN (
+			'PROMPT_PREVIEW_INPUT','PROMPT_PREVIEW_OUTPUT',
+			'AAP_FILE','AAP_FILE_DERIVED'
+		  )
 		  AND retention_mode='EXPIRING'
 		  AND body_purged_at IS NULL
 		  AND retention_until IS NOT NULL
@@ -277,7 +281,10 @@ func (w *PreviewPurgeWorker) refreshBacklog(ctx context.Context) {
 		SELECT count(*),
 			EXTRACT(EPOCH FROM (clock_timestamp() - min(retention_until)))
 		FROM stored_objects
-		WHERE kind IN ('PROMPT_PREVIEW_INPUT','PROMPT_PREVIEW_OUTPUT')
+		WHERE kind IN (
+			'PROMPT_PREVIEW_INPUT','PROMPT_PREVIEW_OUTPUT',
+			'AAP_FILE','AAP_FILE_DERIVED'
+		  )
 		  AND retention_mode='EXPIRING'
 		  AND body_purged_at IS NULL
 		  AND retention_until IS NOT NULL

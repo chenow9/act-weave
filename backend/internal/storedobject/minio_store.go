@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -21,9 +22,16 @@ const (
 	BucketAuditPackages           = "actweave-audit-packages"
 	BucketToolTests               = "actweave-tool-tests"
 	BucketConnectionVerifications = "actweave-connection-verifications"
-	defaultMaxObjectBytes         = int64(512 << 20)
-	maxPresignedDownloadTTL       = 15 * time.Minute
-	objectSHA256MetadataKey       = "actweave-sha256"
+	// BucketAAPStaging holds short-lived plaintext client uploads before
+	// promote. Objects here are not encrypted; GC reaps abandoned keys.
+	BucketAAPStaging = "actweave-aap-staging"
+	// BucketAAPFiles holds permanent AAP_FILE / AAP_FILE_DERIVED objects
+	// written exclusively via SecureStore after promote (never direct client PUT).
+	BucketAAPFiles          = "actweave-aap-files"
+	defaultMaxObjectBytes   = int64(512 << 20)
+	maxPresignedDownloadTTL = 15 * time.Minute
+	maxPresignedUploadTTL   = 15 * time.Minute
+	objectSHA256MetadataKey = "actweave-sha256"
 )
 
 var (
@@ -98,6 +106,9 @@ type blobBackend interface {
 	Abort(context.Context, string, string) error
 	Delete(context.Context, string, string) error
 	PresignGet(context.Context, string, string, time.Duration) (*url.URL, error)
+	// PresignPutWithHeaders must sign at least Content-Length (KD-17).
+	// Do not use unbound PresignedPutObject as a production path.
+	PresignPutWithHeaders(context.Context, string, string, time.Duration, http.Header) (*url.URL, error)
 }
 
 type ObjectStore struct {
@@ -351,8 +362,9 @@ func (store *ObjectStore) authorizedMetadata(
 }
 
 // PurgeBody is the internal, idempotent body-delete primitive for expired
-// prompt-preview objects. It never decrypts, never presigns, and treats a
-// missing blob as success. Metadata remains as a tombstone with body_purged_at.
+// EXPIRING objects (prompt-preview and AAP_FILE / AAP_FILE_DERIVED). It never
+// decrypts, never presigns, and treats a missing blob as success. Metadata
+// remains as a tombstone with body_purged_at.
 func (store *ObjectStore) PurgeBody(ctx context.Context, workspaceID, objectID string) error {
 	workspaceID = strings.TrimSpace(workspaceID)
 	objectID = strings.TrimSpace(objectID)
@@ -363,7 +375,7 @@ func (store *ObjectStore) PurgeBody(ctx context.Context, workspaceID, objectID s
 	if err != nil {
 		return err
 	}
-	if !IsPromptPreview(metadata.Kind) {
+	if !IsExpiringBodyPurgeable(metadata.Kind) {
 		return ErrInvalid
 	}
 	if metadata.BodyPurgedAt != nil {
@@ -376,19 +388,19 @@ func (store *ObjectStore) PurgeBody(ctx context.Context, workspaceID, objectID s
 	if err := store.backend.Delete(ctx, metadata.Bucket, metadata.ObjectKey); err != nil {
 		// Absent object is success; other failures surface as storage errors.
 		if !errors.Is(err, ErrNotFound) && !isBlobAbsent(err) {
-			return fmt.Errorf("purge preview body: %w: %v", ErrObjectStorage, err)
+			return fmt.Errorf("purge expiring body: %w: %v", ErrObjectStorage, err)
 		}
 	}
 	tx, err := store.repository.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin preview body purge: %w", err)
+		return fmt.Errorf("begin expiring body purge: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err := store.repository.MarkBodyPurgedInTx(ctx, tx, workspaceID, objectID, nil); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit preview body purge: %w", err)
+		return fmt.Errorf("commit expiring body purge: %w", err)
 	}
 	return nil
 }
@@ -450,6 +462,8 @@ func bucketForKind(kind string) (string, error) {
 		return BucketToolTests, nil
 	case KindAuditEventPayload, KindAuditExport:
 		return BucketAuditPackages, nil
+	case KindAAPFile, KindAAPFileDerived:
+		return BucketAAPFiles, nil
 	case KindOpenAPISource, KindPromptRunInput, KindPromptRunOutput,
 		KindPromptPreviewInput, KindPromptPreviewOutput, KindModelTurn,
 		KindChatMessage, KindToolInvocationPayload, KindExecutionCheckpoint,
@@ -458,6 +472,82 @@ func bucketForKind(kind string) (string, error) {
 	default:
 		return "", ErrInvalid
 	}
+}
+
+// PresignPutWithHeaders returns a SigV4 presigned PUT URL that binds the
+// provided headers into the signature (KD-17). Content-Length is required;
+// Content-Type should be supplied by callers. Unbound PresignedPutObject is
+// not used as a production path.
+func (store *ObjectStore) PresignPutWithHeaders(
+	ctx context.Context,
+	bucket, objectKey string,
+	ttl time.Duration,
+	headers http.Header,
+) (*url.URL, error) {
+	bucket = strings.TrimSpace(bucket)
+	objectKey = strings.TrimSpace(objectKey)
+	if bucket == "" || objectKey == "" || ttl < time.Second || ttl > maxPresignedUploadTTL {
+		return nil, ErrInvalid
+	}
+	if headers == nil || strings.TrimSpace(headers.Get("Content-Length")) == "" {
+		return nil, ErrInvalid
+	}
+	signed, err := store.backend.PresignPutWithHeaders(ctx, bucket, objectKey, ttl, headers)
+	if err != nil {
+		return nil, fmt.Errorf("presign put with headers: %w: %v", ErrObjectStorage, err)
+	}
+	return signed, nil
+}
+
+// EnsureBuckets creates the given MinIO buckets if missing (idempotent).
+// Intended for server bootstrap of AAP staging + permanent buckets.
+func EnsureBuckets(ctx context.Context, config MinIOConfig, buckets ...string) error {
+	config.Endpoint = strings.TrimSpace(config.Endpoint)
+	config.AccessKey = strings.TrimSpace(config.AccessKey)
+	config.SecretKey = strings.TrimSpace(config.SecretKey)
+	config.Region = strings.TrimSpace(config.Region)
+	if config.Endpoint == "" || strings.Contains(config.Endpoint, "://") ||
+		config.AccessKey == "" || config.SecretKey == "" {
+		return ErrInvalid
+	}
+	if len(buckets) == 0 {
+		return ErrInvalid
+	}
+	client, err := minio.New(config.Endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(config.AccessKey, config.SecretKey, ""),
+		Secure: config.UseSSL,
+		Region: config.Region,
+	})
+	if err != nil {
+		return fmt.Errorf("create MinIO client for bucket ensure: %w", err)
+	}
+	for _, bucket := range buckets {
+		bucket = strings.TrimSpace(bucket)
+		if bucket == "" || !validBucket(bucket) {
+			return ErrInvalid
+		}
+		exists, err := client.BucketExists(ctx, bucket)
+		if err != nil {
+			return fmt.Errorf("check bucket %q: %w", bucket, err)
+		}
+		if exists {
+			continue
+		}
+		if err := client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{Region: config.Region}); err != nil {
+			// Concurrent bootstrap may create the bucket first; re-check.
+			exists, checkErr := client.BucketExists(ctx, bucket)
+			if checkErr == nil && exists {
+				continue
+			}
+			return fmt.Errorf("create bucket %q: %w", bucket, err)
+		}
+	}
+	return nil
+}
+
+// AAPBootstrapBuckets returns staging + permanent buckets for AAP file storage.
+func AAPBootstrapBuckets() []string {
+	return []string{BucketAAPStaging, BucketAAPFiles}
 }
 
 type countingReader struct {
@@ -568,6 +658,25 @@ func (backend *minioBlobBackend) PresignGet(
 	ttl time.Duration,
 ) (*url.URL, error) {
 	return backend.client.PresignedGetObject(ctx, bucket, objectKey, ttl, url.Values{})
+}
+
+// PresignPutWithHeaders signs a PUT using minio.PresignHeader so extra headers
+// (at minimum Content-Length) are part of the SigV4 signature. Callers must
+// send the exact same header values on the upload request.
+func (backend *minioBlobBackend) PresignPutWithHeaders(
+	ctx context.Context,
+	bucket, objectKey string,
+	ttl time.Duration,
+	headers http.Header,
+) (*url.URL, error) {
+	if headers == nil || strings.TrimSpace(headers.Get("Content-Length")) == "" {
+		return nil, ErrInvalid
+	}
+	// Clone so we do not mutate the caller's map while signing.
+	extra := headers.Clone()
+	return backend.client.PresignHeader(
+		ctx, http.MethodPut, bucket, objectKey, ttl, url.Values{}, extra,
+	)
 }
 
 func minioObjectInfo(info minio.ObjectInfo) blobInfo {

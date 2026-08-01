@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"actweave/backend/internal/aap"
+	"actweave/backend/internal/aapfile"
 	"actweave/backend/internal/agent"
 	"actweave/backend/internal/agentaccess"
 	"actweave/backend/internal/agentaccessauth"
@@ -119,6 +120,9 @@ func mappedRetryable(mapped mappedError) bool {
 		outboundidentity.CodeCredentialCapacityExceeded,
 		outboundidentity.CodeBrokerUnavailable:
 		return true
+	// File not ready (PROCESSING) is client-poll-retryable (design §6.1).
+	case "FILE_NOT_READY":
+		return true
 	// ZKL-56 §6.2 Smart DAG: retryable independent of HTTP status class.
 	case smartdag.CodeSessionVersionConflict,
 		smartdag.CodeModelTimeout,
@@ -143,6 +147,9 @@ func mappedRetryable(mapped mappedError) bool {
 // inherits the other's stable codes or resource-visibility semantics.
 func mapAAPError(err error) mappedError {
 	if mapped, ok := mapOutboundIdentityError(err); ok {
+		return mapped
+	}
+	if mapped, ok := mapAAPFileError(err); ok {
 		return mapped
 	}
 	switch {
@@ -205,6 +212,59 @@ func mapAAPError(err error) mappedError {
 		return mappedError{http.StatusUnprocessableEntity, "VALIDATION_ERROR", "The request is not valid."}
 	default:
 		return mappedError{http.StatusInternalServerError, "INTERNAL_ERROR", "The request could not be completed."}
+	}
+}
+
+// mapAAPFileError maps FILE_* domain errors (design §6.1).
+func mapAAPFileError(err error) (mappedError, bool) {
+	switch {
+	case errors.Is(err, aap.ErrFileRuntimeUnavailable):
+		return mappedError{http.StatusUnprocessableEntity, "FILE_RUNTIME_UNAVAILABLE", "Multimodal file runtime is not available."}, true
+	case errors.Is(err, ErrAAPFilesFeatureDisabled):
+		return mappedError{http.StatusNotFound, "FILE_FEATURE_DISABLED", "The requested resource was not found."}, true
+	case errors.Is(err, aapfile.ErrNotFound):
+		return mappedError{http.StatusNotFound, "FILE_NOT_FOUND", "The requested file was not found."}, true
+	case errors.Is(err, aapfile.ErrNotReady):
+		return mappedError{http.StatusUnprocessableEntity, "FILE_NOT_READY", "The file is not ready for this operation."}, true
+	case errors.Is(err, aapfile.ErrExpired):
+		return mappedError{http.StatusUnprocessableEntity, "FILE_UPLOAD_EXPIRED", "The upload intent has expired."}, true
+	case errors.Is(err, aapfile.ErrPendingLimit):
+		return mappedError{http.StatusTooManyRequests, "FILE_PENDING_LIMIT", "The workspace pending upload limit was exceeded."}, true
+	case errors.Is(err, aapfile.ErrCallbackLate):
+		return mappedError{http.StatusConflict, "FILE_PROCESSOR_CALLBACK_LATE", "The processor callback arrived after the delivery deadline."}, true
+	case errors.Is(err, aapfile.ErrCallbackUnauthorized):
+		return mappedError{http.StatusUnauthorized, "FILE_PROCESSOR_CALLBACK_UNAUTHORIZED", "The processor callback signature is invalid or expired."}, true
+	case errors.Is(err, aapfile.ErrArtifactTooLarge):
+		return mappedError{http.StatusUnprocessableEntity, "FILE_PROCESSOR_ARTIFACT_TOO_LARGE", "The processor callback artifacts exceed the size limit."}, true
+	case errors.Is(err, aapfile.ErrConflict):
+		return mappedError{http.StatusConflict, "CONFLICT", "The file state has changed or conflicts with this request."}, true
+	case errors.Is(err, aapfile.ErrInvalid):
+		return mappedError{http.StatusUnprocessableEntity, "VALIDATION_ERROR", "The request is not valid."}, true
+	case errors.Is(err, aapfile.ErrFailed):
+		code, message := aapFileFailedCode(err)
+		return mappedError{http.StatusUnprocessableEntity, code, message}, true
+	default:
+		return mappedError{}, false
+	}
+}
+
+func aapFileFailedCode(err error) (code, message string) {
+	text := err.Error()
+	switch {
+	case strings.Contains(text, aapfile.ErrorCodeIntegrityMismatch):
+		return "FILE_INTEGRITY_MISMATCH", "The uploaded content does not match the declared integrity."
+	case strings.Contains(text, aapfile.ErrorCodeMediaTypeMismatch):
+		return "FILE_MEDIA_TYPE_MISMATCH", "The uploaded content does not match the declared media type."
+	case strings.Contains(text, aapfile.ErrorCodeMediaTypeDenied):
+		return "FILE_MEDIA_TYPE_DENIED", "The media type is not allowed."
+	case strings.Contains(text, aapfile.ErrorCodeSizeExceeded):
+		return "FILE_SIZE_EXCEEDED", "The file size exceeds the configured limit."
+	case strings.Contains(text, aapfile.ErrorCodeUploadExpired):
+		return "FILE_UPLOAD_EXPIRED", "The upload intent has expired."
+	case strings.Contains(text, aapfile.ErrorCodeProcessingFailed):
+		return "FILE_PROCESSING_FAILED", "File processing failed."
+	default:
+		return "FILE_PROCESSING_FAILED", "The file operation failed."
 	}
 }
 

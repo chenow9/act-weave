@@ -2,6 +2,7 @@ import {
   AgentAccessClient,
   MemoryTokenProvider,
   type AccessTokenMaterial,
+  type AAPFile,
   type ProtocolItem,
   type ReducedRunSnapshot,
 } from "@actweave/agent-client";
@@ -118,11 +119,16 @@ export function createBffTokenProvider(seed?: AccessTokenMaterial): MemoryTokenP
 export async function startChatTurn(
   text: string,
   conversationId?: string,
+  fileIds?: string[],
 ): Promise<ChatTurnResult> {
   const res = await fetch("/bff/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ text, conversationId }),
+    body: JSON.stringify({
+      text,
+      conversationId,
+      ...(fileIds && fileIds.length ? { fileIds } : {}),
+    }),
   });
   const payload = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -130,6 +136,98 @@ export async function startChatTurn(
     throw new Error(msg || `chat HTTP ${res.status}`);
   }
   return payload as ChatTurnResult;
+}
+
+export interface UploadAttachmentInput {
+  file: File;
+  workspaceId: string;
+  agentId: string;
+  aapBaseUrl: string;
+  /** Optional progress callback (0–1). */
+  onProgress?: (phase: "intent" | "put" | "complete" | "ready", ratio: number) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * Browser-side AAP file lifecycle using a BFF-minted short access token.
+ * Requires Grant scopes file:write + file:read and agentAccess.files enabled.
+ */
+export async function uploadAttachment(input: UploadAttachmentInput): Promise<AAPFile> {
+  const { file, workspaceId, agentId, aapBaseUrl, onProgress, signal } = input;
+  const client = new AgentAccessClient({
+    baseUrl: aapBaseUrl,
+    tokenProvider: createBffTokenProvider(),
+  });
+  const idempotencyKey =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `demo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  onProgress?.("intent", 0.05);
+  const created = await client.createFile(
+    workspaceId,
+    agentId,
+    {
+      filename: file.name || "attachment",
+      mediaType: file.type || "application/octet-stream",
+      sizeBytes: file.size,
+    },
+    { idempotencyKey, signal },
+  );
+  const upload = created.upload;
+  const aapFile = created.file;
+  if (!upload?.url || !aapFile?.id) {
+    throw new Error("createFile missing upload URL or file id");
+  }
+
+  onProgress?.("put", 0.2);
+  const bytes = await file.arrayBuffer();
+  await client.putFileUpload(upload, bytes, { signal });
+
+  onProgress?.("complete", 0.7);
+  await client.completeFile(workspaceId, agentId, aapFile.id, {}, {
+    idempotencyKey:
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `demo-complete-${Date.now()}`,
+    signal,
+  });
+
+  onProgress?.("ready", 0.85);
+  const ready = await client.waitUntilReady(workspaceId, agentId, aapFile.id, {
+    signal,
+    timeoutMs: 120_000,
+    pollIntervalMs: 500,
+  });
+  onProgress?.("ready", 1);
+  return ready;
+}
+
+/** Best-effort blob URL for READY image preview (Bearer content stream). */
+export async function fetchFileObjectUrl(options: {
+  aapBaseUrl: string;
+  workspaceId: string;
+  agentId: string;
+  fileId: string;
+  mediaType?: string;
+}): Promise<string | null> {
+  try {
+    const client = new AgentAccessClient({
+      baseUrl: options.aapBaseUrl,
+      tokenProvider: createBffTokenProvider(),
+    });
+    const result = await client.getFileContent(
+      options.workspaceId,
+      options.agentId,
+      options.fileId,
+      { prefer: "content" },
+    );
+    const mime = result.contentType || options.mediaType || "application/octet-stream";
+    const blob = new Blob([result.body], { type: mime });
+    return URL.createObjectURL(blob);
+  } catch {
+    return null;
+  }
 }
 
 export async function* followRunLive(options: {

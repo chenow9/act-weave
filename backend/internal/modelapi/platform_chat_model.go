@@ -410,12 +410,26 @@ func (m *PlatformChatModel) doStreamRequest(ctx context.Context, encoded, token 
 
 // --- wire mapping ------------------------------------------------------------
 
+// openAIMessage is the OpenAI chat message wire shape. Content is either a
+// plain string (text-only) or a multi-part array for vision/multimodal input.
 type openAIMessage struct {
 	Role       string           `json:"role"`
-	Content    string           `json:"content,omitempty"`
+	Content    any              `json:"content,omitempty"`
 	Name       string           `json:"name,omitempty"`
 	ToolCallID string           `json:"tool_call_id,omitempty"`
 	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
+}
+
+// openAIMultiPart is one content part in a multimodal messages[].content array.
+type openAIMultiPart struct {
+	Type     string              `json:"type"`
+	Text     string              `json:"text,omitempty"`
+	ImageURL *openAIImageURLPart `json:"image_url,omitempty"`
+}
+
+type openAIImageURLPart struct {
+	URL    string `json:"url"`
+	Detail string `json:"detail,omitempty"`
 }
 
 type openAIToolCall struct {
@@ -442,9 +456,19 @@ func mapMessagesToOpenAI(input []*schema.Message) ([]openAIMessage, error) {
 		}
 		wire := openAIMessage{
 			Role:       role,
-			Content:    msg.Content,
 			Name:       msg.Name,
 			ToolCallID: msg.ToolCallID,
+		}
+		// Prefer UserInputMultiContent for multimodal user input (IC-08).
+		// Never silently drop unsupported parts — return an error instead.
+		if len(msg.UserInputMultiContent) > 0 {
+			parts, err := mapUserInputMultiContentToOpenAI(msg.UserInputMultiContent)
+			if err != nil {
+				return nil, fmt.Errorf("model message at index %d: %w", i, err)
+			}
+			wire.Content = parts
+		} else if strings.TrimSpace(msg.Content) != "" {
+			wire.Content = msg.Content
 		}
 		if len(msg.ToolCalls) > 0 {
 			wire.ToolCalls = make([]openAIToolCall, 0, len(msg.ToolCalls))
@@ -465,6 +489,48 @@ func mapMessagesToOpenAI(input []*schema.Message) ([]openAIMessage, error) {
 			}
 		}
 		out = append(out, wire)
+	}
+	return out, nil
+}
+
+func mapUserInputMultiContentToOpenAI(parts []schema.MessageInputPart) ([]openAIMultiPart, error) {
+	out := make([]openAIMultiPart, 0, len(parts))
+	for _, part := range parts {
+		switch part.Type {
+		case schema.ChatMessagePartTypeText:
+			out = append(out, openAIMultiPart{Type: "text", Text: part.Text})
+		case schema.ChatMessagePartTypeImageURL:
+			if part.Image == nil {
+				return nil, errors.New("image_url part missing image")
+			}
+			url := ""
+			if part.Image.URL != nil && strings.TrimSpace(*part.Image.URL) != "" {
+				url = strings.TrimSpace(*part.Image.URL)
+			} else if part.Image.Base64Data != nil && *part.Image.Base64Data != "" {
+				mime := strings.TrimSpace(part.Image.MIMEType)
+				if mime == "" {
+					return nil, errors.New("image_url base64 part requires mime_type")
+				}
+				url = fmt.Sprintf("data:%s;base64,%s", mime, *part.Image.Base64Data)
+			} else {
+				return nil, errors.New("image_url part requires url or base64 data")
+			}
+			detail := strings.TrimSpace(string(part.Image.Detail))
+			out = append(out, openAIMultiPart{
+				Type: "image_url",
+				ImageURL: &openAIImageURLPart{
+					URL:    url,
+					Detail: detail,
+				},
+			})
+		default:
+			// Unsupported part types (file_url, video, …) must fail closed —
+			// callers map this to MODEL_CONTENT_UNSUPPORTED at the assembly layer.
+			return nil, fmt.Errorf("unsupported multimodal content part type %q", part.Type)
+		}
+	}
+	if len(out) == 0 {
+		return nil, errors.New("multimodal content is empty")
 	}
 	return out, nil
 }

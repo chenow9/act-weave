@@ -294,6 +294,27 @@ func assertProtocolMessageText(
 	}
 }
 
+func TestParseMessageContentPartsV1AndLegacy(t *testing.T) {
+	fileID := "d41f1f2e-7b5a-7c3d-8e9f-1234567890f1"
+	v1 := `{"schemaVersion":"aap.message-content.v1","parts":[{"type":"text","text":"hi"},{"type":"input_file","fileId":"` + fileID + `","mediaType":"image/png"}]}`
+	parts, err := chat.ParseMessageContentParts(v1)
+	if err != nil || len(parts) != 2 {
+		t.Fatalf("parts=%+v err=%v", parts, err)
+	}
+	filePart, ok := parts[1].(protocolevent.InputFileContentPart)
+	if !ok || filePart.FileID != fileID || filePart.MediaType != "image/png" {
+		t.Fatalf("file part=%+v", parts[1])
+	}
+	legacy, err := chat.ParseMessageContentParts("legacy plain text body")
+	if err != nil || len(legacy) != 1 {
+		t.Fatalf("legacy=%+v err=%v", legacy, err)
+	}
+	text, ok := legacy[0].(protocolevent.TextContentPart)
+	if !ok || text.Text != "legacy plain text body" {
+		t.Fatalf("legacy text=%+v", legacy[0])
+	}
+}
+
 func protocolMessageHash(content string) string {
 	digest := sha256.Sum256([]byte(content))
 	return hex.EncodeToString(digest[:])

@@ -35,6 +35,14 @@ var aapAllowedLogFields = map[string]struct{}{
 	"duration_ms":          {},
 	"sequence":             {},
 	"component":            {},
+	// AAP File surface (design §10.2) — never URL/query/Authorization; avoid *_token* names.
+	"file_id":       {},
+	"file_status":   {},
+	"processor_id":  {},
+	"media_class":   {},
+	"delivery_id":   {},
+	"stage":         {},
+	"download_purpose": {},
 }
 
 // Forbidden substrings in log field names (defense in depth).

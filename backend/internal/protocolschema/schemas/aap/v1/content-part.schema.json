@@ -14,9 +14,19 @@
     },
     {
       "type": "object",
+      "required": ["type", "fileId"],
+      "properties": {
+        "type": {"const": "input_file"},
+        "fileId": {"$ref": "common.schema.json#/$defs/uuid"},
+        "mediaType": {"type": "string", "minLength": 1, "maxLength": 255}
+      },
+      "additionalProperties": true
+    },
+    {
+      "type": "object",
       "required": ["type"],
       "properties": {
-        "type": {"type": "string", "not": {"enum": ["text"]}}
+        "type": {"type": "string", "not": {"enum": ["text", "input_file"]}}
       },
       "additionalProperties": true
     }

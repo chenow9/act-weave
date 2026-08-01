@@ -250,6 +250,7 @@ func assertUnknownEnums(t *testing.T) {
 		{"item status", protocolevent.ParseItemStatus("streaming"), protocolevent.ItemStatusUnknown},
 		{"role", protocolevent.ParseMessageRole("developer"), protocolevent.MessageRoleUnknown},
 		{"content", protocolevent.ParseContentPartType("image"), protocolevent.ContentPartTypeUnknown},
+		{"content input_file", protocolevent.ParseContentPartType("input_file"), protocolevent.ContentPartTypeInputFile},
 		{"delta", protocolevent.ParseDeltaType("binary_delta"), protocolevent.DeltaTypeUnknown},
 		{"interaction kind", protocolevent.ParseInteractionKind("question"), protocolevent.InteractionKindUnknown},
 		{"interaction status", protocolevent.ParseInteractionStatus("delegated"), protocolevent.InteractionStatusUnknown},

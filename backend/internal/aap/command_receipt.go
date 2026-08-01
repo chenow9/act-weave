@@ -17,6 +17,8 @@ const (
 	CommandRunCreate          = "run.create"
 	CommandRunCancel          = "run.cancel"
 	CommandInteractionDecide  = "interaction.decide"
+	CommandFileCreate         = "file.create"
+	CommandFileComplete       = "file.complete"
 	MinimumCommandReceiptTTL  = 24 * time.Hour
 )
 
@@ -218,7 +220,8 @@ func validCommandReceiptKey(value CommandReceiptKey) bool {
 		return false
 	}
 	switch value.Operation {
-	case CommandConversationCreate, CommandRunCreate, CommandRunCancel, CommandInteractionDecide:
+	case CommandConversationCreate, CommandRunCreate, CommandRunCancel, CommandInteractionDecide,
+		CommandFileCreate, CommandFileComplete:
 		return true
 	default:
 		return false
@@ -230,7 +233,7 @@ func validCommandResource(resourceType, resourceID string) bool {
 		return false
 	}
 	switch resourceType {
-	case "CONVERSATION", "RUN", "INTERACTION":
+	case "CONVERSATION", "RUN", "INTERACTION", "FILE":
 		return true
 	default:
 		return false

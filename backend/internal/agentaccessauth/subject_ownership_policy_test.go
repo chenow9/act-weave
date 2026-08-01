@@ -21,7 +21,7 @@ func TestSubjectOwnershipPolicy(t *testing.T) {
 	state := authorizationTestState(caller)
 	state.GrantScopes = append([]string(nil), canonicalAAPScopes...)
 	state.AgentPolicyScopes = append([]string(nil), canonicalAAPScopes...)
-	state.SubjectSharingResources = []string{"conversation", "run", "event", "interaction", "artifact"}
+	state.SubjectSharingResources = []string{"conversation", "run", "event", "interaction", "artifact", "file"}
 
 	tests := []struct {
 		name       string
@@ -36,6 +36,9 @@ func TestSubjectOwnershipPolicy(t *testing.T) {
 		{"event read", ActionEventRead, ownershipResource(ResourceRun, 14), "event"},
 		{"interaction decide", ActionInteractionDecide, ownershipResource(ResourceInteraction, 15), "interaction"},
 		{"artifact read", ActionArtifactRead, ownershipResource(ResourceArtifact, 16), "artifact"},
+		{"file complete", ActionFileComplete, ownershipResource(ResourceFile, 17), "file"},
+		{"file read", ActionFileRead, ownershipResource(ResourceFile, 18), "file"},
+		{"file content", ActionFileContent, ownershipResource(ResourceFile, 19), "file"},
 	}
 	for _, test := range tests {
 		t.Run(test.name+" subject owner", func(t *testing.T) {

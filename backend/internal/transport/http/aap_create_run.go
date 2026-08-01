@@ -32,9 +32,12 @@ type AAPCreateRunScope struct {
 	AgentID     string
 }
 
+// AAPRunContentPart is one createRun input content part (text | input_file).
 type AAPRunContentPart struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type      string `json:"type"`
+	Text      string `json:"text,omitempty"`
+	FileID    string `json:"fileId,omitempty"`
+	MediaType string `json:"mediaType,omitempty"`
 }
 
 type AAPRunInputItem struct {
@@ -234,19 +237,51 @@ func validateCreateRunRequest(request AAPCreateRunRequest) error {
 			return ErrAAPCreateRunInvalid
 		}
 		for _, part := range item.Content {
-			if part.Type != "text" {
+			switch strings.TrimSpace(part.Type) {
+			case "text":
+				if strings.TrimSpace(part.Text) == "" {
+					return ErrAAPCreateRunInvalid
+				}
+				totalText += len(part.Text)
+				if totalText > 64<<10 {
+					return ErrAAPCreateRunInvalid
+				}
+			case "input_file":
+				if _, err := uuid.Parse(strings.TrimSpace(part.FileID)); err != nil {
+					return ErrAAPCreateRunInvalid
+				}
+				if strings.TrimSpace(part.Text) != "" {
+					return ErrAAPCreateRunInvalid
+				}
+			default:
 				return ErrAAPUnsupportedContentType
-			}
-			if strings.TrimSpace(part.Text) == "" {
-				return ErrAAPCreateRunInvalid
-			}
-			totalText += len(part.Text)
-			if totalText > 64<<10 {
-				return ErrAAPCreateRunInvalid
 			}
 		}
 	}
 	return nil
+}
+
+// aapRunContentParts maps transport content to aap.RunContentPart (order preserved).
+func aapRunContentParts(items []AAPRunInputItem) []aap.RunContentPart {
+	if len(items) == 0 {
+		return nil
+	}
+	parts := make([]aap.RunContentPart, 0, len(items[0].Content))
+	for _, part := range items[0].Content {
+		switch strings.TrimSpace(part.Type) {
+		case "text":
+			parts = append(parts, aap.RunContentPart{
+				Type: "text", Text: strings.TrimSpace(part.Text),
+			})
+		case "input_file":
+			parts = append(parts, aap.RunContentPart{
+				Type: "input_file",
+				FileID: strings.ToLower(strings.TrimSpace(part.FileID)),
+				MediaType: strings.TrimSpace(part.MediaType),
+			})
+		}
+	}
+	return parts
 }
 
 func validateCreateRunResult(

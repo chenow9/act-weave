@@ -2,9 +2,11 @@ package chatruntimebridge
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
+	"actweave/backend/internal/chatruntime"
 	"actweave/backend/internal/execution"
 )
 
@@ -27,5 +29,16 @@ func TestUserSafeBridgeErrorWrappedContextCode(t *testing.T) {
 	cause := errors.New("CONTEXT_SNAPSHOT_UNSUPPORTED: bad version")
 	if executionErrorCode(cause) != execution.ErrCodeContextSnapshotUnsupported {
 		t.Fatalf("code: %s", executionErrorCode(cause))
+	}
+}
+
+func TestExecutionErrorCodeModelContentUnsupported(t *testing.T) {
+	if executionErrorCode(chatruntime.ErrModelContentUnsupported) !=
+		chatruntime.ErrCodeModelContentUnsupported {
+		t.Fatalf("sentinel: %s", executionErrorCode(chatruntime.ErrModelContentUnsupported))
+	}
+	wrapped := fmt.Errorf("assemble: %w", chatruntime.ErrModelContentUnsupported)
+	if executionErrorCode(wrapped) != chatruntime.ErrCodeModelContentUnsupported {
+		t.Fatalf("wrapped: %s", executionErrorCode(wrapped))
 	}
 }

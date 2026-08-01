@@ -100,7 +100,10 @@ func (repository *Repository) MarkBodyPurgedInTx(
 			purge_next_attempt_at=NULL,
 			purge_last_error_code=NULL
 		WHERE so.workspace_id=$1 AND so.id=$2
-		  AND so.kind IN ('PROMPT_PREVIEW_INPUT','PROMPT_PREVIEW_OUTPUT')
+		  AND so.kind IN (
+			'PROMPT_PREVIEW_INPUT','PROMPT_PREVIEW_OUTPUT',
+			'AAP_FILE','AAP_FILE_DERIVED'
+		  )
 		  AND so.retention_mode='EXPIRING'
 		  AND so.retention_until IS NOT NULL
 		  AND so.retention_until <= clock_timestamp()
@@ -339,7 +342,7 @@ func validKind(value string) bool {
 		KindPromptPreviewInput, KindPromptPreviewOutput, KindModelTurn,
 		KindChatMessage, KindToolTestPayload, KindToolInvocationPayload,
 		KindExecutionCheckpoint, KindAuditEventPayload, KindAuditExport,
-		KindChatContextSummary:
+		KindChatContextSummary, KindAAPFile, KindAAPFileDerived:
 		return true
 	default:
 		return false

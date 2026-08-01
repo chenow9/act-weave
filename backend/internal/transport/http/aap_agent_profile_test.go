@@ -108,19 +108,19 @@ func TestAAPAgentProfile(t *testing.T) {
 
 	t.Run("changes opaque version for behavioral publication changes", func(t *testing.T) {
 		base := aapPublishedAgentSummary()
-		first, _, err := projectAAPAgentProfile(base, aapProfileDescriptors())
+		first, _, err := projectAAPAgentProfile(base, aapProfileDescriptors(), false, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		changedPrompt := "b28f1f2e-7b5a-7c3d-8e9f-123456789099"
 		base.CurrentPromptRevisionID = &changedPrompt
-		second, _, err := projectAAPAgentProfile(base, aapProfileDescriptors())
+		second, _, err := projectAAPAgentProfile(base, aapProfileDescriptors(), false, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		descriptors := aapProfileDescriptors()
 		descriptors[0].ConnectionID = "connection-private-change"
-		third, _, err := projectAAPAgentProfile(aapPublishedAgentSummary(), descriptors)
+		third, _, err := projectAAPAgentProfile(aapPublishedAgentSummary(), descriptors, false, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

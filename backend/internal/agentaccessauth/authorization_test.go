@@ -12,9 +12,8 @@ import (
 
 func TestAuthorizationActionMatrixCoversEveryAAPV1Scope(t *testing.T) {
 	matrix := AAPActionMatrix()
-	if len(matrix) != len(canonicalAAPScopes) {
-		t.Fatalf("action matrix size=%d scopes=%d", len(matrix), len(canonicalAAPScopes))
-	}
+	// Multiple actions may share a scope (file.create/complete → file:write);
+	// do not require len(matrix) == len(canonicalAAPScopes).
 	want := map[AAPAction]AAPActionRule{
 		ActionAgentProfileRead:   {RequiredScope: "agent:read", ConcealDenial: true},
 		ActionConversationCreate: {RequiredScope: "conversation:create"},
@@ -46,10 +45,48 @@ func TestAuthorizationActionMatrixCoversEveryAAPV1Scope(t *testing.T) {
 			RequiredScope: "artifact:read", ResourceType: ResourceArtifact,
 			OwnershipRequired: true, ConcealDenial: true,
 		},
+		ActionFileCreate: {RequiredScope: "file:write"},
+		ActionFileComplete: {
+			RequiredScope: "file:write", ResourceType: ResourceFile,
+			OwnershipRequired: true, ConcealDenial: true,
+		},
+		ActionFileRead: {
+			RequiredScope: "file:read", ResourceType: ResourceFile,
+			OwnershipRequired: true, ConcealDenial: true,
+		},
+		ActionFileContent: {
+			RequiredScope: "file:read", ResourceType: ResourceFile,
+			OwnershipRequired: true, ConcealDenial: true,
+		},
 	}
 	if !reflect.DeepEqual(matrix, want) {
 		t.Fatalf("unexpected AAP action matrix:\ngot=%+v\nwant=%+v", matrix, want)
 	}
+
+	scopeSet := make(map[string]struct{}, len(canonicalAAPScopes))
+	for _, scope := range canonicalAAPScopes {
+		scopeSet[scope] = struct{}{}
+	}
+	usedScopes := make(map[string]struct{}, len(matrix))
+	for action, rule := range matrix {
+		if _, ok := scopeSet[rule.RequiredScope]; !ok {
+			t.Fatalf("action %s RequiredScope %q not in canonicalAAPScopes", action, rule.RequiredScope)
+		}
+		usedScopes[rule.RequiredScope] = struct{}{}
+	}
+	for _, scope := range canonicalAAPScopes {
+		if _, ok := usedScopes[scope]; !ok {
+			t.Fatalf("canonical scope %q is not required by any action", scope)
+		}
+	}
+	for _, action := range []AAPAction{
+		ActionFileCreate, ActionFileComplete, ActionFileRead, ActionFileContent,
+	} {
+		if _, ok := matrix[action]; !ok {
+			t.Fatalf("file action %s missing from matrix", action)
+		}
+	}
+
 	delete(matrix, ActionRunRead)
 	if len(AAPActionMatrix()) != len(want) {
 		t.Fatal("callers must not mutate the shared AAP action matrix")
@@ -253,6 +290,63 @@ func TestAuthorizationCreationDoesNotInvokeSubjectOwnershipResolver(t *testing.T
 		Principal: principal, Action: ActionConversationCreate,
 	}); err != nil || ownership.calls != 0 {
 		t.Fatalf("new Conversation authorization err=%v ownership calls=%d", err, ownership.calls)
+	}
+}
+
+func TestAuthorizationFileCreateDoesNotRequireOwnership(t *testing.T) {
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	principal := authorizationTestPrincipal(now)
+	principal.Scopes = append(principal.Scopes, "file:write")
+	state := authorizationTestState(principal)
+	state.GrantScopes = append(state.GrantScopes, "file:write")
+	state.AgentPolicyScopes = append(state.AgentPolicyScopes, "file:write")
+	ownership := &subjectOwnershipStub{err: errors.New("must not be called")}
+	service, err := NewAAPAuthorizationService(
+		&authorizationStateStoreStub{state: state}, ownership,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.now = func() time.Time { return now }
+	decision, err := service.Authorize(context.Background(), AAPAuthorizationRequest{
+		Principal: principal, Action: ActionFileCreate,
+	})
+	if err != nil || ownership.calls != 0 || decision.Snapshot.RequiredScope != "file:write" {
+		t.Fatalf("file.create err=%v ownership calls=%d snapshot=%+v", err, ownership.calls, decision.Snapshot)
+	}
+}
+
+func TestAuthorizationFileReadConcealsMissingScope(t *testing.T) {
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	principal := authorizationTestPrincipal(now)
+	// principal has no file:read
+	state := authorizationTestState(principal)
+	state.GrantScopes = append(state.GrantScopes, "file:read")
+	state.AgentPolicyScopes = append(state.AgentPolicyScopes, "file:read")
+	audit := &authorizationAuditStub{}
+	service, err := NewAAPAuthorizationService(
+		&authorizationStateStoreStub{state: state},
+		&subjectOwnershipStub{decision: SubjectOwnershipDecision{
+			Mode: "SUBJECT_OWNED", OwnerID: principal.PrincipalID, PolicyVersion: 1,
+		}},
+		WithAAPAuthorizationAudit(audit),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.now = func() time.Time { return now }
+	_, err = service.Authorize(context.Background(), AAPAuthorizationRequest{
+		Principal: principal, Action: ActionFileRead,
+		Resource: AAPAuthorizationResource{
+			Type: ResourceFile, ID: "a68f1f2e-7b5a-7c3d-8e9f-1234567890f1",
+		},
+	})
+	if !errors.Is(err, ErrAAPAuthorizationNotVisible) {
+		t.Fatalf("file.read without scope must conceal: %v", err)
+	}
+	var denial *AAPAuthorizationError
+	if !errors.As(err, &denial) || denial.Reason != "TOKEN_SCOPE_MISSING" {
+		t.Fatalf("denial=%+v", denial)
 	}
 }
 

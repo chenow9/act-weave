@@ -37,16 +37,34 @@ export {
 } from "./sse-reader.js";
 
 export type {
+  AAPFile,
+  AAPFileLinks,
+  AAPFileMediaType,
+  AAPFileProcessing,
+  AAPFileProcessingStage,
+  AAPFilePurpose,
+  AAPFileStatus,
   AgentProfile,
   APIErrorBody,
   APIRun,
+  CompleteFileRequest,
+  CompleteFileResponse,
   ContextCompactionItem,
   Conversation,
   CreateConversationResponse,
+  CreateFileRequest,
+  CreateFileResponse,
+  CreateRunContentPart,
+  CreateRunInputFilePart,
   CreateRunInputMessage,
   CreateRunRequest,
+  CreateRunTextPart,
+  FileContentResult,
+  FileUpload,
+  GetFileResponse,
   InteractionDecision,
   InteractionDecisionResponse,
+  MintFileDownloadResponse,
   ProtocolErrorValue,
   ProtocolInteraction,
   ProtocolItem,
@@ -58,7 +76,14 @@ export type {
   RunSummary,
   RunTrigger,
 } from "./models.js";
-export { deepCloneJSON, isContextCompactionItem, isTerminalRunStatus } from "./models.js";
+export {
+  deepCloneJSON,
+  isContextCompactionItem,
+  isReadyFileStatus,
+  isTerminalFileStatus,
+  isTerminalRunStatus,
+  SDK_PREFER_DOWNLOAD_TOKEN_BYTES,
+} from "./models.js";
 
 export { RunReducer } from "./reducer.js";
 
@@ -73,5 +98,7 @@ export {
   type FetchLike,
   type FollowRunEvent,
   type FollowRunOptions,
+  type GetFileContentOptions,
   type StreamRunEventsOptions,
+  type WaitUntilReadyOptions,
 } from "./client.js";

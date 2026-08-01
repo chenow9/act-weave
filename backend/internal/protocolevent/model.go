@@ -200,15 +200,20 @@ func ParseMessageRole(value string) MessageRole {
 type ContentPartType string
 
 const (
-	ContentPartTypeText    ContentPartType = "text"
-	ContentPartTypeUnknown ContentPartType = "unknown"
+	ContentPartTypeText      ContentPartType = "text"
+	ContentPartTypeInputFile ContentPartType = "input_file"
+	ContentPartTypeUnknown   ContentPartType = "unknown"
 )
 
 func ParseContentPartType(value string) ContentPartType {
-	if strings.TrimSpace(value) == string(ContentPartTypeText) {
+	switch strings.TrimSpace(value) {
+	case string(ContentPartTypeText):
 		return ContentPartTypeText
+	case string(ContentPartTypeInputFile):
+		return ContentPartTypeInputFile
+	default:
+		return ContentPartTypeUnknown
 	}
-	return ContentPartTypeUnknown
 }
 
 type ContentPart interface {
@@ -221,6 +226,16 @@ type TextContentPart struct {
 }
 
 func (TextContentPart) ContentKind() ContentPartType { return ContentPartTypeText }
+
+// InputFileContentPart references a durable AAP File by stable fileId (KD-4).
+// Public protocol projection must never attach download URLs or blob bytes.
+type InputFileContentPart struct {
+	Type      ContentPartType `json:"type"`
+	FileID    string          `json:"fileId"`
+	MediaType string          `json:"mediaType,omitempty"`
+}
+
+func (InputFileContentPart) ContentKind() ContentPartType { return ContentPartTypeInputFile }
 
 type UnknownContentPart struct {
 	Type string
@@ -861,14 +876,25 @@ func DecodeContentPart(raw json.RawMessage) (ContentPart, error) {
 	if err := json.Unmarshal(canonical, &discriminator); err != nil || discriminator.Type == "" {
 		return nil, ErrModelInvalid
 	}
-	if discriminator.Type == "text" {
+	switch discriminator.Type {
+	case "text":
 		var value TextContentPart
 		if err := json.Unmarshal(canonical, &value); err != nil {
 			return nil, ErrModelInvalid
 		}
 		return value, nil
+	case "input_file":
+		var value InputFileContentPart
+		if err := json.Unmarshal(canonical, &value); err != nil {
+			return nil, ErrModelInvalid
+		}
+		if value.Type != ContentPartTypeInputFile || !modelUUID(value.FileID) {
+			return nil, ErrModelInvalid
+		}
+		return value, nil
+	default:
+		return UnknownContentPart{Type: discriminator.Type, raw: canonical}, nil
 	}
-	return UnknownContentPart{Type: discriminator.Type, raw: canonical}, nil
 }
 
 func DecodeDelta(raw json.RawMessage) (Delta, error) {
@@ -917,8 +943,15 @@ func ValidateItem(item Item) error {
 			if part == nil || strings.TrimSpace(string(part.ContentKind())) == "" {
 				return ErrModelInvalid
 			}
-			if text, ok := part.(TextContentPart); ok && text.Type != ContentPartTypeText {
-				return ErrModelInvalid
+			switch typed := part.(type) {
+			case TextContentPart:
+				if typed.Type != ContentPartTypeText {
+					return ErrModelInvalid
+				}
+			case InputFileContentPart:
+				if typed.Type != ContentPartTypeInputFile || !modelUUID(typed.FileID) {
+					return ErrModelInvalid
+				}
 			}
 		}
 	case ToolCallItem:

@@ -31,6 +31,10 @@ const (
 	ActionEventRead          AAPAction = "event.read"
 	ActionInteractionDecide  AAPAction = "interaction.decide"
 	ActionArtifactRead       AAPAction = "artifact.read"
+	ActionFileCreate         AAPAction = "file.create"
+	ActionFileComplete       AAPAction = "file.complete"
+	ActionFileRead           AAPAction = "file.read"
+	ActionFileContent        AAPAction = "file.content"
 )
 
 type AAPResourceType string
@@ -41,6 +45,7 @@ const (
 	ResourceRun          AAPResourceType = "RUN"
 	ResourceInteraction  AAPResourceType = "INTERACTION"
 	ResourceArtifact     AAPResourceType = "ARTIFACT"
+	ResourceFile         AAPResourceType = "FILE"
 )
 
 type AAPActionRule struct {
@@ -50,6 +55,9 @@ type AAPActionRule struct {
 	ConcealDenial     bool
 }
 
+// aapActionRules is the AAP v1 action matrix. Multiple actions may share a
+// scope (e.g. file.create/complete → file:write); len(matrix) is not required
+// to equal len(canonicalAAPScopes).
 var aapActionRules = map[AAPAction]AAPActionRule{
 	ActionAgentProfileRead:   {RequiredScope: "agent:read", ConcealDenial: true},
 	ActionConversationCreate: {RequiredScope: "conversation:create"},
@@ -60,6 +68,11 @@ var aapActionRules = map[AAPAction]AAPActionRule{
 	ActionEventRead:          {RequiredScope: "event:read", ResourceType: ResourceRun, OwnershipRequired: true, ConcealDenial: true},
 	ActionInteractionDecide:  {RequiredScope: "interaction:decide", ResourceType: ResourceInteraction, OwnershipRequired: true, ConcealDenial: true},
 	ActionArtifactRead:       {RequiredScope: "artifact:read", ResourceType: ResourceArtifact, OwnershipRequired: true, ConcealDenial: true},
+	// File actions (KD-5/15, §5.6.2): create has no ownership resource; complete/read/content conceal denial.
+	ActionFileCreate:   {RequiredScope: "file:write"},
+	ActionFileComplete: {RequiredScope: "file:write", ResourceType: ResourceFile, OwnershipRequired: true, ConcealDenial: true},
+	ActionFileRead:     {RequiredScope: "file:read", ResourceType: ResourceFile, OwnershipRequired: true, ConcealDenial: true},
+	ActionFileContent:  {RequiredScope: "file:read", ResourceType: ResourceFile, OwnershipRequired: true, ConcealDenial: true},
 }
 
 func AAPActionMatrix() map[AAPAction]AAPActionRule {

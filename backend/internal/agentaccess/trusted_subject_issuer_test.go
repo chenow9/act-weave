@@ -22,8 +22,8 @@ import (
 func TestTrustedSubjectIssuerMigrationAndConfigUpdateBumpsSecurityVersion(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 5 || version.Dirty {
-		t.Fatalf("expected clean Trusted Subject Issuer migration version 55, got %+v", version)
+	if !version.Applied || version.Number != 6 || version.Dirty {
+		t.Fatalf("expected clean latest schema for Trusted Subject Issuer, got %+v", version)
 	}
 	db := testDatabase.Open(t)
 	insertRepositoryFixtures(t, db)

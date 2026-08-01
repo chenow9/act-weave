@@ -16,8 +16,8 @@ import (
 func TestManagementCommandRepository(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 5 || version.Dirty {
-		t.Fatalf("expected clean management command migration version 45, got %+v", version)
+	if !version.Applied || version.Number != 6 || version.Dirty {
+		t.Fatalf("expected clean latest schema (migration 6), got %+v", version)
 	}
 	db := testDatabase.Open(t)
 	insertRepositoryFixtures(t, db)

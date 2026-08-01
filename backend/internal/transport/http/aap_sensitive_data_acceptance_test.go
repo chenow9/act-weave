@@ -22,6 +22,28 @@ func TestAAPSensitiveDataAcceptance(t *testing.T) {
 	t.Run("DTOAllowlistsExcludeCredentialFields", testSensitiveHTTPDTOAllowlists)
 	t.Run("RunItemsDoNotEmbedArtifactSignedURLs", testSensitiveHTTPArtifactBoundary)
 	t.Run("TokenQueryRejectionDoesNotReflectToken", testSensitiveHTTPTokenQuery)
+	t.Run("FileGETDTOExcludesUploadAndPresign", testSensitiveHTTPFileDTO)
+}
+
+func testSensitiveHTTPFileDTO(t *testing.T) {
+	t.Parallel()
+	// GET/complete file DTOs must not declare upload/presign fields.
+	// Create response may include upload (create-only surface).
+	for _, dto := range []any{aapFileDTO{}, aapGetFileResponse{}, aapCompleteFileResponse{}} {
+		tags := contractJSONTags(dto)
+		for tag := range tags {
+			normalized := strings.ToLower(strings.NewReplacer("_", "", "-", "").Replace(tag))
+			for _, forbidden := range []string{"upload", "presign", "downloadurl", "signedurl", "presigned"} {
+				if strings.Contains(normalized, forbidden) {
+					t.Fatalf("%T exposes sensitive field %q", dto, tag)
+				}
+			}
+		}
+	}
+	createTags := contractJSONTags(aapCreateFileResponse{})
+	if _, ok := createTags["upload"]; !ok {
+		t.Fatal("create file response must allow upload (create-only)")
+	}
 }
 
 func testSensitiveHTTPGoldenTraces(t *testing.T) {
@@ -85,6 +107,8 @@ func testSensitiveHTTPDTOAllowlists(t *testing.T) {
 		"password", "secret", "client_secret", "private_key", "authorization",
 		"cookie", "resume_token", "resumeToken", "access_token", "refresh_token",
 		"chainOfThought", "signedUrl", "signed_url",
+		// File GET surfaces must not expose live transport URLs (IC-04).
+		"downloadUrl", "download_url", "presign", "presignedUrl", "uploadUrl",
 	}
 	dtos := []any{
 		oauthTokenSuccess{},
@@ -94,6 +118,10 @@ func testSensitiveHTTPDTOAllowlists(t *testing.T) {
 		AAPCreateRunRequest{},
 		aapRunResourceDTO{},
 		aapInteractionDecisionRequest{},
+		// File GET resource never carries upload/presign/downloadUrl (IC-04).
+		aapFileDTO{},
+		aapGetFileResponse{},
+		aapCompleteFileResponse{},
 	}
 	for _, dto := range dtos {
 		tags := contractJSONTags(dto)

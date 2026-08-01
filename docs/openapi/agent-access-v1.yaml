@@ -241,6 +241,150 @@ paths:
         '409': {$ref: '#/components/responses/Conflict'}
         '412': {$ref: '#/components/responses/Conflict'}
         '429': {$ref: '#/components/responses/RateLimited'}
+  /workspaces/{workspaceId}/agents/{agentId}/files:
+    parameters:
+      - {$ref: '#/components/parameters/WorkspaceId'}
+      - {$ref: '#/components/parameters/AgentId'}
+    post:
+      operationId: createFile
+      summary: Create an AAP file upload intent (presigned PUT).
+      description: >-
+        Allocates a fileId and returns a short-lived presigned PUT URL with
+        Content-Length and Content-Type bound in the signature. The upload
+        object appears only on this response — subsequent GET never echoes it.
+        Requires file:write. Gated by agentAccess.files (default disabled).
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateFileRequest'}
+      responses:
+        '201':
+          description: Upload intent created.
+          headers:
+            Location: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreateFileResponse'}
+        '200':
+          description: Idempotent replay of the same create intent.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreateFileResponse'}
+        '404': {$ref: '#/components/responses/NotVisible'}
+        '409': {$ref: '#/components/responses/IdempotencyConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /workspaces/{workspaceId}/agents/{agentId}/files/{fileId}:
+    parameters:
+      - {$ref: '#/components/parameters/WorkspaceId'}
+      - {$ref: '#/components/parameters/AgentId'}
+      - {$ref: '#/components/parameters/FileId'}
+    get:
+      operationId: getFile
+      summary: Get file status (source of truth; no SSE in v1).
+      description: >-
+        Returns file lifecycle status, processing stages, and a relative content
+        link. Never includes upload URL, presign headers, or live download URLs.
+        Requires file:read.
+      responses:
+        '200':
+          description: File resource.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GetFileResponse'}
+        '404': {$ref: '#/components/responses/NotVisible'}
+  /workspaces/{workspaceId}/agents/{agentId}/files/{fileId}:complete:
+    parameters:
+      - {$ref: '#/components/parameters/WorkspaceId'}
+      - {$ref: '#/components/parameters/AgentId'}
+      - {$ref: '#/components/parameters/FileId'}
+    post:
+      operationId: completeFile
+      summary: Confirm staging upload (fast path; does not wait for promote).
+      description: >-
+        Stats staging, validates size/MIME, CAS to UPLOADED, enqueues promote.
+        Requires file:write and ownership. Does not block on encryption.
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                sha256: {type: string, pattern: '^[a-fA-F0-9]{64}$'}
+      responses:
+        '200':
+          description: Complete accepted; promote is asynchronous.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CompleteFileResponse'}
+        '404': {$ref: '#/components/responses/NotVisible'}
+        '409': {$ref: '#/components/responses/IdempotencyConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /workspaces/{workspaceId}/agents/{agentId}/files/{fileId}/content:
+    parameters:
+      - {$ref: '#/components/parameters/WorkspaceId'}
+      - {$ref: '#/components/parameters/AgentId'}
+      - {$ref: '#/components/parameters/FileId'}
+    get:
+      operationId: getFileContent
+      summary: Stream file content with Bearer (path A).
+      description: >-
+        Server-side SecureStore.Open stream. Requires file:read and READY file.
+        Prefer :download for large bodies.
+      responses:
+        '200':
+          description: Decrypted file body.
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        '404': {$ref: '#/components/responses/NotVisible'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /workspaces/{workspaceId}/agents/{agentId}/files/{fileId}:download:
+    parameters:
+      - {$ref: '#/components/parameters/WorkspaceId'}
+      - {$ref: '#/components/parameters/AgentId'}
+      - {$ref: '#/components/parameters/FileId'}
+    post:
+      operationId: mintFileDownload
+      summary: Mint an opaque download token (path B).
+      description: >-
+        Returns a short-lived opaque token id and relative proxy URL. Never
+        returns MinIO credentials. Requires file:read and READY file.
+      responses:
+        '200':
+          description: Download token minted.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MintFileDownloadResponse'}
+        '404': {$ref: '#/components/responses/NotVisible'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /files/downloads/{tokenId}:
+    parameters:
+      - {$ref: '#/components/parameters/TokenId'}
+    get:
+      operationId: downloadFileByToken
+      summary: Stream file content via opaque download token (no Bearer).
+      security: []
+      description: >-
+        Validates the opaque token row (expiry, purpose, not consumed, file READY)
+        and streams SecureStore body. Token is not a JWT and is not a MinIO key.
+      responses:
+        '200':
+          description: Decrypted file body.
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        '404': {$ref: '#/components/responses/NotVisible'}
 components:
   securitySchemes:
     AAPAccessToken:
@@ -254,6 +398,8 @@ components:
     ConversationId: {name: conversationId, in: path, required: true, schema: {$ref: '#/components/schemas/UUID'}}
     RunId: {name: runId, in: path, required: true, schema: {$ref: '#/components/schemas/UUID'}}
     InteractionId: {name: interactionId, in: path, required: true, schema: {$ref: '#/components/schemas/UUID'}}
+    FileId: {name: fileId, in: path, required: true, schema: {$ref: '#/components/schemas/UUID'}}
+    TokenId: {name: tokenId, in: path, required: true, schema: {$ref: '#/components/schemas/UUID'}}
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -342,12 +488,20 @@ components:
                 type: array
                 minItems: 1
                 items:
-                  type: object
-                  additionalProperties: false
-                  required: [type, text]
-                  properties:
-                    type: {type: string, enum: [text]}
-                    text: {type: string, minLength: 1}
+                  oneOf:
+                    - type: object
+                      additionalProperties: false
+                      required: [type, text]
+                      properties:
+                        type: {type: string, enum: [text]}
+                        text: {type: string, minLength: 1}
+                    - type: object
+                      additionalProperties: false
+                      required: [type, fileId]
+                      properties:
+                        type: {type: string, enum: [input_file]}
+                        fileId: {$ref: '#/components/schemas/UUID'}
+                        mediaType: {type: string, minLength: 1, maxLength: 255}
         stream: {type: boolean}
         metadata:
           type: object
@@ -418,6 +572,110 @@ components:
         interaction: {type: object, description: AAP v1 Interaction snapshot.}
         idempotent: {type: boolean}
         links: {type: object}
+    CreateFileRequest:
+      type: object
+      additionalProperties: false
+      required: [mediaType, sizeBytes]
+      properties:
+        filename: {type: string, maxLength: 512}
+        mediaType:
+          type: string
+          enum: [image/png, image/jpeg, image/webp, image/gif, application/pdf]
+        sizeBytes: {type: integer, format: int64, minimum: 1}
+        sha256: {type: string, pattern: '^[a-fA-F0-9]{64}$'}
+        purpose:
+          type: string
+          enum: [GENERAL, VISION, DOCUMENT, TOOL_INPUT]
+    File:
+      type: object
+      additionalProperties: false
+      required: [object, id, agentId, status, mediaType, sizeBytes, purpose, processing, artifacts, links, createdAt, updatedAt]
+      description: >-
+        Public File resource. Must never include upload, presign, or live
+        downloadUrl fields (sensitive acceptance).
+      properties:
+        object: {type: string, enum: [file]}
+        id: {$ref: '#/components/schemas/UUID'}
+        agentId: {$ref: '#/components/schemas/UUID'}
+        status:
+          type: string
+          enum: [pending_upload, uploaded, processing, ready, failed, expired]
+        filename: {type: string}
+        mediaType: {type: string}
+        detectedMediaType: {type: string}
+        sizeBytes: {type: integer, format: int64}
+        sha256: {type: string}
+        purpose: {type: string}
+        error: {$ref: '#/components/schemas/ErrorValue'}
+        processing:
+          type: object
+          additionalProperties: false
+          required: [version, stages]
+          properties:
+            version: {type: integer, format: int64}
+            stages:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [stage, status]
+                properties:
+                  stage: {type: string}
+                  status: {type: string}
+        artifacts: {type: array, items: {type: object}}
+        links:
+          type: object
+          additionalProperties: false
+          required: [content]
+          properties:
+            content: {type: string, description: Relative Bearer content path (not a live token URL).}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        readyAt: {type: string, format: date-time}
+    FileUpload:
+      type: object
+      additionalProperties: false
+      required: [method, url, headers, expiresAt]
+      description: Write-only create response fragment; never appears on GET.
+      properties:
+        method: {type: string, enum: [PUT]}
+        url: {type: string, format: uri}
+        headers:
+          type: object
+          additionalProperties: {type: string}
+          description: Must include Content-Type and Content-Length for signed PUT.
+        expiresAt: {type: string, format: date-time}
+    CreateFileResponse:
+      type: object
+      additionalProperties: false
+      required: [file, idempotent]
+      properties:
+        file: {$ref: '#/components/schemas/File'}
+        upload: {$ref: '#/components/schemas/FileUpload'}
+        idempotent: {type: boolean}
+    CompleteFileResponse:
+      type: object
+      additionalProperties: false
+      required: [file, idempotent]
+      properties:
+        file: {$ref: '#/components/schemas/File'}
+        idempotent: {type: boolean}
+    GetFileResponse:
+      type: object
+      additionalProperties: false
+      required: [file]
+      properties:
+        file: {$ref: '#/components/schemas/File'}
+    MintFileDownloadResponse:
+      type: object
+      additionalProperties: false
+      required: [token, expiresAt, url]
+      properties:
+        token: {$ref: '#/components/schemas/UUID'}
+        expiresAt: {type: string, format: date-time}
+        url:
+          type: string
+          description: Relative path /api/agent-access/v1/files/downloads/{tokenId}
     EventEnvelope:
       type: object
       additionalProperties: false

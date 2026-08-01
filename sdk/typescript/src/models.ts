@@ -134,10 +134,154 @@ export interface CreateConversationResponse {
   idempotent: boolean;
 }
 
+/** Text content part (always supported). */
+export interface CreateRunTextPart {
+  type: "text";
+  text: string;
+}
+
+/**
+ * File content part. Requires AAP files feature + RuntimeMultimodal for model E2E.
+ * Wire only stable `fileId` — never embed live download/presign URLs.
+ */
+export interface CreateRunInputFilePart {
+  type: "input_file";
+  fileId: string;
+  /** Optional declared media type; server may ignore or validate against file. */
+  mediaType?: string;
+}
+
+export type CreateRunContentPart = CreateRunTextPart | CreateRunInputFilePart;
+
 export interface CreateRunInputMessage {
   type: "message";
   role: "user";
-  content: Array<{ type: "text"; text: string }>;
+  content: CreateRunContentPart[];
+}
+
+// --- AAP File resources (agent-access-v1 OpenAPI) -------------------------
+
+/** File lifecycle status (GET is source of truth; no File SSE in v1). */
+export type AAPFileStatus =
+  | "pending_upload"
+  | "uploaded"
+  | "processing"
+  | "ready"
+  | "failed"
+  | "expired"
+  | string;
+
+export type AAPFilePurpose = "GENERAL" | "VISION" | "DOCUMENT" | "TOOL_INPUT" | string;
+
+export type AAPFileMediaType =
+  | "image/png"
+  | "image/jpeg"
+  | "image/webp"
+  | "image/gif"
+  | "application/pdf"
+  | string;
+
+export interface AAPFileProcessingStage {
+  stage: string;
+  status: string;
+}
+
+export interface AAPFileProcessing {
+  version: number;
+  stages: AAPFileProcessingStage[];
+}
+
+export interface AAPFileLinks {
+  /** Relative Bearer content path — not a live token URL. */
+  content: string;
+  [key: string]: string;
+}
+
+/** Public File resource. Must never include upload / presign / downloadUrl. */
+export interface AAPFile {
+  object: "file";
+  id: string;
+  agentId: string;
+  status: AAPFileStatus;
+  filename?: string;
+  mediaType: string;
+  detectedMediaType?: string;
+  sizeBytes: number;
+  sha256?: string;
+  purpose: string;
+  error?: ProtocolErrorValue;
+  processing: AAPFileProcessing;
+  artifacts: unknown[];
+  links: AAPFileLinks;
+  createdAt: string;
+  updatedAt: string;
+  readyAt?: string;
+}
+
+/** Write-only create fragment; never appears on subsequent GET. */
+export interface FileUpload {
+  method: "PUT" | string;
+  url: string;
+  /**
+   * Headers required for the signed PUT. Must include Content-Type and
+   * Content-Length exactly as returned by createFile.
+   */
+  headers: Record<string, string>;
+  expiresAt: string;
+}
+
+export interface CreateFileRequest {
+  filename?: string;
+  mediaType: AAPFileMediaType;
+  sizeBytes: number;
+  sha256?: string;
+  purpose?: AAPFilePurpose;
+}
+
+export interface CreateFileResponse {
+  file: AAPFile;
+  /** Present on create intent; omitted on idempotent replay when upload expired. */
+  upload?: FileUpload;
+  idempotent: boolean;
+}
+
+export interface CompleteFileRequest {
+  sha256?: string;
+}
+
+export interface CompleteFileResponse {
+  file: AAPFile;
+  idempotent: boolean;
+}
+
+export interface GetFileResponse {
+  file: AAPFile;
+}
+
+export interface MintFileDownloadResponse {
+  /** Opaque download token id (not a MinIO key / JWT). */
+  token: string;
+  expiresAt: string;
+  /** Relative proxy path, e.g. /api/agent-access/v1/files/downloads/{tokenId}. */
+  url: string;
+}
+
+export interface FileContentResult {
+  body: ArrayBuffer;
+  contentType: string;
+  /** Path used: Bearer content vs opaque download token. */
+  via: "content" | "download";
+}
+
+/** Soft threshold (4 MiB) above which getFileContent prefers :download path B. */
+export const SDK_PREFER_DOWNLOAD_TOKEN_BYTES = 4 * 1024 * 1024;
+
+export function isTerminalFileStatus(status: string): boolean {
+  return status === "ready" || status === "failed" || status === "expired";
+}
+
+export function isReadyFileStatus(status: string): boolean {
+  return status === "ready";
 }
 
 /** Write-only REQUEST_PASSTHROUGH envelope; never appears in responses. */

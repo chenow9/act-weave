@@ -7,17 +7,31 @@
 
 import { AgentClientError, errorFromProtocol } from "./errors.js";
 import type {
+  AAPFile,
   AgentProfile,
+  CompleteFileRequest,
+  CompleteFileResponse,
   Conversation,
   CreateConversationResponse,
+  CreateFileRequest,
+  CreateFileResponse,
   CreateRunRequest,
+  FileContentResult,
+  FileUpload,
+  GetFileResponse,
   InteractionDecision,
   InteractionDecisionResponse,
+  MintFileDownloadResponse,
   ProtocolErrorValue,
   ReducedRunSnapshot,
   RunResponse,
 } from "./models.js";
-import { isTerminalRunStatus } from "./models.js";
+import {
+  isReadyFileStatus,
+  isTerminalFileStatus,
+  isTerminalRunStatus,
+  SDK_PREFER_DOWNLOAD_TOKEN_BYTES,
+} from "./models.js";
 import { RunReducer } from "./reducer.js";
 import { assertNoAccessTokenInURL } from "./sse-parser.js";
 import { openAAPSEStream } from "./sse-reader.js";
@@ -68,6 +82,28 @@ export interface FollowRunEvent {
   message: AAPSEMessage;
   snapshot: ReducedRunSnapshot;
   session: AAPSESession;
+}
+
+export interface WaitUntilReadyOptions {
+  signal?: AbortSignal | undefined;
+  /** Poll interval for GET file status (default 500ms). */
+  pollIntervalMs?: number | undefined;
+  /** Overall timeout (default 120_000ms). */
+  timeoutMs?: number | undefined;
+}
+
+export interface GetFileContentOptions {
+  signal?: AbortSignal | undefined;
+  /**
+   * Known size in bytes. When omitted, getFile is called first so the SDK can
+   * choose Bearer content vs :download (prefer download when sizeBytes > 4MiB).
+   */
+  sizeBytes?: number | undefined;
+  /**
+   * Force path: "content" (Bearer GET .../content) or "download" (mint token).
+   * Default auto-selects download when sizeBytes > 4MiB.
+   */
+  prefer?: "auto" | "content" | "download" | undefined;
 }
 
 export class AgentAccessClient {
@@ -212,6 +248,303 @@ export class AgentAccessClient {
         expectedStatuses: [200],
       },
     );
+  }
+
+  // --- Files (presigned PUT → complete → waitUntilReady → createRun) -----
+
+  /**
+   * Create a file upload intent. Response may include a write-only `upload`
+   * fragment (presigned PUT + required headers). Subsequent GET never echoes it.
+   * Requires `file:write`. Gated by agentAccess.files (default off).
+   */
+  async createFile(
+    workspaceId: string,
+    agentId: string,
+    body: CreateFileRequest,
+    options: { idempotencyKey: string; signal?: AbortSignal },
+  ): Promise<CreateFileResponse> {
+    return this.jsonRequest<CreateFileResponse>(
+      "POST",
+      `/workspaces/${enc(workspaceId)}/agents/${enc(agentId)}/files`,
+      {
+        body,
+        idempotencyKey: options.idempotencyKey,
+        signal: options.signal,
+        expectedStatuses: [201, 200],
+      },
+    );
+  }
+
+  /**
+   * PUT bytes to the presigned upload URL from createFile.
+   * **Must** send the exact headers returned by create (Content-Length / Content-Type
+   * are bound into the signature). Does not attach the AAP Bearer token.
+   */
+  async putFileUpload(
+    upload: FileUpload,
+    body: ArrayBuffer | Uint8Array | Blob,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<void> {
+    assertNoAccessTokenInURL(upload.url);
+
+    const headers = new Headers();
+    for (const [key, value] of Object.entries(upload.headers ?? {})) {
+      if (value !== undefined && value !== null && String(value).length > 0) {
+        headers.set(key, String(value));
+      }
+    }
+    // Signature requires these; ensure they are present even if map used odd casing.
+    if (!hasHeaderIgnoreCase(headers, "Content-Type") || !hasHeaderIgnoreCase(headers, "Content-Length")) {
+      throw new AgentClientError(
+        "File upload headers must include Content-Type and Content-Length from createFile",
+        { code: "INVALID_UPLOAD_HEADERS", retryable: false },
+      );
+    }
+
+    const init: RequestInit = {
+      method: upload.method || "PUT",
+      headers,
+      body: toRequestBody(body),
+    };
+    if (options.signal) {
+      init.signal = options.signal;
+    }
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(upload.url, init);
+    } catch (cause) {
+      if (options.signal?.aborted || (cause instanceof DOMException && cause.name === "AbortError")) {
+        throw abortError();
+      }
+      throw new AgentClientError("File upload PUT failed", {
+        code: "NETWORK_ERROR",
+        retryable: true,
+        cause,
+      });
+    }
+
+    if (!response.ok) {
+      // Presigned storage errors are not AAP error envelopes.
+      let details: unknown;
+      try {
+        details = await response.text();
+      } catch {
+        details = undefined;
+      }
+      throw new AgentClientError(`File upload PUT HTTP ${response.status}`, {
+        code: "UPLOAD_HTTP_ERROR",
+        status: response.status,
+        retryable: response.status === 429 || response.status >= 500,
+        details,
+      });
+    }
+  }
+
+  /**
+   * Confirm staging upload (fast path). Enqueues promote; does not wait for READY.
+   * Requires `file:write`.
+   */
+  async completeFile(
+    workspaceId: string,
+    agentId: string,
+    fileId: string,
+    body: CompleteFileRequest | undefined,
+    options: { idempotencyKey: string; signal?: AbortSignal },
+  ): Promise<CompleteFileResponse> {
+    return this.jsonRequest<CompleteFileResponse>(
+      "POST",
+      `/workspaces/${enc(workspaceId)}/agents/${enc(agentId)}/files/${enc(fileId)}:complete`,
+      {
+        body: body ?? {},
+        idempotencyKey: options.idempotencyKey,
+        signal: options.signal,
+        expectedStatuses: [200],
+      },
+    );
+  }
+
+  /**
+   * Get file status (source of truth; no File SSE in v1). Requires `file:read`.
+   * Never returns upload URLs, presign headers, or live download URLs.
+   */
+  async getFile(
+    workspaceId: string,
+    agentId: string,
+    fileId: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<AAPFile> {
+    const response = await this.jsonRequest<GetFileResponse>(
+      "GET",
+      `/workspaces/${enc(workspaceId)}/agents/${enc(agentId)}/files/${enc(fileId)}`,
+      { signal: options.signal, expectedStatuses: [200] },
+    );
+    return response.file;
+  }
+
+  /**
+   * Poll GET until status is ready, or throw on failed/expired/timeout.
+   * v1 has no File SSE — this is the supported wait helper.
+   */
+  async waitUntilReady(
+    workspaceId: string,
+    agentId: string,
+    fileId: string,
+    options: WaitUntilReadyOptions = {},
+  ): Promise<AAPFile> {
+    const pollIntervalMs = options.pollIntervalMs ?? 500;
+    const timeoutMs = options.timeoutMs ?? 120_000;
+    const started = Date.now();
+
+    while (true) {
+      if (options.signal?.aborted) {
+        throw abortError();
+      }
+      const file = await this.getFile(
+        workspaceId,
+        agentId,
+        fileId,
+        options.signal ? { signal: options.signal } : {},
+      );
+      if (isReadyFileStatus(file.status)) {
+        return file;
+      }
+      if (isTerminalFileStatus(file.status)) {
+        const code =
+          file.status === "expired"
+            ? "FILE_UPLOAD_EXPIRED"
+            : file.error?.code ?? "FILE_PROCESSING_FAILED";
+        throw new AgentClientError(
+          file.error?.message ?? `File reached terminal status ${file.status}`,
+          {
+            code,
+            status: 422,
+            retryable: false,
+            details: { file },
+          },
+        );
+      }
+      if (Date.now() - started >= timeoutMs) {
+        throw new AgentClientError("waitUntilReady timed out before file became ready", {
+          code: "FILE_WAIT_TIMEOUT",
+          retryable: true,
+          details: { fileId, status: file.status, timeoutMs },
+        });
+      }
+      await sleep(pollIntervalMs, options.signal);
+    }
+  }
+
+  /**
+   * Mint an opaque download token (path B). Relative `url` is not a MinIO credential.
+   * Requires `file:read` and READY file.
+   */
+  async mintFileDownload(
+    workspaceId: string,
+    agentId: string,
+    fileId: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<MintFileDownloadResponse> {
+    const req: {
+      signal?: AbortSignal;
+      expectedStatuses: number[];
+    } = { expectedStatuses: [200] };
+    if (options.signal) {
+      req.signal = options.signal;
+    }
+    return this.jsonRequest<MintFileDownloadResponse>(
+      "POST",
+      `/workspaces/${enc(workspaceId)}/agents/${enc(agentId)}/files/${enc(fileId)}:download`,
+      req,
+    );
+  }
+
+  /**
+   * Download file bytes. Small files use Bearer GET .../content (path A).
+   * When sizeBytes > 4MiB (or prefer:"download"), mints :download and GETs the
+   * opaque token proxy (path B, no Bearer on the token GET).
+   */
+  async getFileContent(
+    workspaceId: string,
+    agentId: string,
+    fileId: string,
+    options: GetFileContentOptions = {},
+  ): Promise<FileContentResult> {
+    let sizeBytes = options.sizeBytes;
+    if (sizeBytes === undefined && options.prefer !== "content" && options.prefer !== "download") {
+      const meta = await this.getFile(
+        workspaceId,
+        agentId,
+        fileId,
+        options.signal ? { signal: options.signal } : {},
+      );
+      sizeBytes = meta.sizeBytes;
+    }
+
+    const prefer =
+      options.prefer === "content" || options.prefer === "download"
+        ? options.prefer
+        : sizeBytes !== undefined && sizeBytes > SDK_PREFER_DOWNLOAD_TOKEN_BYTES
+          ? "download"
+          : "content";
+
+    if (prefer === "download") {
+      const minted = await this.mintFileDownload(
+        workspaceId,
+        agentId,
+        fileId,
+        options.signal ? { signal: options.signal } : {},
+      );
+      const absolute = resolveAgainstBase(this.baseUrl, minted.url);
+      assertNoAccessTokenInURL(absolute);
+      const downloadOpts: {
+        method: string;
+        headers: Record<string, string>;
+        signal?: AbortSignal;
+        withAuth: boolean;
+        allowStatuses: number[];
+      } = {
+        method: "GET",
+        // Token proxy is the credential — do not send AAP Bearer.
+        headers: { Accept: "*/*" },
+        withAuth: false,
+        allowStatuses: [200],
+      };
+      if (options.signal) {
+        downloadOpts.signal = options.signal;
+      }
+      const response = await this.fetchBinary(absolute, downloadOpts);
+      return {
+        body: await response.arrayBuffer(),
+        contentType: response.headers.get("content-type") ?? "application/octet-stream",
+        via: "download",
+      };
+    }
+
+    const path = `/workspaces/${enc(workspaceId)}/agents/${enc(agentId)}/files/${enc(fileId)}/content`;
+    const contentOpts: {
+      method: string;
+      headers: Record<string, string>;
+      signal?: AbortSignal;
+      withAuth: boolean;
+      allowStatuses: number[];
+      retryOn401: boolean;
+    } = {
+      method: "GET",
+      headers: { Accept: "*/*" },
+      withAuth: true,
+      allowStatuses: [200],
+      retryOn401: true,
+    };
+    if (options.signal) {
+      contentOpts.signal = options.signal;
+    }
+    const response = await this.fetchBinary(this.baseUrl + path, contentOpts);
+    return {
+      body: await response.arrayBuffer(),
+      contentType: response.headers.get("content-type") ?? "application/octet-stream",
+      via: "content",
+    };
   }
 
   // --- SSE Events / Follow -----------------------------------------------
@@ -506,32 +839,62 @@ export class AgentAccessClient {
       retryOn401?: boolean | undefined;
     } = {},
   ): Promise<Response> {
-    const url = this.baseUrl + path;
+    return this.fetchBinary(this.baseUrl + path, {
+      method,
+      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      headers: {
+        ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}),
+        Accept: "application/json",
+        ...options.headers,
+      },
+      idempotencyKey: options.idempotencyKey,
+      signal: options.signal,
+      forceRefresh: options.forceRefresh,
+      allowStatuses: options.allowStatuses,
+      retryOn401: options.retryOn401,
+      withAuth: true,
+    });
+  }
+
+  /**
+   * Low-level fetch with optional AAP Bearer, 401 refresh, and status allow-list.
+   * Used for JSON CRUD and binary content downloads.
+   */
+  private async fetchBinary(
+    url: string,
+    options: {
+      method: string;
+      body?: BodyInit | undefined;
+      headers?: Record<string, string> | undefined;
+      idempotencyKey?: string | undefined;
+      signal?: AbortSignal | undefined;
+      forceRefresh?: boolean | undefined;
+      allowStatuses?: number[] | undefined;
+      retryOn401?: boolean | undefined;
+      withAuth?: boolean | undefined;
+    },
+  ): Promise<Response> {
     assertNoAccessTokenInURL(url);
 
     const attempt = async (forceRefresh: boolean): Promise<Response> => {
-      const token = await this.tokens.getAccessToken({ forceRefresh });
       const headers = new Headers(options.headers);
-      headers.set("Authorization", `Bearer ${token}`);
+      if (options.withAuth !== false) {
+        const token = await this.tokens.getAccessToken({ forceRefresh });
+        headers.set("Authorization", `Bearer ${token}`);
+      }
       if (options.idempotencyKey) {
         headers.set("Idempotency-Key", options.idempotencyKey);
       }
-      if (options.body !== undefined && !headers.has("Content-Type")) {
-        headers.set("Content-Type", "application/json");
-      }
-      if (!headers.has("Accept")) {
-        headers.set("Accept", "application/json");
-      }
 
       const init: RequestInit = {
-        method,
+        method: options.method,
         headers,
       };
       if (options.signal) {
         init.signal = options.signal;
       }
       if (options.body !== undefined) {
-        init.body = JSON.stringify(options.body);
+        init.body = options.body;
       }
 
       try {
@@ -548,8 +911,9 @@ export class AgentAccessClient {
       }
     };
 
+    const canRetry401 = options.withAuth !== false && options.retryOn401 !== false;
     let response = await attempt(options.forceRefresh === true);
-    if (response.status === 401 && options.retryOn401 !== false) {
+    if (response.status === 401 && canRetry401) {
       response = await attempt(true);
     }
 
@@ -656,4 +1020,44 @@ function stripTrailingSlash(value: string): string {
 
 function enc(value: string): string {
   return encodeURIComponent(value);
+}
+
+function hasHeaderIgnoreCase(headers: Headers, name: string): boolean {
+  const target = name.toLowerCase();
+  for (const key of headers.keys()) {
+    if (key.toLowerCase() === target) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function toRequestBody(body: ArrayBuffer | Uint8Array | Blob): BodyInit {
+  if (typeof Blob !== "undefined" && body instanceof Blob) {
+    return body;
+  }
+  if (body instanceof ArrayBuffer) {
+    return body;
+  }
+  // Uint8Array (and Node Buffer subclass): pass a plain view for fetch BodyInit.
+  if (ArrayBuffer.isView(body)) {
+    return body as unknown as BodyInit;
+  }
+  return body as BodyInit;
+}
+
+/**
+ * Resolve mint/download relative paths against the AAP base URL origin.
+ * Mint responses use absolute-path URLs under /api/agent-access/v1/...
+ */
+function resolveAgainstBase(baseUrl: string, pathOrUrl: string): string {
+  const trimmed = pathOrUrl.trim();
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  if (trimmed.startsWith("/")) {
+    const origin = new URL(baseUrl).origin;
+    return origin + trimmed;
+  }
+  return `${stripTrailingSlash(baseUrl)}/${trimmed.replace(/^\/+/, "")}`;
 }

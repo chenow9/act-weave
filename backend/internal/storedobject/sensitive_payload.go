@@ -148,6 +148,12 @@ func (scrubber *JSONSecretScrubber) scrubValue(value any, key string) any {
 	switch typed := value.(type) {
 	case map[string]any:
 		for childKey, child := range typed {
+			// IC-09 / KD-22: drop wire-only file download URL fields entirely
+			// (not merely redact) so permanent payloads have no downloadUrl keys.
+			if fileDownloadPayloadKey(childKey) {
+				delete(typed, childKey)
+				continue
+			}
 			typed[childKey] = scrubber.scrubValue(child, childKey)
 		}
 		return typed
@@ -160,6 +166,10 @@ func (scrubber *JSONSecretScrubber) scrubValue(value any, key string) any {
 		if _, sensitive := scrubber.sensitiveValues[typed]; sensitive {
 			return "[REDACTED]"
 		}
+		// Strip opaque AAP file download proxy paths if they ever appear as values.
+		if strings.Contains(strings.ToLower(typed), "/files/downloads/") {
+			return "[REDACTED]"
+		}
 	}
 	return value
 }
@@ -170,6 +180,17 @@ func secretPayloadKey(key string) bool {
 	case "password", "passwd", "authorization", "proxyauthorization", "cookie", "setcookie",
 		"token", "accesstoken", "refreshtoken", "idtoken", "apikey", "clientsecret",
 		"secret", "secretvalue", "privatekey":
+		return true
+	default:
+		return false
+	}
+}
+
+// fileDownloadPayloadKey matches wire-only AAP file transport URL field names.
+func fileDownloadPayloadKey(key string) bool {
+	normalized := strings.NewReplacer("-", "", "_", "", ".", "").Replace(strings.ToLower(strings.TrimSpace(key)))
+	switch normalized {
+	case "downloadurl", "presignedurl", "signedurl", "uploadurl":
 		return true
 	default:
 		return false

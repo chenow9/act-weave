@@ -3,6 +3,7 @@
 一套与 ActWeave 控制台风格一致的 **Agent Access Protocol（AAP）对话 Demo**。
 
 - 富文本：Markdown、数学公式（KaTeX）、代码高亮、图片  
+- **附件**：选文件 / 拖拽 / 粘贴 → 上传 → 带 `fileId` 发送 → 对话气泡渲染预览  
 - 架构：**BFF 持有 Client Secret**，浏览器只拿短期 Access Token  
 - 两种模式：**Live AAP**（真实 Agent） / **Mock**（离线富文本预览）
 
@@ -16,7 +17,25 @@ npm install
 npm run dev:mock
 ```
 
-打开 [http://127.0.0.1:5188](http://127.0.0.1:5188)，点击建议气泡或「插入富文本样例」。
+打开 [http://127.0.0.1:5188](http://127.0.0.1:5188)，点击建议气泡或「插入富文本样例」。  
+也可点作曲家左侧 **附件** 选择图片/PDF：Mock 模式会在气泡中渲染本地预览（不上传）。
+
+## 附件（选文件 · 上传 · 气泡渲染）
+
+| 能力 | 说明 |
+| --- | --- |
+| 选择 | 曲作家「附件」按钮、拖到输入区、或粘贴图片 |
+| 类型 / 限制 | `png` / `jpeg` / `webp` / `gif` / `pdf`，单文件 ≤ 25MB，最多 8 个 |
+| Mock | 本地 Object URL 预览进用户气泡，不走 AAP |
+| Live | 浏览器用短期 Token：`createFile` → 预签名 PUT → `complete` → `waitUntilReady`，再 `POST /bff/chat` 带 `fileIds` |
+| 协议 | BFF 将每个 `fileId` 编入 user message 的 `input_file` content part |
+| 气泡 | 图片缩略图可点击放大；PDF 显示文件名 + 大小 + 短 fileId |
+
+Live 附件还需要：
+
+1. `.env` 的 `AAP_SCOPES` 含 `file:write file:read`（见 `.env.example`）  
+2. ActWeave 服务端 `agentAccess.files.enabled=true`，并完成文件相关 migration / MinIO  
+3. Agent 侧若做多模态理解，需启用 RuntimeMultimodal（见对接指南）
 
 ## 对接真实 AAP
 
@@ -64,11 +83,12 @@ BFF 已配置且凭证有效时，页面右上角显示 **Live AAP**；否则自
 ```text
 Browser (Vite UI)
    │  POST /bff/outbound-credentials  { value }   ← 可选：业务 Token 仅存 BFF
-   │  POST /bff/chat  { text, conversationId? }
+   │  SDK createFile / put / complete / waitUntilReady  ← 附件（短期 token）
+   │  POST /bff/chat  { text, conversationId?, fileIds? }
    ▼
 BFF (server/index.mjs)
    │  client_credentials → access_token
-   │  create conversation + run
+   │  create conversation + run（content: text + input_file*）
    │  (+ outboundCredentials write-only envelope when bound)
    ▼
 AAP  /api/agent-access/v1
@@ -86,6 +106,7 @@ Browser SDK followRun(SSE)  ← 仅使用短期 access_token
 | 数学 | `markdown-it-texmath` + `katex`（`$...$` / `$$...$$`） |
 | 代码 | `highlight.js` |
 | 图片 | 允许 `http(s)://`，DOMPurify 消毒 |
+| 附件 | 曲作家选/拖/粘贴；Live 走 AAP File；气泡内图/PDF 卡片 |
 | 工具调用 | 渲染 AAP `tool_call` item 卡片 |
 
 ## 主要文件
@@ -109,6 +130,9 @@ demos/aap-chat/
 | SSE 连不上 | 确认 AAP 已启用且 CORS 策略；本 Demo 用 BFF 签发 token 后浏览器直连 AAP base |
 | `OUTBOUND_CREDENTIAL_REQUIRED` | 配置 `OUTBOUND_CONNECTION_ID` 并在页面绑定业务 Token |
 | 工具 401 / 出站失败 | ① 业务 Token 是否有效 ② Agent 能力是否绑定了该 Connection ③ Connection 模式是否为 REQUEST_PASSTHROUGH |
+| 附件上传 403 / scope | Grant 是否含 `file:write`/`file:read`；`AAP_SCOPES` 是否包含 |
+| 附件 `files disabled` | 服务端 `agentAccess.files.enabled` 是否打开 |
+| 上传后 createRun 无多模态 | Agent / RuntimeMultimodal 与文件 READY 状态 |
 
 更完整的协议说明见仓库根目录：
 

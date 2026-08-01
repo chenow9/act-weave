@@ -123,6 +123,100 @@ type AgentAccessConfig struct {
 	// Feature controls public AAP data-plane exposure (M10-T8).
 	// Zero value is Enabled=false (no public surface) with empty allowlists.
 	Feature AAPFeatureRollout `yaml:"feature"`
+	// Files gates the AAP File REST surface (IC-04). Zero value is Enabled=false
+	// (file routes not-visible / 404 conceal). Independent of Feature rollout.
+	Files AgentAccessFilesConfig `yaml:"files"`
+}
+
+// AgentAccessFilesConfig is the gray-release gate and limits for AAP File APIs
+// (design §11.1). Default enabled=false; production must not enable before IC-11.
+type AgentAccessFilesConfig struct {
+	Enabled                   bool     `yaml:"enabled"`
+	AllowAllWorkspaces        bool     `yaml:"allowAllWorkspaces"`
+	WorkspaceIDs              []string `yaml:"workspaceIds"`
+	AllowAllClients           bool     `yaml:"allowAllClients"`
+	ClientIDs                 []string `yaml:"clientIds"`
+	MaxBytes                  int64    `yaml:"maxBytes"`
+	AllowedMediaTypes         []string `yaml:"allowedMediaTypes"`
+	StagingTTLSeconds         int      `yaml:"stagingTtlSeconds"`
+	RetentionDays             int      `yaml:"retentionDays"`
+	MaxPendingPerWorkspace    int      `yaml:"maxPendingPerWorkspace"`
+	MaxReadyBytesPerWorkspace int64    `yaml:"maxReadyBytesPerWorkspace"`
+	PublicUploadBaseURL       string   `yaml:"publicUploadBaseUrl"`
+	VirusScan                 struct {
+		Enabled  bool `yaml:"enabled"`
+		Required bool `yaml:"required"`
+	} `yaml:"virusScan"`
+	// RuntimeMultimodal gates model assembly of input_file (IC-08); orthogonal to files gate.
+	RuntimeMultimodal bool `yaml:"runtimeMultimodal"`
+}
+
+// AllowsWorkspace reports whether the workspace may use AAP File APIs when files are enabled.
+func (feature AgentAccessFilesConfig) AllowsWorkspace(workspaceID string) bool {
+	if !feature.Enabled {
+		return false
+	}
+	workspaceID = strings.ToLower(strings.TrimSpace(workspaceID))
+	if workspaceID == "" {
+		return false
+	}
+	if feature.AllowAllWorkspaces {
+		return true
+	}
+	for _, id := range feature.WorkspaceIDs {
+		if strings.ToLower(strings.TrimSpace(id)) == workspaceID {
+			return true
+		}
+	}
+	return false
+}
+
+// AllowsClient reports whether the Agent Access Client may use AAP File APIs.
+func (feature AgentAccessFilesConfig) AllowsClient(clientID string) bool {
+	if !feature.Enabled {
+		return false
+	}
+	clientID = strings.ToLower(strings.TrimSpace(clientID))
+	if clientID == "" {
+		return false
+	}
+	if feature.AllowAllClients {
+		return true
+	}
+	for _, id := range feature.ClientIDs {
+		if strings.ToLower(strings.TrimSpace(id)) == clientID {
+			return true
+		}
+	}
+	return false
+}
+
+// Normalized returns a copy with trimmed lower-case UUID lists.
+func (feature AgentAccessFilesConfig) Normalized() AgentAccessFilesConfig {
+	out := feature
+	out.WorkspaceIDs = nil
+	out.ClientIDs = nil
+	out.AllowedMediaTypes = nil
+	out.PublicUploadBaseURL = strings.TrimSpace(feature.PublicUploadBaseURL)
+	for _, id := range feature.WorkspaceIDs {
+		id = strings.ToLower(strings.TrimSpace(id))
+		if id != "" {
+			out.WorkspaceIDs = append(out.WorkspaceIDs, id)
+		}
+	}
+	for _, id := range feature.ClientIDs {
+		id = strings.ToLower(strings.TrimSpace(id))
+		if id != "" {
+			out.ClientIDs = append(out.ClientIDs, id)
+		}
+	}
+	for _, media := range feature.AllowedMediaTypes {
+		media = strings.ToLower(strings.TrimSpace(media))
+		if media != "" {
+			out.AllowedMediaTypes = append(out.AllowedMediaTypes, media)
+		}
+	}
+	return out
 }
 
 // AAPFeatureRollout is the Workspace/Client gray-release gate for AAP v1.
@@ -405,6 +499,50 @@ func (config *Config) applyEnvironment(lookup LookupEnv) error {
 	if raw, ok := lookup("ACTWEAVE_AAP_FEATURE_CLIENT_IDS"); ok {
 		config.AgentAccess.Feature.ClientIDs = splitCSV(raw)
 	}
+	if raw, ok := lookup("ACTWEAVE_AAP_FILES_ENABLED"); ok {
+		value, err := strconv.ParseBool(strings.TrimSpace(raw))
+		if err != nil {
+			return errors.New("ACTWEAVE_AAP_FILES_ENABLED must be a boolean")
+		}
+		config.AgentAccess.Files.Enabled = value
+	}
+	if raw, ok := lookup("ACTWEAVE_AAP_FILES_ALLOW_ALL_WORKSPACES"); ok {
+		value, err := strconv.ParseBool(strings.TrimSpace(raw))
+		if err != nil {
+			return errors.New("ACTWEAVE_AAP_FILES_ALLOW_ALL_WORKSPACES must be a boolean")
+		}
+		config.AgentAccess.Files.AllowAllWorkspaces = value
+	}
+	if raw, ok := lookup("ACTWEAVE_AAP_FILES_ALLOW_ALL_CLIENTS"); ok {
+		value, err := strconv.ParseBool(strings.TrimSpace(raw))
+		if err != nil {
+			return errors.New("ACTWEAVE_AAP_FILES_ALLOW_ALL_CLIENTS must be a boolean")
+		}
+		config.AgentAccess.Files.AllowAllClients = value
+	}
+	if raw, ok := lookup("ACTWEAVE_AAP_FILES_WORKSPACE_IDS"); ok {
+		config.AgentAccess.Files.WorkspaceIDs = splitCSV(raw)
+	}
+	if raw, ok := lookup("ACTWEAVE_AAP_FILES_CLIENT_IDS"); ok {
+		config.AgentAccess.Files.ClientIDs = splitCSV(raw)
+	}
+	if raw, ok := lookup("ACTWEAVE_AAP_FILES_MAX_BYTES"); ok {
+		value, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if err != nil || value < 1 {
+			return errors.New("ACTWEAVE_AAP_FILES_MAX_BYTES must be a positive integer")
+		}
+		config.AgentAccess.Files.MaxBytes = value
+	}
+	if raw, ok := lookup("ACTWEAVE_AAP_FILES_RUNTIME_MULTIMODAL"); ok {
+		value, err := strconv.ParseBool(strings.TrimSpace(raw))
+		if err != nil {
+			return errors.New("ACTWEAVE_AAP_FILES_RUNTIME_MULTIMODAL must be a boolean")
+		}
+		config.AgentAccess.Files.RuntimeMultimodal = value
+	}
+	if raw, ok := lookup("ACTWEAVE_AAP_FILES_PUBLIC_UPLOAD_BASE_URL"); ok {
+		config.AgentAccess.Files.PublicUploadBaseURL = strings.TrimSpace(raw)
+	}
 	if raw, ok := lookup("ACTWEAVE_AGENT_AUDIT_DEBUG"); ok {
 		value, err := strconv.ParseBool(strings.TrimSpace(raw))
 		if err != nil {
@@ -471,6 +609,9 @@ func (config Config) ValidateServer() error {
 		return err
 	}
 	if err := validateAAPFeatureRollout(config.AgentAccess.Feature); err != nil {
+		return err
+	}
+	if err := validateAgentAccessFilesConfig(config.AgentAccess.Files); err != nil {
 		return err
 	}
 	if err := validateRuntimeConfig(config.Runtime); err != nil {
@@ -628,6 +769,54 @@ func validateAAPFeatureRollout(feature AAPFeatureRollout) error {
 			return errors.New("agentAccess.feature.clientIds must be unique")
 		}
 		seenCL[id] = struct{}{}
+	}
+	return nil
+}
+
+func validateAgentAccessFilesConfig(files AgentAccessFilesConfig) error {
+	if files.AllowAllWorkspaces && len(files.WorkspaceIDs) > 0 {
+		return errors.New("agentAccess.files.workspaceIds must be empty when allowAllWorkspaces is true")
+	}
+	if files.AllowAllClients && len(files.ClientIDs) > 0 {
+		return errors.New("agentAccess.files.clientIds must be empty when allowAllClients is true")
+	}
+	const maxAllowlist = 10_000
+	if len(files.WorkspaceIDs) > maxAllowlist || len(files.ClientIDs) > maxAllowlist {
+		return errors.New("agentAccess.files allowlists exceed the configured maximum")
+	}
+	seenWS := make(map[string]struct{}, len(files.WorkspaceIDs))
+	for _, id := range files.WorkspaceIDs {
+		id = strings.ToLower(strings.TrimSpace(id))
+		if id == "" {
+			return errors.New("agentAccess.files.workspaceIds must not contain empty values")
+		}
+		if _, dup := seenWS[id]; dup {
+			return errors.New("agentAccess.files.workspaceIds must be unique")
+		}
+		seenWS[id] = struct{}{}
+	}
+	seenCL := make(map[string]struct{}, len(files.ClientIDs))
+	for _, id := range files.ClientIDs {
+		id = strings.ToLower(strings.TrimSpace(id))
+		if id == "" {
+			return errors.New("agentAccess.files.clientIds must not contain empty values")
+		}
+		if _, dup := seenCL[id]; dup {
+			return errors.New("agentAccess.files.clientIds must be unique")
+		}
+		seenCL[id] = struct{}{}
+	}
+	if files.MaxBytes < 0 {
+		return errors.New("agentAccess.files.maxBytes must be non-negative")
+	}
+	if files.MaxPendingPerWorkspace < 0 {
+		return errors.New("agentAccess.files.maxPendingPerWorkspace must be non-negative")
+	}
+	if files.MaxReadyBytesPerWorkspace < 0 {
+		return errors.New("agentAccess.files.maxReadyBytesPerWorkspace must be non-negative")
+	}
+	if files.StagingTTLSeconds < 0 || files.RetentionDays < 0 {
+		return errors.New("agentAccess.files staging/retention durations must be non-negative")
 	}
 	return nil
 }

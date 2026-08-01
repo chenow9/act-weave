@@ -20,7 +20,7 @@ const WORKSPACE_ID = (process.env.AAP_WORKSPACE_ID || "").trim();
 const AGENT_ID = (process.env.AAP_AGENT_ID || "").trim();
 const SCOPES = (
   process.env.AAP_SCOPES ||
-  "agent:read conversation:create conversation:read run:create run:read run:cancel event:read interaction:decide"
+  "agent:read conversation:create conversation:read run:create run:read run:cancel event:read interaction:decide file:write file:read"
 ).trim();
 /** Service Connection UUID used by Agent capabilities (REQUEST_PASSTHROUGH). */
 const OUTBOUND_CONNECTION_ID = (process.env.OUTBOUND_CONNECTION_ID || "").trim();
@@ -132,8 +132,11 @@ const server = http.createServer(async (req, res) => {
       }
       const body = await readJSON(req);
       const text = String(body?.text || "").trim();
-      if (!text) {
-        return json(res, 400, { error: { code: "EMPTY_TEXT", message: "text is required" } });
+      const fileIds = normalizeFileIds(body?.fileIds);
+      if (!text && fileIds.length === 0) {
+        return json(res, 400, {
+          error: { code: "EMPTY_MESSAGE", message: "text or fileIds is required" },
+        });
       }
       // Soft gate: when OUTBOUND_REQUIRE_FOR_CHAT=true, refuse chat without a live
       // business token. Default is optional so pure-LLM turns still work; tools that
@@ -153,7 +156,7 @@ const server = http.createServer(async (req, res) => {
       }
       const conversationId = body?.conversationId ? String(body.conversationId) : undefined;
       const token = await getAccessToken();
-      const run = await createRun(token, text, conversationId);
+      const run = await createRun(token, text, conversationId, fileIds);
       return json(res, 200, {
         conversationId: run.conversationId,
         runId: run.runId,
@@ -163,6 +166,7 @@ const server = http.createServer(async (req, res) => {
         workspaceId: WORKSPACE_ID,
         agentId: AGENT_ID,
         outboundAttached: Boolean(getLiveOutboundBinding()),
+        fileIds,
       });
     }
 
@@ -323,7 +327,31 @@ function tokenExpiresInSeconds() {
   return secs > 0 ? secs : 1;
 }
 
-async function createRun(accessToken, text, conversationId) {
+/**
+ * @param {unknown} raw
+ * @returns {string[]}
+ */
+function normalizeFileIds(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const item of raw) {
+    const id = String(item || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+
+/**
+ * @param {string} accessToken
+ * @param {string} text
+ * @param {string|undefined} conversationId
+ * @param {string[]} [fileIds]
+ */
+async function createRun(accessToken, text, conversationId, fileIds = []) {
   let convId = conversationId;
   if (!convId) {
     const convRes = await fetch(
@@ -344,6 +372,19 @@ async function createRun(accessToken, text, conversationId) {
     if (!convId) throw new Error("createConversation missing id");
   }
 
+  /** @type {Array<Record<string, unknown>>} */
+  const content = [];
+  const messageText = String(text || "").trim();
+  if (messageText) {
+    content.push({ type: "text", text: messageText });
+  } else if (fileIds.length > 0) {
+    // Protocol prefers a text part; keep a short placeholder when only attachments.
+    content.push({ type: "text", text: "（见附件）" });
+  }
+  for (const fileId of fileIds) {
+    content.push({ type: "input_file", fileId });
+  }
+
   // stream:false + Accept: application/json — BFF only needs the accepted Run id.
   // Browser follows events via SSE (followRun).
   const runBody = {
@@ -353,7 +394,7 @@ async function createRun(accessToken, text, conversationId) {
       {
         type: "message",
         role: "user",
-        content: [{ type: "text", text }],
+        content,
       },
     ],
   };

@@ -515,6 +515,94 @@ func TestGenerateWithEmptyObjectToolSchemaDoesNotFailParameters(t *testing.T) {
 	}
 }
 
+func TestGenerateMapsUserInputMultiContentToImageURL(t *testing.T) {
+	t.Parallel()
+
+	var sawMulti atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode: %v", err)
+			return
+		}
+		msgs, _ := body["messages"].([]any)
+		if len(msgs) == 0 {
+			t.Error("missing messages")
+			return
+		}
+		user, _ := msgs[0].(map[string]any)
+		content, ok := user["content"].([]any)
+		if !ok || len(content) != 2 {
+			t.Errorf("want multimodal content array, got %T %v", user["content"], user["content"])
+			return
+		}
+		textPart, _ := content[0].(map[string]any)
+		imgPart, _ := content[1].(map[string]any)
+		if textPart["type"] != "text" || textPart["text"] != "describe" {
+			t.Errorf("text part: %v", textPart)
+		}
+		if imgPart["type"] != "image_url" {
+			t.Errorf("image part type: %v", imgPart)
+		}
+		imgURL, _ := imgPart["image_url"].(map[string]any)
+		url, _ := imgURL["url"].(string)
+		if !strings.HasPrefix(url, "data:image/png;base64,") {
+			t.Errorf("image url: %q", url)
+		}
+		// Wire must not include external download hosts from assembly.
+		if strings.Contains(url, "http://") || strings.Contains(url, "https://") {
+			t.Errorf("must use data URL not http: %q", url)
+		}
+		sawMulti.Store(true)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{
+				"message": map[string]any{"role": "assistant", "content": "a cat"},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	cm, err := NewPlatformChatModel(server.Client(), noopSecrets(), testConfig(server.URL+"/v1"))
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	b64 := "iVBORw0KGgo="
+	msg, err := cm.Generate(context.Background(), []*schema.Message{{
+		Role: schema.User,
+		UserInputMultiContent: []schema.MessageInputPart{
+			{Type: schema.ChatMessagePartTypeText, Text: "describe"},
+			{
+				Type: schema.ChatMessagePartTypeImageURL,
+				Image: &schema.MessageInputImage{
+					MessagePartCommon: schema.MessagePartCommon{
+						Base64Data: &b64,
+						MIMEType:   "image/png",
+					},
+				},
+			},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if msg.Content != "a cat" || !sawMulti.Load() {
+		t.Fatalf("content=%q sawMulti=%v", msg.Content, sawMulti.Load())
+	}
+}
+
+func TestMapMessagesRejectsUnsupportedMultimodalPart(t *testing.T) {
+	t.Parallel()
+	_, err := mapMessagesToOpenAI([]*schema.Message{{
+		Role: schema.User,
+		UserInputMultiContent: []schema.MessageInputPart{
+			{Type: schema.ChatMessagePartTypeFileURL},
+		},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "unsupported multimodal") {
+		t.Fatalf("want unsupported part error, got %v", err)
+	}
+}
+
 func noopSecrets() SecretOpener {
 	return secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return errors.New("secret open unexpected")

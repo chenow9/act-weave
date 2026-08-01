@@ -24,8 +24,9 @@ Product overview and local run: root [`README.md`](../README.md) / [`README.zh-C
 3. Create **Conversations** and **Runs**
 4. Follow **Run events** over SSE (`Last-Event-ID` resume)
 5. Decide **Interactions** (human / policy confirmations)
+6. (Optional, **off by default**) Upload **Files**, wait until ready, and reference them from Run input as `input_file` parts
 
-AAP is **not** the ActWeave management console API (`/api/v1`). Console user session JWTs are **rejected** on AAP routes.
+AAP is **not** the ActWeave management console API (`/api/v1`). Console user session JWTs are **rejected** on AAP routes. There is **no** Console product UI for AAP files in v1.
 
 | Surface | Base path | Auth | Who uses it |
 | --- | --- | --- | --- |
@@ -60,7 +61,8 @@ Store the Client Secret / private key in **your** secret manager. Secrets never 
 | **Grant** | Permission bound to Client + Agent(s) + scopes (+ optional policies) |
 | **Access Token** | Short-lived JWT (`EdDSA` / `at+jwt`). Binds **one** Workspace, **one** Agent, Client, principal, optional External Subject |
 | **Conversation** | Durable dialogue container for one Agent |
-| **Run** | One execution under a Conversation (v1 input is **text only**) |
+| **Run** | One execution under a Conversation. Default input is **text**; when AAP files is enabled, user messages may also include `input_file` parts that reference a stable `fileId` |
+| **File** | Optional uploaded blob with lifecycle status (`pending_upload` → … → `ready`). GET status is the source of truth (no File SSE in v1) |
 | **Protocol Event** | Durable fact on the Run stream (`sequence` is the cursor) |
 | **Interaction** | Run paused for approve / decline / cancel |
 | **External Subject** | End-user identity from your IdP via Token Exchange (optional) |
@@ -206,8 +208,10 @@ Grant scopes are the **upper bound**. Each Token request asks for a **subset**.
 | `event:read` | SSE / event follow |
 | `interaction:decide` | Approve / decline / cancel interactions |
 | `artifact:read` | Artifact access (when authorized) |
+| `file:write` | Create upload intent + complete (when files feature is enabled) |
+| `file:read` | Read file status / content / mint download (when files feature is enabled) |
 
-Use least privilege: only request scopes your integration actually needs.
+Use least privilege: only request scopes your integration actually needs. File scopes are useless until the operator enables `agentAccess.files` for your workspace/client.
 
 ---
 
@@ -244,7 +248,7 @@ Content-Type: application/json
 }
 ```
 
-v1 accepts **text input only**. Other content types → `UNSUPPORTED_CONTENT_TYPE`.
+Default deployments accept **text** message content. When AAP files is enabled and the file is `ready`, you may also attach `{ "type": "input_file", "fileId": "<uuid>" }` parts (see [§9.1](#91-files-optional)). Unknown content types → `UNSUPPORTED_CONTENT_TYPE`. Multimodal model assembly additionally requires **`RuntimeMultimodal`** (operator flag; default off).
 
 ### Step 4 — Follow Run events (SSE)
 
@@ -331,7 +335,156 @@ Auth: `Authorization: Bearer <access_token>` except Token Endpoint and JWKS.
 | --- | --- | --- | --- |
 | `POST` | `.../runs/{rid}/interactions/{iid}:decide` | `interaction:decide` | Body + `If-Match` + `Idempotency-Key` |
 
+### Files (optional; default disabled)
+
+| Method | Path | Scope | Notes |
+| --- | --- | --- | --- |
+| `POST` | `/workspaces/{wid}/agents/{aid}/files` | `file:write` | Create upload intent + write-only `upload` (presigned PUT). `Idempotency-Key` required |
+| `POST` | `/workspaces/{wid}/agents/{aid}/files/{fid}:complete` | `file:write` | Confirm staging; async promote. `Idempotency-Key` required |
+| `GET` | `/workspaces/{wid}/agents/{aid}/files/{fid}` | `file:read` | Status SoT (no File SSE in v1) |
+| `GET` | `/workspaces/{wid}/agents/{aid}/files/{fid}/content` | `file:read` | Bearer stream (path A); prefer `:download` for large bodies |
+| `POST` | `/workspaces/{wid}/agents/{aid}/files/{fid}:download` | `file:read` | Mint opaque download token (path B) |
+| `GET` | `/files/downloads/{tokenId}` | none (token) | Stream via opaque token; **no** AAP Bearer |
+
+**v1 does not provide** `GET .../files` (list) or `DELETE .../files/{id}`. There is no Console product UI for files.
+
 Authoritative request/response schemas: [`openapi/agent-access-v1.yaml`](./openapi/agent-access-v1.yaml).
+
+### 9.1 Files (optional)
+
+Feature gate: `agentAccess.files.enabled` defaults to **false**. When disabled, file routes conceal as not visible (**404**). End-to-end multimodal model input additionally requires **`RuntimeMultimodal=true`**; with files enabled but runtime multimodal off, `createRun` with `input_file` fails closed with **422 `FILE_RUNTIME_UNAVAILABLE`** (no Run is created).
+
+#### Upload flow
+
+1. **`POST .../files`** with `mediaType`, `sizeBytes` (and optional `filename`, `sha256`, `purpose`) + `Idempotency-Key`.
+2. Response `201` includes `file` + **write-only** `upload: { method: "PUT", url, headers, expiresAt }`.  
+   - `headers` **must** be sent on the PUT exactly as returned. At minimum the signature binds **`Content-Length`** and **`Content-Type`**.  
+   - Subsequent **GET never echoes** `upload`, presign headers, or live download URLs.
+3. **Client PUT** the raw bytes to `upload.url` (typically object storage). Do **not** attach the AAP Bearer token to this PUT.
+4. **`POST .../files/{fileId}:complete`** (optional body `{ "sha256": "..." }`). Fast path: stats staging, validates size/MIME, CAS → `uploaded`, enqueues promote. Does **not** wait for encryption.
+5. **Poll `GET .../files/{fileId}`** until `status=ready` (SDK: `waitUntilReady`). Terminal failures: `failed` / `expired`.
+6. **`POST .../runs`** with content parts:
+
+```json
+{
+  "conversationId": "<uuid>",
+  "stream": false,
+  "input": [{
+    "type": "message",
+    "role": "user",
+    "content": [
+      { "type": "text", "text": "Summarize this invoice" },
+      { "type": "input_file", "fileId": "<file-uuid>" }
+    ]
+  }]
+}
+```
+
+Wire protocol and persisted items carry only stable **`fileId`** — never live download/presign URLs or blob plaintext.
+
+#### Defaults (confirm with operator)
+
+| Limit | Default |
+| --- | --- |
+| maxBytes | 25 MiB |
+| Allowed MIME | `image/png`, `image/jpeg`, `image/webp`, `image/gif`, `application/pdf` |
+| Staging TTL | ~15 minutes |
+| Retention | EXPIRING ~30 days (first successful createRun reference may promote retention) |
+| Download token TTL | client_content / tool_invoke ≤ 5m; processor_delivery ≤ 10m (hard cap 15m) |
+
+#### Content download
+
+| Path | How | When |
+| --- | --- | --- |
+| **A** | `GET .../files/{fileId}/content` + Bearer + `file:read` | Small bodies; simple clients |
+| **B** | `POST .../files/{fileId}:download` → relative `url` → `GET /files/downloads/{tokenId}` (**no** Bearer) | **Preferred when `sizeBytes > 4 MiB`**; tools/processors always use opaque tokens |
+
+Token ids are opaque DB rows, **not** JWTs and **not** MinIO credentials. Reverse proxies streaming file bodies should disable response buffering and allow read timeouts ≥ 120s for up to maxBytes.
+
+#### Processor webhook contract (partner / DLP / custom stages)
+
+Workspace-configured HTTPS processors receive an async POST after promote (HMAC, not AAP Bearer):
+
+```http
+POST https://partner.example/hooks/aap-file
+Content-Type: application/json
+X-ActWeave-Signature: t=<unix>,v1=<hmac_sha256_hex>
+```
+
+Delivery body (illustrative):
+
+```json
+{
+  "specVersion": "file-processor.v1",
+  "eventType": "file.uploaded",
+  "deliveryId": "<uuid>",
+  "workspaceId": "<uuid>",
+  "agentId": "<uuid>",
+  "fileId": "<uuid>",
+  "mediaType": "application/pdf",
+  "sizeBytes": 12345,
+  "sha256": "...",
+  "download": {
+    "url": "https://aap-host/api/agent-access/v1/files/downloads/<tokenId>",
+    "expiresAt": "...",
+    "purpose": "processor_delivery"
+  },
+  "callback": {
+    "url": "https://aap-host/api/agent-access/v1/internal/file-processor/callbacks/<deliveryId>",
+    "expiresAt": "..."
+  }
+}
+```
+
+- **Signature:** HMAC-SHA256 over `t + "." + rawBody` with the workspace processor secret; header form `t=<unix>,v1=<hex>`. Verify within ±5 minutes skew.
+- **Download URL** in the delivery is a short-lived opaque token proxy — fetch it without an AAP Bearer.
+- **Callback** (partner → ActWeave), also HMAC-signed with the same secret scheme:
+
+```http
+POST /api/agent-access/v1/internal/file-processor/callbacks/{deliveryId}
+Content-Type: application/json
+X-ActWeave-Signature: t=<unix>,v1=<hmac_sha256_hex>
+```
+
+```json
+{
+  "processorId": "partner-dlp",
+  "status": "succeeded",
+  "artifacts": [
+    {
+      "kind": "DLP_REPORT",
+      "mediaType": "application/json",
+      "contentBase64": "..."
+    }
+  ],
+  "attributes": { "dlpRisk": "low" }
+}
+```
+
+| Rule | Detail |
+| --- | --- |
+| Callback body cap | ~384 KiB request; **decoded** artifacts total ≤ **256 KiB** |
+| Job lifecycle | `PENDING` → `DELIVERED` → `SUCCEEDED` \| `FAILED` \| `TIMED_OUT` |
+| Late callback | After `TIMED_OUT` → **409 `FILE_PROCESSOR_CALLBACK_LATE`** (does not break an already-terminal file) |
+| Idempotent replay | Same delivery success callback → 200 |
+| Webhook URL policy | **https only**; private / link-local / metadata IPs rejected (SSRF) |
+| Config surface | Workspace table / operator injection — **no** public list API and **no** Console UI in v1 |
+
+#### Partner tool headers (`x-actweave-file`)
+
+When a tool schema marks a property with `x-actweave-file: true`, ActWeave mints short-lived download tokens at **invoke** time and injects them on the **outbound wire only** (scrubbed before permanent storage / protocol projection):
+
+| Situation | Header |
+| --- | --- |
+| Exactly one file | `X-ActWeave-File-Download: <absolute-proxy-url>` |
+| Multiple files | `X-ActWeave-File-Downloads: application/json` with body `{"<fileId>":"<url>",...}` |
+
+Partners should either:
+
+- declare optional `downloadUrl` on the file object in the tool input schema and read it from the JSON body, **or**
+- read `X-ActWeave-File-Download(s)` headers
+
+Partners must **not** be required to hold an AAP token and call `:download` themselves. Model-visible / stored tool arguments contain only `fileId` (and metadata) — never live URLs.
 
 ---
 
@@ -452,8 +605,21 @@ When a Run needs confirmation:
 | `REPLAY_CURSOR_INVALID` | 422 | no | Reset from known-good sequence or `0` |
 | `IDEMPOTENCY_CONFLICT` | 409 | no | New key or identical body |
 | `RATE_LIMITED` | 429 | yes | Honor `Retry-After` / `RateLimit-*` |
-| `UNSUPPORTED_CONTENT_TYPE` | 400 | no | Use text-only input |
+| `UNSUPPORTED_CONTENT_TYPE` | 400 | no | Use supported content parts only |
 | `SLOW_CONSUMER` | SSE disconnect | yes | Reconnect with last `id` |
+| `FILE_NOT_FOUND` | 404 | no | Missing / not visible (conceal) |
+| `FILE_FEATURE_DISABLED` | 404 | no | Files gate closed (conceal) |
+| `FILE_NOT_READY` | 422 | yes if still processing | Wait / poll GET before createRun |
+| `FILE_UPLOAD_EXPIRED` | 422 | no | Re-create intent; staging TTL elapsed |
+| `FILE_SIZE_EXCEEDED` | 422 | no | Reduce payload / respect maxBytes |
+| `FILE_MEDIA_TYPE_DENIED` | 422 | no | Use allowed MIME whitelist |
+| `FILE_MEDIA_TYPE_MISMATCH` | 422 | no | Bytes do not match declared mediaType |
+| `FILE_INTEGRITY_MISMATCH` | 422 | no | sha256 mismatch |
+| `FILE_PROCESSING_FAILED` | 422 | no | Do not reference failed file |
+| `FILE_RUNTIME_UNAVAILABLE` | 422 | no | `input_file` requires `RuntimeMultimodal`; no Run created |
+| `FILE_PROCESSOR_CALLBACK_LATE` | 409 | no | Job already TIMED_OUT; leave state |
+| `FILE_PENDING_LIMIT` | 429 | yes | Back off; concurrent PENDING_UPLOAD cap |
+| `MODEL_CONTENT_UNSUPPORTED` | run failed | no | Provider cannot consume media |
 
 OAuth Token Endpoint errors use RFC 6749-style `error` / `error_description` and **must not** echo secrets.
 
@@ -493,14 +659,29 @@ const client = new AgentAccessClient({
   tokenProvider: tokens,
 });
 
-const { conversation } = await client.createConversation(workspaceId, agentId, {
-  title: "Ticket 42",
-});
+const { conversation } = await client.createConversation(
+  workspaceId,
+  agentId,
+  { title: "Ticket 42" },
+  { idempotencyKey: crypto.randomUUID() },
+);
 
-const run = await client.createRun(workspaceId, agentId, {
-  conversationId: conversation.id,
-  input: [{ type: "text", text: "Hello" }],
-});
+const run = await client.createRun(
+  workspaceId,
+  agentId,
+  {
+    conversationId: conversation.id,
+    stream: false,
+    input: [
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "text", text: "Hello" }],
+      },
+    ],
+  },
+  { idempotencyKey: crypto.randomUUID() },
+);
 
 for await (const { message, snapshot } of client.followRun(
   workspaceId,
@@ -519,13 +700,64 @@ for await (const { message, snapshot } of client.followRun(
 }
 ```
 
+### 14.1 File upload (when `agentAccess.files` is enabled)
+
+```ts
+const bytes = new Uint8Array(/* ... */); // never embed production secrets in samples
+const created = await client.createFile(
+  workspaceId,
+  agentId,
+  {
+    filename: "invoice.png",
+    mediaType: "image/png",
+    sizeBytes: bytes.byteLength,
+  },
+  { idempotencyKey: crypto.randomUUID() },
+);
+
+// PUT must use create-returned headers (Content-Length + Content-Type are signed).
+await client.putFileUpload(created.upload!, bytes);
+
+await client.completeFile(workspaceId, agentId, created.file.id, undefined, {
+  idempotencyKey: crypto.randomUUID(),
+});
+
+const ready = await client.waitUntilReady(workspaceId, agentId, created.file.id);
+
+// Multimodal E2E also requires RuntimeMultimodal on the ActWeave side.
+await client.createRun(
+  workspaceId,
+  agentId,
+  {
+    conversationId: conversation.id,
+    stream: false,
+    input: [
+      {
+        type: "message",
+        role: "user",
+        content: [
+          { type: "text", text: "Describe this image" },
+          { type: "input_file", fileId: ready.id },
+        ],
+      },
+    ],
+  },
+  { idempotencyKey: crypto.randomUUID() },
+);
+
+// Small: Bearer .../content. Large (>4MiB): prefers :download token proxy.
+const content = await client.getFileContent(workspaceId, agentId, ready.id);
+```
+
 SDK guarantees:
 
 - Access Token only in `Authorization` (never query)
 - Auto-reconnect with `Last-Event-ID` on gaps / retryable disconnects
 - Force-refresh on `TOKEN_EXPIRED` / HTTP 401, then resume the same cursor
+- File PUT uses **only** create-returned headers (no AAP Bearer on object storage)
+- `getFileContent` prefers opaque `:download` when `sizeBytes > 4MiB`
 
-Also exported: `StaticTokenProvider`, `RunReducer`, `AAPSESession`. See `sdk/typescript/README.md`.
+Also exported: `StaticTokenProvider`, `RunReducer`, `AAPSESession`, file types / `SDK_PREFER_DOWNLOAD_TOKEN_BYTES`. See `sdk/typescript/README.md`.
 
 ---
 
@@ -563,6 +795,9 @@ Unauthorized `Origin` is not reflected. Prefer moving secrets server-side and di
 - [ ] Error handling maps stable codes (`TOKEN_EXPIRED`, `REPLAY_CURSOR_INVALID`, …)  
 - [ ] Token Exchange subject issuer config verified (if you bind end users)  
 - [ ] OpenAPI / SDK versions match the ActWeave deployment  
+- [ ] If using files: operator enabled `agentAccess.files` **and** (for model vision/PDF) `RuntimeMultimodal`; Grant includes `file:read` / `file:write`  
+- [ ] If using files: PUT always sends create-returned `Content-Length` / `Content-Type`; never store live download URLs in your long-term logs  
+- [ ] If you implement a processor: verify `X-ActWeave-Signature`, https-only callback URL policy, and late-callback `FILE_PROCESSOR_CALLBACK_LATE` handling 
 
 ---
 

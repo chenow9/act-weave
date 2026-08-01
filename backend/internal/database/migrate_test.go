@@ -51,8 +51,15 @@ func TestEmbeddedMigrationSetStartsWithBaselineThenSessionContext(t *testing.T) 
 	if fifth != 5 {
 		t.Fatalf("expected fifth migration version 5, got %d", fifth)
 	}
-	if _, err := source.Next(fifth); err == nil {
-		t.Fatal("expected only five embedded migrations")
+	sixth, err := source.Next(fifth)
+	if err != nil {
+		t.Fatalf("expected aap files migration: %v", err)
+	}
+	if sixth != 6 {
+		t.Fatalf("expected sixth migration version 6, got %d", sixth)
+	}
+	if _, err := source.Next(sixth); err == nil {
+		t.Fatal("expected only six embedded migrations")
 	}
 
 	for _, item := range []struct {
@@ -64,6 +71,7 @@ func TestEmbeddedMigrationSetStartsWithBaselineThenSessionContext(t *testing.T) 
 		{version: 3, identifier: "chat_context_summaries"},
 		{version: 4, identifier: "agent_context_llm_compaction"},
 		{version: 5, identifier: "agent_access_cors_loopback"},
+		{version: 6, identifier: "aap_files"},
 	} {
 		for _, direction := range []struct {
 			name string

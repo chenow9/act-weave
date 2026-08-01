@@ -61,7 +61,9 @@ services:
         mc mb --ignore-existing local/actweave-executions &&
         mc mb --ignore-existing local/actweave-audit-packages &&
         mc mb --ignore-existing local/actweave-tool-tests &&
-        mc mb --ignore-existing local/actweave-connection-verifications
+        mc mb --ignore-existing local/actweave-connection-verifications &&
+        mc mb --ignore-existing local/actweave-aap-staging &&
+        mc mb --ignore-existing local/actweave-aap-files
     restart: "no"
 
   backend:

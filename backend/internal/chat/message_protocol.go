@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -9,6 +10,9 @@ import (
 
 	"github.com/google/uuid"
 )
+
+// MessageContentSchemaVersion is the durable AAP createRun message body schema (design §5.7.2).
+const MessageContentSchemaVersion = "aap.message-content.v1"
 
 type ProtocolMessageContentReader interface {
 	ReadPermanentChat(context.Context, string, string, string) (string, error)
@@ -43,16 +47,60 @@ func (mapper *ProtocolMessageMapper) MapCompleted(
 	if err != nil {
 		return protocolevent.MessageItem{}, err
 	}
+	parts, err := ParseMessageContentParts(content)
+	if err != nil {
+		return protocolevent.MessageItem{}, ErrInvalid
+	}
 	item := protocolevent.MessageItem{
 		ID: message.ID, Type: protocolevent.ItemTypeMessage, Status: status, Role: role,
-		Content: []protocolevent.ContentPart{
-			protocolevent.TextContentPart{Type: protocolevent.ContentPartTypeText, Text: content},
-		},
+		Content: parts,
 	}
 	if err := protocolevent.ValidateItem(item); err != nil {
 		return protocolevent.MessageItem{}, ErrInvalid
 	}
 	return item, nil
+}
+
+// ParseMessageContentParts projects permanent message body to protocol content parts.
+// aap.message-content.v1 → text + input_file parts (never download URLs).
+// Legacy non-JSON / missing schemaVersion → single text part (Console/history compat).
+func ParseMessageContentParts(content string) ([]protocolevent.ContentPart, error) {
+	if content == "" {
+		return nil, ErrInvalid
+	}
+	var envelope struct {
+		SchemaVersion string            `json:"schemaVersion"`
+		Parts         []json.RawMessage `json:"parts"`
+	}
+	if err := json.Unmarshal([]byte(content), &envelope); err != nil ||
+		envelope.SchemaVersion != MessageContentSchemaVersion || len(envelope.Parts) == 0 {
+		return []protocolevent.ContentPart{
+			protocolevent.TextContentPart{Type: protocolevent.ContentPartTypeText, Text: content},
+		}, nil
+	}
+	parts := make([]protocolevent.ContentPart, 0, len(envelope.Parts))
+	for _, raw := range envelope.Parts {
+		part, err := protocolevent.DecodeContentPart(raw)
+		if err != nil {
+			return nil, ErrInvalid
+		}
+		switch typed := part.(type) {
+		case protocolevent.TextContentPart:
+			parts = append(parts, typed)
+		case protocolevent.InputFileContentPart:
+			// Strip any accidental URL-bearing fields by re-materializing allowlisted keys only.
+			parts = append(parts, protocolevent.InputFileContentPart{
+				Type: protocolevent.ContentPartTypeInputFile,
+				FileID: typed.FileID, MediaType: typed.MediaType,
+			})
+		default:
+			return nil, ErrInvalid
+		}
+	}
+	if len(parts) == 0 {
+		return nil, ErrInvalid
+	}
+	return parts, nil
 }
 
 func (mapper *ProtocolMessageMapper) MapStarted(

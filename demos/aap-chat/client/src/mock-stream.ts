@@ -71,21 +71,79 @@ cd demos/aap-chat && npm install && npm run dev
 你可以继续提问；在配置 \`.env\` 后切换为 **Live AAP** 模式即可对接真实 Agent。
 `;
 
-export async function* mockAssistantStream(userText: string): AsyncGenerator<MockChunk> {
+export async function* mockAssistantStream(
+  userText: string,
+  options?: { attachmentNames?: string[] },
+): AsyncGenerator<MockChunk> {
+  const names = options?.attachmentNames?.filter(Boolean) || [];
+  const hasAttachments = names.length > 0;
+  const isAttachmentOnly =
+    hasAttachments &&
+    (!userText.trim() || userText === "（见附件）" || userText === "请根据附件回答");
   yield { kind: "user", text: userText };
-  yield { kind: "status", text: "Mock 模式 · 本地流式渲染" };
-  yield { kind: "tool", name: "demo.compose_rich_reply", status: "running", detail: "{}" };
-
-  await sleep(350);
+  yield {
+    kind: "status",
+    text: hasAttachments ? "Mock 模式 · 已收到附件预览" : "Mock 模式 · 本地流式渲染",
+  };
   yield {
     kind: "tool",
-    name: "demo.compose_rich_reply",
+    name: hasAttachments ? "demo.render_attachments" : "demo.compose_rich_reply",
+    status: "running",
+    detail: hasAttachments
+      ? JSON.stringify(
+          {
+            note: "Mock 不上传真实文件；气泡内用本地 Object URL 渲染",
+            attachments: names,
+          },
+          null,
+          2,
+        )
+      : "{}",
+  };
+
+  await sleep(350);
+
+  const reply = isAttachmentOnly
+    ? [
+        "已收到你发送的附件（**Mock** 模式，未真正上传到 AAP）：",
+        "",
+        ...names.map((n, i) => `${i + 1}. \`${n}\``),
+        "",
+        "用户气泡中应能看到图片缩略图或 PDF 卡片。",
+        "",
+        "配置 `.env` 并启用 `agentAccess.files` 后，Live 模式会走：",
+        "",
+        "```text",
+        "createFile → 预签名 PUT → complete → waitUntilReady → createRun(input_file)",
+        "```",
+        "",
+        "可继续输入文字，或切换 **Live AAP** 做真实多模态对话。",
+      ].join("\n")
+    : hasAttachments
+      ? [
+          `收到 ${names.length} 个附件（${names.map((n) => `\`${n}\``).join("、")}），以及你的文字：`,
+          "",
+          `> ${userText.trim() || "（无文字）"}`,
+          "",
+          "下方是常规富文本样例（Mock）：",
+          "",
+          DEMO_REPLY,
+        ].join("\n")
+      : DEMO_REPLY;
+
+  yield {
+    kind: "tool",
+    name: hasAttachments ? "demo.render_attachments" : "demo.compose_rich_reply",
     status: "succeeded",
-    detail: JSON.stringify({ mode: "mock", bytes: DEMO_REPLY.length }, null, 2),
+    detail: JSON.stringify(
+      { mode: "mock", attachments: names, bytes: reply.length },
+      null,
+      2,
+    ),
   };
 
   // Stream by paragraphs for a nicer typing feel
-  const parts = DEMO_REPLY.split(/(\n\n+)/);
+  const parts = reply.split(/(\n\n+)/);
   let acc = "";
   for (const part of parts) {
     acc += part;

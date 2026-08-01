@@ -95,6 +95,10 @@ type Dependencies struct {
 	// Optional in tests; when nil/incomplete, triggered compact falls back to token_window
 	// after best-effort evidence persistence (or hard-fails on evidence errors).
 	Compact *CompactDependencies
+	// Multimodal assembles aap.message-content.v1 (+ optional READY input_file)
+	// into model schema messages (IC-08). When nil, text-only legacy/v1 text works;
+	// input_file parts fail closed with MODEL_CONTENT_UNSUPPORTED.
+	Multimodal *chatruntime.MultimodalAssembler
 }
 
 // Bridge implements agentrun.Runtime on the eino engine path.
@@ -121,6 +125,7 @@ type Bridge struct {
 	agentAuditDebug bool
 	assemblies      *execution.ContextAssemblyRepository
 	compact         *CompactDependencies
+	multimodal      *chatruntime.MultimodalAssembler
 
 	activeMu   sync.Mutex
 	activeRuns map[string]*activeRunExecution
@@ -174,6 +179,7 @@ func NewBridge(deps Dependencies) (*Bridge, error) {
 		logger: logger, now: now, agentAuditDebug: deps.AgentAuditDebug,
 		assemblies:      deps.Assemblies,
 		compact:         deps.Compact,
+		multimodal:      deps.Multimodal,
 		activeRuns:      make(map[string]*activeRunExecution),
 		pendingConfirms: make(map[string][]einoruntime.PendingConfirmInterrupt),
 	}, nil
@@ -694,8 +700,13 @@ func (b *Bridge) buildMessages(
 		}
 		switch role {
 		case "user":
-			messages = append(messages, schema.UserMessage(content))
+			userMsg, userErr := b.assembleUserSchemaMessage(ctx, job.WorkspaceID, configuredAgent.ID, content)
+			if userErr != nil {
+				return nil, userErr
+			}
+			messages = append(messages, userMsg)
 		case "assistant":
+			// Assistant durable bodies are plain text (not aap.message-content.v1).
 			messages = append(messages, schema.AssistantMessage(content, nil))
 		case "system":
 			// Instruction already injected; skip history system rows.
@@ -800,7 +811,11 @@ func (b *Bridge) buildMessagesTokenWindow(
 		case contextwindow.RoleSystem:
 			out = append(out, schema.SystemMessage(m.Content))
 		case contextwindow.RoleUser:
-			out = append(out, schema.UserMessage(m.Content))
+			userMsg, userErr := b.assembleUserSchemaMessage(ctx, job.WorkspaceID, run.AgentID, m.Content)
+			if userErr != nil {
+				return nil, userErr
+			}
+			out = append(out, userMsg)
 		case contextwindow.RoleAssistant:
 			out = append(out, schema.AssistantMessage(m.Content, nil))
 		}
@@ -809,6 +824,25 @@ func (b *Bridge) buildMessagesTokenWindow(
 		return nil, execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
 	}
 	return out, nil
+}
+
+// assembleUserSchemaMessage maps durable user content to a model schema message.
+// AAP createRun stores aap.message-content.v1; input_file parts are assembled
+// when Multimodal.RuntimeMultimodal is true, else fail with MODEL_CONTENT_UNSUPPORTED.
+func (b *Bridge) assembleUserSchemaMessage(
+	ctx context.Context,
+	workspaceID, agentID, content string,
+) (*schema.Message, error) {
+	assembler := b.multimodal
+	if assembler == nil {
+		// No multimodal wiring: still decode v1 text; fail closed on input_file.
+		assembler = &chatruntime.MultimodalAssembler{RuntimeMultimodal: false}
+	}
+	msg, err := assembler.AssembleUserMessage(ctx, workspaceID, agentID, content)
+	if err != nil {
+		return nil, err
+	}
+	return msg, nil
 }
 
 // historyPageSize is the reverse-page resource bound for session-context assembly.
@@ -1453,6 +1487,9 @@ func executionErrorCode(err error) string {
 	if err == nil {
 		return "INVOCATION_FAILED"
 	}
+	if errors.Is(err, chatruntime.ErrModelContentUnsupported) {
+		return chatruntime.ErrCodeModelContentUnsupported
+	}
 	var ctxErr *execution.ContextError
 	if errors.As(err, &ctxErr) && ctxErr != nil && strings.TrimSpace(ctxErr.Code) != "" {
 		return ctxErr.Code
@@ -1465,6 +1502,7 @@ func executionErrorCode(err error) string {
 		execution.ErrCodeContextRequiredInputTooLarge,
 		execution.ErrCodeContextAssemblyFailed,
 		execution.ErrCodeContextWindowExceededUpstream,
+		chatruntime.ErrCodeModelContentUnsupported,
 	} {
 		if strings.Contains(msg, code) {
 			return code

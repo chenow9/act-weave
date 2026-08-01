@@ -30,8 +30,13 @@ const (
 	ScopeEventRead          AgentScope = "event:read"
 	ScopeInteractionDecide  AgentScope = "interaction:decide"
 	ScopeArtifactRead       AgentScope = "artifact:read"
+	ScopeFileWrite          AgentScope = "file:write"
+	ScopeFileRead           AgentScope = "file:read"
 )
 
+// KnownAgentScopes is the management Grant scopes enum (must stay aligned with
+// agentaccessauth.canonicalAAPScopes and agent-grant.schema.json).
+// Old Grants without file scopes remain valid; new Grants may include them.
 func KnownAgentScopes() []AgentScope {
 	return []AgentScope{
 		ScopeAgentRead,
@@ -43,6 +48,8 @@ func KnownAgentScopes() []AgentScope {
 		ScopeEventRead,
 		ScopeInteractionDecide,
 		ScopeArtifactRead,
+		ScopeFileWrite,
+		ScopeFileRead,
 	}
 }
 
@@ -69,6 +76,7 @@ const (
 	SubjectSharingEvent        SubjectSharingResource = "event"
 	SubjectSharingInteraction  SubjectSharingResource = "interaction"
 	SubjectSharingArtifact     SubjectSharingResource = "artifact"
+	SubjectSharingFile         SubjectSharingResource = "file"
 )
 
 type SubjectSharingPolicy struct {
@@ -79,7 +87,7 @@ type SubjectSharingPolicy struct {
 func KnownSubjectSharingResources() []SubjectSharingResource {
 	return []SubjectSharingResource{
 		SubjectSharingConversation, SubjectSharingRun, SubjectSharingEvent,
-		SubjectSharingInteraction, SubjectSharingArtifact,
+		SubjectSharingInteraction, SubjectSharingArtifact, SubjectSharingFile,
 	}
 }
 

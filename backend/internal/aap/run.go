@@ -24,7 +24,22 @@ var (
 	ErrRunInvalid             = errors.New("AAP Run input is invalid")
 	ErrRunNotFound            = errors.New("AAP Run was not found")
 	ErrRunIdempotencyConflict = errors.New("AAP Run idempotency key conflicts with another request")
+	// ErrFileRuntimeUnavailable is returned when createRun includes input_file but
+	// RuntimeMultimodal is off (KD-23). Mapped to 422 FILE_RUNTIME_UNAVAILABLE.
+	ErrFileRuntimeUnavailable = errors.New("AAP file runtime multimodal is unavailable")
 )
+
+// MessageContentSchemaVersion is the permanent chat message body schema for AAP createRun.
+const MessageContentSchemaVersion = "aap.message-content.v1"
+
+// RunContentPart is one createRun content part (text or input_file).
+// File bytes and download URLs are never included (KD-4).
+type RunContentPart struct {
+	Type      string `json:"type"`
+	Text      string `json:"text,omitempty"`
+	FileID    string `json:"fileId,omitempty"`
+	MediaType string `json:"mediaType,omitempty"`
+}
 
 var runIDNamespace = uuid.MustParse("7be892be-fbe5-4ce6-8873-a879dd34c828")
 
@@ -96,8 +111,10 @@ func NewRunService(
 type CreateRunInput struct {
 	Scope          ConversationScope
 	ConversationID string
-	Text           string
-	Metadata       map[string]string
+	// Text is a compatibility helper (joined text parts). Authoritative content is Parts.
+	Text     string
+	Parts    []RunContentPart
+	Metadata map[string]string
 	IdempotencyKey string
 	TraceID        string
 	Principal      agentaccessauth.AAPAccessTokenPrincipal
@@ -133,12 +150,8 @@ func (service *RunService) Create(
 	receiptKey := commandReceiptKey(
 		input.Scope, input.Principal, input.Authorization, CommandRunCreate, input.IdempotencyKey,
 	)
-	// Request hash intentionally excludes Token / expiresAt / locator material.
-	requestHash, err := commandRequestHash(struct {
-		ConversationID string            `json:"conversationId"`
-		Text           string            `json:"text"`
-		Metadata       map[string]string `json:"metadata"`
-	}{ConversationID: input.ConversationID, Text: input.Text, Metadata: input.Metadata})
+	// Request hash: ordered text + fileIds only — no bytes/URLs (design §5.7.3).
+	requestHash, err := createRunCommandRequestHash(input)
 	if err != nil {
 		return CreateRunResult{}, err
 	}
@@ -196,9 +209,14 @@ func (service *RunService) Create(
 		Identity: identity, ClientID: input.Authorization.Snapshot.ClientID,
 		AllowPolicyShared: allowShared,
 	}
+	messageContent, err := EncodeMessageContentV1(input.Parts)
+	if err != nil {
+		cleanupAttach()
+		return CreateRunResult{}, ErrRunInvalid
+	}
 	sent, err := service.messages.SendMessage(ctx, chat.SendMessageInput{
 		MessageID: messageID, RunID: runID, WorkspaceID: input.Scope.WorkspaceID,
-		SessionID: input.ConversationID, Content: input.Text, TraceID: input.TraceID,
+		SessionID: input.ConversationID, Content: messageContent, TraceID: input.TraceID,
 		RunInputSummary: summary, AuthorizationSnapshot: authorizationJSON,
 		Access: &access, PrincipalSnapshot: &executionPrincipal,
 	})
@@ -304,16 +322,88 @@ func normalizeCreateRun(input CreateRunInput) CreateRunInput {
 		cloned[key] = value
 	}
 	input.Metadata = cloned
+	input.Parts = normalizeRunContentParts(input.Parts, input.Text)
+	if input.Text == "" {
+		input.Text = joinedTextFromParts(input.Parts)
+	}
 	return input
 }
 
+func normalizeRunContentParts(parts []RunContentPart, text string) []RunContentPart {
+	if len(parts) == 0 {
+		if strings.TrimSpace(text) == "" {
+			return nil
+		}
+		return []RunContentPart{{Type: "text", Text: strings.TrimSpace(text)}}
+	}
+	normalized := make([]RunContentPart, 0, len(parts))
+	for _, part := range parts {
+		switch strings.TrimSpace(part.Type) {
+		case "text":
+			normalized = append(normalized, RunContentPart{
+				Type: "text", Text: strings.TrimSpace(part.Text),
+			})
+		case "input_file":
+			normalized = append(normalized, RunContentPart{
+				Type: "input_file",
+				FileID: strings.ToLower(strings.TrimSpace(part.FileID)),
+				MediaType: strings.TrimSpace(part.MediaType),
+			})
+		default:
+			normalized = append(normalized, part)
+		}
+	}
+	return normalized
+}
+
+func joinedTextFromParts(parts []RunContentPart) string {
+	texts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part.Type == "text" && part.Text != "" {
+			texts = append(texts, part.Text)
+		}
+	}
+	return strings.Join(texts, "\n")
+}
+
 func validCreateRunInput(input CreateRunInput) bool {
-	return validConversationScope(input.Scope) && canonicalUUID(input.ConversationID) &&
-		canonicalUUID(input.IdempotencyKey) && input.TraceID != "" && input.Text != "" &&
-		utf8.ValidString(input.Text) && len([]byte(input.Text)) <= 64<<10 &&
-		ValidateRunMetadata(input.Metadata) == nil &&
-		validConversationAuthorization(input.Scope, input.Principal, input.Authorization,
-			agentaccessauth.ActionRunCreate, input.ConversationID)
+	if !validConversationScope(input.Scope) || !canonicalUUID(input.ConversationID) ||
+		!canonicalUUID(input.IdempotencyKey) || input.TraceID == "" ||
+		ValidateRunMetadata(input.Metadata) != nil ||
+		!validConversationAuthorization(input.Scope, input.Principal, input.Authorization,
+			agentaccessauth.ActionRunCreate, input.ConversationID) {
+		return false
+	}
+	return validRunContentParts(input.Parts)
+}
+
+func validRunContentParts(parts []RunContentPart) bool {
+	if len(parts) == 0 || len(parts) > 32 {
+		return false
+	}
+	totalText := 0
+	hasContent := false
+	for _, part := range parts {
+		switch part.Type {
+		case "text":
+			if part.Text == "" || !utf8.ValidString(part.Text) {
+				return false
+			}
+			totalText += len([]byte(part.Text))
+			if totalText > 64<<10 {
+				return false
+			}
+			hasContent = true
+		case "input_file":
+			if !canonicalUUID(part.FileID) || part.Text != "" {
+				return false
+			}
+			hasContent = true
+		default:
+			return false
+		}
+	}
+	return hasContent
 }
 
 func deterministicRunID(input CreateRunInput) string {
@@ -330,20 +420,113 @@ func deterministicRunMessageID(runID string) string {
 }
 
 func canonicalRunInputSummary(input CreateRunInput, messageID string) (json.RawMessage, error) {
-	request, err := json.Marshal(struct {
-		ConversationID string            `json:"conversationId"`
-		Text           string            `json:"text"`
-		Metadata       map[string]string `json:"metadata"`
-	}{input.ConversationID, input.Text, input.Metadata})
+	hashMaterial, err := buildCreateRunHashMaterial(input)
+	if err != nil {
+		return nil, err
+	}
+	request, err := json.Marshal(hashMaterial)
 	if err != nil {
 		return nil, err
 	}
 	digest := sha256.Sum256(request)
+	messageContent, err := EncodeMessageContentV1(input.Parts)
+	if err != nil {
+		return nil, err
+	}
 	return json.Marshal(map[string]any{
 		"schemaVersion": "aap.run-input.v1", "requestHash": hex.EncodeToString(digest[:]),
-		"messageId": messageID, "contentSha256": contentSHA256(input.Text),
-		"contentLength": len([]byte(input.Text)),
+		"messageId": messageID, "contentSha256": contentSHA256(messageContent),
+		"contentLength": len([]byte(messageContent)),
+		"fileIds":       orderedFileIDs(input.Parts),
 	})
+}
+
+type createRunHashPart struct {
+	Type   string `json:"type"`
+	Text   string `json:"text,omitempty"`
+	FileID string `json:"fileId,omitempty"`
+}
+
+type createRunHashMaterial struct {
+	ConversationID string              `json:"conversationId"`
+	Parts          []createRunHashPart `json:"parts"`
+	Metadata       map[string]string   `json:"metadata"`
+}
+
+func buildCreateRunHashMaterial(input CreateRunInput) (createRunHashMaterial, error) {
+	parts := make([]createRunHashPart, 0, len(input.Parts))
+	for _, part := range input.Parts {
+		switch part.Type {
+		case "text":
+			parts = append(parts, createRunHashPart{Type: "text", Text: part.Text})
+		case "input_file":
+			parts = append(parts, createRunHashPart{Type: "input_file", FileID: part.FileID})
+		default:
+			return createRunHashMaterial{}, ErrRunInvalid
+		}
+	}
+	return createRunHashMaterial{
+		ConversationID: input.ConversationID, Parts: parts, Metadata: input.Metadata,
+	}, nil
+}
+
+func createRunCommandRequestHash(input CreateRunInput) ([]byte, error) {
+	material, err := buildCreateRunHashMaterial(input)
+	if err != nil {
+		return nil, err
+	}
+	return commandRequestHash(material)
+}
+
+func orderedFileIDs(parts []RunContentPart) []string {
+	ids := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part.Type == "input_file" && part.FileID != "" {
+			ids = append(ids, part.FileID)
+		}
+	}
+	return ids
+}
+
+// EncodeMessageContentV1 serializes durable message body for AAP createRun (design §5.7.2).
+// Only references are stored — no file bytes.
+func EncodeMessageContentV1(parts []RunContentPart) (string, error) {
+	if len(parts) == 0 {
+		return "", ErrRunInvalid
+	}
+	wireParts := make([]map[string]string, 0, len(parts))
+	for _, part := range parts {
+		switch part.Type {
+		case "text":
+			wireParts = append(wireParts, map[string]string{"type": "text", "text": part.Text})
+		case "input_file":
+			entry := map[string]string{"type": "input_file", "fileId": part.FileID}
+			if part.MediaType != "" {
+				entry["mediaType"] = part.MediaType
+			}
+			wireParts = append(wireParts, entry)
+		default:
+			return "", ErrRunInvalid
+		}
+	}
+	raw, err := json.Marshal(struct {
+		SchemaVersion string              `json:"schemaVersion"`
+		Parts         []map[string]string `json:"parts"`
+	}{SchemaVersion: MessageContentSchemaVersion, Parts: wireParts})
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
+// HasInputFilePart reports whether parts include any input_file reference.
+func HasInputFilePart(parts []RunContentPart) bool {
+	for _, part := range parts {
+		if part.Type == "input_file" {
+			return true
+		}
+	}
+	return false
 }
 
 func sameRunCreation(

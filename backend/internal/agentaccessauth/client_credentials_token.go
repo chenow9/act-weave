@@ -33,6 +33,8 @@ var canonicalAAPScopes = []string{
 	"event:read",
 	"interaction:decide",
 	"artifact:read",
+	"file:write",
+	"file:read",
 }
 
 // ClientCredentialsGrant is an authorization snapshot read after Client
@@ -69,11 +71,11 @@ type AAPAccessTokenActorClaim struct {
 
 type AAPAccessTokenClaims struct {
 	jwt.RegisteredClaims
-	AuthorizedParty string                   `json:"azp"`
-	WorkspaceID     string                   `json:"wid"`
-	AgentID         string                   `json:"aid"`
-	Scope           string                   `json:"scope"`
-	SecurityVersion int64                    `json:"ver"`
+	AuthorizedParty string                    `json:"azp"`
+	WorkspaceID     string                    `json:"wid"`
+	AgentID         string                    `json:"aid"`
+	Scope           string                    `json:"scope"`
+	SecurityVersion int64                     `json:"ver"`
 	Actor           *AAPAccessTokenActorClaim `json:"act,omitempty"`
 }
 

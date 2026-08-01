@@ -162,6 +162,8 @@ func subjectSharingResourceForAction(action AAPAction) string {
 		return "interaction"
 	case ActionArtifactRead:
 		return "artifact"
+	case ActionFileComplete, ActionFileRead, ActionFileContent:
+		return "file"
 	default:
 		return ""
 	}
@@ -177,7 +179,7 @@ func containsSubjectSharingResource(resources []string, target string) bool {
 		}
 		seen[resource] = struct{}{}
 		switch resource {
-		case "conversation", "run", "event", "interaction", "artifact":
+		case "conversation", "run", "event", "interaction", "artifact", "file":
 		default:
 			return false
 		}
@@ -189,7 +191,7 @@ func containsSubjectSharingResource(resources []string, target string) bool {
 }
 
 // SubjectOwnershipRepository normalizes Conversation, Run/Event,
-// Interaction and Artifact ownership from their authoritative domain facts.
+// Interaction, Artifact and File ownership from their authoritative domain facts.
 // Artifact lookup deliberately requires one unique Run Item binding.
 type SubjectOwnershipRepository struct {
 	db *sql.DB
@@ -219,6 +221,8 @@ func (repository *SubjectOwnershipRepository) ResolveSubjectOwnershipRecord(
 		return repository.resolveInteraction(ctx, resource)
 	case ResourceArtifact:
 		return repository.resolveArtifact(ctx, action, resource)
+	case ResourceFile:
+		return repository.resolveFile(ctx, resource)
 	default:
 		return SubjectOwnershipRecord{}, ErrAAPAuthorizationInvalid
 	}
@@ -375,6 +379,31 @@ func (repository *SubjectOwnershipRepository) resolveArtifact(
 		return SubjectOwnershipRecord{}, subjectOwnershipDenied(OwnershipReasonArtifactUnbound)
 	}
 	return records[0], nil
+}
+
+// resolveFile loads ownership from aap_files (design §5.6.3).
+// v1 create always writes SUBJECT_OWNED; POLICY_SHARED is retained for
+// compatibility with subjectSharing.resources=["file"] when present.
+func (repository *SubjectOwnershipRepository) resolveFile(
+	ctx context.Context,
+	resource AAPAuthorizationResource,
+) (SubjectOwnershipRecord, error) {
+	record := SubjectOwnershipRecord{ResourceType: resource.Type, ResourceID: resource.ID}
+	var subjectType, subjectID, clientID sql.NullString
+	err := repository.db.QueryRowContext(ctx, `
+		SELECT workspace_id, agent_id, actor_type, actor_id,
+		       subject_type, subject_id, client_id,
+		       ownership_mode, ownership_policy_version
+		FROM aap_files WHERE id = $1
+	`, resource.ID).Scan(
+		&record.WorkspaceID, &record.AgentID, &record.ActorType, &record.ActorID,
+		&subjectType, &subjectID, &clientID, &record.Mode, &record.PolicyVersion,
+	)
+	if err != nil {
+		return SubjectOwnershipRecord{}, mapSubjectOwnershipRead("resolve File ownership", err)
+	}
+	record.SubjectType, record.SubjectID, record.ClientID = subjectType.String, subjectID.String, clientID.String
+	return record, nil
 }
 
 func mapSubjectOwnershipRead(operation string, err error) error {

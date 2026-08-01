@@ -60,6 +60,19 @@ func main() {
 			if err != nil {
 				return fmt.Errorf("initialize outbound identity signing keys: %w", err)
 			}
+			minioConfig := storedobject.MinIOConfig{
+				Endpoint:  config.Storage.MinIO.Endpoint,
+				AccessKey: config.Storage.MinIO.AccessKey,
+				SecretKey: config.Storage.MinIO.SecretKey,
+				UseSSL:    config.Storage.MinIO.UseSSL,
+				Region:    config.Storage.MinIO.Region,
+			}
+			// AAP file storage substrate (IC-01): idempotent staging + permanent buckets.
+			if err := storedobject.EnsureBuckets(
+				context.Background(), minioConfig, storedobject.AAPBootstrapBuckets()...,
+			); err != nil {
+				return fmt.Errorf("ensure AAP object buckets: %w", err)
+			}
 			app, err := application.Open(context.Background(), application.Config{
 				PostgresDSN:              config.Database.DSN,
 				JWTSecret:                config.Authentication.JWTSecret,
@@ -70,19 +83,14 @@ func main() {
 					config.AgentAccess.SigningKeys.MaxTokenTTLSeconds,
 				) * time.Second,
 				AgentAccessFeature: config.AgentAccess.Feature,
+				AgentAccessFiles:   config.AgentAccess.Files,
 				MetricsBearerToken:     config.Server.MetricsBearerToken,
 				AgentAuditDebug:        config.AgentAudit.Debug,
 				ToolsAllowForcePublish: config.Tools.AllowForcePublish,
 				// Runtime after Load (PR15): agent engine staged to eino
 				// (enabled+allowAll) unless explicitly disabled.
 				Runtime: config.Runtime,
-				MinIO: storedobject.MinIOConfig{
-					Endpoint:  config.Storage.MinIO.Endpoint,
-					AccessKey: config.Storage.MinIO.AccessKey,
-					SecretKey: config.Storage.MinIO.SecretKey,
-					UseSSL:    config.Storage.MinIO.UseSSL,
-					Region:    config.Storage.MinIO.Region,
-				},
+				MinIO:   minioConfig,
 				PreviewPurge: agent.PreviewPurgeConfig{
 					Interval:   time.Duration(config.AgentPrompt.PreviewPurge.IntervalSeconds) * time.Second,
 					BatchLimit: config.AgentPrompt.PreviewPurge.BatchLimit,

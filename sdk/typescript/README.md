@@ -14,6 +14,8 @@ Requires Node.js 20+.
 
 - Short-lived access token providers (client credentials / token exchange / BFF mint)
 - Run command client (`createRun`, interaction decisions, cancel)
+- File upload helpers (`createFile` → `putFileUpload` with signed Content-Length/Type → `completeFile` → `waitUntilReady` → `createRun` with `input_file`)
+- `getFileContent` (Bearer for small files; prefers opaque `:download` when `sizeBytes > 4MiB`)
 - SSE session with automatic reconnect and `Last-Event-ID` resume
 - Protocol event reducer for conversation/run projections
 - Generated protocol enums and envelope types from the Schema Registry

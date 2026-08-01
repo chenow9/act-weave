@@ -129,8 +129,19 @@ func testAAPLogDashboardFields(t *testing.T) {
 		"run_id", "run-d",
 		"request_id", "req-d",
 		"error_code", "SEQUENCE_CONFLICT",
+		// IC-11 file allowlist (§10.2)
+		"file_id", "file-d",
+		"file_status", "READY",
+		"processor_id", "partner-dlp",
+		"media_class", "image",
+		"delivery_id", "del-d",
+		"stage", "promote",
+		"download_purpose", "client_content",
+		// Must drop:
 		"prompt", "should drop",
 		"tool_result", "should drop",
+		"upload_url", "https://minio.example/secret?X-Amz-Signature=abc",
+		"download_token", "tok-should-drop",
 		slog.String("event", "aap.sequence.conflict"),
 	)
 	joined := map[string]any{}
@@ -141,13 +152,18 @@ func testAAPLogDashboardFields(t *testing.T) {
 		}
 		joined[key] = filtered[i+1]
 	}
-	for _, key := range []string{"workspace_id", "agent_id", "client_id", "run_id", "request_id", "error_code", "event"} {
+	for _, key := range []string{
+		"workspace_id", "agent_id", "client_id", "run_id", "request_id", "error_code", "event",
+		"file_id", "file_status", "processor_id", "media_class", "delivery_id", "stage", "download_purpose",
+	} {
 		if joined[key] == nil {
 			t.Fatalf("missing dashboard field %q in %#v", key, joined)
 		}
 	}
-	if _, ok := joined["prompt"]; ok {
-		t.Fatalf("prompt must not pass allowlist: %#v", joined)
+	for _, forbidden := range []string{"prompt", "tool_result", "upload_url", "download_token"} {
+		if _, ok := joined[forbidden]; ok {
+			t.Fatalf("%s must not pass allowlist: %#v", forbidden, joined)
+		}
 	}
 }
 

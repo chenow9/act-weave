@@ -83,6 +83,7 @@ func TestMinIOStoreControlledBucketMapping(t *testing.T) {
 		KindExecutionCheckpoint: BucketExecutions, KindChatContextSummary: BucketExecutions,
 		KindToolTestPayload: BucketToolTests,
 		KindAuditEventPayload: BucketAuditPackages, KindAuditExport: BucketAuditPackages,
+		KindAAPFile: BucketAAPFiles, KindAAPFileDerived: BucketAAPFiles,
 	}
 	for kind, want := range tests {
 		got, err := bucketForKind(kind)
@@ -370,6 +371,25 @@ func (backend *fakeBlobBackend) PresignGet(
 ) (*url.URL, error) {
 	return url.Parse(fmt.Sprintf("https://objects.example.test/%s/%s?expires=%d",
 		bucket, key, int(ttl.Seconds())))
+}
+
+func (backend *fakeBlobBackend) PresignPutWithHeaders(
+	_ context.Context,
+	bucket, key string,
+	ttl time.Duration,
+	headers http.Header,
+) (*url.URL, error) {
+	if strings.TrimSpace(headers.Get("Content-Length")) == "" {
+		return nil, ErrInvalid
+	}
+	signed := "content-length"
+	if ct := strings.TrimSpace(headers.Get("Content-Type")); ct != "" {
+		signed += ";content-type"
+	}
+	return url.Parse(fmt.Sprintf(
+		"https://objects.example.test/%s/%s?expires=%d&X-Amz-SignedHeaders=%s",
+		bucket, key, int(ttl.Seconds()), signed,
+	))
 }
 
 func (backend *fakeBlobBackend) hasObject(workspaceID, objectID string) bool {

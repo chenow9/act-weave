@@ -23,6 +23,18 @@ agentAccess:
     workspaceIds: []
     allowAllClients: true
     clientIds: []
+  # AAP File surface (IC-04). Default closed; enable only after IC-11 GC/ops gate.
+  # Env: ACTWEAVE_AAP_FILES_ENABLED, ACTWEAVE_AAP_FILES_ALLOW_ALL_*, etc.
+  files:
+    enabled: false
+    allowAllWorkspaces: false
+    workspaceIds: []
+    allowAllClients: false
+    clientIds: []
+    maxBytes: 26214400
+    maxPendingPerWorkspace: 20
+    maxReadyBytesPerWorkspace: 5368709120
+    runtimeMultimodal: false
   signingKeys:
     # Local development only. Production must mount a protected, stable PKCS#8
     # Ed25519 key file and set generateIfMissing=false.

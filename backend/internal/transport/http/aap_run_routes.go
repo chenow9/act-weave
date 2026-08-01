@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"actweave/backend/internal/aap"
+	"actweave/backend/internal/aapfile"
 	"actweave/backend/internal/agentaccess"
 	"actweave/backend/internal/agentaccessauth"
+	"actweave/backend/internal/config"
 	"actweave/backend/internal/execution"
 	"actweave/backend/internal/outboundidentity"
 	"actweave/backend/internal/protocolevent"
@@ -49,6 +51,13 @@ type AAPRunItemReader interface {
 	ListForRun(context.Context, string, string, string) ([]protocolevent.RunItemProjection, error)
 }
 
+// AAPCreateRunFileLookup loads file status for createRun input_file validation (IC-06).
+type AAPCreateRunFileLookup interface {
+	GetFile(context.Context, string, string) (aapfile.File, error)
+	// PromoteRetentionOnReference is optional; implementations may no-op.
+	PromoteRetentionOnReference(context.Context, string, string) error
+}
+
 type AAPRunRoutes struct {
 	authorizer    AAPDataPlaneAuthorizer
 	conversations AAPConversationApplication
@@ -62,6 +71,9 @@ type AAPRunRoutes struct {
 	// outboundAttachConfigured is true when the Run application is wired with
 	// BindingAttacher (fail-closed when credentials present but not configured).
 	outboundAttachConfigured bool
+	// filesGate + fileLookup gate input_file createRun (KD-23 / READY checks).
+	filesGate  *config.AgentAccessFilesConfig
+	fileLookup AAPCreateRunFileLookup
 }
 
 func (routes *AAPRunRoutes) ConfigureCommandQuota(quota agentaccess.DataPlaneQuota) error {
@@ -116,6 +128,20 @@ func (routes *AAPRunRoutes) ConfigureOutboundAttach() {
 	if routes != nil {
 		routes.outboundAttachConfigured = true
 	}
+}
+
+// ConfigureFiles enables createRun input_file authorization, READY checks,
+// RuntimeMultimodal fail-closed (KD-23), and retention promote on success.
+func (routes *AAPRunRoutes) ConfigureFiles(
+	gate *config.AgentAccessFilesConfig,
+	lookup AAPCreateRunFileLookup,
+) error {
+	if routes == nil || gate == nil || lookup == nil || routes.filesGate != nil {
+		return ErrAAPCreateRunInvalid
+	}
+	routes.filesGate = gate
+	routes.fileLookup = lookup
+	return nil
 }
 
 func (routes *AAPRunRoutes) RegisterAgentAccessV1(v1 AgentAccessV1Routes) {
@@ -222,8 +248,26 @@ func (routes *AAPRunRoutes) createRun(c *gin.Context) {
 		_ = outboundidentity.ZeroCredentialsRaw(creds)
 		return
 	}
+	parts := aapRunContentParts(request.Input)
+	// KD-23: input_file requires RuntimeMultimodal before any Run is created.
+	if aap.HasInputFilePart(parts) {
+		if routes.filesGate == nil || !routes.filesGate.RuntimeMultimodal ||
+			!routes.filesGate.AllowsWorkspace(scope.WorkspaceID) {
+			_ = outboundidentity.ZeroCredentialsRaw(creds)
+			RespondError(c, aap.ErrFileRuntimeUnavailable)
+			return
+		}
+		if err := routes.authorizeCreateRunFiles(c, caller, scope, parts); err != nil {
+			_ = outboundidentity.ZeroCredentialsRaw(creds)
+			if !errors.Is(err, errAAPCreateRunAuthResponded) {
+				RespondError(c, err)
+			}
+			return
+		}
+	}
 	result, err := routes.runs.Create(c.Request.Context(), aap.CreateRunInput{
-		Scope: scope, ConversationID: conversationID, Text: aapRunInputText(request.Input),
+		Scope: scope, ConversationID: conversationID,
+		Text: aapRunInputText(request.Input), Parts: parts,
 		Metadata: cloneRunMetadata(request.Metadata), IdempotencyKey: idempotencyKey,
 		TraceID: requestContext.TraceID, Principal: caller, Authorization: authorization,
 		OutboundCredentialsRaw: creds,
@@ -232,6 +276,17 @@ func (routes *AAPRunRoutes) createRun(c *gin.Context) {
 	if err != nil {
 		RespondError(c, err)
 		return
+	}
+	// KD-16: first successful createRun referencing READY files may promote retention.
+	if aap.HasInputFilePart(parts) && routes.fileLookup != nil {
+		for _, part := range parts {
+			if part.Type != "input_file" {
+				continue
+			}
+			_ = routes.fileLookup.PromoteRetentionOnReference(
+				c.Request.Context(), scope.WorkspaceID, part.FileID,
+			)
+		}
 	}
 	transportResult := AAPCreateRunResult{
 		RunID: result.Run.ID, ConversationID: result.Run.SessionID,
@@ -624,12 +679,86 @@ func aapRunResourceETag(value aapRunResourceDTO) (string, error) {
 }
 
 func aapRunInputText(items []AAPRunInputItem) string {
+	if len(items) == 0 {
+		return ""
+	}
 	parts := make([]string, 0, len(items[0].Content))
 	for _, part := range items[0].Content {
-		parts = append(parts, strings.TrimSpace(part.Text))
+		if strings.TrimSpace(part.Type) == "text" {
+			parts = append(parts, strings.TrimSpace(part.Text))
+		}
 	}
 	return strings.Join(parts, "\n")
 }
+
+// authorizeCreateRunFiles enforces file.read + READY for each input_file (design §5.7 / IC-06).
+// Cross-workspace or invisible files surface as FILE_NOT_FOUND (conceal).
+func (routes *AAPRunRoutes) authorizeCreateRunFiles(
+	c *gin.Context,
+	caller agentaccessauth.AAPAccessTokenPrincipal,
+	scope aap.ConversationScope,
+	parts []aap.RunContentPart,
+) error {
+	if routes == nil || routes.authorizer == nil || routes.fileLookup == nil || c == nil {
+		return aap.ErrFileRuntimeUnavailable
+	}
+	seen := make(map[string]struct{}, len(parts))
+	for i := range parts {
+		if parts[i].Type != "input_file" {
+			continue
+		}
+		fileID := strings.ToLower(strings.TrimSpace(parts[i].FileID))
+		if fileID == "" {
+			return ErrAAPCreateRunInvalid
+		}
+		if _, dup := seen[fileID]; dup {
+			continue
+		}
+		seen[fileID] = struct{}{}
+		_, _, ok := authorizeAAPRequest(
+			c, routes.authorizer, agentaccessauth.ActionFileRead,
+			agentaccessauth.AAPAuthorizationResource{
+				Type: agentaccessauth.ResourceFile, ID: fileID,
+			},
+		)
+		if !ok {
+			// authorizeAAPRequest already wrote the response; return a sentinel so
+			// createRun does not double-RespondError.
+			return errAAPCreateRunAuthResponded
+		}
+		file, err := routes.fileLookup.GetFile(c.Request.Context(), scope.WorkspaceID, fileID)
+		if err != nil {
+			if errors.Is(err, aapfile.ErrNotFound) {
+				return aapfile.ErrNotFound
+			}
+			return err
+		}
+		if file.WorkspaceID != scope.WorkspaceID || file.AgentID != scope.AgentID {
+			return aapfile.ErrNotFound
+		}
+		switch file.Status {
+		case aapfile.StatusReady:
+			// Echo media type when client omitted it (server may attach declared/detected).
+			if parts[i].MediaType == "" {
+				if file.DetectedMediaType != nil && *file.DetectedMediaType != "" {
+					parts[i].MediaType = *file.DetectedMediaType
+				} else {
+					parts[i].MediaType = file.DeclaredMediaType
+				}
+			}
+		case aapfile.StatusFailed:
+			return fmt.Errorf("%w: %s", aapfile.ErrFailed, aapfile.ErrorCodeProcessingFailed)
+		case aapfile.StatusProcessing, aapfile.StatusUploaded, aapfile.StatusPendingUpload:
+			return aapfile.ErrNotReady
+		default:
+			return aapfile.ErrNotReady
+		}
+	}
+	return nil
+}
+
+// errAAPCreateRunAuthResponded signals that authorizeAAPRequest already aborted the response.
+var errAAPCreateRunAuthResponded = errors.New("AAP create Run authorization already responded")
 
 func aapRunLink(scope aap.ConversationScope, runID string) string {
 	return "/api/agent-access/v1/workspaces/" + scope.WorkspaceID +

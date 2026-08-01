@@ -21,8 +21,9 @@
 3. 创建 **Conversation** 与 **Run**  
 4. 通过 SSE 跟随 **Run 事件**（`Last-Event-ID` 断线续传）  
 5. 对 **Interaction** 做 approve / decline / cancel  
+6. （可选，**默认关闭**）上传 **File**、等待 ready，并在 Run 输入中以 `input_file` 部分引用  
 
-AAP **不是** ActWeave 管理控制台 API（`/api/v1`）。控制台用户 Session JWT 在 AAP 路由上会被 **拒绝**。
+AAP **不是** ActWeave 管理控制台 API（`/api/v1`）。控制台用户 Session JWT 在 AAP 路由上会被 **拒绝**。v1 **没有**面向 AAP 文件的 Console 产品 UI。
 
 | 面 | 路径前缀 | 鉴权 | 使用者 |
 | --- | --- | --- | --- |
@@ -55,7 +56,8 @@ Client Secret / 私钥只应保存在**你方**密钥管理系统中。密钥不
 | **Grant** | Client + Agent(s) + scopes（及可选策略）的授权 |
 | **Access Token** | 短期 JWT（`EdDSA` / `at+jwt`），绑定一个 Workspace、一个 Agent、Client、主体及可选 External Subject |
 | **Conversation** | 针对某一 Agent 的对话容器 |
-| **Run** | Conversation 下的一次执行（v1 输入仅 **text**） |
+| **Run** | Conversation 下的一次执行。默认输入为 **text**；在开启 AAP files 后，用户消息还可包含引用稳定 `fileId` 的 `input_file` 部分 |
+| **File** | 可选上传对象，含生命周期状态（`pending_upload` → … → `ready`）。GET 状态为事实源（v1 无 File SSE） |
 | **Protocol Event** | Run 流上的持久事实（`sequence` 为游标） |
 | **Interaction** | Run 因确认而等待 |
 | **External Subject** | 通过 Token Exchange 绑定的终端用户身份（可选） |
@@ -201,8 +203,10 @@ Grant 的 scope 是**上限**。每次 Token 请求只能申请**子集**。
 | `event:read` | SSE / 事件跟随 |
 | `interaction:decide` | 审批 Interaction |
 | `artifact:read` | 制品访问（在授权时） |
+| `file:write` | 创建上传意图 + complete（files 功能开启时） |
+| `file:read` | 读文件状态 / 内容 / 签发下载（files 功能开启时） |
 
-最小权限：只申请集成实际需要的 scope。
+最小权限：只申请集成实际需要的 scope。在运营方为工作区/客户端启用 `agentAccess.files` 之前，file scope 无效。
 
 ---
 
@@ -239,7 +243,7 @@ Content-Type: application/json
 }
 ```
 
-v1 仅接受 **text** 输入。其他类型 → `UNSUPPORTED_CONTENT_TYPE`。
+默认部署接受 **text** 消息内容。当 AAP files 已启用且文件为 `ready` 时，还可附加 `{ "type": "input_file", "fileId": "<uuid>" }` 部分（见 [§9.1](#91-文件可选)）。未知内容类型 → `UNSUPPORTED_CONTENT_TYPE`。多模态模型装配额外依赖 **`RuntimeMultimodal`**（运营开关；默认关闭）。
 
 ### 步骤 4 — 跟随 Run 事件（SSE）
 
@@ -326,7 +330,156 @@ Base：`/api/agent-access/v1`
 | --- | --- | --- | --- |
 | `POST` | `.../runs/{rid}/interactions/{iid}:decide` | `interaction:decide` | Body + `If-Match` + `Idempotency-Key` |
 
+### Files（可选；默认关闭）
+
+| 方法 | 路径 | Scope | 说明 |
+| --- | --- | --- | --- |
+| `POST` | `/workspaces/{wid}/agents/{aid}/files` | `file:write` | 创建上传意图 + 仅响应中的 `upload`（预签名 PUT）。需 `Idempotency-Key` |
+| `POST` | `/workspaces/{wid}/agents/{aid}/files/{fid}:complete` | `file:write` | 确认 staging；异步 promote。需 `Idempotency-Key` |
+| `GET` | `/workspaces/{wid}/agents/{aid}/files/{fid}` | `file:read` | 状态事实源（v1 无 File SSE） |
+| `GET` | `/workspaces/{wid}/agents/{aid}/files/{fid}/content` | `file:read` | Bearer 流（路径 A）；大文件优先 `:download` |
+| `POST` | `/workspaces/{wid}/agents/{aid}/files/{fid}:download` | `file:read` | 签发不透明下载 token（路径 B） |
+| `GET` | `/files/downloads/{tokenId}` | 无（token） | 经不透明 token 拉流；**不要**带 AAP Bearer |
+
+**v1 不提供** `GET .../files`（列表）或 `DELETE .../files/{id}`。无 Console 产品文件 UI。
+
 请求/响应 schema 以 [`openapi/agent-access-v1.yaml`](./openapi/agent-access-v1.yaml) 为准。
+
+### 9.1 文件（可选）
+
+功能开关：`agentAccess.files.enabled` 默认 **false**。关闭时文件路由以不可见隐蔽（**404**）。端到端多模态模型输入还要求 **`RuntimeMultimodal=true`**；files 已开但 runtime multimodal 关闭时，带 `input_file` 的 `createRun` 以 **422 `FILE_RUNTIME_UNAVAILABLE`** 失败关闭（不创建 Run）。
+
+#### 上传流程
+
+1. **`POST .../files`**，携带 `mediaType`、`sizeBytes`（及可选 `filename`、`sha256`、`purpose`）+ `Idempotency-Key`。
+2. 响应 `201` 含 `file` + **仅此处出现**的 `upload: { method: "PUT", url, headers, expiresAt }`。  
+   - PUT **必须**按返回的 `headers` 原样发送。签名至少绑定 **`Content-Length`** 与 **`Content-Type`**。  
+   - 后续 **GET 永不回显** `upload`、预签名头或 live 下载 URL。
+3. **客户端 PUT** 原始字节到 `upload.url`（通常为对象存储）。**不要**在该 PUT 上附加 AAP Bearer。
+4. **`POST .../files/{fileId}:complete`**（可选 body `{ "sha256": "..." }`）。快路径：stat staging、校验 size/MIME、CAS → `uploaded`、入队 promote。**不等待**加密完成。
+5. **轮询 `GET .../files/{fileId}`** 直至 `status=ready`（SDK：`waitUntilReady`）。终态失败：`failed` / `expired`。
+6. **`POST .../runs`**，content 部分示例：
+
+```json
+{
+  "conversationId": "<uuid>",
+  "stream": false,
+  "input": [{
+    "type": "message",
+    "role": "user",
+    "content": [
+      { "type": "text", "text": "请概括这份发票" },
+      { "type": "input_file", "fileId": "<file-uuid>" }
+    ]
+  }]
+}
+```
+
+协议线与持久化 item **仅携带稳定 `fileId`** — 禁止 live 下载/预签名 URL 或 blob 明文。
+
+#### 默认限制（以运营方配置为准）
+
+| 项 | 默认 |
+| --- | --- |
+| maxBytes | 25 MiB |
+| 允许 MIME | `image/png`、`image/jpeg`、`image/webp`、`image/gif`、`application/pdf` |
+| Staging TTL | 约 15 分钟 |
+| 保留 | EXPIRING 约 30 天（首次成功 createRun 引用可提升保留） |
+| 下载 token TTL | client_content / tool_invoke ≤ 5m；processor_delivery ≤ 10m（硬顶 15m） |
+
+#### 内容下载
+
+| 路径 | 方式 | 适用 |
+| --- | --- | --- |
+| **A** | `GET .../files/{fileId}/content` + Bearer + `file:read` | 小文件；简单客户端 |
+| **B** | `POST .../files/{fileId}:download` → 相对 `url` → `GET /files/downloads/{tokenId}`（**无** Bearer） | **`sizeBytes > 4 MiB` 时优先**；工具/处理器一律用不透明 token |
+
+Token id 为不透明 DB 行，**不是** JWT，也**不是** MinIO 凭证。对流式文件响应的反向代理应关闭响应缓冲，并将读超时设为 ≥ 120s（至多 maxBytes）。
+
+#### 处理器 Webhook 契约（合作方 / DLP / 自定义 stage）
+
+工作区配置的 HTTPS 处理器在 promote 后收到异步 POST（HMAC，非 AAP Bearer）：
+
+```http
+POST https://partner.example/hooks/aap-file
+Content-Type: application/json
+X-ActWeave-Signature: t=<unix>,v1=<hmac_sha256_hex>
+```
+
+投递 body（示意）：
+
+```json
+{
+  "specVersion": "file-processor.v1",
+  "eventType": "file.uploaded",
+  "deliveryId": "<uuid>",
+  "workspaceId": "<uuid>",
+  "agentId": "<uuid>",
+  "fileId": "<uuid>",
+  "mediaType": "application/pdf",
+  "sizeBytes": 12345,
+  "sha256": "...",
+  "download": {
+    "url": "https://aap-host/api/agent-access/v1/files/downloads/<tokenId>",
+    "expiresAt": "...",
+    "purpose": "processor_delivery"
+  },
+  "callback": {
+    "url": "https://aap-host/api/agent-access/v1/internal/file-processor/callbacks/<deliveryId>",
+    "expiresAt": "..."
+  }
+}
+```
+
+- **签名：** 对 `t + "." + rawBody` 做 HMAC-SHA256（密钥为工作区 processor secret）；头格式 `t=<unix>,v1=<hex>`。校验时间窗约 ±5 分钟。
+- 投递中的 **download URL** 为短时不透明 token 代理 — **无需** AAP Bearer 即可拉取。
+- **回调**（合作方 → ActWeave）同样使用 HMAC：
+
+```http
+POST /api/agent-access/v1/internal/file-processor/callbacks/{deliveryId}
+Content-Type: application/json
+X-ActWeave-Signature: t=<unix>,v1=<hmac_sha256_hex>
+```
+
+```json
+{
+  "processorId": "partner-dlp",
+  "status": "succeeded",
+  "artifacts": [
+    {
+      "kind": "DLP_REPORT",
+      "mediaType": "application/json",
+      "contentBase64": "..."
+    }
+  ],
+  "attributes": { "dlpRisk": "low" }
+}
+```
+
+| 规则 | 说明 |
+| --- | --- |
+| 回调体上限 | 请求约 384 KiB；**解码后**制品合计 ≤ **256 KiB** |
+| Job 生命周期 | `PENDING` → `DELIVERED` → `SUCCEEDED` \| `FAILED` \| `TIMED_OUT` |
+| 晚到回调 | 已 `TIMED_OUT` 后 → **409 `FILE_PROCESSOR_CALLBACK_LATE`**（不破坏已达终态） |
+| 幂等重放 | 同一 delivery 成功回调 → 200 |
+| Webhook URL 策略 | **仅 https**；拒绝 private / link-local / 元数据 IP（防 SSRF） |
+| 配置面 | 工作区表 / 运营注入 — v1 **无**公开 list API、**无** Console UI |
+
+#### 合作方工具头（`x-actweave-file`）
+
+当工具 schema 将属性标记为 `x-actweave-file: true` 时，ActWeave 在 **invoke** 时签发短时下载 token，并**仅注入出站 wire**（持久化 / 协议投影前会 scrub）：
+
+| 场景 | Header |
+| --- | --- |
+| 恰好 1 个文件 | `X-ActWeave-File-Download: <absolute-proxy-url>` |
+| 多个文件 | `X-ActWeave-File-Downloads: application/json`，值为 `{"<fileId>":"<url>",...}` |
+
+合作方可：
+
+- 在工具输入 schema 的文件对象上声明可选 `downloadUrl` 并从 JSON body 读取，**或**
+- 读取 `X-ActWeave-File-Download(s)` 头
+
+**不**要求合作方自持 AAP token 再调 `:download`。模型可见 / 已存储的工具参数**仅**含 `fileId`（及元数据）— 永不含 live URL。
 
 ---
 
@@ -447,8 +600,21 @@ data: {"specVersion":"1.0","type":"stream.error","error":{"code":"TOKEN_EXPIRED"
 | `REPLAY_CURSOR_INVALID` | 422 | 否 | 从已知合法 sequence 或 `0` 重置 |
 | `IDEMPOTENCY_CONFLICT` | 409 | 否 | 换新 key 或保证 body 完全一致 |
 | `RATE_LIMITED` | 429 | 是 | 遵守 `Retry-After` / `RateLimit-*` |
-| `UNSUPPORTED_CONTENT_TYPE` | 400 | 否 | 仅用 text 输入 |
+| `UNSUPPORTED_CONTENT_TYPE` | 400 | 否 | 仅使用支持的 content part |
 | `SLOW_CONSUMER` | SSE 断连 | 是 | 用上次 `id` 重连 |
+| `FILE_NOT_FOUND` | 404 | 否 | 不存在 / 不可见（隐蔽） |
+| `FILE_FEATURE_DISABLED` | 404 | 否 | files 开关关闭（隐蔽） |
+| `FILE_NOT_READY` | 422 | 处理中时可重试 | createRun 前轮询 GET |
+| `FILE_UPLOAD_EXPIRED` | 422 | 否 | 重新 create；staging 已过期 |
+| `FILE_SIZE_EXCEEDED` | 422 | 否 | 减小体积 / 遵守 maxBytes |
+| `FILE_MEDIA_TYPE_DENIED` | 422 | 否 | 使用允许的 MIME 白名单 |
+| `FILE_MEDIA_TYPE_MISMATCH` | 422 | 否 | 字节与声明 mediaType 不符 |
+| `FILE_INTEGRITY_MISMATCH` | 422 | 否 | sha256 不匹配 |
+| `FILE_PROCESSING_FAILED` | 422 | 否 | 勿引用失败文件 |
+| `FILE_RUNTIME_UNAVAILABLE` | 422 | 否 | `input_file` 需要 `RuntimeMultimodal`；不创建 Run |
+| `FILE_PROCESSOR_CALLBACK_LATE` | 409 | 否 | Job 已 TIMED_OUT；不改状态 |
+| `FILE_PENDING_LIMIT` | 429 | 是 | 退避；并发 PENDING_UPLOAD 上限 |
+| `MODEL_CONTENT_UNSUPPORTED` | run failed | 否 | 模型供应商不支持该媒体 |
 
 OAuth Token 端点错误遵循 RFC 6749 的 `error` / `error_description`，不得回显密钥。
 
@@ -488,14 +654,29 @@ const client = new AgentAccessClient({
   tokenProvider: tokens,
 });
 
-const { conversation } = await client.createConversation(workspaceId, agentId, {
-  title: "Ticket 42",
-});
+const { conversation } = await client.createConversation(
+  workspaceId,
+  agentId,
+  { title: "Ticket 42" },
+  { idempotencyKey: crypto.randomUUID() },
+);
 
-const run = await client.createRun(workspaceId, agentId, {
-  conversationId: conversation.id,
-  input: [{ type: "text", text: "Hello" }],
-});
+const run = await client.createRun(
+  workspaceId,
+  agentId,
+  {
+    conversationId: conversation.id,
+    stream: false,
+    input: [
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "text", text: "Hello" }],
+      },
+    ],
+  },
+  { idempotencyKey: crypto.randomUUID() },
+);
 
 for await (const { message, snapshot } of client.followRun(
   workspaceId,
@@ -514,13 +695,64 @@ for await (const { message, snapshot } of client.followRun(
 }
 ```
 
+### 14.1 文件上传（当 `agentAccess.files` 已启用）
+
+```ts
+const bytes = new Uint8Array(/* ... */); // 示例中不要写生产密钥
+const created = await client.createFile(
+  workspaceId,
+  agentId,
+  {
+    filename: "invoice.png",
+    mediaType: "image/png",
+    sizeBytes: bytes.byteLength,
+  },
+  { idempotencyKey: crypto.randomUUID() },
+);
+
+// PUT 必须使用 create 返回的 headers（Content-Length / Content-Type 已签名绑定）
+await client.putFileUpload(created.upload!, bytes);
+
+await client.completeFile(workspaceId, agentId, created.file.id, undefined, {
+  idempotencyKey: crypto.randomUUID(),
+});
+
+const ready = await client.waitUntilReady(workspaceId, agentId, created.file.id);
+
+// 多模态 E2E 还依赖 ActWeave 侧 RuntimeMultimodal
+await client.createRun(
+  workspaceId,
+  agentId,
+  {
+    conversationId: conversation.id,
+    stream: false,
+    input: [
+      {
+        type: "message",
+        role: "user",
+        content: [
+          { type: "text", text: "描述这张图" },
+          { type: "input_file", fileId: ready.id },
+        ],
+      },
+    ],
+  },
+  { idempotencyKey: crypto.randomUUID() },
+);
+
+// 小文件：Bearer .../content。大文件（>4MiB）：优先 :download token 代理
+const content = await client.getFileContent(workspaceId, agentId, ready.id);
+```
+
 SDK 保证：
 
 - Access Token 只出现在 `Authorization`  
 - 断线 / 空洞时用 `Last-Event-ID` 自动重连  
 - `TOKEN_EXPIRED` / HTTP 401 时强制刷新后按原游标恢复  
+- 文件 PUT **仅**使用 create 返回的 headers（对象存储 PUT 不带 AAP Bearer）  
+- `getFileContent` 在 `sizeBytes > 4MiB` 时优先不透明 `:download`  
 
-另有导出：`StaticTokenProvider`、`RunReducer`、`AAPSESession`。详见 `sdk/typescript/README.md`。
+另有导出：`StaticTokenProvider`、`RunReducer`、`AAPSESession`、文件类型 / `SDK_PREFER_DOWNLOAD_TOKEN_BYTES`。详见 `sdk/typescript/README.md`。
 
 ---
 
@@ -558,6 +790,9 @@ SDK 保证：
 - [ ] 错误处理映射稳定错误码  
 - [ ] 若绑定终端用户，已核对 Token Exchange Issuer 配置  
 - [ ] OpenAPI / SDK 版本与部署环境一致  
+- [ ] 若使用文件：运营已启用 `agentAccess.files`，且（模型 vision/PDF 场景）`RuntimeMultimodal`；Grant 含 `file:read` / `file:write`  
+- [ ] 若使用文件：PUT 始终发送 create 返回的 `Content-Length` / `Content-Type`；长期日志不保存 live 下载 URL  
+- [ ] 若实现处理器：校验 `X-ActWeave-Signature`、仅 https 回调 URL 策略，并处理晚到回调 `FILE_PROCESSOR_CALLBACK_LATE`  
 
 ---
 

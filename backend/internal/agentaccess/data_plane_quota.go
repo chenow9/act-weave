@@ -20,6 +20,11 @@ const (
 	QuotaInteractionDecide  DataPlaneQuotaOperation = "interaction.decide"
 	// QuotaEventStream bounds SSE open rate (distinct from concurrent stream leases).
 	QuotaEventStream DataPlaneQuotaOperation = "event.stream"
+	// File operations (IC-04).
+	QuotaFileCreate   DataPlaneQuotaOperation = "file.create"
+	QuotaFileComplete DataPlaneQuotaOperation = "file.complete"
+	QuotaFileContent  DataPlaneQuotaOperation = "file.content"
+	QuotaFileDownload DataPlaneQuotaOperation = "file.download"
 )
 
 var (
@@ -62,6 +67,10 @@ func DefaultDataPlaneQuotaConfig() DataPlaneQuotaConfig {
 			QuotaRunCancel:          60,
 			QuotaInteractionDecide:  60,
 			QuotaEventStream:        120,
+			QuotaFileCreate:         60,
+			QuotaFileComplete:       60,
+			QuotaFileContent:        120,
+			QuotaFileDownload:       60,
 		},
 	}
 }
@@ -206,7 +215,8 @@ func validQuotaRequest(value DataPlaneQuotaRequest) bool {
 
 func validQuotaOperation(value DataPlaneQuotaOperation) bool {
 	switch value {
-	case QuotaConversationCreate, QuotaRunCreate, QuotaRunCancel, QuotaInteractionDecide, QuotaEventStream:
+	case QuotaConversationCreate, QuotaRunCreate, QuotaRunCancel, QuotaInteractionDecide, QuotaEventStream,
+		QuotaFileCreate, QuotaFileComplete, QuotaFileContent, QuotaFileDownload:
 		return true
 	default:
 		return false

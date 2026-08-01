@@ -29,6 +29,9 @@ type HTTPExecutor struct {
 	client *http.Client
 	mutex  sync.Mutex
 	active map[string]context.CancelFunc
+	// fileDownloads optionally injects wire-only download URLs for x-actweave-file
+	// schema nodes (IC-09 / KD-22). Nil is a no-op (existing tools unchanged).
+	fileDownloads FileDownloadEnricher
 }
 
 func NewHTTPExecutor(client *http.Client) *HTTPExecutor {
@@ -38,10 +41,29 @@ func NewHTTPExecutor(client *http.Client) *HTTPExecutor {
 	return &HTTPExecutor{client: client, active: make(map[string]context.CancelFunc)}
 }
 
+// ConfigureFileDownloads attaches the AAP file download enricher. Safe to call
+// once during process bootstrap before the server accepts traffic.
+func (executor *HTTPExecutor) ConfigureFileDownloads(enricher FileDownloadEnricher) *HTTPExecutor {
+	if executor == nil {
+		return nil
+	}
+	executor.fileDownloads = enricher
+	return executor
+}
+
 // NewExecutorRegistry is the phase-one application registry. It deliberately
 // registers the real HTTP executor only; unavailable future kinds are rejected.
 func NewExecutorRegistry(client *http.Client) (*execution.Registry, error) {
-	return execution.NewRegistry(NewHTTPExecutor(client))
+	return NewExecutorRegistryWith(NewHTTPExecutor(client))
+}
+
+// NewExecutorRegistryWith registers the provided HTTP executor instance so
+// callers can ConfigureFileDownloads on the same pointer after construction.
+func NewExecutorRegistryWith(httpExec *HTTPExecutor) (*execution.Registry, error) {
+	if httpExec == nil {
+		httpExec = NewHTTPExecutor(nil)
+	}
+	return execution.NewRegistry(httpExec)
 }
 
 func (*HTTPExecutor) Kind() string { return execution.ExecutorTypeHTTP }
@@ -60,6 +82,35 @@ func (executor *HTTPExecutor) Invoke(
 	if err != nil {
 		return result, err
 	}
+	// KD-22: wire-only file download enrichment. Mutates a deep-copied wireInput
+	// and download headers only — request.Input / pipeline persistence stay scrubbed.
+	wireInput := input
+	if executor != nil && executor.fileDownloads != nil {
+		createdBy := strings.TrimSpace(request.ActorID)
+		if createdBy == "" {
+			createdBy = "system:tool-invoke"
+		}
+		enriched, enrichErr := executor.fileDownloads.EnrichFileDownloads(ctx, FileDownloadEnrichRequest{
+			WorkspaceID: request.Snapshot.WorkspaceID,
+			CreatedBy:   createdBy,
+			InputSchema: request.Snapshot.InputSchema,
+			Input:       input,
+		})
+		if enrichErr != nil {
+			return result, enrichErr
+		}
+		if enriched.WireInput != nil {
+			wireInput = enriched.WireInput
+		}
+		if len(enriched.Headers) > 0 {
+			if headers == nil {
+				headers = make(map[string]string, len(enriched.Headers))
+			}
+			for name, value := range enriched.Headers {
+				headers[name] = value
+			}
+		}
+	}
 	invocationContext, cancel := context.WithTimeout(ctx, policy.Timeout)
 	if err := executor.register(request.InvocationID, cancel); err != nil {
 		cancel()
@@ -76,7 +127,7 @@ func (executor *HTTPExecutor) Invoke(
 			execution.ErrorCodeEventSink, "INTERNAL", false, 0, err,
 		))
 	}
-	httpRequest, err := buildSnapshotHTTPRequest(invocationContext, action, input, endpoint, headers)
+	httpRequest, err := buildSnapshotHTTPRequest(invocationContext, action, wireInput, endpoint, headers)
 	if err != nil {
 		return executor.finish(ctx, sink, result, err)
 	}

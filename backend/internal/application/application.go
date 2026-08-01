@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"actweave/backend/internal/aap"
+	"actweave/backend/internal/aapfile"
 	"actweave/backend/internal/agent"
 	"actweave/backend/internal/agentaccess"
 	"actweave/backend/internal/agentaccessauth"
@@ -71,6 +72,8 @@ type Config struct {
 	// AgentAccessFeature gates the public AAP data plane (M10-T8). Zero value keeps
 	// surface closed; set Enabled+allow-all for local/dev full open.
 	AgentAccessFeature config.AAPFeatureRollout
+	// AgentAccessFiles gates AAP File REST (IC-04). Zero value keeps files disabled.
+	AgentAccessFiles config.AgentAccessFilesConfig
 	// MetricsBearerToken protects GET /metrics when set; empty = loopback only.
 	MetricsBearerToken string
 	// AgentAuditDebug enables agent full-trace debug audit capture/exposure.
@@ -113,6 +116,8 @@ type Application struct {
 	securityVersionCache       *agentaccessauth.SecurityVersionCache
 	recoveryWorker             *execution.RecoveryWorker
 	previewPurgeWorker         *agent.PreviewPurgeWorker
+	filePipelineWorker         *aapfile.PipelineWorker
+	fileStagingGCWorker        *aapfile.StagingGCWorker
 	// outbound runtime lifecycle (optional; nil when affinity not configured)
 	outboundRuntime *outboundRuntimeLifecycle
 }
@@ -128,6 +133,12 @@ func (application *Application) Close() error {
 	}
 	if application.previewPurgeWorker != nil {
 		application.previewPurgeWorker.Stop()
+	}
+	if application.filePipelineWorker != nil {
+		application.filePipelineWorker.Stop()
+	}
+	if application.fileStagingGCWorker != nil {
+		application.fileStagingGCWorker.Stop()
 	}
 	if application.outboundRuntime != nil {
 		application.outboundRuntime.Stop()
@@ -542,7 +553,10 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		return nil, err
 	}
 
-	executorRegistry, err := toolruntime.NewExecutorRegistry(client)
+	// Shared HTTP executor instance so IC-09 file download enrichment can be
+	// attached after aapfile domain is constructed (later in bootstrap).
+	httpToolExecutor := toolruntime.NewHTTPExecutor(client)
+	executorRegistry, err := toolruntime.NewExecutorRegistryWith(httpToolExecutor)
 	if err != nil {
 		return nil, err
 	}
@@ -894,6 +908,83 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if err := aapConversationRoutes.ConfigureCommandQuota(aapCommandQuota); err != nil {
 		return nil, err
 	}
+	// AAP File domain + REST (IC-04). Content Open uses dedicated authorizer.
+	aapFileRepo, err := aapfile.NewRepository(db)
+	if err != nil {
+		return nil, err
+	}
+	aapFileAuthorizer, err := agentaccessauth.NewAAPFileObjectAuthorizer(db)
+	if err != nil {
+		return nil, err
+	}
+	aapFileObjectStore, err := storedobject.NewMinIOStore(config.MinIO, objectRepository, aapFileAuthorizer)
+	if err != nil {
+		return nil, err
+	}
+	aapFileSecure, err := storedobject.NewSecureStore(aapFileObjectStore, objectCipher)
+	if err != nil {
+		return nil, err
+	}
+	aapFileDomainOpts := []aapfile.ServiceOption{}
+	filesCfg := config.AgentAccessFiles.Normalized()
+	if filesCfg.MaxBytes > 0 {
+		aapFileDomainOpts = append(aapFileDomainOpts, aapfile.WithMaxBytes(filesCfg.MaxBytes))
+	}
+	if filesCfg.MaxPendingPerWorkspace > 0 {
+		aapFileDomainOpts = append(aapFileDomainOpts, aapfile.WithMaxPendingPerWorkspace(filesCfg.MaxPendingPerWorkspace))
+	}
+	if filesCfg.MaxReadyBytesPerWorkspace > 0 {
+		aapFileDomainOpts = append(aapFileDomainOpts, aapfile.WithMaxReadyBytesPerWorkspace(filesCfg.MaxReadyBytesPerWorkspace))
+	}
+	aapFileDomainOpts = append(aapFileDomainOpts, aapfile.WithVirusScan(aapfile.VirusScanConfig{
+		Enabled: filesCfg.VirusScan.Enabled, Required: filesCfg.VirusScan.Required,
+	}))
+	aapFileDomain, err := aapfile.NewService(
+		aapFileRepo, aapfile.ObjectStagingStore{Store: objectStore}, aapFileSecure,
+		aapFileDomainOpts...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	aapFileApp, err := aap.NewFileService(aapFileDomain)
+	if err != nil {
+		return nil, err
+	}
+	if err := aapFileApp.ConfigureCommandReceipts(aapCommandReceipts); err != nil {
+		return nil, err
+	}
+	aapFileRoutes, err := httptransport.NewAAPFileRoutes(
+		agentAccessAuthorizer, aapFileApp, aapFileSecure, &filesCfg,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := aapFileRoutes.ConfigureCommandQuota(aapCommandQuota); err != nil {
+		return nil, err
+	}
+	// Processor HMAC callback (no Bearer) — always register; gate checks files.enabled.
+	if err := aapFileRoutes.ConfigureProcessorCallback(aapFileDomain, aapfile.InlineSecretResolver{}); err != nil {
+		return nil, err
+	}
+	// KD-14: agent profile advertises input_file only when files enabled for workspace.
+	aapAgentProfileRoutes.ConfigureFiles(&filesCfg)
+	// Pipeline worker: idle-safe when no jobs (safe even if files.enabled=false).
+	filePipelineCfg := aapfile.DefaultPipelineWorkerConfig()
+	filePipelineCfg.PublicBaseURL = filesCfg.PublicUploadBaseURL
+	filePipelineCfg.VirusScan = aapfile.VirusScanConfig{
+		Enabled: filesCfg.VirusScan.Enabled, Required: filesCfg.VirusScan.Required,
+	}
+	filePipelineWorker, err := aapfile.NewPipelineWorker(aapFileRepo, aapFileDomain, filePipelineCfg)
+	if err != nil {
+		return nil, err
+	}
+	// Staging GC (IC-11 / KD-21): residual staging cleanup; release-blocking before gray.
+	fileStagingGC, err := aapfile.NewStagingGCWorker(
+		aapFileRepo, aapfile.ObjectStagingStore{Store: objectStore}, aapfile.DefaultStagingGCConfig(),
+	)
+	if err != nil {
+		return nil, err
+	}
 	toolResumeExecutor, err := execution.NewToolConfirmationResumeExecutor(chatInvoker)
 	if err != nil {
 		return nil, err
@@ -1116,6 +1207,28 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 			return chatruntimebridge.NewCompactModelFromSnapshot(ctx, buildChatModel, run)
 		},
 	}
+	// IC-08: multimodal model assembly from READY AAP files (RuntimeMultimodal).
+	// Orthogonal to files.enabled; createRun still fail-closes when flag is false.
+	var multimodalAssembler *chatruntime.MultimodalAssembler
+	if fileSource := newMultimodalFileSource(aapFileDomain, aapFileSecure); fileSource != nil {
+		maxBytes := filesCfg.MaxBytes
+		if maxBytes <= 0 {
+			maxBytes = aapfile.DefaultMaxBytes
+		}
+		multimodalAssembler = &chatruntime.MultimodalAssembler{
+			RuntimeMultimodal: filesCfg.RuntimeMultimodal,
+			Files:             fileSource,
+			MaxBytes:          maxBytes,
+		}
+	}
+	// IC-09 / KD-22: wire-only tool file download enrichment on outbound HTTP.
+	// Persistent KindToolInvocationPayload stays scrubbed (no download URLs).
+	// Platform in-process tools use newPlatformToolFileAccess (SecureStore.Open, no URL).
+	if minter := newAAPToolFileMinter(aapFileDomain); minter != nil {
+		httpToolExecutor.ConfigureFileDownloads(toolruntime.NewSchemaFileDownloadEnricher(
+			minter, filesCfg.PublicUploadBaseURL,
+		))
+	}
 	bridge, bridgeErr := chatruntimebridge.NewBridge(chatruntimebridge.Dependencies{
 		Sessions: chatRepository, Results: chatService, Content: chatObjects,
 		Agents: agentRepository, Models: modelRepository, Runs: runRepository,
@@ -1132,6 +1245,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		Assemblies:         assemblyRepo,
 		Compact:            compactDeps,
 		BuildChatModel:     buildChatModel,
+		Multimodal:         multimodalAssembler,
 	})
 	if bridgeErr != nil {
 		return nil, fmt.Errorf("eino chat runtime bridge required after PR16: %w", bridgeErr)
@@ -1225,6 +1339,10 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		return nil, err
 	}
 	if err := aapRunRoutes.ConfigureCommandQuota(aapCommandQuota); err != nil {
+		return nil, err
+	}
+	// IC-06: createRun input_file READY checks + RuntimeMultimodal fail-closed + retention.
+	if err := aapRunRoutes.ConfigureFiles(&filesCfg, aapFileDomain); err != nil {
 		return nil, err
 	}
 	chatMessenger, err := chatruntime.NewMessenger(chatService, agentRuntime)
@@ -1341,7 +1459,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		},
 		AgentAccessRegistrars: []httptransport.AgentAccessV1RouteRegistrar{
 			agentAccessJWKSRoutes, agentAccessTokenRoutes, aapAgentProfileRoutes,
-			aapConversationRoutes, aapRunRoutes,
+			aapConversationRoutes, aapRunRoutes, aapFileRoutes,
 		},
 		OutboundIdentityJWKS: outboundJWKS,
 		AAPCORS:              aapCORS,
@@ -1363,6 +1481,8 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	// Start after full wiring succeeds so partial Open failures do not leak loops.
 	recoveryWorker.Start(context.WithoutCancel(ctx))
 	previewPurgeWorker.Start(context.WithoutCancel(ctx))
+	filePipelineWorker.Start(context.WithoutCancel(ctx))
+	fileStagingGC.Start(context.WithoutCancel(ctx))
 	return &Application{
 		db: db, handler: handler, eventNotifier: liveEvents,
 		securityChanges: securityChanges, clientSecretAuthenticator: clientSecretAuthenticator,
@@ -1371,6 +1491,8 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		securityVersionCache:       securityVersionCache,
 		recoveryWorker:             recoveryWorker,
 		previewPurgeWorker:         previewPurgeWorker,
+		filePipelineWorker:         filePipelineWorker,
+		fileStagingGCWorker:        fileStagingGC,
 		outboundRuntime:            outboundRuntime,
 	}, nil
 }
