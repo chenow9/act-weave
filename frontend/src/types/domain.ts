@@ -1473,6 +1473,86 @@ export interface AgentAuditStep {
   runId?: string;
   stepId?: string;
   invocationId?: string;
+  /** Nested agent attribution (AGENT_DELEGATION hierarchy). */
+  agentId?: string;
+  delegationId?: string;
+  parentStepId?: string;
+  parentDelegationId?: string;
+  childRunId?: string;
+  callerAgentId?: string;
+  targetAgentId?: string;
+  externalAgentRef?: string;
+  mode?: string;
+  protocol?: string;
+  origin?: string;
+  depth?: number;
+  status?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  /** Remote A2A linkage from agent_run_delegations. */
+  remoteTaskId?: string;
+  remoteContextId?: string;
+  remoteMessageId?: string;
+  remoteEndpointRef?: string;
+  protocolStatus?: string;
+  /** Token usage — omit/null when unknown (never invent 0 for A2A without usage). */
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  totalTokens?: number | null;
+  tokensKnown?: boolean;
+  /** Execution dispatch attempts (not finalize-outbox retries). */
+  attemptCount?: number;
+  retryCount?: number;
+  children?: AgentAuditStep[];
+  collapsed?: boolean;
+}
+
+/** Internal Agent→Agent binding. */
+export interface AgentDelegationBinding {
+  id: string;
+  workspaceId: string;
+  callerAgentId: string;
+  targetAgentId: string;
+  callableName: string;
+  description: string;
+  mode: "INLINE" | "TASK";
+  contextPolicy: "TASK_ONLY" | "SUMMARY" | "SELECTED_MESSAGES";
+  enabled: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A2A inbound exposure. */
+export interface AgentA2AExposure {
+  id: string;
+  workspaceId: string;
+  agentId: string;
+  publicName: string;
+  publicDescription: string;
+  enabled: boolean;
+  authMode: "AGENT_ACCESS" | "NONE";
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A2A outbound remote binding. */
+export interface AgentA2ARemoteBinding {
+  id: string;
+  workspaceId: string;
+  callerAgentId: string;
+  callableName: string;
+  description: string;
+  endpointUrl: string;
+  agentCardUrl?: string;
+  allowedHosts: string[];
+  authSecretRef?: string;
+  timeoutMs: number;
+  enabled: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AgentAuditTraceDetail {

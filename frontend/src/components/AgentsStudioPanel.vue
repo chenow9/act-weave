@@ -3,8 +3,10 @@
 /** Agents studio panel (ZKL-64 item 16). */
 import AppSelect from "./AppSelect.vue";
 import AgentPromptDiffViewer from "./AgentPromptDiffViewer.vue";
+import AgentDelegationPanel from "./AgentDelegationPanel.vue";
 import { useAgentsPageContext } from "../composables/useAgentsPageContext";
 import { COMPACTION_SUMMARY_PERMANENCE_WARNING } from "../utils/session-context-config";
+import { computed } from "vue";
 
 const scp = useAgentsPageContext();
 /* prettier-ignore */
@@ -28,8 +30,16 @@ const agentContextModeOptions = [
   { label: "关闭窗口管理", value: "disabled" },
 ];
 
+/** Options for delegation target picker (exclude self when possible). */
+const delegationAgentOptions = computed(() => {
+  const items = (scp.agents?.items ?? []) as { id: string; name: string }[];
+  if (items.length) return items.map((a) => ({ id: a.id, name: a.name }));
+  return [];
+});
+
 void AppSelect;
 void AgentPromptDiffViewer;
+void AgentDelegationPanel;
 </script>
 
 <template>
@@ -289,6 +299,13 @@ void AgentPromptDiffViewer;
               </div>
             </div>
           </section>
+
+          <AgentDelegationPanel
+            v-if="studioMode === 'edit' && draftAgent.id && draftAgent.workspaceId"
+            :workspace-id="draftAgent.workspaceId"
+            :agent-id="draftAgent.id"
+            :agent-options="delegationAgentOptions"
+          />
 
           <section class="agent-studio-section studio-prompt-editor">
             <header>

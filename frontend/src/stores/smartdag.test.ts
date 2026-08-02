@@ -9,6 +9,20 @@ import { useWorkflowStore } from "./workflow";
 
 vi.mock("../services/api", () => ({
   apiClient: { post: vi.fn(), get: vi.fn() },
+  toAPIError: (error: unknown) => {
+    if (error && typeof error === "object" && "code" in error) return error;
+    const message = error instanceof Error ? error.message : "request failed";
+    return { message, code: "ERROR", status: 0 };
+  },
+}));
+
+// sendTurn uses postLlmJobSse; bridge to apiClient.post mock for legacy tests.
+vi.mock("../services/llm-job-sse", () => ({
+  postLlmJobSse: vi.fn(async (options: { path: string; body: unknown }) => {
+    const { apiClient } = await import("../services/api");
+    const res = await apiClient.post(options.path, options.body);
+    return (res as { data: unknown }).data;
+  }),
 }));
 
 const graphV1: WorkflowGraphDraft = {

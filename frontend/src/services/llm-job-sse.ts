@@ -88,7 +88,7 @@ async function readErrorBody(response: Response): Promise<APIError> {
 /**
  * POST a long LLM job over SSE. Resolves with completed event data, or rejects with APIError.
  */
-export async function postLlmJobSse<T extends Record<string, unknown> = Record<string, unknown>>(
+export async function postLlmJobSse<T extends object = Record<string, unknown>>(
   options: PostLlmJobSseOptions,
 ): Promise<T> {
   const url = joinURL(options.path);

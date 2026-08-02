@@ -2,6 +2,7 @@
 import "./audit-logs-page.css";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
+import AgentAuditStepNode from "../components/AgentAuditStepNode.vue";
 import ManagementList, { type ManagementListColumn } from "../components/ManagementList.vue";
 import ManagementPageHeader from "../components/ManagementPageHeader.vue";
 import ManagementSummaryStrip from "../components/ManagementSummaryStrip.vue";
@@ -311,7 +312,34 @@ function stepIcon(type: string) {
   if (type === "tool") return "fa-solid fa-screwdriver-wrench";
   if (type === "output") return "fa-solid fa-circle-check";
   if (type === "context_compaction") return "fa-solid fa-compress";
+  if (type === "agent_delegation") return "fa-solid fa-sitemap";
   return "fa-solid fa-terminal";
+}
+
+/** Expand/collapse state for nested agent_delegation frames. */
+const expandedDelegation = ref<Record<string, boolean>>({});
+
+function isDelegationExpanded(step: AgentAuditStep, index: number) {
+  const key = stepKey(step, index);
+  if (key in expandedDelegation.value) return expandedDelegation.value[key];
+  // Default: expanded for depth 0, collapsed when nested.
+  return !(step.collapsed || (step.depth != null && step.depth > 1));
+}
+
+function toggleDelegation(step: AgentAuditStep, index: number) {
+  const key = stepKey(step, index);
+  expandedDelegation.value[key] = !isDelegationExpanded(step, index);
+}
+
+function delegationMeta(step: AgentAuditStep) {
+  const bits: string[] = [];
+  if (step.protocol) bits.push(step.protocol);
+  if (step.mode) bits.push(step.mode);
+  if (step.origin) bits.push(step.origin);
+  if (step.depth != null) bits.push(`depth=${step.depth}`);
+  if (step.status) bits.push(step.status);
+  if (step.errorCode) bits.push(step.errorCode);
+  return bits.join(" · ");
 }
 
 function stepText(step: AgentAuditStep) {
@@ -445,49 +473,19 @@ async function runAction(action: () => Promise<void>, fallback: string) {
 
       <div v-if="agentAudit.detailLoading" class="span-12 empty">加载详情中…</div>
       <div v-else class="span-12 timeline">
-        <div v-for="(step, index) in agentAudit.selected.steps" :key="stepKey(step, index)" class="timeline-item">
-          <div class="timeline-rail">
-            <div class="timeline-icon" :class="step.type">
-              <i :class="stepIcon(step.type)"></i>
-            </div>
-            <span class="time mono">{{ (step.timeOffsetMs / 1000).toFixed(2) }}s</span>
-          </div>
-          <div class="timeline-card" :class="step.type">
-            <div class="timeline-card-head">
-              <h3>{{ step.title }}</h3>
-              <span v-if="step.latencyMs != null" class="mono pill">{{ formatLatency(step.latencyMs) }}</span>
-            </div>
-            <p v-if="stepText(step)" class="step-content" :class="{ reasoning: step.type === 'reasoning' }">
-              {{ stepText(step) }}
-            </p>
-            <div v-if="step.type === 'tool'" class="tool-grid">
-              <div>
-                <div class="json-label"><i class="fa-solid fa-code"></i> 调用参数 (Params)</div>
-                <pre class="json-view">{{ JSON.stringify(displayJson(step.params, step.paramsState), null, 2) }}</pre>
-              </div>
-              <div>
-                <div class="json-label"><i class="fa-solid fa-wave-square"></i> 返回结果 (Result)</div>
-                <pre class="json-view">{{ JSON.stringify(displayJson(step.result, step.resultState), null, 2) }}</pre>
-              </div>
-            </div>
-            <div v-else-if="step.type === 'context_compaction'" class="tool-grid">
-              <div>
-                <div class="json-label"><i class="fa-solid fa-compress"></i> Compact 元数据</div>
-                <pre class="json-view">{{ JSON.stringify(displayJson(step.params, step.paramsState), null, 2) }}</pre>
-              </div>
-              <div v-if="step.content && step.contentState === 'plain' && !agentAudit.isMasked">
-                <div class="json-label"><i class="fa-solid fa-file-lines"></i> 摘要正文（受控）</div>
-                <pre class="json-view">{{ step.content }}</pre>
-              </div>
-              <div v-else>
-                <div class="json-label"><i class="fa-solid fa-shield-halved"></i> 摘要正文</div>
-                <p class="step-content muted">
-                  默认脱敏。仅在全局 debug 开启、平台管理员且关闭页面遮罩时从加密对象展示。
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
+        <!-- Recursive node supports A→B→C… agent_delegation nesting of any depth -->
+        <AgentAuditStepNode
+          v-for="(step, index) in agentAudit.selected.steps"
+          :key="stepKey(step, index)"
+          :step="step"
+          :index="index"
+          :depth="0"
+          :format-latency="formatLatency"
+          :step-text="stepText"
+          :display-json="displayJson"
+          :step-icon="stepIcon"
+          :delegation-meta="delegationMeta"
+        />
         <div ref="timelineSentinelRef" class="timeline-sentinel" aria-hidden="true" />
         <div v-if="agentAudit.detailLoadingMore" class="timeline-loading muted">加载更多步骤…</div>
         <div v-else-if="agentAudit.detailHasMore" class="timeline-loading muted">下拉继续加载</div>
@@ -505,6 +503,49 @@ async function runAction(action: () => Promise<void>, fallback: string) {
 <style scoped>
 .agent-audit-page {
   min-width: 0;
+}
+
+.delegation-toggle {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  margin-right: 0.35rem;
+  color: inherit;
+  padding: 0 0.15rem;
+}
+
+.delegation-children {
+  margin-top: 0.75rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.timeline-item.nested {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.timeline-card.nested {
+  flex: 1;
+  background: #fafafa;
+}
+
+.timeline-icon.agent_delegation {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.timeline-card.agent_delegation {
+  border-color: #ddd6fe;
+}
+
+.timeline-card.FAILED,
+.timeline-card.CANCELLED,
+.timeline-card.TIMED_OUT {
+  border-color: #fecaca;
 }
 
 .agent-audit-mask {

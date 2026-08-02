@@ -357,7 +357,9 @@ export const useSmartDagStore = defineStore("smartdag", {
         };
       };
       // SSE failed events put the turn body on APIError.response.data.
-      const body = (anyErr?.response?.data || (apiErr.response?.data as typeof anyErr.response.data)) as
+      const sseData = anyErr?.response?.data;
+      const apiData = apiErr.response?.data as typeof sseData | undefined;
+      const body = (sseData || apiData) as
         | NonNullable<typeof anyErr.response>["data"]
         | undefined;
       const errDTO = body?.error || {

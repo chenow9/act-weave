@@ -22,11 +22,21 @@ vi.mock("../services/api", () => ({
     post: vi.fn(),
     put: vi.fn(),
   },
+  getAuthToken: () => "test-token",
   apiErrorMessage: (error: unknown, fallback: string) =>
     error instanceof Error ? fallback + "（" + error.message + "）" : fallback,
-  toAPIError: (error: { message?: string; response?: { status?: number } }) => ({
+  toAPIError: (error: { message?: string; response?: { status?: number }; code?: string }) => ({
     message: error.message || "request failed",
     status: error.response?.status,
+    code: error.code || "ERROR",
+  }),
+}));
+
+vi.mock("../services/llm-job-sse", () => ({
+  postLlmJobSse: vi.fn(async (options: { path: string; body: unknown }) => {
+    const { apiClient } = await import("../services/api");
+    const res = await apiClient.post(options.path, options.body);
+    return (res as { data: unknown }).data;
   }),
 }));
 
