@@ -373,8 +373,8 @@ func TestCreateRejectsDisallowedMediaAndOversize(t *testing.T) {
 func TestMigrationAAPFilesTablesExist(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 6 || version.Dirty {
-		t.Fatalf("expected migration 6, got %+v", version)
+	if !version.Applied || version.Number != 18 || version.Dirty {
+		t.Fatalf("expected migration 18, got %+v", version)
 	}
 	db := testDatabase.Open(t)
 	for _, table := range []string{
@@ -443,7 +443,7 @@ func openMigratedDB(t *testing.T) *sql.DB {
 	t.Helper()
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 6 {
+	if !version.Applied || version.Number != 18 || version.Dirty {
 		t.Fatalf("migrate: %+v", version)
 	}
 	return testDatabase.Open(t)

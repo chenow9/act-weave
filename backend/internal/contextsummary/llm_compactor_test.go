@@ -13,11 +13,11 @@ type fakeCompactModel struct {
 	out string
 	err error
 	// last call params
-	temp     float64
-	maxTok   int
-	system   string
-	user     string
-	calls    int
+	temp   float64
+	maxTok int
+	system string
+	user   string
+	calls  int
 }
 
 func (f *fakeCompactModel) Generate(_ context.Context, system, user string, temperature float64, maxTokens int) (string, error) {
@@ -104,7 +104,7 @@ func TestExtractiveNotSuccessPath(t *testing.T) {
 	}
 	g := &Generator{repo: nil, Compactor: nil}
 	if _, err := g.Generate(context.Background(), GenerateInput{
-		Turns: []contextwindow.Turn{{User: contextwindow.HistoryMessage{ID: "u", Content: "x", ContentHash: "h"}}},
+		Turns:                []contextwindow.Turn{{User: contextwindow.HistoryMessage{ID: "u", Content: "x", ContentHash: "h"}}},
 		CoverageEndMessageID: "c08f1f2e-7b5a-7c3d-8e9f-123456789001",
 	}); err == nil {
 		t.Fatal("expected invalid without repo/compactor")

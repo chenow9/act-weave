@@ -92,7 +92,7 @@ func TestPermanentToolPayloadScrubsFileDownloadURLs(t *testing.T) {
 	result, err := writer.Write(context.Background(), SensitivePayloadInput{
 		ObjectID: objectID, WorkspaceID: minioStoreWorkspaceID,
 		Kind: KindToolInvocationPayload, Request: request,
-		Response: json.RawMessage(`{"ok":true}`),
+		Response:      json.RawMessage(`{"ok":true}`),
 		CreatedByType: CreatorUser, CreatedByID: minioStoreOwnerID,
 	})
 	if err != nil {

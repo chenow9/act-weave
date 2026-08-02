@@ -2,9 +2,9 @@ package aapfile_test
 
 import (
 	"context"
-	"database/sql"
 	"crypto/sha256"
 	"crypto/tls"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -446,7 +446,6 @@ func uploadAndComplete(t *testing.T, service *aapfile.Service, staging *fakeStag
 	}
 	return intent.File.ID
 }
-
 
 func testWebhookClient(server *httptest.Server) *http.Client {
 	return &http.Client{

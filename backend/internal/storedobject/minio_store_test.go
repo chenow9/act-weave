@@ -81,7 +81,7 @@ func TestMinIOStoreControlledBucketMapping(t *testing.T) {
 		KindPromptPreviewOutput: BucketExecutions, KindModelTurn: BucketExecutions,
 		KindChatMessage: BucketExecutions, KindToolInvocationPayload: BucketExecutions,
 		KindExecutionCheckpoint: BucketExecutions, KindChatContextSummary: BucketExecutions,
-		KindToolTestPayload: BucketToolTests,
+		KindToolTestPayload:   BucketToolTests,
 		KindAuditEventPayload: BucketAuditPackages, KindAuditExport: BucketAuditPackages,
 		KindAAPFile: BucketAAPFiles, KindAAPFileDerived: BucketAAPFiles,
 	}

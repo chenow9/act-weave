@@ -6,8 +6,8 @@ import (
 	"errors"
 	"testing"
 
-	"actweave/backend/internal/execution"
 	"actweave/backend/internal/database/dbtest"
+	"actweave/backend/internal/execution"
 )
 
 func TestDeterministicCompactIDs(t *testing.T) {

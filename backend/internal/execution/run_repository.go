@@ -20,13 +20,17 @@ const agentRunColumns = `
 	ar.authorization_snapshot,ar.input_summary,ar.output_summary,ar.error_code,
 	ar.started_at,ar.finished_at,ar.lock_version,ar.principal_snapshot_version,
 	ar.subject_type,ar.subject_id,ar.client_id,ar.grant_id,ar.grant_version,
-	ar.agent_policy_version
+	ar.agent_policy_version,
+	COALESCE(ar.parent_run_id::text,''), COALESCE(ar.parent_delegation_id::text,''),
+	COALESCE(ar.agent_graph_snapshot, '{}'::jsonb)
 `
 
 const agentRunStepColumns = `
 	ars.id,ars.workspace_id,ars.run_id,ars.sequence_no,ars.step_type,ars.status,
 	ars.capability_release_id,ars.input_summary,ars.output_summary,ars.raw_object_id,
-	ars.raw_sha256,ars.raw_length,ars.started_at,ars.finished_at,ars.error_code
+	ars.raw_sha256,ars.raw_length,ars.started_at,ars.finished_at,ars.error_code,
+	COALESCE(ars.agent_id::text,''), COALESCE(ars.delegation_id::text,''),
+	COALESCE(ars.parent_step_id::text,'')
 `
 
 const workflowExecutionColumns = `
@@ -100,26 +104,122 @@ func startAgentRun(
 		return AgentRun{}, ErrRunInvalid
 	}
 	snapshotArguments := executionSnapshotArguments(principalSnapshot)
+	graphSnap := input.AgentGraphSnapshot
+	if len(graphSnap) == 0 {
+		graphSnap = json.RawMessage(`{}`)
+	}
+	graphSnap, graphErr := canonicalRunObject(graphSnap)
+	if graphErr != nil {
+		return AgentRun{}, ErrRunInvalid
+	}
 	value, err := scanAgentRun(queryer.QueryRowContext(ctx, `
 		INSERT INTO agent_runs AS ar(
 		 id,workspace_id,session_id,agent_id,status,trigger_type,triggered_by_type,
 		 triggered_by_id,trace_id,model_snapshot,capability_snapshot,
 		 context_policy_snapshot,agent_snapshot,snapshot_schema_version,authorization_snapshot,
 		 input_summary,principal_snapshot_version,subject_type,subject_id,client_id,
-		 grant_id,grant_version,agent_policy_version
+		 grant_id,grant_version,agent_policy_version,
+		 parent_run_id,parent_delegation_id,agent_graph_snapshot
 		) VALUES($1,$2,$3,$4,'RUNNING',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
-		 $16,$17,$18,$19,$20,$21,$22)
+		 $16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
 		RETURNING `+agentRunColumns,
 		input.ID, input.WorkspaceID, runNullableString(input.SessionID), input.AgentID,
 		input.TriggerType, input.TriggeredByType, input.TriggeredByID, input.TraceID,
 		[]byte(model), []byte(capabilities), []byte(contextPolicy), []byte(agentSnapshot),
 		input.Snapshots.SchemaVersion, []byte(authorizationEnvelope), []byte(inputSummary),
 		snapshotArguments[0], snapshotArguments[1], snapshotArguments[2], snapshotArguments[3],
-		snapshotArguments[4], snapshotArguments[5], snapshotArguments[6]))
+		snapshotArguments[4], snapshotArguments[5], snapshotArguments[6],
+		runNullableString(input.ParentRunID), runNullableString(input.ParentDelegationID),
+		[]byte(graphSnap)))
 	if err != nil {
 		return AgentRun{}, mapRunWrite("start agent run", err)
 	}
 	return value, nil
+}
+
+// SetAgentGraphSnapshotIfEmpty stores agent_graph_snapshot.v1 once (first write wins).
+// Fail closed: if a non-empty snapshot already exists and differs, returns error.
+// If the row was empty and the UPDATE matches zero rows, returns error.
+func (r *RunRepository) SetAgentGraphSnapshotIfEmpty(
+	ctx context.Context, workspaceID, runID string, snapshot json.RawMessage,
+) error {
+	workspaceID, runID = strings.TrimSpace(workspaceID), strings.TrimSpace(runID)
+	if !invocationValidUUID(workspaceID) || !invocationValidUUID(runID) {
+		return ErrRunInvalid
+	}
+	canonical, err := canonicalRunObject(snapshot)
+	if err != nil {
+		return ErrRunInvalid
+	}
+	// Read current; if already frozen, require byte-equal content.
+	var current []byte
+	err = r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(agent_graph_snapshot, '{}'::jsonb) FROM agent_runs
+		WHERE workspace_id=$1 AND id=$2
+	`, workspaceID, runID).Scan(&current)
+	if err != nil {
+		return mapRunRead("get agent graph snapshot", err)
+	}
+	cur := json.RawMessage(current)
+	if len(cur) > 0 && string(cur) != "{}" && string(cur) != "null" {
+		// Already frozen: allow equivalent topology (ignore builtAt clock noise).
+		if graphSnapshotEqualIgnoringBuiltAt(cur, canonical) {
+			return nil
+		}
+		return fmt.Errorf("%w: agent_graph_snapshot already frozen with different content", ErrRunConflict)
+	}
+	// Permanent-snapshot guard requires every agent_runs UPDATE to bump lock_version
+	// by exactly 1 (ERRCODE 40001 otherwise). Graph freeze is a first-write field
+	// update and must participate in the same versioning contract as status transitions.
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE agent_runs SET agent_graph_snapshot=$3, lock_version=lock_version+1
+		WHERE workspace_id=$1 AND id=$2
+		  AND (agent_graph_snapshot IS NULL OR agent_graph_snapshot = '{}'::jsonb)
+	`, workspaceID, runID, []byte(canonical))
+	if err != nil {
+		return mapRunWrite("set agent graph snapshot", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 1 {
+		return nil
+	}
+	// Concurrent writer may have frozen the same content: re-read and compare
+	// (builtAt stripped for idempotent equality of topology freezes).
+	var again []byte
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COALESCE(agent_graph_snapshot, '{}'::jsonb) FROM agent_runs
+		WHERE workspace_id=$1 AND id=$2
+	`, workspaceID, runID).Scan(&again); err != nil {
+		return mapRunRead("re-read agent graph snapshot", err)
+	}
+	if graphSnapshotEqualIgnoringBuiltAt(json.RawMessage(again), canonical) {
+		return nil
+	}
+	return fmt.Errorf("%w: agent_graph_snapshot freeze race with different content", ErrRunConflict)
+}
+
+// graphSnapshotEqualIgnoringBuiltAt compares freeze documents without builtAt clock noise.
+func graphSnapshotEqualIgnoringBuiltAt(a, b json.RawMessage) bool {
+	var ma, mb map[string]any
+	if json.Unmarshal(a, &ma) != nil || json.Unmarshal(b, &mb) != nil {
+		return false
+	}
+	delete(ma, "builtAt")
+	delete(mb, "builtAt")
+	ca, e1 := canonicalRunObject(mustMarshalJSON(ma))
+	cb, e2 := canonicalRunObject(mustMarshalJSON(mb))
+	if e1 != nil || e2 != nil {
+		return false
+	}
+	return string(ca) == string(cb)
+}
+
+func mustMarshalJSON(v any) json.RawMessage {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return json.RawMessage(`{}`)
+	}
+	return raw
 }
 
 func (r *RunRepository) GetAgentRun(
@@ -308,11 +408,13 @@ func (r *RunRepository) AppendAgentRunStep(
 	value, err := scanAgentRunStep(tx.QueryRowContext(ctx, `
 		INSERT INTO agent_run_steps AS ars(
 		 id,workspace_id,run_id,sequence_no,step_type,status,
-		 capability_release_id,input_summary
-		) VALUES($1,$2,$3,$4,$5,'RUNNING',$6,$7)
+		 capability_release_id,input_summary,agent_id,delegation_id,parent_step_id
+		) VALUES($1,$2,$3,$4,$5,'RUNNING',$6,$7,$8,$9,$10)
 		RETURNING `+agentRunStepColumns,
 		input.ID, input.WorkspaceID, input.RunID, sequence, input.StepType,
-		runNullableString(input.CapabilityReleaseID), []byte(summary)))
+		runNullableString(input.CapabilityReleaseID), []byte(summary),
+		runNullableString(input.AgentID), runNullableString(input.DelegationID),
+		runNullableString(input.ParentStepID)))
 	if err != nil {
 		return AgentRunStep{}, mapRunWrite("append agent run step", err)
 	}
@@ -359,7 +461,7 @@ func (r *RunRepository) transitionAgentRunStep(
 	value, err := scanAgentRunStep(queryer.QueryRowContext(ctx, `
 		UPDATE agent_run_steps ars SET status=$4,output_summary=$5,raw_object_id=$6,
 		 raw_sha256=$7,raw_length=$8,error_code=$9,
-		 finished_at=CASE WHEN $4 IN ('SUCCEEDED','FAILED','SKIPPED','CANCELLED')
+		 finished_at=CASE WHEN $4 IN ('SUCCEEDED','FAILED','SKIPPED','CANCELLED','TIMED_OUT')
 		   THEN GREATEST(ars.started_at, NOW()) ELSE NULL END
 		WHERE workspace_id=$1 AND id=$2 AND status=$3
 		RETURNING `+agentRunStepColumns,
@@ -825,7 +927,8 @@ func validActorType(value string) bool {
 
 func validRunStatus(value string) bool {
 	switch value {
-	case "PENDING", "RUNNING", "WAITING_CONFIRMATION", "SUCCEEDED", "FAILED", "CANCELLED":
+	case "PENDING", "RUNNING", "WAITING_CONFIRMATION", "WAITING_INTERACTION",
+		"SUCCEEDED", "FAILED", "CANCELLED", "TIMED_OUT", "ACCEPTED":
 		return true
 	default:
 		return false
@@ -834,7 +937,8 @@ func validRunStatus(value string) bool {
 
 func validStepStatus(value string) bool {
 	switch value {
-	case "QUEUED", "RUNNING", "WAITING_CONFIRMATION", "SUCCEEDED", "FAILED", "SKIPPED", "CANCELLED":
+	case "QUEUED", "RUNNING", "WAITING_CONFIRMATION",
+		"SUCCEEDED", "FAILED", "SKIPPED", "CANCELLED", "TIMED_OUT":
 		return true
 	default:
 		return false
@@ -843,7 +947,7 @@ func validStepStatus(value string) bool {
 
 func runFinishedAt(status string) any {
 	switch status {
-	case "SUCCEEDED", "FAILED", "SKIPPED", "CANCELLED":
+	case "SUCCEEDED", "FAILED", "SKIPPED", "CANCELLED", "TIMED_OUT":
 		return time.Now().UTC()
 	default:
 		return nil
@@ -891,6 +995,8 @@ func scanAgentRun(scanner runScanner) (AgentRun, error) {
 	var subjectType, subjectID, clientID, grantID sql.NullString
 	var grantVersion, policyVersion sql.NullInt64
 	var finishedAt sql.NullTime
+	var parentRunID, parentDelegationID string
+	var graphSnap []byte
 	err := scanner.Scan(
 		&value.ID, &value.WorkspaceID, &sessionID, &value.AgentID, &value.Status,
 		&value.TriggerType, &value.TriggeredByType, &value.TriggeredByID, &value.TraceID,
@@ -900,11 +1006,14 @@ func scanAgentRun(scanner runScanner) (AgentRun, error) {
 		&value.OutputSummary, &errorCode, &value.StartedAt, &finishedAt, &value.LockVersion,
 		&value.PrincipalSnapshotVersion, &subjectType, &subjectID, &clientID, &grantID,
 		&grantVersion, &policyVersion,
+		&parentRunID, &parentDelegationID, &graphSnap,
 	)
 	if err != nil {
 		return AgentRun{}, err
 	}
 	value.SessionID, value.ErrorCode = sessionID.String, errorCode.String
+	value.ParentRunID, value.ParentDelegationID = parentRunID, parentDelegationID
+	value.AgentGraphSnapshot = append(json.RawMessage(nil), graphSnap...)
 	value.PrincipalSnapshot, err = scannedExecutionSnapshot(
 		value.PrincipalSnapshotVersion, value.WorkspaceID, value.TriggeredByType,
 		value.TriggeredByID, subjectType, subjectID, clientID, grantID,
@@ -925,11 +1034,13 @@ func scanAgentRunStep(scanner runScanner) (AgentRunStep, error) {
 	var releaseID, rawObjectID, rawSHA256, errorCode sql.NullString
 	var rawLength sql.NullInt64
 	var finishedAt sql.NullTime
+	var agentID, delegationID, parentStepID string
 	err := scanner.Scan(
 		&value.ID, &value.WorkspaceID, &value.RunID, &value.SequenceNo,
 		&value.StepType, &value.Status, &releaseID, &value.InputSummary,
 		&value.OutputSummary, &rawObjectID, &rawSHA256, &rawLength,
 		&value.StartedAt, &finishedAt, &errorCode,
+		&agentID, &delegationID, &parentStepID,
 	)
 	if err != nil {
 		return AgentRunStep{}, err
@@ -937,6 +1048,7 @@ func scanAgentRunStep(scanner runScanner) (AgentRunStep, error) {
 	value.CapabilityReleaseID, value.RawObjectID = releaseID.String, rawObjectID.String
 	value.RawSHA256, value.RawLength = rawSHA256.String, rawLength.Int64
 	value.ErrorCode = errorCode.String
+	value.AgentID, value.DelegationID, value.ParentStepID = agentID, delegationID, parentStepID
 	if finishedAt.Valid {
 		finished := finishedAt.Time
 		value.FinishedAt = &finished

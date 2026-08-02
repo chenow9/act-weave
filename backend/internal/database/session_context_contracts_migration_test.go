@@ -43,7 +43,7 @@ func TestSessionContextContractsMigration(t *testing.T) {
 		if err := migrator.Up(); err != nil {
 			t.Fatalf("apply migrations up: %v", err)
 		}
-		assertMigrationVersion(t, migrator, 6) // includes later additive migrations
+		assertMigrationVersion(t, migrator, 18) // includes later additive migrations
 	})
 
 	db := openSessionContextDB(t, dsn)
@@ -57,9 +57,10 @@ func TestSessionContextContractsMigration(t *testing.T) {
 	assertNoBodyColumnsOnAssembly(t, db)
 	_ = db.Close()
 
-	// roll back additive migrations (6,5,4,3,2) back to baseline, then up again
+	// Roll back all additive migrations (2..latest) to baseline 000001, then up again.
+	// Latest is 16 → 15 down steps leaves version 1.
 	applyMigrations(t, dsn, func(migrator *database.Migrator) {
-		if err := migrator.Down(5); err != nil {
+		if err := migrator.Down(17); err != nil {
 			t.Fatalf("roll back session context migration: %v", err)
 		}
 		assertMigrationVersion(t, migrator, 1)
@@ -70,7 +71,7 @@ func TestSessionContextContractsMigration(t *testing.T) {
 		if err := migrator.Up(); err != nil {
 			t.Fatalf("re-apply session context migration: %v", err)
 		}
-		assertMigrationVersion(t, migrator, 6)
+		assertMigrationVersion(t, migrator, 18)
 	})
 	db = openSessionContextDB(t, dsn)
 	assertSessionContextColumns(t, db)
@@ -201,9 +202,9 @@ func assertSessionContextDefaults(t *testing.T, db *sql.DB) {
 	}
 	for name, value := range map[string]string{
 		"model runtime_capabilities": modelCaps,
-		"workspace context_policy":    workspacePolicy,
-		"agent context_policy":        agentPolicy,
-		"agent_snapshot":              agentSnapshot,
+		"workspace context_policy":   workspacePolicy,
+		"agent context_policy":       agentPolicy,
+		"agent_snapshot":             agentSnapshot,
 	} {
 		if value != "{}" {
 			t.Fatalf("expected empty object default for %s, got %q", name, value)

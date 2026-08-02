@@ -20,7 +20,7 @@ func TestDownloadTokenLifecycleHardening(t *testing.T) {
 
 	t.Run("purpose_mismatch_rejected", func(t *testing.T) {
 		minted, err := service.MintDownloadToken(ctx, aapfile.MintDownloadTokenInput{
-			Scope: aapfile.Scope{WorkspaceID: testWorkspaceID, AgentID: testAgentID},
+			Scope:  aapfile.Scope{WorkspaceID: testWorkspaceID, AgentID: testAgentID},
 			FileID: file.ID, Purpose: aapfile.DownloadPurposeClientContent,
 			CreatedBy: testServiceID,
 		})
@@ -46,7 +46,7 @@ func TestDownloadTokenLifecycleHardening(t *testing.T) {
 		}
 		// Invalid mint purpose.
 		_, err = service.MintDownloadToken(ctx, aapfile.MintDownloadTokenInput{
-			Scope: aapfile.Scope{WorkspaceID: testWorkspaceID, AgentID: testAgentID},
+			Scope:  aapfile.Scope{WorkspaceID: testWorkspaceID, AgentID: testAgentID},
 			FileID: file.ID, Purpose: "evil_purpose", CreatedBy: testServiceID,
 		})
 		if err != aapfile.ErrInvalid {
@@ -69,7 +69,7 @@ func TestDownloadTokenLifecycleHardening(t *testing.T) {
 		}
 		// Multi-use client_content: resolve must reject after TTL.
 		multi, err := svc.MintDownloadToken(ctx, aapfile.MintDownloadTokenInput{
-			Scope: aapfile.Scope{WorkspaceID: testWorkspaceID, AgentID: testAgentID},
+			Scope:  aapfile.Scope{WorkspaceID: testWorkspaceID, AgentID: testAgentID},
 			FileID: file.ID, Purpose: aapfile.DownloadPurposeClientContent,
 			CreatedBy: testServiceID, TTL: time.Minute,
 		})
@@ -78,7 +78,7 @@ func TestDownloadTokenLifecycleHardening(t *testing.T) {
 		}
 		// Single-use tool_invoke: consume also rejects after TTL.
 		single, err := svc.MintDownloadToken(ctx, aapfile.MintDownloadTokenInput{
-			Scope: aapfile.Scope{WorkspaceID: testWorkspaceID, AgentID: testAgentID},
+			Scope:  aapfile.Scope{WorkspaceID: testWorkspaceID, AgentID: testAgentID},
 			FileID: file.ID, Purpose: aapfile.DownloadPurposeToolInvoke,
 			CreatedBy: testServiceID, TTL: time.Minute,
 		})
@@ -102,7 +102,7 @@ func TestDownloadTokenLifecycleHardening(t *testing.T) {
 
 	t.Run("single_use_double_read_fails", func(t *testing.T) {
 		minted, err := service.MintDownloadToken(ctx, aapfile.MintDownloadTokenInput{
-			Scope: aapfile.Scope{WorkspaceID: testWorkspaceID, AgentID: testAgentID},
+			Scope:  aapfile.Scope{WorkspaceID: testWorkspaceID, AgentID: testAgentID},
 			FileID: file.ID, Purpose: aapfile.DownloadPurposeToolInvoke,
 			CreatedBy: testServiceID, SingleUse: false, // forced true for tool_invoke
 		})
@@ -132,7 +132,7 @@ func TestDownloadTokenLifecycleHardening(t *testing.T) {
 
 	t.Run("single_use_concurrent_cas", func(t *testing.T) {
 		minted, err := service.MintDownloadToken(ctx, aapfile.MintDownloadTokenInput{
-			Scope: aapfile.Scope{WorkspaceID: testWorkspaceID, AgentID: testAgentID},
+			Scope:  aapfile.Scope{WorkspaceID: testWorkspaceID, AgentID: testAgentID},
 			FileID: file.ID, Purpose: aapfile.DownloadPurposeProcessorDelivery,
 			CreatedBy: testServiceID,
 		})
@@ -162,7 +162,7 @@ func TestDownloadTokenLifecycleHardening(t *testing.T) {
 
 	t.Run("ttl_capped_at_max", func(t *testing.T) {
 		minted, err := service.MintDownloadToken(ctx, aapfile.MintDownloadTokenInput{
-			Scope: aapfile.Scope{WorkspaceID: testWorkspaceID, AgentID: testAgentID},
+			Scope:  aapfile.Scope{WorkspaceID: testWorkspaceID, AgentID: testAgentID},
 			FileID: file.ID, Purpose: aapfile.DownloadPurposeClientContent,
 			CreatedBy: testServiceID, TTL: time.Hour,
 		})
@@ -190,7 +190,7 @@ func TestDownloadTokenLifecycleHardening(t *testing.T) {
 		}
 		// Live token must survive.
 		live, err := service.MintDownloadToken(ctx, aapfile.MintDownloadTokenInput{
-			Scope: aapfile.Scope{WorkspaceID: testWorkspaceID, AgentID: testAgentID},
+			Scope:  aapfile.Scope{WorkspaceID: testWorkspaceID, AgentID: testAgentID},
 			FileID: file.ID, Purpose: aapfile.DownloadPurposeClientContent,
 			CreatedBy: testServiceID,
 		})

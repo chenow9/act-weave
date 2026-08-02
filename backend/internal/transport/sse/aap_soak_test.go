@@ -19,15 +19,15 @@ import (
 
 // Soak defaults (aligned with DefaultBackpressurePolicy / DefaultFollowPolicy).
 const (
-	soakReplayEvents          = 100_000
-	soakReplayPageSize        = 100
-	soakMultiClients          = 8
-	soakEventsPerClientRun    = 200
-	soakSlowWriteTimeout      = 25 * time.Millisecond
-	soakHeartbeatInterval     = 5 * time.Millisecond
-	soakPollInterval          = 2 * time.Millisecond
-	soakGoroutineLeakBudget   = 32 // process noise allowance after GC
-	soakFastPathMaxLatencyMs  = 50 // slow consumer must not stall fast path this long
+	soakReplayEvents         = 100_000
+	soakReplayPageSize       = 100
+	soakMultiClients         = 8
+	soakEventsPerClientRun   = 200
+	soakSlowWriteTimeout     = 25 * time.Millisecond
+	soakHeartbeatInterval    = 5 * time.Millisecond
+	soakPollInterval         = 2 * time.Millisecond
+	soakGoroutineLeakBudget  = 32 // process noise allowance after GC
+	soakFastPathMaxLatencyMs = 50 // slow consumer must not stall fast path this long
 )
 
 // TestAAPSoak is the M10-T5 capacity / long-connection gate for AAP SSE transport.
@@ -305,12 +305,12 @@ func testAAPSoakTokenReconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	binding := agentaccessauth.StreamBinding{
-		WorkspaceID: "a0000000-0000-4000-8000-000000000001",
-		AgentID:     "a0000000-0000-4000-8000-000000000002",
-		ClientID:    "a0000000-0000-4000-8000-000000000003",
-		GrantID:     "a0000000-0000-4000-8000-000000000004",
-		PrincipalID: "a0000000-0000-4000-8000-000000000005",
-		SubjectID:   "a0000000-0000-4000-8000-000000000006",
+		WorkspaceID:     "a0000000-0000-4000-8000-000000000001",
+		AgentID:         "a0000000-0000-4000-8000-000000000002",
+		ClientID:        "a0000000-0000-4000-8000-000000000003",
+		GrantID:         "a0000000-0000-4000-8000-000000000004",
+		PrincipalID:     "a0000000-0000-4000-8000-000000000005",
+		SubjectID:       "a0000000-0000-4000-8000-000000000006",
 		SecurityVersion: 1,
 		TokenExpiresAt:  time.Now().UTC().Add(20 * time.Millisecond),
 	}
@@ -467,11 +467,11 @@ func soakEvent(scope protocolevent.RunScope, sequence int64, eventType string) p
 
 // syntheticFollowReader generates sequences on demand (no full materialization of 100k events).
 type syntheticFollowReader struct {
-	scope      protocolevent.RunScope
-	total      int64
-	terminal   bool
-	mu         sync.Mutex
-	maxFlight  int
+	scope     protocolevent.RunScope
+	total     int64
+	terminal  bool
+	mu        sync.Mutex
+	maxFlight int
 }
 
 func newSyntheticFollowReader(scope protocolevent.RunScope, total int64, terminal bool) *syntheticFollowReader {

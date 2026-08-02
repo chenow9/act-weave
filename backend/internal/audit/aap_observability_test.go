@@ -39,16 +39,16 @@ func testAAPAuditAuthIndexOnly(t *testing.T) {
 		RequestID:    "req-obs-auth-1",
 		TraceID:      "tr-obs-auth-1",
 		Metadata: map[string]any{
-			"clientId":            "a38f1f2e-7b5a-7c3d-8e9f-1234567890e1",
-			"agentId":             "a38f1f2e-7b5a-7c3d-8e9f-1234567890f1",
-			"servicePrincipalId":  "a38f1f2e-7b5a-7c3d-8e9f-1234567890c1",
-			"runId":               "a38f1f2e-7b5a-7c3d-8e9f-1234567890d1",
-			"requiredScope":       "run:create",
-			"reason":              "SCOPE_MISSING",
-			"errorCode":           "AUTHORIZATION_DENIED",
+			"clientId":           "a38f1f2e-7b5a-7c3d-8e9f-1234567890e1",
+			"agentId":            "a38f1f2e-7b5a-7c3d-8e9f-1234567890f1",
+			"servicePrincipalId": "a38f1f2e-7b5a-7c3d-8e9f-1234567890c1",
+			"runId":              "a38f1f2e-7b5a-7c3d-8e9f-1234567890d1",
+			"requiredScope":      "run:create",
+			"reason":             "SCOPE_MISSING",
+			"errorCode":          "AUTHORIZATION_DENIED",
 			// Attempted smuggling — must be redacted / dropped.
-			"accessToken":  "eyJhbGciOiJIUzI1NiJ9.payload.signature123456",
-			"clientSecret": "awsk_should_never_persist",
+			"accessToken":   "eyJhbGciOiJIUzI1NiJ9.payload.signature123456",
+			"clientSecret":  "awsk_should_never_persist",
 			"authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature123456",
 		},
 	})
@@ -111,10 +111,10 @@ func testAAPAuditCredentialLifecycle(t *testing.T) {
 			"secret":       "awsk_new_secret_value",
 		},
 		Metadata: map[string]any{
-			"clientId":     "a38f1f2e-7b5a-7c3d-8e9f-1234567890e1",
-			"operation":    "rotate",
-			"errorCode":    "NONE",
-			"lastUsedAge":  "72h", // age signal for credential expiry backlog alerts
+			"clientId":    "a38f1f2e-7b5a-7c3d-8e9f-1234567890e1",
+			"operation":   "rotate",
+			"errorCode":   "NONE",
+			"lastUsedAge": "72h", // age signal for credential expiry backlog alerts
 		},
 	})
 	if err != nil {
@@ -150,10 +150,10 @@ func testAAPAuditOpsSignals(t *testing.T) {
 		Result:       "FAILURE",
 		RequestID:    "req-obs-seq-1",
 		Metadata: map[string]any{
-			"runId":      "a38f1f2e-7b5a-7c3d-8e9f-1234567890d2",
-			"clientId":   "a38f1f2e-7b5a-7c3d-8e9f-1234567890e1",
-			"agentId":    "a38f1f2e-7b5a-7c3d-8e9f-1234567890f1",
-			"errorCode":  "SEQUENCE_CONFLICT",
+			"runId":            "a38f1f2e-7b5a-7c3d-8e9f-1234567890d2",
+			"clientId":         "a38f1f2e-7b5a-7c3d-8e9f-1234567890e1",
+			"agentId":          "a38f1f2e-7b5a-7c3d-8e9f-1234567890f1",
+			"errorCode":        "SEQUENCE_CONFLICT",
 			"expectedSequence": 12,
 			"observedSequence": 11,
 		},
@@ -176,12 +176,12 @@ func testAAPAuditOpsSignals(t *testing.T) {
 		Result:       "SUCCESS",
 		RequestID:    "req-obs-wait-1",
 		Metadata: map[string]any{
-			"runId":            "a38f1f2e-7b5a-7c3d-8e9f-1234567890d3",
-			"clientId":         "a38f1f2e-7b5a-7c3d-8e9f-1234567890e1",
-			"agentId":          "a38f1f2e-7b5a-7c3d-8e9f-1234567890f1",
-			"interactionId":    "a38f1f2e-7b5a-7c3d-8e9f-1234567890i1",
-			"waitingAgeMs": 3_600_000,
-			"errorCode":    "NONE",
+			"runId":         "a38f1f2e-7b5a-7c3d-8e9f-1234567890d3",
+			"clientId":      "a38f1f2e-7b5a-7c3d-8e9f-1234567890e1",
+			"agentId":       "a38f1f2e-7b5a-7c3d-8e9f-1234567890f1",
+			"interactionId": "a38f1f2e-7b5a-7c3d-8e9f-1234567890i1",
+			"waitingAgeMs":  3_600_000,
+			"errorCode":     "NONE",
 			// Free-text content keys must be redacted (rawContentKey).
 			"body":   "approve purchase of $999",
 			"prompt": "chain of thought secret",

@@ -14,16 +14,16 @@ import (
 )
 
 const (
-	testOwner   = "c08f1f2e-7b5a-7c3d-8e9f-123456789001"
-	testWS      = "c08f1f2e-7b5a-7c3d-8e9f-123456789002"
-	testModel   = "c08f1f2e-7b5a-7c3d-8e9f-123456789003"
-	testAgent   = "c08f1f2e-7b5a-7c3d-8e9f-123456789004"
-	testSession = "c08f1f2e-7b5a-7c3d-8e9f-123456789005"
-	testMsgEnd  = "c08f1f2e-7b5a-7c3d-8e9f-123456789006"
+	testOwner    = "c08f1f2e-7b5a-7c3d-8e9f-123456789001"
+	testWS       = "c08f1f2e-7b5a-7c3d-8e9f-123456789002"
+	testModel    = "c08f1f2e-7b5a-7c3d-8e9f-123456789003"
+	testAgent    = "c08f1f2e-7b5a-7c3d-8e9f-123456789004"
+	testSession  = "c08f1f2e-7b5a-7c3d-8e9f-123456789005"
+	testMsgEnd   = "c08f1f2e-7b5a-7c3d-8e9f-123456789006"
 	testMsgStart = "c08f1f2e-7b5a-7c3d-8e9f-123456789016"
-	testToken   = "c08f1f2e-7b5a-7c3d-8e9f-123456789007"
-	testHash    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	testHashB   = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	testToken    = "c08f1f2e-7b5a-7c3d-8e9f-123456789007"
+	testHash     = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	testHashB    = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 )
 
 func seedSummaryFixture(t *testing.T, db *sql.DB) {
@@ -68,7 +68,7 @@ func TestSummaryClaimReadyImmutable(t *testing.T) {
 	claim := contextsummary.ClaimInput{
 		WorkspaceID: testWS, SessionID: testSession, CoverageEndMessageID: testMsgEnd,
 		CoverageStartMessageID: testMsgStart,
-		SourceDigest: testHash, PolicyFingerprint: testHash, PromptTemplateHash: testHash,
+		SourceDigest:           testHash, PolicyFingerprint: testHash, PromptTemplateHash: testHash,
 		PromptTemplateVersion: "v1", OwnerToken: testToken, LeaseTTL: time.Minute,
 		GenerationMethod: contextsummary.GenerationLegacyExtractive,
 	}
@@ -295,7 +295,7 @@ func TestCrossWorkspaceContentObjectFK(t *testing.T) {
 func TestMigration000004Schema(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 5 || version.Dirty {
+	if !version.Applied || version.Number != 18 || version.Dirty {
 		t.Fatalf("migration version = %+v", version)
 	}
 	db := testDatabase.Open(t)

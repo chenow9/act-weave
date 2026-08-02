@@ -20,7 +20,7 @@ func TestPrincipalAwareChatOwnershipMigration(t *testing.T) {
 	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 5 || version.Dirty {
+	if !version.Applied || version.Number != 18 || version.Dirty {
 		t.Fatalf("expected migration 48, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -43,7 +43,7 @@ func TestPrincipalAwareChatOwnershipMigration(t *testing.T) {
 	}
 
 	version = testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 5 || version.Dirty {
+	if !version.Applied || version.Number != 18 || version.Dirty {
 		t.Fatalf("Principal-aware Chat migration=%+v", version)
 	}
 	repository, err := chat.NewRepository(db)

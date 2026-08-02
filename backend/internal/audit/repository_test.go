@@ -17,7 +17,7 @@ const auditPayloadObjectID = "a48f1f2e-7b5a-7c3d-8e9f-123456789001"
 func TestInsertAuditEventIsRedactedScopedAndInsertOnly(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 5 || version.Dirty {
+	if !version.Applied || version.Number != 18 || version.Dirty {
 		t.Fatalf("audit payload migration = %+v", version)
 	}
 	db := testDatabase.Open(t)

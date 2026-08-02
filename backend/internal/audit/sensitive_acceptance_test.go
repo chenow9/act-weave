@@ -48,8 +48,8 @@ func testAuditSensitiveRedaction(t *testing.T) {
 			"prompt":   "raw chain of thought prompt text",
 		},
 		Metadata: map[string]any{
-			"errorCode":  "NONE",
-			"diagnostic": "token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.c2lnbmF0dXJlMTIzNDU2Nzg",
+			"errorCode":   "NONE",
+			"diagnostic":  "token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.c2lnbmF0dXJlMTIzNDU2Nzg",
 			"resumeToken": "resume-token-should-redact",
 		},
 	})

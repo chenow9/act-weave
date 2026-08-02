@@ -22,7 +22,7 @@ import (
 func TestTrustedSubjectIssuerMigrationAndConfigUpdateBumpsSecurityVersion(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 6 || version.Dirty {
+	if !version.Applied || version.Number != 18 || version.Dirty {
 		t.Fatalf("expected clean latest schema for Trusted Subject Issuer, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -118,7 +118,7 @@ func TestTrustedSubjectIssuerMigrationAndConfigUpdateBumpsSecurityVersion(t *tes
 		ActorID: repositoryOwnerID, ExpectedLockVersion: updated.LockVersion,
 		Config: agentaccess.TrustedSubjectIssuerConfig{
 			Issuer: config.Issuer, Audience: config.Audience,
-			JWKSURI: "https://idp.partner.example.test/jwks.json",
+			JWKSURI:    "https://idp.partner.example.test/jwks.json",
 			InlineJWKS: inlineJWKS, Algorithms: []string{"EdDSA"},
 			ClaimPolicy: agentaccessauth.DefaultSubjectClaimPolicy(),
 		},
@@ -135,8 +135,8 @@ func TestTrustedSubjectIssuerMigrationAndConfigUpdateBumpsSecurityVersion(t *tes
 		ActorID: repositoryOwnerID, ExpectedLockVersion: updated.LockVersion,
 		Config: agentaccess.TrustedSubjectIssuerConfig{
 			Issuer: config.Issuer, Audience: config.Audience,
-			JWKSURI: "https://idp.partner.example.test/jwks.json",
-			Algorithms: []string{"EdDSA", "PS256"},
+			JWKSURI:     "https://idp.partner.example.test/jwks.json",
+			Algorithms:  []string{"EdDSA", "PS256"},
 			ClaimPolicy: agentaccessauth.DefaultSubjectClaimPolicy(),
 		},
 	})
@@ -305,10 +305,10 @@ func trustedSubjectTestInlineJWKS(t *testing.T, keyID string, publicKey ed25519.
 func toPublicTrustedSubjectClient(value agentaccess.AgentAccessClient) map[string]any {
 	return map[string]any{
 		"id": value.ID, "trustedSubjectIssuer": value.TrustedSubjectIssuer,
-		"trustedSubjectAudience": value.TrustedSubjectAudience,
-		"trustedSubjectJwksUri":  value.TrustedSubjectJWKSURI,
-		"trustedSubjectInlineJwks": value.TrustedSubjectInlineJWKS,
-		"trustedSubjectAlgorithms": value.TrustedSubjectAlgorithms,
+		"trustedSubjectAudience":    value.TrustedSubjectAudience,
+		"trustedSubjectJwksUri":     value.TrustedSubjectJWKSURI,
+		"trustedSubjectInlineJwks":  value.TrustedSubjectInlineJWKS,
+		"trustedSubjectAlgorithms":  value.TrustedSubjectAlgorithms,
 		"trustedSubjectClaimPolicy": value.TrustedSubjectClaimPolicy,
 	}
 }

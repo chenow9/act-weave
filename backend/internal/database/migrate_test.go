@@ -23,43 +23,25 @@ func TestEmbeddedMigrationSetStartsWithBaselineThenSessionContext(t *testing.T) 
 	if version != 1 {
 		t.Fatalf("expected first migration version 1, got %d", version)
 	}
-	next, err := source.Next(version)
-	if err != nil {
-		t.Fatalf("expected session-context migration after baseline: %v", err)
+
+	// Walk the full chain and assert latest version.
+	current := version
+	var last uint = version
+	for {
+		next, err := source.Next(current)
+		if err != nil {
+			break
+		}
+		if next != current+1 {
+			t.Fatalf("expected sequential migration versions, got %d after %d", next, current)
+		}
+		current = next
+		last = next
 	}
-	if next != 2 {
-		t.Fatalf("expected second migration version 2, got %d", next)
-	}
-	third, err := source.Next(next)
-	if err != nil {
-		t.Fatalf("expected chat context summaries migration: %v", err)
-	}
-	if third != 3 {
-		t.Fatalf("expected third migration version 3, got %d", third)
-	}
-	fourth, err := source.Next(third)
-	if err != nil {
-		t.Fatalf("expected agent context llm compaction migration: %v", err)
-	}
-	if fourth != 4 {
-		t.Fatalf("expected fourth migration version 4, got %d", fourth)
-	}
-	fifth, err := source.Next(fourth)
-	if err != nil {
-		t.Fatalf("expected agent access cors loopback migration: %v", err)
-	}
-	if fifth != 5 {
-		t.Fatalf("expected fifth migration version 5, got %d", fifth)
-	}
-	sixth, err := source.Next(fifth)
-	if err != nil {
-		t.Fatalf("expected aap files migration: %v", err)
-	}
-	if sixth != 6 {
-		t.Fatalf("expected sixth migration version 6, got %d", sixth)
-	}
-	if _, err := source.Next(sixth); err == nil {
-		t.Fatal("expected only six embedded migrations")
+	// Latest embedded migration (000016_inbound_task_aliases).
+	const wantLatest = 18
+	if last != wantLatest {
+		t.Fatalf("expected latest embedded migration version %d, got %d (update wantLatest when adding migrations)", wantLatest, last)
 	}
 
 	for _, item := range []struct {
@@ -72,6 +54,16 @@ func TestEmbeddedMigrationSetStartsWithBaselineThenSessionContext(t *testing.T) 
 		{version: 4, identifier: "agent_context_llm_compaction"},
 		{version: 5, identifier: "agent_access_cors_loopback"},
 		{version: 6, identifier: "aap_files"},
+		{version: 7, identifier: "aap_file_grant_scopes"},
+		{version: 8, identifier: "aap_file_data_commands"},
+		{version: 9, identifier: "agent_delegation_a2a"},
+		{version: 10, identifier: "agent_delegation_hardening"},
+		{version: 11, identifier: "delegation_execution_lease"},
+		{version: 12, identifier: "inbound_lease_outbox_claim"},
+		{version: 13, identifier: "delegation_audit_tokens"},
+		{version: 14, identifier: "delegation_attempt_invariant"},
+		{version: 15, identifier: "inbound_request_hash_sticky"},
+		{version: 16, identifier: "inbound_task_aliases"},
 	} {
 		for _, direction := range []struct {
 			name string
