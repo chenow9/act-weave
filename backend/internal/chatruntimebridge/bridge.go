@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"actweave/backend/internal/agent"
+	"actweave/backend/internal/agentdelegation"
 	"actweave/backend/internal/agentrun"
 	"actweave/backend/internal/chat"
 	"actweave/backend/internal/chatruntime"
@@ -99,6 +100,9 @@ type Dependencies struct {
 	// into model schema messages (IC-08). When nil, text-only legacy/v1 text works;
 	// input_file parts fail closed with MODEL_CONTENT_UNSUPPORTED.
 	Multimodal *chatruntime.MultimodalAssembler
+	// Delegation wires internal Agent→Agent (Eino AgentTool) and optional A2A remotes.
+	// When nil, existing single-agent tool behavior is unchanged.
+	Delegation *DelegationDeps
 }
 
 // Bridge implements agentrun.Runtime on the eino engine path.
@@ -126,6 +130,7 @@ type Bridge struct {
 	assemblies      *execution.ContextAssemblyRepository
 	compact         *CompactDependencies
 	multimodal      *chatruntime.MultimodalAssembler
+	delegation      *DelegationDeps
 
 	activeMu   sync.Mutex
 	activeRuns map[string]*activeRunExecution
@@ -137,6 +142,9 @@ type Bridge struct {
 
 type activeRunExecution struct {
 	cancel context.CancelCauseFunc
+	// gen increments on re-register for the same slot so a stale unregister
+	// (generation-aware) cannot wipe a newer reclaim registration.
+	gen int64
 }
 
 // Compile-time: Bridge is a production Runtime.
@@ -180,6 +188,7 @@ func NewBridge(deps Dependencies) (*Bridge, error) {
 		assemblies:      deps.Assemblies,
 		compact:         deps.Compact,
 		multimodal:      deps.Multimodal,
+		delegation:      deps.Delegation,
 		activeRuns:      make(map[string]*activeRunExecution),
 		pendingConfirms: make(map[string][]einoruntime.PendingConfirmInterrupt),
 	}, nil
@@ -419,6 +428,43 @@ func (b *Bridge) drive(
 	if err != nil {
 		return "", "", err
 	}
+	// Inject internal AgentTools + optional A2A remotes (preserves existing tools).
+	// Graph snapshot freeze is fail-closed before any nested dispatch.
+	var delBudget *agentdelegation.Budget
+	var graphSnap *agentdelegation.GraphSnapshotV1
+	tools, delBudget, graphSnap, err = b.attachDelegationTools(ctx, job, run, tools, pendingKey)
+	if err != nil {
+		return "", "", fmt.Errorf("attach agent delegation tools: %w", err)
+	}
+	if graphSnap != nil {
+		raw, rawErr := graphSnapshotBytes(graphSnap)
+		if rawErr != nil {
+			return "", "", fmt.Errorf("marshal agent graph snapshot: %w", rawErr)
+		}
+		if b.runs == nil {
+			return "", "", fmt.Errorf("persist agent graph snapshot: run store required")
+		}
+		setter, ok := b.runs.(interface {
+			SetAgentGraphSnapshotIfEmpty(context.Context, string, string, json.RawMessage) error
+		})
+		if !ok {
+			return "", "", fmt.Errorf("persist agent graph snapshot: SetAgentGraphSnapshotIfEmpty not supported")
+		}
+		if err := setter.SetAgentGraphSnapshotIfEmpty(ctx, job.WorkspaceID, job.RunID, raw); err != nil {
+			return "", "", fmt.Errorf("persist agent graph snapshot: %w", err)
+		}
+		// Keep in-memory run view consistent for child capability reads and
+		// subsequent lock_version-sensitive transitions (freeze bumps lock).
+		run.AgentGraphSnapshot = raw
+		if current, gerr := b.runs.GetAgentRun(ctx, job.WorkspaceID, job.RunID); gerr == nil {
+			run.LockVersion = current.LockVersion
+			if len(current.AgentGraphSnapshot) > 0 {
+				run.AgentGraphSnapshot = current.AgentGraphSnapshot
+			}
+		}
+	}
+	// Root-shared budget + run identity for audited AgentTool / A2A tools.
+	ctx = withDelegationRunContext(ctx, job, run, delBudget)
 
 	instruction := snapRT.SystemPrompt
 	if strings.TrimSpace(instruction) == "" {
@@ -568,9 +614,9 @@ func (b *Bridge) buildPipelineTools(
 		// Resume/confirm path already passes run.PrincipalSnapshot (see pause.go).
 		principalSnap := run.PrincipalSnapshot
 		pt, err := einoruntime.NewPipelineTool(einoruntime.PipelineToolConfig{
-			Info:                 info,
-			Pipeline:             b.toolInvoker,
-			Resolver:             b.toolInvoker,
+			Info:     info,
+			Pipeline: b.toolInvoker,
+			Resolver: b.toolInvoker,
 			// Capability-snapshot flag only; OR with resolved.RequiresConfirmation
 			// inside InvokableRun after the single lazy resolve.
 			RequiresConfirmation: cap.RequiresConfirmation,
@@ -784,7 +830,7 @@ func (b *Bridge) buildMessagesTokenWindow(
 		segJSON, _ := json.Marshal(segments)
 		rec := execution.ContextAssemblyRecord{
 			WorkspaceID: job.WorkspaceID, RunID: job.RunID, SessionID: job.SessionID,
-			Mode: plan.Mode,
+			Mode:                   plan.Mode,
 			PolicySnapshotHash:     execution.HashJSONObject(run.ContextPolicySnapshot),
 			ModelSnapshotHash:      execution.HashJSONObject(run.ModelSnapshot),
 			CapabilitySnapshotHash: execution.HashJSONObject(run.CapabilitySnapshot),
@@ -881,7 +927,7 @@ func (b *Bridge) loadBoundedHistoryForAssembly(
 	}
 
 	var (
-		cursor     *chat.MessagePageCursor
+		cursor *chat.MessagePageCursor
 		// histNewestFirst holds decrypted history strictly before current, newest first.
 		histNewestFirst []contextwindow.HistoryMessage
 		priorTurns      []contextwindow.Turn
@@ -1209,12 +1255,18 @@ func (b *Bridge) registerActiveRun(
 		return nil, false
 	}
 	key := activeRunSlotKey(activeRunKey(workspaceID, runID), slot)
-	active := &activeRunExecution{cancel: cancel}
 	b.activeMu.Lock()
 	defer b.activeMu.Unlock()
-	if _, exists := b.activeRuns[key]; exists {
-		return nil, false
+	var gen int64 = 1
+	if prev, exists := b.activeRuns[key]; exists && prev != nil {
+		// Reclaim/re-entry: interrupt previous holder and bump generation so its
+		// deferred unregister cannot clear this registration (pointer+gen match).
+		gen = prev.gen + 1
+		if prev.cancel != nil {
+			prev.cancel(ErrRunCancelled)
+		}
 	}
+	active := &activeRunExecution{cancel: cancel, gen: gen}
 	b.activeRuns[key] = active
 	return active, true
 }
@@ -1225,7 +1277,8 @@ func (b *Bridge) unregisterActiveRun(
 ) {
 	key := activeRunSlotKey(activeRunKey(workspaceID, runID), slot)
 	b.activeMu.Lock()
-	if b.activeRuns[key] == active {
+	// Generation-aware: only the matching generation clears the slot.
+	if cur := b.activeRuns[key]; cur == active && (active == nil || cur.gen == active.gen) {
 		delete(b.activeRuns, key)
 	}
 	b.activeMu.Unlock()
@@ -1284,11 +1337,27 @@ func (b *Bridge) recordToolStep(ctx context.Context, event einoruntime.ToolCompl
 	if err != nil {
 		return err
 	}
-	if _, err := b.steps.AppendAgentRunStep(ctx, execution.AppendAgentRunStepInput{
-		ID: stepID, WorkspaceID: event.WorkspaceID, RunID: event.AgentRunID,
+	runID := event.AgentRunID
+	stepIn := execution.AppendAgentRunStepInput{
+		ID: stepID, WorkspaceID: event.WorkspaceID, RunID: runID,
 		StepType: "TOOL", CapabilityReleaseID: strings.TrimSpace(event.ReleaseID),
 		InputSummary: inputSummary,
-	}); err != nil {
+	}
+	if rc, ok := agentdelegation.RunContextFrom(ctx); ok && rc != nil {
+		// Nested agent attribution: agent_id = executing agent; run may be TASK child.
+		if rc.RunID != "" {
+			stepIn.RunID = rc.RunID
+		}
+		stepIn.AgentID = rc.CallerAgentID
+		if rc.ParentDelegationID != nil {
+			stepIn.DelegationID = *rc.ParentDelegationID
+		}
+		// Same-run parent_step_id only (TASK child nests via delegation_id).
+		if sameRunParentStep(rc) {
+			stepIn.ParentStepID = *rc.ParentStepID
+		}
+	}
+	if _, err := b.steps.AppendAgentRunStep(ctx, stepIn); err != nil {
 		return fmt.Errorf("append TOOL step: %w", err)
 	}
 	outputSummary, err := json.Marshal(buildToolStepOutputSummary(event))
@@ -1382,11 +1451,30 @@ func (b *Bridge) recordModelTurn(
 		"hasReasoning":    strings.TrimSpace(reasoningForAudit) != "",
 		"contentLength":   len(strings.TrimSpace(turn.Content)),
 		"reasoningTokens": turn.ReasoningTokens,
+		"hasToolCalls":    turn.HasToolCalls,
+		"tokensKnown":     turn.TokensKnown,
 	})
-	if _, err := b.steps.AppendAgentRunStep(ctx, execution.AppendAgentRunStepInput{
+	modelStep := execution.AppendAgentRunStepInput{
 		ID: stepID, WorkspaceID: job.WorkspaceID, RunID: job.RunID,
-		StepType: "MODEL", InputSummary: inputSummary,
-	}); err != nil {
+		StepType: "MODEL", InputSummary: inputSummary, AgentID: run.AgentID,
+	}
+	var parentDelID string
+	if rc, ok := agentdelegation.RunContextFrom(ctx); ok && rc != nil {
+		if rc.RunID != "" {
+			modelStep.RunID = rc.RunID
+		}
+		if rc.CallerAgentID != "" {
+			modelStep.AgentID = rc.CallerAgentID
+		}
+		if rc.ParentDelegationID != nil {
+			modelStep.DelegationID = *rc.ParentDelegationID
+			parentDelID = *rc.ParentDelegationID
+		}
+		if sameRunParentStep(rc) {
+			modelStep.ParentStepID = *rc.ParentStepID
+		}
+	}
+	if _, err := b.steps.AppendAgentRunStep(ctx, modelStep); err != nil {
 		return fmt.Errorf("append MODEL step: %w", err)
 	}
 	payload, err := json.Marshal(buildModelTurnAuditPayload(turn, true, b.agentAuditDebug))
@@ -1400,6 +1488,15 @@ func (b *Bridge) recordModelTurn(
 		Reasoning: reasoningForAudit,
 	}); err != nil {
 		return fmt.Errorf("record MODEL turn evidence: %w", err)
+	}
+	// Aggregate tokens onto the parent AGENT_DELEGATION when nested (fail-closed).
+	if turn.TokensKnown && parentDelID != "" && b.delegation != nil && b.delegation.Audit != nil {
+		if aerr := b.delegation.Audit.AccumulateModelTokens(ctx, job.WorkspaceID, parentDelID, agentdelegation.TokenUsage{
+			PromptTokens: turn.PromptTokens, CompletionTokens: turn.CompletionTokens,
+			TotalTokens: turn.TotalTokens, Known: true,
+		}); aerr != nil {
+			return fmt.Errorf("accumulate model tokens: %w", aerr)
+		}
 	}
 	return nil
 }
@@ -1421,12 +1518,22 @@ func reasoningTextForAudit(turn einoruntime.ModelTurn) string {
 }
 
 // buildModelTurnAuditPayload: compact fields always; reasoning only when
-// agentAuditDebug is on.
+// agentAuditDebug is on. Usage/toolCalls always recorded for call-chain evidence.
 func buildModelTurnAuditPayload(turn einoruntime.ModelTurn, ok, agentAuditDebug bool) map[string]any {
 	payload := map[string]any{
-		"content": strings.TrimSpace(turn.Content),
-		"ok":      ok,
-		"source":  "chatruntimebridge",
+		"content":      strings.TrimSpace(turn.Content),
+		"ok":           ok,
+		"source":       "chatruntimebridge",
+		"hasToolCalls": turn.HasToolCalls,
+	}
+	if len(turn.ToolCallIDs) > 0 {
+		payload["toolCallIds"] = turn.ToolCallIDs
+	}
+	if turn.TokensKnown {
+		payload["usage"] = map[string]any{
+			"promptTokens": turn.PromptTokens, "completionTokens": turn.CompletionTokens,
+			"totalTokens": turn.TotalTokens,
+		}
 	}
 	if turn.ReasoningTokens > 0 {
 		payload["reasoningTokens"] = turn.ReasoningTokens
@@ -1481,6 +1588,20 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// sameRunParentStep is true when parent_step_id would reference a step on the
+// same agent_run as the nested step (INLINE). TASK child runs must not set it.
+func sameRunParentStep(rc *agentdelegation.RunContext) bool {
+	if rc == nil || rc.ParentStepID == nil || strings.TrimSpace(*rc.ParentStepID) == "" {
+		return false
+	}
+	runID := strings.TrimSpace(rc.RunID)
+	parentRun := strings.TrimSpace(rc.ParentRunID)
+	if runID == "" || parentRun == "" {
+		return false
+	}
+	return runID == parentRun
 }
 
 func executionErrorCode(err error) string {

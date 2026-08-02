@@ -46,7 +46,7 @@ func aggregateStatus(runs []RunFact) string {
 		switch strings.ToUpper(strings.TrimSpace(run.Status)) {
 		case "RUNNING", "WAITING_CONFIRMATION", "WAITING_INTERACTION", "ACCEPTED":
 			anyRunning = true
-		case "FAILED", "CANCELLED":
+		case "FAILED", "CANCELLED", "TIMED_OUT":
 			anyFailed = true
 		}
 	}
@@ -156,11 +156,16 @@ func BuildTimeline(
 	for _, step := range steps {
 		switch strings.ToUpper(strings.TrimSpace(step.StepType)) {
 		case "CONTEXT_COMPACTION":
-			out = append(out, compactStep(base, step, debugMode))
+			out = append(out, withAttribution(compactStep(base, step, debugMode), step))
 		case "MODEL":
-			out = append(out, modelReasoningStep(base, step, debugMode))
+			out = append(out, withAttribution(modelReasoningStep(base, step, debugMode), step))
 		case "TOOL", "WORKFLOW":
-			out = append(out, toolStep(base, step, debugMode))
+			out = append(out, withAttribution(toolStep(base, step, debugMode), step))
+		case "AGENT_DELEGATION":
+			out = append(out, withAttribution(delegationStep(base, step, debugMode), step))
+		default:
+			// Unknown step types still surface so audit never silently drops evidence.
+			out = append(out, withAttribution(unknownStep(base, step), step))
 		}
 	}
 
@@ -177,13 +182,19 @@ func BuildTimeline(
 	}
 
 	// Stable timeline by time offset then type order (compact before MODEL).
-	typeOrder := map[string]int{"input": 0, "context_compaction": 1, "reasoning": 2, "tool": 3, "output": 4}
+	typeOrder := map[string]int{
+		"input": 0, "context_compaction": 1, "reasoning": 2,
+		"agent_delegation": 3, "tool": 4, "output": 5, "unknown": 6,
+	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].TimeOffsetMs != out[j].TimeOffsetMs {
 			return out[i].TimeOffsetMs < out[j].TimeOffsetMs
 		}
 		return typeOrder[out[i].Type] < typeOrder[out[j].Type]
 	})
+
+	// Nest steps under AGENT_DELEGATION frames by parent_step_id / delegation_id.
+	out = nestDelegationTree(out)
 
 	detail := TraceDetail{
 		TraceID: list.TraceID, StartedAt: list.StartedAt, FinishedAt: list.FinishedAt,
@@ -192,6 +203,291 @@ func BuildTimeline(
 		StepTotal: len(out), StepOffset: 0, StepLimit: len(out), HasMore: false,
 	}
 	return detail
+}
+
+func withAttribution(s Step, fact StepFact) Step {
+	s.AgentID = fact.AgentID
+	s.DelegationID = fact.DelegationID
+	s.ParentDelegationID = fact.ParentDelegationID
+	s.ParentStepID = fact.ParentStepID
+	if s.Status == "" {
+		s.Status = fact.Status
+	}
+	// Propagate joined delegation identity when present (nested MODEL/TOOL under del).
+	if fact.ChildRunID != "" && s.ChildRunID == "" {
+		s.ChildRunID = fact.ChildRunID
+	}
+	return s
+}
+
+func firstNonEmptyStr(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+func delegationStep(base time.Time, step StepFact, debugMode bool) Step {
+	title := "Agent 调用"
+	// Prefer authoritative agent_run_delegations columns; fall back to input_summary.
+	caller, target, mode, protocol, origin := step.CallerAgentID, step.TargetAgentID, step.Mode, step.Protocol, step.Origin
+	depth := step.Depth
+	extRef, childRun := step.ExternalAgentRef, step.ChildRunID
+	var in map[string]any
+	_ = json.Unmarshal(step.InputSummary, &in)
+	if in != nil {
+		if caller == "" {
+			caller, _ = in["callerAgentId"].(string)
+		}
+		if target == "" {
+			target, _ = in["targetAgentId"].(string)
+		}
+		if mode == "" {
+			mode, _ = in["mode"].(string)
+		}
+		if protocol == "" {
+			protocol, _ = in["protocol"].(string)
+		}
+		if origin == "" {
+			origin, _ = in["origin"].(string)
+		}
+		if extRef == "" {
+			extRef, _ = in["externalAgentRef"].(string)
+		}
+		if depth == 0 {
+			if d, ok := in["depth"].(float64); ok {
+				depth = int(d)
+			}
+		}
+		if childRun == "" {
+			if c, ok := in["childRunId"].(string); ok {
+				childRun = c
+			}
+		}
+		name, _ := in["callableName"].(string)
+		if name != "" {
+			title = "Agent 调用: " + name
+		}
+	}
+	// Origin-aware path in title:
+	// EXTERNAL inbound: externalAgentRef → targetAgentId
+	// INTERNAL: callerAgentId → targetAgentId
+	// outbound A2A: callerAgentId → externalAgentRef
+	title = title + delegationTitlePath(origin, protocol, caller, target, extRef)
+	status := firstNonEmptyStr(step.DelegationStatus, step.Status)
+	result := Step{
+		Type: "agent_delegation", Title: title,
+		TimeOffsetMs: offsetMs(base, step.StartedAt),
+		RunID:        step.RunID, StepID: step.ID,
+		AgentID: step.AgentID, DelegationID: step.DelegationID,
+		ParentDelegationID: step.ParentDelegationID, ParentStepID: step.ParentStepID,
+		CallerAgentID: caller, TargetAgentID: target, ExternalRef: extRef,
+		Mode: mode, Protocol: protocol, Origin: origin, Depth: depth,
+		Status: status, ChildRunID: childRun,
+		RemoteTaskID: step.RemoteTaskID, RemoteContextID: step.RemoteContextID,
+		RemoteMessageID: step.RemoteMessageID, RemoteEndpointRef: step.RemoteEndpointRef,
+		ProtocolStatus: step.ProtocolStatus,
+		InputTokens:    step.InputTokens, OutputTokens: step.OutputTokens, TotalTokens: step.TotalTokens,
+		TokensKnown: step.TokensKnown,
+		// Always emit attempt/retry for real AGENT_DELEGATION (including 0/0 pre-dispatch).
+		AttemptCount: intPtr(step.AttemptCount), RetryCount: intPtr(step.RetryCount),
+		Collapsed: depth > 0,
+	}
+	if step.DelegationLatencyMs != nil {
+		result.LatencyMs = step.DelegationLatencyMs
+	} else if step.FinishedAt != nil {
+		latency := step.FinishedAt.Sub(step.StartedAt).Milliseconds()
+		if latency < 0 {
+			latency = 0
+		}
+		result.LatencyMs = &latency
+	}
+	params, pState := presentJSON(nil, step.InputSummary, debugMode, true)
+	out, oState := presentJSON(nil, step.OutputSummary, debugMode, true)
+	result.Params, result.ParamsState = params, pState
+	result.Result, result.ResultState = out, oState
+	result.ErrorCode = firstNonEmptyStr(step.DelegationErrorCode)
+	result.ErrorMessage = firstNonEmptyStr(step.DelegationErrorMsg)
+	var outMap map[string]any
+	if json.Unmarshal(step.OutputSummary, &outMap) == nil {
+		if result.ErrorCode == "" {
+			if c, ok := outMap["errorCode"].(string); ok {
+				result.ErrorCode = c
+			}
+		}
+		if result.ErrorMessage == "" {
+			if m, ok := outMap["message"].(string); ok {
+				result.ErrorMessage = m
+			}
+		}
+	}
+	if strings.EqualFold(status, "FAILED") || strings.EqualFold(status, "CANCELLED") ||
+		strings.EqualFold(status, "TIMED_OUT") {
+		result.Title = result.Title + " [" + strings.ToUpper(status) + "]"
+	}
+	return result
+}
+
+func unknownStep(base time.Time, step StepFact) Step {
+	return Step{
+		Type: "unknown", Title: "步骤: " + step.StepType,
+		TimeOffsetMs: offsetMs(base, step.StartedAt),
+		RunID:        step.RunID, StepID: step.ID, Status: step.Status,
+		Params: step.InputSummary, Result: step.OutputSummary,
+	}
+}
+
+// delegationTitlePath formats the human path segment for agent_delegation titles.
+// EXTERNAL: externalAgentRef → target; INTERNAL: caller → target;
+// outbound A2A (non-EXTERNAL with extRef): caller → externalAgentRef.
+func delegationTitlePath(origin, protocol, caller, target, extRef string) string {
+	origin = strings.ToUpper(strings.TrimSpace(origin))
+	protocol = strings.ToUpper(strings.TrimSpace(protocol))
+	caller, target, extRef = strings.TrimSpace(caller), strings.TrimSpace(target), strings.TrimSpace(extRef)
+	switch {
+	case origin == "EXTERNAL":
+		if extRef != "" && target != "" {
+			return " (" + extRef + " → " + shortID(target) + ")"
+		}
+		if extRef != "" {
+			return " → " + extRef
+		}
+		if target != "" {
+			return " → " + shortID(target)
+		}
+	case protocol == "A2A" && extRef != "" && origin != "EXTERNAL":
+		if caller != "" {
+			return " (" + shortID(caller) + " → " + extRef + ")"
+		}
+		return " → " + extRef
+	default:
+		if caller != "" && target != "" {
+			return " (" + shortID(caller) + " → " + shortID(target) + ")"
+		}
+		if target != "" {
+			return " → " + shortID(target)
+		}
+	}
+	return ""
+}
+
+func shortID(id string) string {
+	id = strings.TrimSpace(id)
+	if len(id) <= 8 {
+		return id
+	}
+	return id[:8]
+}
+
+// nestDelegationTree moves steps with parentStepId / parent_delegation under
+// their AGENT_DELEGATION parent. Nested agent_delegation frames (A→B→C) attach
+// recursively so depth is preserved for any call chain.
+func nestDelegationTree(flat []Step) []Step {
+	byID := map[string]int{}
+	for i := range flat {
+		if flat[i].StepID != "" {
+			byID[flat[i].StepID] = i
+		}
+	}
+	// Also index by delegationId → agent_delegation step.
+	byDel := map[string]int{}
+	for i := range flat {
+		if flat[i].Type == "agent_delegation" && flat[i].DelegationID != "" {
+			byDel[flat[i].DelegationID] = i
+		}
+		// Delegation step's own StepID is the parent for nested children.
+		if flat[i].Type == "agent_delegation" && flat[i].StepID != "" {
+			byDel["step:"+flat[i].StepID] = i
+		}
+	}
+	attached := map[int]bool{}
+	for i := range flat {
+		if flat[i].Type == "input" || flat[i].Type == "output" {
+			continue
+		}
+		// Root-level agent_delegation (no parent) stays at top; nested ones attach.
+		parentIdx := -1
+		if flat[i].ParentStepID != "" {
+			if idx, ok := byID[flat[i].ParentStepID]; ok && flat[idx].Type == "agent_delegation" {
+				parentIdx = idx
+			}
+		}
+		if parentIdx < 0 && flat[i].DelegationID != "" && flat[i].Type != "agent_delegation" {
+			if idx, ok := byDel[flat[i].DelegationID]; ok {
+				parentIdx = idx
+			}
+		}
+		// Nested agent_delegation: ParentStepID (INLINE) or ParentDelegationID (TASK).
+		if parentIdx < 0 && flat[i].Type == "agent_delegation" && flat[i].ParentStepID != "" {
+			if idx, ok := byID[flat[i].ParentStepID]; ok && flat[idx].Type == "agent_delegation" {
+				parentIdx = idx
+			}
+		}
+		if parentIdx < 0 && flat[i].Type == "agent_delegation" && flat[i].ParentDelegationID != "" {
+			if idx, ok := byDel[flat[i].ParentDelegationID]; ok {
+				parentIdx = idx
+			}
+		}
+		if parentIdx < 0 || parentIdx == i {
+			continue
+		}
+		// Copy value before append to avoid aliasing issues when nesting recursively.
+		child := flat[i]
+		flat[parentIdx].Children = append(flat[parentIdx].Children, child)
+		attached[i] = true
+	}
+	if len(attached) == 0 {
+		return flat
+	}
+	// Reconstruct tree by walking non-attached roots and collecting children by parent map.
+	childrenOf := map[int][]int{}
+	for i := range flat {
+		if !attached[i] {
+			continue
+		}
+		parentIdx := -1
+		if flat[i].ParentStepID != "" {
+			if idx, ok := byID[flat[i].ParentStepID]; ok && flat[idx].Type == "agent_delegation" {
+				parentIdx = idx
+			}
+		}
+		if parentIdx < 0 && flat[i].DelegationID != "" && flat[i].Type != "agent_delegation" {
+			if idx, ok := byDel[flat[i].DelegationID]; ok {
+				parentIdx = idx
+			}
+		}
+		if parentIdx < 0 && flat[i].Type == "agent_delegation" && flat[i].ParentDelegationID != "" {
+			if idx, ok := byDel[flat[i].ParentDelegationID]; ok {
+				parentIdx = idx
+			}
+		}
+		if parentIdx >= 0 {
+			childrenOf[parentIdx] = append(childrenOf[parentIdx], i)
+		}
+	}
+	var build func(idx int) Step
+	build = func(idx int) Step {
+		s := flat[idx]
+		s.Children = nil
+		for _, cIdx := range childrenOf[idx] {
+			s.Children = append(s.Children, build(cIdx))
+		}
+		return s
+	}
+	out := make([]Step, 0, len(flat)-len(attached))
+	for i := range flat {
+		if attached[i] {
+			continue
+		}
+		if flat[i].Type == "agent_delegation" {
+			out = append(out, build(i))
+		} else {
+			out = append(out, flat[i])
+		}
+	}
+	return out
 }
 
 // PageTimelineSteps returns one page of the built timeline without reordering.
@@ -478,4 +774,8 @@ func offsetMs(base, at time.Time) int64 {
 		return 0
 	}
 	return ms
+}
+
+func intPtr(v int) *int {
+	return &v
 }

@@ -6,16 +6,21 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 
+	"actweave/backend/internal/a2agateway"
 	"actweave/backend/internal/aap"
 	"actweave/backend/internal/aapfile"
 	"actweave/backend/internal/agent"
 	"actweave/backend/internal/agentaccess"
 	"actweave/backend/internal/agentaccessauth"
 	"actweave/backend/internal/agentaudit"
+	"actweave/backend/internal/agentdelegation"
 	"actweave/backend/internal/agentrun"
 	"actweave/backend/internal/audit"
 	"actweave/backend/internal/authn"
@@ -120,6 +125,8 @@ type Application struct {
 	fileStagingGCWorker        *aapfile.StagingGCWorker
 	// outbound runtime lifecycle (optional; nil when affinity not configured)
 	outboundRuntime *outboundRuntimeLifecycle
+	// A2A delegation finalize outbox worker (durable terminal recovery).
+	finalizeWorker *a2agateway.FinalizeWorker
 }
 
 func (application *Application) Handler() http.Handler { return application.handler }
@@ -142,6 +149,11 @@ func (application *Application) Close() error {
 	}
 	if application.outboundRuntime != nil {
 		application.outboundRuntime.Stop()
+	}
+	if application.finalizeWorker != nil {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		application.finalizeWorker.Stop(stopCtx)
+		cancel()
 	}
 	var notifierErr error
 	if application.eventNotifier != nil {
@@ -546,6 +558,39 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	}
 	agentRoutes = agentRoutes.WithCurrentPromptReader(currentPromptQuery).
 		WithCreationService(agentCreationService)
+
+	// Agent→Agent bindings + A2A gateway config (management APIs).
+	delegationRepo, err := agentdelegation.NewRepository(db)
+	if err != nil {
+		return nil, err
+	}
+	delegationService, err := agentdelegation.NewService(delegationRepo)
+	if err != nil {
+		return nil, err
+	}
+	a2aRepo, err := a2agateway.NewRepository(db)
+	if err != nil {
+		return nil, err
+	}
+	// PublicBase for Agent Cards: mandatory HTTPS-capable public origin from token endpoint.
+	// Never hardcode loopback in production paths.
+	publicBase := ""
+	if ep := strings.TrimSpace(config.AgentAccessTokenEndpoint); ep != "" {
+		if u, uerr := parseHTTPOrigin(ep); uerr == nil {
+			publicBase = u
+		}
+	}
+	if publicBase == "" {
+		return nil, fmt.Errorf("AgentAccessTokenEndpoint origin is required for A2A Agent Card publicBase")
+	}
+	allowAuthNone := strings.EqualFold(strings.TrimSpace(os.Getenv("ACTWEAVE_A2A_ALLOW_AUTH_NONE")), "true")
+	delegationRoutes, err := httptransport.NewAgentDelegationRoutes(
+		authorizer, delegationService, a2aRepo, publicBase,
+		httptransport.AgentDelegationRouteOptions{AllowAuthNone: allowAuthNone},
+	)
+	if err != nil {
+		return nil, err
+	}
 	aapAgentProfileRoutes, err := httptransport.NewAAPAgentProfileRoutes(
 		agentAccessAuthorizer, agentRepository, capabilityCatalog,
 	)
@@ -1246,6 +1291,49 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		Compact:            compactDeps,
 		BuildChatModel:     buildChatModel,
 		Multimodal:         multimodalAssembler,
+		Delegation: &chatruntimebridge.DelegationDeps{
+			Bindings: delegationService,
+			Audit:    delegationService,
+			Catalog:  capabilityCatalog,
+			ChildRuns: &chatruntimebridge.ChildRunStoreAdapter{
+				Runs: runRepository,
+				GetParent: func(ctx context.Context, workspaceID, parentRunID string) (execution.AgentRun, error) {
+					return runRepository.GetAgentRun(ctx, workspaceID, parentRunID)
+				},
+			},
+			RemoteBindings:        a2aRepo,
+			EnqueueFinalizeOutbox: a2aRepo.EnqueueFinalizeOutbox,
+			AuthHeaderResolver: func(ctx context.Context, secretRef string) (string, error) {
+				ref := strings.TrimSpace(secretRef)
+				if ref == "" || secretService == nil {
+					return "", fmt.Errorf("secret ref empty or resolver unavailable")
+				}
+				// Format: secret:<workspaceUUID>:<secretUUID>
+				parts := strings.Split(ref, ":")
+				if len(parts) != 3 || parts[0] != "secret" {
+					return "", fmt.Errorf("authSecretRef must be secret:<workspaceId>:<secretId>")
+				}
+				refWS, secretID := strings.TrimSpace(parts[1]), strings.TrimSpace(parts[2])
+				// Runtime fail-closed: secret workspace must equal current run workspace.
+				// Prevents historical cross-tenant refs from resolving at call time.
+				rc, ok := agentdelegation.RunContextFrom(ctx)
+				if !ok || rc == nil || strings.TrimSpace(rc.WorkspaceID) == "" {
+					return "", fmt.Errorf("authSecretRef requires run workspace context")
+				}
+				if !strings.EqualFold(refWS, strings.TrimSpace(rc.WorkspaceID)) {
+					return "", fmt.Errorf("authSecretRef workspace does not match run workspace")
+				}
+				var token string
+				err := secretService.WithActiveSecret(ctx, refWS, secretID, func(plaintext []byte) error {
+					token = "Bearer " + strings.TrimSpace(string(plaintext))
+					return nil
+				})
+				if err != nil {
+					return "", err
+				}
+				return token, nil
+			},
+		},
 	})
 	if bridgeErr != nil {
 		return nil, fmt.Errorf("eino chat runtime bridge required after PR16: %w", bridgeErr)
@@ -1454,6 +1542,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		Authenticator: authenticator, AgentAccessAuthenticator: agentAccessTokenVerifier,
 		Registrars: []httptransport.V1RouteRegistrar{
 			authRoutes, workspaceRoutes, agentAccessRoutes, configurationRoutes, agentRoutes,
+			delegationRoutes,
 			toolRoutes, workflowRoutes, generateSessionRoutes, chatRoutes, auditRoutes, agentAuditRoutes,
 			overviewRoutes,
 		},
@@ -1469,6 +1558,49 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if err != nil {
 		return nil, err
 	}
+	// Mount A2A inbound gateway (allowlisted agents only) beside the main router.
+	// Durable runs + real agent-access token auth; audit prewrite before dispatch.
+	a2aMux := http.NewServeMux()
+	a2aMux.Handle("/", handler)
+	a2aAuth := a2agateway.AgentAccessAuth{
+		Verifier: a2agateway.AccessTokenVerifierFunc(func(ctx context.Context, value string) (a2agateway.AccessTokenClaims, error) {
+			p, err := agentAccessTokenVerifier.VerifyAccessToken(ctx, value)
+			if err != nil {
+				return a2agateway.AccessTokenClaims{}, err
+			}
+			return a2agateway.AccessTokenClaims{
+				PrincipalID: p.PrincipalID, ServicePrincipalID: p.ServicePrincipalID,
+				WorkspaceID: p.WorkspaceID, AgentID: p.AgentID, Scopes: p.Scopes,
+			}, nil
+		}),
+		RequiredScopes: a2agateway.DefaultInboundScopes,
+		// Production default: AuthMode=NONE is rejected. Enable only via env for local tests.
+		AllowAuthNone: strings.EqualFold(strings.TrimSpace(os.Getenv("ACTWEAVE_A2A_ALLOW_AUTH_NONE")), "true"),
+	}
+	a2aRunner := &a2agateway.DurableInboundRunner{
+		Runs:    runRepository,
+		Freezer: bridge, // freeze root model/agent/capability/graph at Prepare
+		CancelHook: func(ctx context.Context, workspaceID, runID string) error {
+			return agentRuntime.CancelRun(workspaceID, runID)
+		},
+		Execute: func(ctx context.Context, req a2agateway.InboundRunRequest, runID string) (string, error) {
+			// Real Eino agent drive on the pre-created durable run (no chat session required).
+			return bridge.ExecuteA2AInbound(ctx, req, runID)
+		},
+	}
+	a2aInbound, a2aInboundErr := a2agateway.NewInboundGateway(
+		a2aRepo, delegationService, a2aRunner, publicBase, a2aAuth,
+	)
+	if a2aInboundErr != nil {
+		return nil, a2aInboundErr
+	}
+	a2aInbound.Register(a2aMux)
+	handler = a2aMux
+	finalizeWorker, finalizeWorkerErr := a2agateway.NewFinalizeWorker(a2aRepo, delegationService, slog.Default())
+	if finalizeWorkerErr != nil {
+		return nil, finalizeWorkerErr
+	}
+
 	purgeConfig := config.PreviewPurge
 	if purgeConfig.Interval <= 0 || purgeConfig.BatchLimit <= 0 || purgeConfig.ClaimLease <= 0 {
 		purgeConfig = agent.DefaultPreviewPurgeConfig()
@@ -1478,11 +1610,13 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		return nil, err
 	}
 
-	// Start after full wiring succeeds so partial Open failures do not leak loops.
+	// Start workers only after all constructors succeed so partial Open never leaks
+	// background goroutines against a closing DB.
 	recoveryWorker.Start(context.WithoutCancel(ctx))
 	previewPurgeWorker.Start(context.WithoutCancel(ctx))
 	filePipelineWorker.Start(context.WithoutCancel(ctx))
 	fileStagingGC.Start(context.WithoutCancel(ctx))
+	finalizeWorker.Start(context.WithoutCancel(ctx))
 	return &Application{
 		db: db, handler: handler, eventNotifier: liveEvents,
 		securityChanges: securityChanges, clientSecretAuthenticator: clientSecretAuthenticator,
@@ -1494,5 +1628,17 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		filePipelineWorker:         filePipelineWorker,
 		fileStagingGCWorker:        fileStagingGC,
 		outboundRuntime:            outboundRuntime,
+		finalizeWorker:             finalizeWorker,
 	}, nil
+}
+
+func parseHTTPOrigin(raw string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", err
+	}
+	if u.Scheme == "" || u.Host == "" {
+		return "", fmt.Errorf("invalid origin")
+	}
+	return u.Scheme + "://" + u.Host, nil
 }

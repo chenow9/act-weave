@@ -59,6 +59,44 @@ type Step struct {
 	RunID        string          `json:"runId,omitempty"`
 	StepID       string          `json:"stepId,omitempty"`
 	InvocationID string          `json:"invocationId,omitempty"`
+	// Nested agent attribution (AGENT_DELEGATION hierarchy).
+	AgentID            string `json:"agentId,omitempty"`
+	DelegationID       string `json:"delegationId,omitempty"`
+	ParentDelegationID string `json:"parentDelegationId,omitempty"`
+	ParentStepID       string `json:"parentStepId,omitempty"`
+	ChildRunID         string `json:"childRunId,omitempty"`
+	CallerAgentID      string `json:"callerAgentId,omitempty"`
+	TargetAgentID      string `json:"targetAgentId,omitempty"`
+	ExternalRef        string `json:"externalAgentRef,omitempty"`
+	Mode               string `json:"mode,omitempty"`
+	Protocol           string `json:"protocol,omitempty"`
+	Origin             string `json:"origin,omitempty"`
+	// Depth must always serialize (including 0 for EXTERNAL root inbound).
+	// omitempty would drop depth=0 and break API/UI contracts.
+	Depth        int    `json:"depth"`
+	Status       string `json:"status,omitempty"`
+	ErrorCode    string `json:"errorCode,omitempty"`
+	ErrorMessage string `json:"errorMessage,omitempty"`
+	// Remote A2A linkage (authoritative from agent_run_delegations).
+	RemoteTaskID      string `json:"remoteTaskId,omitempty"`
+	RemoteContextID   string `json:"remoteContextId,omitempty"`
+	RemoteMessageID   string `json:"remoteMessageId,omitempty"`
+	RemoteEndpointRef string `json:"remoteEndpointRef,omitempty"`
+	ProtocolStatus    string `json:"protocolStatus,omitempty"`
+	// Token usage (null when unknown — never invent 0 for A2A without usage).
+	InputTokens  *int64 `json:"inputTokens,omitempty"`
+	OutputTokens *int64 `json:"outputTokens,omitempty"`
+	TotalTokens  *int64 `json:"totalTokens,omitempty"`
+	TokensKnown  bool   `json:"tokensKnown,omitempty"`
+	// Dispatch attempt/retry (execution only; not finalize-outbox).
+	// Pointer + omitempty: nil omits (non-delegation steps); non-nil including 0
+	// serializes so pre-dispatch failures stay visible as attemptCount:0 / retryCount:0.
+	AttemptCount *int `json:"attemptCount,omitempty"`
+	RetryCount   *int `json:"retryCount,omitempty"`
+	// Children holds nested timeline steps under an agent_delegation frame.
+	Children []Step `json:"children,omitempty"`
+	// Collapsed hints UI default expand state (false = expanded when depth small).
+	Collapsed bool `json:"collapsed,omitempty"`
 }
 
 type TraceDetail struct {
@@ -130,4 +168,35 @@ type StepFact struct {
 	ToolName             string
 	InvocationID         string
 	ToolPayloadAvailable bool
+	// Nested attribution.
+	AgentID            string
+	DelegationID       string
+	ParentDelegationID string
+	ParentStepID       string
+	// Authoritative fields from agent_run_delegations (joined at load).
+	ChildRunID          string
+	CallerAgentID       string
+	TargetAgentID       string
+	ExternalAgentRef    string
+	Mode                string
+	Protocol            string
+	Origin              string
+	Depth               int
+	RemoteTaskID        string
+	RemoteContextID     string
+	RemoteMessageID     string
+	RemoteEndpointRef   string
+	ProtocolStatus      string
+	DelegationErrorCode string
+	DelegationErrorMsg  string
+	DelegationLatencyMs *int64
+	// DelegationStatus is the authoritative row status (may differ from step).
+	DelegationStatus string
+	// Token + attempt fields from agent_run_delegations.
+	InputTokens  *int64
+	OutputTokens *int64
+	TotalTokens  *int64
+	TokensKnown  bool
+	AttemptCount int
+	RetryCount   int
 }

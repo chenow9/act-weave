@@ -188,7 +188,7 @@ func (s *Service) computeStats(ctx context.Context, workspaceID string) (Stats, 
 		SELECT
 			COUNT(*)::bigint,
 			COUNT(*) FILTER (WHERE status = 'SUCCEEDED')::bigint,
-			COUNT(*) FILTER (WHERE status IN ('FAILED','CANCELLED'))::bigint,
+			COUNT(*) FILTER (WHERE status IN ('FAILED','CANCELLED','TIMED_OUT'))::bigint,
 			AVG(EXTRACT(EPOCH FROM (finished_at - started_at)) * 1000)
 				FILTER (WHERE finished_at IS NOT NULL)
 		FROM agent_runs
@@ -372,13 +372,34 @@ func (s *Service) loadSteps(ctx context.Context, workspaceID string, runIDs []st
 	if len(runIDs) == 0 {
 		return nil, nil
 	}
+	// LEFT JOIN agent_run_delegations so AGENT_DELEGATION frames carry authoritative
+	// caller/target/child_run/remote IDs/status/latency — not only step input_summary.
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, run_id, sequence_no, step_type, status,
-		       COALESCE(input_summary, '{}'::jsonb), COALESCE(output_summary, '{}'::jsonb),
-		       COALESCE(raw_object_id::text,''), started_at, finished_at
-		FROM agent_run_steps
-		WHERE workspace_id = $1 AND run_id = ANY($2::uuid[])
-		ORDER BY started_at ASC, sequence_no ASC, id ASC
+		SELECT s.id, s.run_id, s.sequence_no, s.step_type, s.status,
+		       COALESCE(s.input_summary, '{}'::jsonb), COALESCE(s.output_summary, '{}'::jsonb),
+		       COALESCE(s.raw_object_id::text,''), s.started_at, s.finished_at,
+		       COALESCE(s.agent_id::text,''), COALESCE(s.delegation_id::text,''),
+		       COALESCE(s.parent_step_id::text,''),
+		       COALESCE(d.child_run_id::text,''),
+		       COALESCE(d.parent_delegation_id::text,''),
+		       COALESCE(d.caller_agent_id::text,''),
+		       COALESCE(d.target_agent_id::text,''),
+		       COALESCE(d.external_agent_ref,''),
+		       COALESCE(d.mode,''), COALESCE(d.protocol,''), COALESCE(d.origin,''),
+		       COALESCE(d.depth, 0),
+		       COALESCE(d.remote_task_id,''), COALESCE(d.remote_context_id,''),
+		       COALESCE(d.remote_message_id,''), COALESCE(d.remote_endpoint_ref,''),
+		       COALESCE(d.protocol_status,''),
+		       COALESCE(d.error_code,''), COALESCE(d.error_message,''),
+		       d.latency_ms, COALESCE(d.status,''),
+		       d.input_tokens, d.output_tokens, d.total_tokens, COALESCE(d.tokens_known,false),
+		       COALESCE(d.attempt_count,0), COALESCE(d.retry_count,0)
+		FROM agent_run_steps s
+		LEFT JOIN agent_run_delegations d
+		  ON d.workspace_id = s.workspace_id
+		 AND d.id = s.delegation_id
+		WHERE s.workspace_id = $1 AND s.run_id = ANY($2::uuid[])
+		ORDER BY s.started_at ASC, s.sequence_no ASC, s.id ASC
 	`, workspaceID, pq.Array(runIDs))
 	if err != nil {
 		return nil, err
@@ -389,9 +410,20 @@ func (s *Service) loadSteps(ctx context.Context, workspaceID string, runIDs []st
 		var step StepFact
 		var finished sql.NullTime
 		var input, output []byte
+		var latency, inTok, outTok, totTok sql.NullInt64
+		var tokensKnown bool
+		var attempt, retry int
 		if err := rows.Scan(
 			&step.ID, &step.RunID, &step.SequenceNo, &step.StepType, &step.Status,
 			&input, &output, &step.RawObjectID, &step.StartedAt, &finished,
+			&step.AgentID, &step.DelegationID, &step.ParentStepID,
+			&step.ChildRunID, &step.ParentDelegationID, &step.CallerAgentID, &step.TargetAgentID,
+			&step.ExternalAgentRef, &step.Mode, &step.Protocol, &step.Origin,
+			&step.Depth, &step.RemoteTaskID, &step.RemoteContextID,
+			&step.RemoteMessageID, &step.RemoteEndpointRef, &step.ProtocolStatus,
+			&step.DelegationErrorCode, &step.DelegationErrorMsg,
+			&latency, &step.DelegationStatus,
+			&inTok, &outTok, &totTok, &tokensKnown, &attempt, &retry,
 		); err != nil {
 			return nil, err
 		}
@@ -402,6 +434,26 @@ func (s *Service) loadSteps(ctx context.Context, workspaceID string, runIDs []st
 			t := finished.Time.UTC()
 			step.FinishedAt = &t
 		}
+		if latency.Valid {
+			v := latency.Int64
+			step.DelegationLatencyMs = &v
+		}
+		step.TokensKnown = tokensKnown
+		if tokensKnown {
+			if inTok.Valid {
+				v := inTok.Int64
+				step.InputTokens = &v
+			}
+			if outTok.Valid {
+				v := outTok.Int64
+				step.OutputTokens = &v
+			}
+			if totTok.Valid {
+				v := totTok.Int64
+				step.TotalTokens = &v
+			}
+		}
+		step.AttemptCount, step.RetryCount = attempt, retry
 		if strings.EqualFold(step.StepType, "MODEL") {
 			var summary map[string]any
 			if json.Unmarshal(step.OutputSummary, &summary) == nil {

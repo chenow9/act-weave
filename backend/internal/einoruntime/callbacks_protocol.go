@@ -29,11 +29,22 @@ type ProtocolProjector interface {
 // Content is public assistant text; Reasoning is provider reasoning_content when
 // present (may be empty). ReasoningTokens is from usage.completion_tokens_details
 // when the provider reports it (even if reasoning_content text is omitted).
-// One ModelTurn maps to one ADK assistant MessageOutput.
+// Token fields come from schema.Message.ResponseMeta.Usage (stream: Eino max
+// aggregation, not naive sum of cumulative partials).
+// One ModelTurn maps to one ADK assistant MessageOutput (including tool-only turns).
 type ModelTurn struct {
-	Content         string
-	Reasoning       string
-	ReasoningTokens int
+	Content          string
+	Reasoning        string
+	ReasoningTokens  int
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+	// TokensKnown is true only when the provider reported usage for this turn.
+	TokensKnown bool
+	// HasToolCalls is true when the assistant message requested tool invocation
+	// (tool-only MODEL turns must still be audited even with empty content).
+	HasToolCalls bool
+	ToolCallIDs  []string
 }
 
 // ModelTurnObserver is an optional ProtocolProjector extension. When the
@@ -126,26 +137,37 @@ func ProjectAgentEvent(ctx context.Context, event *adk.AgentEvent, projector Pro
 
 	if mv.IsStreaming && mv.MessageStream != nil {
 		mv.MessageStream.SetAutomaticClose()
-		content, reasoning, reasoningTokens, err := projectStreamDeltas(ctx, mv.MessageStream, projector)
+		agg, err := projectStreamDeltas(ctx, mv.MessageStream, projector)
 		if err != nil {
 			return err
 		}
-		if content != "" {
-			if err := projector.OnTextComplete(ctx, content); err != nil {
+		if agg.Content != "" {
+			if err := projector.OnTextComplete(ctx, agg.Content); err != nil {
 				return err
 			}
 		}
-		return notifyModelTurn(ctx, projector, ModelTurn{
-			Content: content, Reasoning: reasoning, ReasoningTokens: reasoningTokens,
-		})
+		return notifyModelTurn(ctx, projector, agg)
 	}
 
 	if mv.Message != nil {
 		content := mv.Message.Content
 		reasoning := strings.TrimSpace(mv.Message.ReasoningContent)
-		reasoningTokens := 0
+		turn := ModelTurn{Content: content, Reasoning: reasoning}
 		if mv.Message.ResponseMeta != nil && mv.Message.ResponseMeta.Usage != nil {
-			reasoningTokens = mv.Message.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens
+			u := mv.Message.ResponseMeta.Usage
+			turn.TokensKnown = true
+			turn.PromptTokens = u.PromptTokens
+			turn.CompletionTokens = u.CompletionTokens
+			turn.TotalTokens = u.TotalTokens
+			turn.ReasoningTokens = u.CompletionTokensDetails.ReasoningTokens
+		}
+		if len(mv.Message.ToolCalls) > 0 {
+			turn.HasToolCalls = true
+			for _, tc := range mv.Message.ToolCalls {
+				if tc.ID != "" {
+					turn.ToolCallIDs = append(turn.ToolCallIDs, tc.ID)
+				}
+			}
 		}
 		if content != "" {
 			if err := projector.OnTextDelta(ctx, content); err != nil {
@@ -155,9 +177,7 @@ func ProjectAgentEvent(ctx context.Context, event *adk.AgentEvent, projector Pro
 				return err
 			}
 		}
-		return notifyModelTurn(ctx, projector, ModelTurn{
-			Content: content, Reasoning: reasoning, ReasoningTokens: reasoningTokens,
-		})
+		return notifyModelTurn(ctx, projector, turn)
 	}
 	return nil
 }
@@ -167,10 +187,10 @@ func notifyModelTurn(ctx context.Context, projector ProtocolProjector, turn Mode
 	if !ok {
 		return nil
 	}
-	// Skip completely empty turns (no content, no reasoning) — e.g. pure
-	// tool-call framing with no audit surface. Callers that need tool-only
-	// MODEL steps can extend later.
-	if strings.TrimSpace(turn.Content) == "" && strings.TrimSpace(turn.Reasoning) == "" {
+	// Record tool-only / usage-only MODEL turns (empty content+reasoning still audit).
+	// Only skip truly empty framing with no tool calls and no usage evidence.
+	if strings.TrimSpace(turn.Content) == "" && strings.TrimSpace(turn.Reasoning) == "" &&
+		!turn.HasToolCalls && !turn.TokensKnown {
 		return nil
 	}
 	turn.Content = strings.TrimSpace(turn.Content)
@@ -182,9 +202,10 @@ func projectStreamDeltas(
 	ctx context.Context,
 	stream *schema.StreamReader[*schema.Message],
 	projector ProtocolProjector,
-) (content string, reasoning string, reasoningTokens int, err error) {
+) (ModelTurn, error) {
 	var contentBuf strings.Builder
 	var reasoningBuf strings.Builder
+	var turn ModelTurn
 	// Always drain/close so the producer Pipe goroutine cannot block forever on Send
 	// after we abort mid-stream (e.g. projector error).
 	defer func() {
@@ -194,14 +215,18 @@ func projectStreamDeltas(
 	}()
 	for {
 		if err := ctx.Err(); err != nil {
-			return contentBuf.String(), reasoningBuf.String(), reasoningTokens, err
+			turn.Content = contentBuf.String()
+			turn.Reasoning = reasoningBuf.String()
+			return turn, err
 		}
 		chunk, err := stream.Recv()
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
-			return contentBuf.String(), reasoningBuf.String(), reasoningTokens, err
+			turn.Content = contentBuf.String()
+			turn.Reasoning = reasoningBuf.String()
+			return turn, err
 		}
 		if chunk == nil {
 			continue
@@ -209,20 +234,52 @@ func projectStreamDeltas(
 		if piece := chunk.ReasoningContent; piece != "" {
 			reasoningBuf.WriteString(piece)
 		}
+		// Eino stream usage is cumulative/max-style (take max, not sum of partials).
 		if chunk.ResponseMeta != nil && chunk.ResponseMeta.Usage != nil {
-			if n := chunk.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens; n > reasoningTokens {
-				reasoningTokens = n
+			u := chunk.ResponseMeta.Usage
+			turn.TokensKnown = true
+			if u.PromptTokens > turn.PromptTokens {
+				turn.PromptTokens = u.PromptTokens
+			}
+			if u.CompletionTokens > turn.CompletionTokens {
+				turn.CompletionTokens = u.CompletionTokens
+			}
+			if u.TotalTokens > turn.TotalTokens {
+				turn.TotalTokens = u.TotalTokens
+			}
+			if n := u.CompletionTokensDetails.ReasoningTokens; n > turn.ReasoningTokens {
+				turn.ReasoningTokens = n
+			}
+		}
+		for _, tc := range chunk.ToolCalls {
+			if tc.ID == "" {
+				continue
+			}
+			turn.HasToolCalls = true
+			found := false
+			for _, id := range turn.ToolCallIDs {
+				if id == tc.ID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				turn.ToolCallIDs = append(turn.ToolCallIDs, tc.ID)
 			}
 		}
 		if chunk.Content == "" {
 			continue
 		}
 		if err := projector.OnTextDelta(ctx, chunk.Content); err != nil {
-			return contentBuf.String(), reasoningBuf.String(), reasoningTokens, err
+			turn.Content = contentBuf.String()
+			turn.Reasoning = reasoningBuf.String()
+			return turn, err
 		}
 		contentBuf.WriteString(chunk.Content)
 	}
-	return contentBuf.String(), reasoningBuf.String(), reasoningTokens, nil
+	turn.Content = contentBuf.String()
+	turn.Reasoning = reasoningBuf.String()
+	return turn, nil
 }
 
 func drainMessageStream(stream *schema.StreamReader[*schema.Message]) (string, error) {

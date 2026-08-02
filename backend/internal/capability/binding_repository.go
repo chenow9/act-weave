@@ -80,6 +80,13 @@ func (r *Repository) Bind(ctx context.Context, input BindInput) (Binding, error)
 			return Binding{}, ErrNotFound
 		}
 	}
+	// When enabling, enforce case-insensitive combined namespace vs internal
+	// bindings and A2A remotes for this agent (same workspace+caller).
+	if input.Enabled {
+		if err := assertCapabilityCallableNamespaceFree(ctx, tx, input); err != nil {
+			return Binding{}, err
+		}
+	}
 	var currentLock int64
 	err = tx.QueryRowContext(ctx, `
 		SELECT lock_version FROM agent_capability_bindings
@@ -127,6 +134,57 @@ func (r *Repository) Bind(ctx context.Context, input BindInput) (Binding, error)
 		return Binding{}, mapWrite("commit capability binding", err)
 	}
 	return value, nil
+}
+
+// assertCapabilityCallableNamespaceFree locks and checks that the capability's
+// callable_name does not collide with enabled internal agent_delegation_bindings
+// or agent_a2a_remote_bindings for the same agent (case-insensitive).
+func assertCapabilityCallableNamespaceFree(ctx context.Context, tx *sql.Tx, input BindInput) error {
+	// Resolve callable name from the release that will be effective.
+	var callable string
+	err := tx.QueryRowContext(ctx, `
+		SELECT lower(btrim(cr.callable_name))
+		FROM capabilities c
+		JOIN capability_releases cr
+		  ON cr.workspace_id = c.workspace_id AND cr.capability_id = c.id
+		 AND cr.id = COALESCE($3::uuid, c.active_release_id)
+		WHERE c.workspace_id=$1 AND c.id=$2 AND c.deleted_at IS NULL
+	`, input.WorkspaceID, input.CapabilityID, input.PinnedReleaseID).Scan(&callable)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrUnavailable
+	}
+	if err != nil {
+		return fmt.Errorf("resolve capability callable_name: %w", err)
+	}
+	if callable == "" {
+		return ErrInvalid
+	}
+	key := input.WorkspaceID + "|" + input.AgentID + "|" + callable
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, key); err != nil {
+		return fmt.Errorf("capability namespace lock: %w", err)
+	}
+	var n int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)::int FROM agent_delegation_bindings
+		WHERE workspace_id=$1 AND caller_agent_id=$2 AND enabled AND deleted_at IS NULL
+		  AND lower(btrim(callable_name)) = $3
+	`, input.WorkspaceID, input.AgentID, callable).Scan(&n); err != nil {
+		return fmt.Errorf("capability vs internal binding namespace: %w", err)
+	}
+	if n > 0 {
+		return ErrConflict
+	}
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)::int FROM agent_a2a_remote_bindings
+		WHERE workspace_id=$1 AND caller_agent_id=$2 AND enabled AND deleted_at IS NULL
+		  AND lower(btrim(callable_name)) = $3
+	`, input.WorkspaceID, input.AgentID, callable).Scan(&n); err != nil {
+		return fmt.Errorf("capability vs a2a remote namespace: %w", err)
+	}
+	if n > 0 {
+		return ErrConflict
+	}
+	return nil
 }
 
 func (r *Repository) Unbind(ctx context.Context, workspaceID, agentID, capabilityID string, expectedLockVersion int64) error {
