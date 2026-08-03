@@ -28,12 +28,12 @@ cd frontend && npm run dev
 3. 创建/确认两个 ACTIVE Agent：
    - **Agent A**（调用方）：提示词中说明可使用工具 `call_b` 委派任务。
    - **Agent B**（被调用方）：绑定至少一个已发布 **TOOL**（任意 HTTP 工具即可）；提示词要求完成任务时调用该工具。
-4. 编辑 Agent A → 面板 **「Agent 委派与 A2A」**：
-   - 目标 Agent = B
-   - callableName = `call_b`（稳定标识，非 Agent ID）
-   - mode = `INLINE`
-   - contextPolicy 默认 `TASK_ONLY`
-   - 保存绑定
+4. 编辑 Agent A → 面板 **「协作与对外能力」** → 展开 **「请其他 Agent 帮忙」**：
+   - 帮我处理的 Agent = B
+   - 调用名 = `call_b`（稳定标识，非 Agent ID）
+   - 执行方式 = 同一次对话内完成（API：`INLINE`）
+   - 上下文固定为「仅任务内容」（`TASK_ONLY`）
+   - 添加协作
 5. 打开 **Chat 执行**，选择 Agent A，发送例如：`请把「查天气」任务委派给 call_b 并汇报结果`。
 6. 打开 **Agent 审计中心**（仅平台管理员）→ 找到对应 Trace：
    - 时间线应出现 **Agent 调用** 节点（`agent_delegation`）

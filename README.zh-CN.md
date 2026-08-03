@@ -45,12 +45,12 @@
 | **业务空间 (Workspace)** | 租户 / 项目边界，隔离配置与运行数据 |
 | **Provider / 连接** | 外部系统与凭证、出站身份策略 |
 | **Tool** | OpenAPI 导入或手工创建；版本、测试、发布 |
-| **Agent** | 绑定模型、提示词、Tool / Workflow 能力 |
+| **Agent** | 绑定模型、提示词、Tool / Workflow；**协作与对外能力**（同空间委派、A2A 入站暴露 / 出站远端） |
 | **Workflow** | 可视化图编排，试跑与发布 |
 | **智能编排 (Smart DAG)** | 用自然语言生成业务流程图草案 |
 | **运行调试台** | 控制台内对话试跑 Agent（非生产入口） |
 | **Agent Access** | 对外 Client、授权与协议配置 |
-| **审计日志** | 运行轨迹与操作审计 |
+| **Agent 审计中心** | 全链路 Trace 时间轴（含嵌套 Agent 调用）、发起方用户名 / Client 名、可跳转身份页 |
 
 ---
 
@@ -95,7 +95,13 @@ node scripts/capture-readme-screenshots.mjs   # 截图到 docs/images/readme/
 
 ### Agent 管理
 
-维护职责、绑定空间、决策模型与系统提示词。演示 Agent：`Acme 导购助手`。
+维护职责、绑定空间、决策模型与系统提示词。编辑已保存的 Agent 时，可在 **「协作与对外能力」** 中配置：
+
+- **请其他 Agent 帮忙**：同工作区内通过稳定调用名委派子 Agent（同次对话 / 独立任务）
+- **允许外部系统调用我**：A2A 入站暴露（对外展示名、访问令牌鉴权）
+- **呼叫外部 Agent**：A2A 出站远端（服务地址、主机白名单、密钥引用）
+
+新建 Agent 需先保存拿到 ID 后再配置协作。演示 Agent：`Acme 导购助手`。
 
 ![Agent 管理](./docs/images/readme/04-agents.png)
 
@@ -149,7 +155,12 @@ node scripts/capture-readme-screenshots.mjs   # 截图到 docs/images/readme/
 
 ### Agent 审计中心
 
-运行与操作审计，支持链路回溯。
+按 Trace 查看全链路运行时间轴（平台管理员）：
+
+- 嵌套 **Agent 调用** 可展开（A→B→C…）
+- 步骤类型语义色区分（输入 / 推理 / 委派 / 工具 / 输出等）
+- 发起方展示 **用户名** 或 **Client 名称**，点击可跳转「用户与权限」或「Agent Access」检索
+- 从侧栏再次进入本页时回到列表，而非停留在上次详情
 
 ![审计日志](./docs/images/readme/13-logs.png)
 

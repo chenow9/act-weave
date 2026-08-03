@@ -42,12 +42,12 @@ In one line: **ActWeave = Tool governance + Agent config + orchestration + audit
 | **Workspace** | Tenant / project boundary |
 | **Provider / Connection** | Upstream systems and credentials |
 | **Tool** | OpenAPI import or hand-authored callable |
-| **Agent** | Model, prompt, bound Tools / Workflows |
+| **Agent** | Model, prompt, bound Tools / Workflows; **collaboration & external reach** (in-workspace delegation, A2A inbound exposure / outbound remotes) |
 | **Workflow** | Visual graph, trial, publish |
 | **Smart DAG** | NL → draft business graph |
 | **Console chat** | Internal Agent trial (not production AAP) |
 | **Agent Access** | External AAP clients and grants |
-| **Audit logs** | Run and admin audit trail |
+| **Agent audit center** | Full-chain Trace timeline (nested Agent calls), initiator username / Client name, deep-link to identity pages |
 
 Business objects come from configuration. The repository does **not** ship sample business data.
 
@@ -94,7 +94,13 @@ Tenant / project boundaries, mode (production / sandbox), status.
 
 ### Agents
 
-Demo agent: `Acme 导购助手` with model binding and prompt.
+Demo agent: `Acme 导购助手` with model binding and prompt. On **edit** (after the Agent is saved), **Collaboration & external reach** supports:
+
+- **Delegate to another Agent** in the same workspace via a stable callable name (same conversation vs separate task)
+- **Expose this Agent inbound (A2A)** with a public display name and access-token auth
+- **Call external Agents (A2A outbound)** with endpoint URL, host allowlist, and secret ref
+
+Create flow: save first to obtain an ID, then configure collaboration.
 
 ![Agents](./docs/images/readme/04-agents.png)
 
@@ -146,9 +152,14 @@ Internal Agent trial (not production AAP).
 
 ![Chat](./docs/images/readme/12-chat.png)
 
-### Audit logs
+### Agent audit center
 
-Run and admin audit trail.
+Trace-level run timeline (platform admins):
+
+- Nested **Agent call** frames expand (A→B→C…)
+- Semantic colors by step type (input / reasoning / delegation / tool / output)
+- Initiator shows **username** or **Client name**; click opens Users or Agent Access with a prefilled search
+- Re-entering via the sidebar returns to the list (not a stale detail view)
 
 ![Logs](./docs/images/readme/13-logs.png)
 
