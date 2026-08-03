@@ -65,9 +65,17 @@ void AgentDelegationPanel;
               <span>返回列表</span>
             </button>
             <span class="agent-studio-divider" aria-hidden="true" />
-            <div>
-              <span>{{ draftAgent.id || "创建后自动生成 ID" }}</span>
-              <h3>{{ studioMode === "create" ? "新建 Agent" : "编辑 Agent" }}</h3>
+            <div class="agent-studio-heading">
+              <p class="agent-studio-eyebrow">
+                {{ studioMode === "create" ? "新建" : "编辑" }}
+              </p>
+              <h3 :title="studioMode === 'edit' && draftAgent.name ? draftAgent.name : undefined">
+                {{
+                  studioMode === "create"
+                    ? "创建 Agent"
+                    : draftAgent.name?.trim() || "未命名 Agent"
+                }}
+              </h3>
             </div>
           </div>
           <div class="agent-studio-actions">
@@ -306,6 +314,23 @@ void AgentDelegationPanel;
             :agent-id="draftAgent.id"
             :agent-options="delegationAgentOptions"
           />
+          <!-- Create mode: bindings need a persisted agentId — show deferred hint only. -->
+          <section
+            v-else-if="studioMode === 'create'"
+            class="agent-studio-section agent-delegation-deferred"
+          >
+            <header>
+              <span><i class="fa-solid fa-sitemap" aria-hidden="true" /> 协作与对外能力</span>
+              <span class="agent-delegation-deferred-badge">创建后可配置</span>
+            </header>
+            <div class="agent-delegation-deferred-body">
+              <i class="fa-solid fa-lock" aria-hidden="true" />
+              <div>
+                <p>请其他 Agent 帮忙、对外开放、呼叫外部服务，需要先创建并保存本 Agent。</p>
+                <small>创建成功后，在编辑页展开对应区块即可配置，无需现在填写。</small>
+              </div>
+            </div>
+          </section>
 
           <section class="agent-studio-section studio-prompt-editor">
             <header>

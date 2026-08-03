@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import "./agent-access-page.css";
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 
 import AppSelect, { type AppSelectOption } from "../components/AppSelect.vue";
 import ManagementList, { type ManagementListColumn } from "../components/ManagementList.vue";
@@ -30,6 +31,7 @@ const access = useAgentAccessStore();
 const agents = useAgentStore();
 const auth = useAuthStore();
 const workspaces = useWorkspaceStore();
+const route = useRoute();
 const query = ref("");
 const viewMode = ref<PageView>("list");
 const activeTab = ref<DetailTab>("credentials");
@@ -211,7 +213,17 @@ useModalFocus({ visible: grantOpen, modalRef: grantModalRef, onClose: () => (gra
 useModalFocus({ visible: secretOpen, modalRef: secretModalRef, onClose: closeSecret });
 useModalFocus({ visible: dangerOpen, modalRef: dangerModalRef, onClose: closeDanger });
 
-onMounted(loadPage);
+function applyRouteSearch() {
+  const q = route.query.q;
+  if (typeof q === "string" && q.trim()) {
+    query.value = q.trim();
+  }
+}
+
+onMounted(() => {
+  applyRouteSearch();
+  void loadPage();
+});
 onBeforeUnmount(clearSecret);
 watch(workspaceId, (next, previous) => {
   if (next && next !== previous) {
@@ -219,6 +231,14 @@ watch(workspaceId, (next, previous) => {
     void loadPage();
   }
 });
+watch(
+  () => route.query.q,
+  () => {
+    applyRouteSearch();
+    // Re-apply local filter; data already loaded.
+    focusClientFromQuery();
+  },
+);
 
 async function loadPage() {
   clearFeedback();
@@ -232,8 +252,24 @@ async function loadPage() {
     if (viewMode.value === "detail" && !access.selectedClientId) {
       viewMode.value = "list";
     }
+    focusClientFromQuery();
   } catch (error) {
     actionError.value = messageFor(error, "Agent Access 配置加载失败，请稍后重试。");
+  }
+}
+
+/** When arriving from audit with ?q=, prefilter and open exact client match. */
+function focusClientFromQuery() {
+  const needle = query.value.trim().toLocaleLowerCase();
+  if (!needle) return;
+  const exact = access.clients.find(
+    (c) =>
+      c.clientId.toLocaleLowerCase() === needle ||
+      c.name.toLocaleLowerCase() === needle ||
+      c.servicePrincipalId?.toLocaleLowerCase() === needle,
+  );
+  if (exact) {
+    void selectClient(exact);
   }
 }
 

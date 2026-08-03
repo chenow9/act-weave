@@ -4,6 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import AgentAccessView from "./AgentAccessView.vue";
 
+vi.mock("vue-router", () => ({
+  useRoute: () => ({ query: {} }),
+  useRouter: () => ({ push: vi.fn() }),
+}));
+
 const fixture = reactive({ canManage: true });
 const client = {
   id: "client-1",

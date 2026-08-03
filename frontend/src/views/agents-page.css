@@ -574,23 +574,29 @@
 .agent-studio-shell {
   display: flex;
   flex-shrink: 0;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding-bottom: 12px;
+  padding-bottom: 14px;
   border-bottom: 1px solid #e2e8f0;
 }
 
-.agent-studio-title,
-.agent-studio-actions {
+.agent-studio-title {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .agent-studio-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
   padding: 0;
   border: 0;
+  padding-top: 2px;
 }
 
 .agent-studio-inline-warning {
@@ -621,10 +627,11 @@
 }
 
 .agent-back-button {
-  min-height: 44px;
+  min-height: 36px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  margin-top: 10px;
   padding: 6px 10px;
   color: #64748b;
   background: transparent;
@@ -632,6 +639,7 @@
   border-radius: 8px;
   font-size: 12px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .agent-back-button:hover {
@@ -641,27 +649,41 @@
 
 .agent-studio-divider {
   width: 1px;
-  height: 16px;
-  background: #cbd5e1;
+  align-self: stretch;
+  min-height: 40px;
+  margin: 6px 2px 0;
+  background: #e2e8f0;
 }
 
-.agent-studio-title div > span {
-  display: inline-flex;
-  padding: 2px 8px;
-  color: #475569;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
+.agent-studio-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.agent-studio-eyebrow {
+  margin: 0;
+  color: #64748b;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.2;
 }
 
-.agent-studio-title h3 {
-  margin-top: 4px;
-  color: #020617;
+.agent-studio-heading h3 {
+  margin: 0;
+  max-width: min(520px, 48vw);
+  overflow: hidden;
+  color: #0f172a;
   font-size: 18px;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .agent-studio-body {
@@ -689,6 +711,59 @@
 
 .agent-parameters-panel {
   overflow: visible;
+}
+
+/* Create-mode teaser: delegation/A2A needs a persisted agentId */
+.agent-delegation-deferred-badge {
+  min-height: 24px;
+  padding: 0 10px;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 999px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.agent-delegation-deferred-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  color: #64748b;
+}
+
+.agent-delegation-deferred-body > i {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.agent-delegation-deferred-body p {
+  margin: 0;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.agent-delegation-deferred-body small {
+  display: block;
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .agent-studio-section > header {

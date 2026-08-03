@@ -169,6 +169,9 @@ export const useAgentAuditStore = defineStore("agentAudit", {
     },
     goToList() {
       this.view = "list";
+      this.selected = undefined;
+      this.detailLoading = false;
+      this.detailLoadingMore = false;
       this.detailHasMore = false;
       this.detailStepOffset = 0;
     },

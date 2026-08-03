@@ -831,6 +831,18 @@ onBeforeUnmount(() => {
   font: inherit;
   font-size: var(--aw-table-toolbar-size, 0.875rem);
   line-height: 1.25;
+  /* Keep type=search for a11y, but hide native clear — we render our own. */
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.management-list-search input[type="search"]::-webkit-search-decoration,
+.management-list-search input[type="search"]::-webkit-search-cancel-button,
+.management-list-search input[type="search"]::-webkit-search-results-button,
+.management-list-search input[type="search"]::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
 }
 
 .management-list-search input:focus {

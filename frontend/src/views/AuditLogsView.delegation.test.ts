@@ -13,13 +13,21 @@ function stepIcon(type: string) {
   return "fa-solid fa-terminal";
 }
 
-/** Mirrors AuditLogsView.delegationMeta depth display contract. */
+/** Mirrors AuditLogsView.delegationMeta human-readable contract. */
 function delegationMeta(step: AgentAuditStep) {
   const bits: string[] = [];
-  if (step.protocol) bits.push(step.protocol);
-  if (step.mode) bits.push(step.mode);
-  if (step.depth != null) bits.push(`depth=${step.depth}`);
-  if (step.origin) bits.push(step.origin);
+  const protocol = (step.protocol || "").toUpperCase();
+  const origin = (step.origin || "").toUpperCase();
+  const mode = (step.mode || "").toUpperCase();
+  if (protocol === "INTERNAL") bits.push("内部协作");
+  else if (protocol === "A2A") bits.push("外部协议");
+  else if (step.protocol) bits.push(step.protocol);
+  if (mode === "INLINE") bits.push("同次对话");
+  else if (mode === "TASK") bits.push("独立任务");
+  else if (step.mode) bits.push(step.mode);
+  if (origin === "EXTERNAL") bits.push("外部发起");
+  else if (origin && origin !== "INTERNAL" && origin !== protocol) bits.push(origin);
+  if (step.depth != null) bits.push(step.depth === 0 ? "顶层" : `第 ${step.depth} 层`);
   return bits.join(" · ");
 }
 
@@ -59,7 +67,7 @@ describe("agent audit delegation timeline", () => {
     };
     // JSON wire format must retain depth:0 (backend omitempty regression guard).
     expect(JSON.stringify(root)).toContain('"depth":0');
-    expect(delegationMeta(root)).toContain("depth=0");
+    expect(delegationMeta(root)).toContain("顶层");
     expect(root.depth).toBe(0);
   });
 

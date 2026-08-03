@@ -2,7 +2,7 @@
 /**
  * Recursive agent audit timeline node — supports A→B→C… nesting of any depth.
  */
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import type { AgentAuditStep } from "../types/domain";
 import AgentAuditStepNode from "./AgentAuditStepNode.vue";
 
@@ -29,20 +29,39 @@ function childKey(child: AgentAuditStep, cIndex: number) {
 
 function shortId(id?: string) {
   if (!id) return "";
-  return id.length > 8 ? id.slice(0, 8) : id;
+  return id.length > 8 ? `${id.slice(0, 8)}…` : id;
 }
 
+function agentLabel(name?: string, id?: string) {
+  if (name?.trim()) return name.trim();
+  return shortId(id);
+}
+
+/** Failure/timeout tone for icon + card accent (overrides type color when error). */
+const statusTone = computed(() => {
+  const s = (props.step.status || "").toUpperCase();
+  if (s === "FAILED" || s === "ERROR") return "is-error";
+  if (s === "TIMED_OUT") return "is-timeout";
+  if (s === "CANCELLED") return "is-cancelled";
+  if (s === "RUNNING" || s === "ACCEPTED" || s === "WAITING_CONFIRMATION" || s === "WAITING_INTERACTION") {
+    return "is-running";
+  }
+  if (s === "SUCCEEDED" || s === "SUCCESS") return "is-success";
+  return "";
+});
+
 /**
- * Origin-aware delegation path:
- * - EXTERNAL inbound: externalAgentRef → targetAgentId
- * - INTERNAL: callerAgentId → targetAgentId
- * - outbound A2A: callerAgentId → externalAgentRef
+ * Origin-aware delegation path in human form:
+ * - Prefer agent display names when API provides them
+ * - EXTERNAL inbound: external → target
+ * - INTERNAL: caller → target
+ * - outbound A2A: caller → external
  */
 function delegationPath(step: AgentAuditStep): string {
   const origin = (step.origin || "").toUpperCase();
   const protocol = (step.protocol || "").toUpperCase();
-  const caller = shortId(step.callerAgentId);
-  const target = shortId(step.targetAgentId);
+  const caller = agentLabel(step.callerAgentName, step.callerAgentId);
+  const target = agentLabel(step.targetAgentName, step.targetAgentId);
   const ext = (step.externalAgentRef || "").trim();
   if (origin === "EXTERNAL") {
     if (ext && target) return `${ext} → ${target}`;
@@ -64,12 +83,12 @@ function delegationPath(step: AgentAuditStep): string {
 <template>
   <div class="timeline-item" :class="{ nested: (depth ?? 0) > 0 }">
     <div class="timeline-rail">
-      <div class="timeline-icon" :class="step.type">
-        <i :class="stepIcon(step.type)"></i>
+      <div class="timeline-icon" :class="[step.type, statusTone]">
+        <i :class="stepIcon(step.type)" aria-hidden="true" />
       </div>
       <span class="time mono">{{ (step.timeOffsetMs / 1000).toFixed(2) }}s</span>
     </div>
-    <div class="timeline-card" :class="[step.type, step.status, { nested: (depth ?? 0) > 0 }]">
+    <div class="timeline-card" :class="[step.type, step.status, statusTone, { nested: (depth ?? 0) > 0 }]">
       <div class="timeline-card-head">
         <h3>
           <button
@@ -108,15 +127,17 @@ function delegationPath(step: AgentAuditStep): string {
       </div>
       <p
         v-if="step.type === 'agent_delegation'"
-        class="step-content muted mono"
+        class="step-content muted delegation-meta"
         data-testid="delegation-meta-line"
       >
         <span data-testid="delegation-meta-text">{{ delegationMeta(step) }}</span>
-        <span v-if="delegationPath(step)" data-testid="delegation-path"> · {{ delegationPath(step) }}</span>
-        <span v-if="step.childRunId"> · child={{ step.childRunId.slice(0, 8) }}</span>
-        <span v-if="step.remoteTaskId"> · task={{ step.remoteTaskId }}</span>
+        <span v-if="delegationPath(step)" data-testid="delegation-path">
+          · 路径 {{ delegationPath(step) }}
+        </span>
+        <span v-if="step.childRunId" :title="step.childRunId"> · 子任务</span>
+        <span v-if="step.remoteTaskId" :title="step.remoteTaskId"> · 远端任务</span>
         <span v-if="step.remoteEndpointRef"> · {{ step.remoteEndpointRef }}</span>
-        <span v-if="step.protocolStatus"> · proto={{ step.protocolStatus }}</span>
+        <span v-if="step.protocolStatus"> · 协议状态 {{ step.protocolStatus }}</span>
         <span v-if="step.errorMessage"> · {{ step.errorMessage }}</span>
       </p>
       <p v-if="stepText(step)" class="step-content" :class="{ reasoning: step.type === 'reasoning' }">
@@ -178,22 +199,72 @@ function delegationPath(step: AgentAuditStep): string {
   min-width: 3.5rem;
 }
 .timeline-icon {
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 1.85rem;
+  height: 1.85rem;
   border-radius: 999px;
   display: grid;
   place-items: center;
-  background: #f3f4f6;
-  font-size: 0.75rem;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.72rem;
+  flex-shrink: 0;
+}
+
+/* Semantic type colors */
+.timeline-icon.input {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+.timeline-icon.reasoning {
+  color: #7c3aed;
+  background: #f5f3ff;
+  border-color: #ddd6fe;
 }
 .timeline-icon.agent_delegation {
+  color: #4338ca;
   background: #e0e7ff;
-  color: #3730a3;
+  border-color: #c7d2fe;
 }
 .timeline-icon.tool {
-  background: #fef3c7;
-  color: #92400e;
+  color: #b45309;
+  background: #fffbeb;
+  border-color: #fde68a;
 }
+.timeline-icon.output {
+  color: #047857;
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+}
+.timeline-icon.context_compaction {
+  color: #0f766e;
+  background: #f0fdfa;
+  border-color: #99f6e4;
+}
+
+/* Status overrides (failure wins over type) */
+.timeline-icon.is-error {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.timeline-icon.is-timeout {
+  color: #c2410c;
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+.timeline-icon.is-cancelled {
+  color: #64748b;
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+.timeline-icon.is-running {
+  color: #0369a1;
+  background: #f0f9ff;
+  border-color: #bae6fd;
+}
+
 .time {
   font-size: 0.7rem;
   color: #9ca3af;
@@ -206,9 +277,50 @@ function delegationPath(step: AgentAuditStep): string {
   padding: 0.65rem 0.85rem;
   background: #fff;
   min-width: 0;
+  border-left-width: 3px;
+  border-left-color: #e2e8f0;
+}
+.timeline-card.input {
+  border-left-color: #3b82f6;
+}
+.timeline-card.reasoning {
+  border-left-color: #8b5cf6;
+  background: #fcfbff;
+}
+.timeline-card.agent_delegation {
+  border-left-color: #6366f1;
+}
+.timeline-card.tool {
+  border-left-color: #f59e0b;
+}
+.timeline-card.output {
+  border-left-color: #10b981;
+}
+.timeline-card.context_compaction {
+  border-left-color: #14b8a6;
+}
+.timeline-card.is-error,
+.timeline-card.FAILED,
+.timeline-card.ERROR {
+  border-left-color: #ef4444;
+  border-color: #fecaca;
+  background: #fffafa;
+}
+.timeline-card.is-timeout,
+.timeline-card.TIMED_OUT {
+  border-left-color: #f97316;
+  border-color: #fed7aa;
+  background: #fffaf5;
+}
+.timeline-card.is-cancelled,
+.timeline-card.CANCELLED {
+  border-left-color: #94a3b8;
 }
 .timeline-card.nested {
   background: #fafafa;
+}
+.timeline-card.reasoning.nested {
+  background: #faf8ff;
 }
 .timeline-card-head {
   display: flex;
@@ -269,6 +381,10 @@ function delegationPath(step: AgentAuditStep): string {
 }
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.delegation-meta {
+  font-size: 0.78rem;
+  line-height: 1.45;
 }
 .pill {
   font-size: 0.72rem;

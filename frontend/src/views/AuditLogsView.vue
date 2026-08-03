@@ -1,20 +1,23 @@
 <script setup lang="ts">
 import "./audit-logs-page.css";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 
 import AgentAuditStepNode from "../components/AgentAuditStepNode.vue";
 import ManagementList, { type ManagementListColumn } from "../components/ManagementList.vue";
 import ManagementPageHeader from "../components/ManagementPageHeader.vue";
 import ManagementSummaryStrip from "../components/ManagementSummaryStrip.vue";
 import type { ManagementSummaryItem } from "../components/ManagementSummaryStrip.vue";
+import { apiClient } from "../services/api";
 import { useAgentAuditStore } from "../stores/agentAudit";
 import { useAuthStore } from "../stores/auth";
 import { useWorkspaceStore } from "../stores/workspaces";
-import type { AgentAuditStep, AgentAuditTraceListItem } from "../types/domain";
+import type { AgentAuditActor, AgentAuditStep, AgentAuditTraceListItem } from "../types/domain";
 
 const agentAudit = useAgentAuditStore();
 const auth = useAuthStore();
 const workspaces = useWorkspaceStore();
+const router = useRouter();
 const pageRef = ref<HTMLElement | null>(null);
 const timelineSentinelRef = ref<HTMLElement | null>(null);
 const actionError = ref("");
@@ -89,9 +92,9 @@ const auditColumns = computed<ManagementListColumn<AgentAuditTraceListItem>[]>((
   },
   {
     key: "userLabel",
-    label: "用户标识",
+    label: "用户",
     width: 160,
-    getValue: (row) => displayUserLabel(row.userLabel),
+    getValue: (row) => displayUserLabel(row.userLabel, row.user),
   },
   {
     key: "status",
@@ -122,6 +125,10 @@ const auditPagination = computed(() => ({
 }));
 
 onMounted(async () => {
+  // Sidebar re-entry should land on the list, not a previously opened detail
+  // (view/selected live in Pinia and survive route remounts).
+  teardownTimelineInfiniteScroll();
+  agentAudit.goToList();
   await runAction(async () => {
     if (!isPlatformAdmin.value) {
       actionError.value = "仅平台管理员可查看 Agent 全链路审计。";
@@ -179,10 +186,26 @@ async function openDetail(traceId: string) {
   if (!workspaceId.value) return;
   await runAction(async () => {
     await agentAudit.loadTraceDetail(workspaceId.value, traceId);
+    await resolveSelectedActorProfile();
   }, "加载链路详情失败。");
   // List→detail reuses the same scroll container; reset so the header is visible without manual scroll.
   await scrollAuditToTop();
   await setupTimelineInfiniteScroll();
+}
+
+/**
+ * Best-effort fill username when the audit API still only has type+id.
+ * Prefer username for display (searchable on 用户与权限).
+ */
+async function resolveSelectedActorProfile() {
+  const selected = agentAudit.selected;
+  if (!selected) return;
+  const actor = selected.user;
+  if (isHumanActorName(actor?.username) && !looksLikeUuid(actor?.username)) return;
+  if (isHumanActorName(selected.userLabel) && !looksLikeUuid(selected.userLabel)) return;
+  const kind = actorKind(actor, selected.userLabel);
+  if (kind !== "USER" && kind !== "") return;
+  await resolveUsername(actor, selected.userLabel);
 }
 
 async function backToList() {
@@ -226,6 +249,8 @@ function stepKey(step: AgentAuditStep, index: number): string {
 
 onBeforeUnmount(() => {
   teardownTimelineInfiniteScroll();
+  // Leaving via sidebar/other routes: next visit starts on the list page.
+  agentAudit.goToList();
 });
 
 async function scrollAuditToTop() {
@@ -288,15 +313,178 @@ function displayJson(data: unknown, state?: string) {
   return data;
 }
 
-/** Mask principal IDs / long opaque tokens in free-form labels while keeping type prefix. */
-function displayUserLabel(label?: string | null) {
-  if (!label) return "—";
-  if (!agentAudit.isMasked) return label;
-  const separator = label.indexOf(":");
-  if (separator > 0) {
-    return `${label.slice(0, separator)}:********`;
+function actorKind(actor?: AgentAuditActor | null, fallbackLabel?: string | null): string {
+  const fromActor = (actor?.type || "").toUpperCase();
+  if (fromActor) return fromActor;
+  const label = (fallbackLabel || "").trim();
+  if (label.includes(":")) return label.split(":")[0].toUpperCase();
+  return "";
+}
+
+/** True when a string is a resolved human name (not type keyword / bare UUID). */
+function isHumanActorName(value?: string | null) {
+  const v = (value || "").trim();
+  if (!v) return false;
+  if (/^(USER|SYSTEM|SERVICE_PRINCIPAL|SERVICE|用户|系统|服务账号|未知主体)$/i.test(v)) return false;
+  if (/^(USER|SYSTEM|SERVICE_PRINCIPAL|SERVICE):/i.test(v)) return false;
+  if (/^[0-9a-f]{8}-[0-9a-f-]{20,}$/i.test(v)) return false;
+  return true;
+}
+
+/**
+ * Primary label shown in the audit UI.
+ * USER → login username first (searchable on /users).
+ * SERVICE → client name / id.
+ * Never prefer bare UUID when a human name exists.
+ */
+function actorPrimaryName(actor?: AgentAuditActor | null, fallbackLabel?: string | null) {
+  const kind = actorKind(actor, fallbackLabel);
+  if (kind === "USER" || kind === "") {
+    if (isHumanActorName(actor?.username)) return actor!.username!.trim();
+    if (isHumanActorName(actor?.displayName)) return actor!.displayName!.trim();
+    if (isHumanActorName(fallbackLabel) && !looksLikeUuid(fallbackLabel)) return fallbackLabel!.trim();
+  } else {
+    if (isHumanActorName(actor?.clientName)) return actor!.clientName!.trim();
+    if (isHumanActorName(actor?.displayName)) return actor!.displayName!.trim();
+    if (isHumanActorName(actor?.username)) return actor!.username!.trim();
+    if (isHumanActorName(actor?.clientId)) return actor!.clientId!.trim();
+    if (isHumanActorName(fallbackLabel) && !looksLikeUuid(fallbackLabel)) return fallbackLabel!.trim();
   }
-  return "********";
+
+  // Unresolved profile: show short id only as last resort (will try resolve on open).
+  const raw = (fallbackLabel || actor?.id || "").trim();
+  if (raw) {
+    const id = raw.includes(":") ? raw.slice(raw.indexOf(":") + 1).trim() : raw;
+    if (id && agentAudit.isMasked) return "已脱敏";
+    if (id) return id.length > 12 ? `${id.slice(0, 8)}…` : id;
+  }
+  return "未知主体";
+}
+
+function looksLikeUuid(value?: string | null) {
+  const v = (value || "").trim();
+  const id = v.includes(":") ? v.slice(v.indexOf(":") + 1).trim() : v;
+  return /^[0-9a-f]{8}-[0-9a-f-]{20,}$/i.test(id);
+}
+
+function actorTypeLabel(type?: string) {
+  const t = (type || "").toUpperCase();
+  if (t === "USER") return "用户";
+  if (t === "SYSTEM") return "系统";
+  if (t === "SERVICE" || t === "SERVICE_PRINCIPAL") return "服务账号";
+  return type || "主体";
+}
+
+/** List cell / compact label — always prefer real names; never collapse to「用户」. */
+function displayUserLabel(label?: string | null, actor?: AgentAuditActor | null) {
+  return actorPrimaryName(actor, label);
+}
+
+function actorTooltipLines(actor?: AgentAuditActor | null, fallbackLabel?: string | null): string[] {
+  const lines: string[] = [];
+  const kind = actorKind(actor, fallbackLabel);
+  lines.push(`类型：${actorTypeLabel(kind)}`);
+  if (actor?.displayName) lines.push(`显示名：${actor.displayName}`);
+  if (actor?.username) lines.push(`用户名：${actor.username}`);
+  if (actor?.clientName) lines.push(`Client 名称：${actor.clientName}`);
+  if (actor?.clientId && !agentAudit.isMasked) lines.push(`Client ID：${actor.clientId}`);
+  else if (actor?.clientId && agentAudit.isMasked) lines.push("Client ID：********");
+  if (actor?.id && !agentAudit.isMasked) lines.push(`主体 ID：${actor.id}`);
+  else if (actor?.id && agentAudit.isMasked) lines.push("主体 ID：********");
+  if (!actor?.displayName && !actor?.username && !actor?.clientName && fallbackLabel && !actor?.id) {
+    lines.push(`标识：${fallbackLabel}`);
+  }
+  if (canOpenActor(actor, fallbackLabel)) {
+    lines.push("点击可跳转查看详情");
+  }
+  return lines;
+}
+
+function canOpenActor(actor?: AgentAuditActor | null, fallbackLabel?: string | null) {
+  const kind = actorKind(actor, fallbackLabel);
+  if (kind === "SYSTEM") return false;
+  // Need at least an id / username / client id to search with.
+  if (actor?.username || actor?.displayName || actor?.id || actor?.clientId || actor?.clientName) return true;
+  const label = (fallbackLabel || "").trim();
+  if (/^(USER|SERVICE_PRINCIPAL|SERVICE):/i.test(label)) return true;
+  return Boolean(label) && kind === "USER";
+}
+
+/** Navigate to user admin or Agent Access with a prefilled search. */
+async function openActor(actor?: AgentAuditActor | null, fallbackLabel?: string | null) {
+  if (!canOpenActor(actor, fallbackLabel)) return;
+  const kind = actorKind(actor, fallbackLabel);
+  const isService = kind === "SERVICE_PRINCIPAL" || kind === "SERVICE";
+
+  if (isService) {
+    const q =
+      actor?.clientId?.trim() ||
+      actor?.clientName?.trim() ||
+      actor?.displayName?.trim() ||
+      actor?.username?.trim() ||
+      "";
+    void router.push({ path: "/agent-access", query: q ? { q } : {} });
+    return;
+  }
+
+  // Platform user: always search by username (admin search does not need UUID).
+  let username = actor?.username?.trim() || "";
+  if (!username || looksLikeUuid(username)) {
+    username = (await resolveUsername(actor, fallbackLabel)) || "";
+  }
+  // Do not fall back to raw UUID — it will not match username search.
+  if (!username || looksLikeUuid(username)) {
+    actionError.value = "未能解析用户名，请确认该用户仍存在于平台。";
+    return;
+  }
+  void router.push({ path: "/users", query: { q: username } });
+}
+
+/** Resolve USER actor to login username via admin users API. */
+async function resolveUsername(
+  actor?: AgentAuditActor | null,
+  fallbackLabel?: string | null,
+): Promise<string> {
+  if (isHumanActorName(actor?.username) && !looksLikeUuid(actor?.username)) {
+    return actor!.username!.trim();
+  }
+  const id = (actor?.id || extractActorId(fallbackLabel) || "").trim();
+  if (!id) return "";
+  try {
+    const res = await apiClient.get<{
+      items?: Array<{ id?: string; username?: string; displayName?: string }>;
+    }>(`/admin/users?query=${encodeURIComponent(id)}&page=1&pageSize=10`);
+    const match =
+      res.data.items?.find((u) => u.id === id) ||
+      res.data.items?.find((u) => (u.id || "").toLowerCase() === id.toLowerCase());
+    if (match?.username) {
+      // Patch selected detail so the UI label updates immediately.
+      const selected = agentAudit.selected;
+      if (selected) {
+        agentAudit.selected = {
+          ...selected,
+          userLabel: match.username,
+          user: {
+            type: "USER",
+            id: match.id || id,
+            username: match.username,
+            displayName: match.displayName || "",
+          },
+        };
+      }
+      return match.username;
+    }
+  } catch {
+    // ignore
+  }
+  return "";
+}
+
+function extractActorId(label?: string | null) {
+  const raw = (label || "").trim();
+  if (!raw) return "";
+  if (raw.includes(":")) return raw.slice(raw.indexOf(":") + 1).trim();
+  return raw;
 }
 
 function maskSensitiveText(text: string) {
@@ -331,13 +519,35 @@ function toggleDelegation(step: AgentAuditStep, index: number) {
   expandedDelegation.value[key] = !isDelegationExpanded(step, index);
 }
 
+/** Human-readable delegation summary (avoid protocol jargon in the timeline). */
 function delegationMeta(step: AgentAuditStep) {
   const bits: string[] = [];
-  if (step.protocol) bits.push(step.protocol);
-  if (step.mode) bits.push(step.mode);
-  if (step.origin) bits.push(step.origin);
-  if (step.depth != null) bits.push(`depth=${step.depth}`);
-  if (step.status) bits.push(step.status);
+  const protocol = (step.protocol || "").toUpperCase();
+  const origin = (step.origin || "").toUpperCase();
+  const mode = (step.mode || "").toUpperCase();
+
+  if (protocol === "INTERNAL") bits.push("内部协作");
+  else if (protocol === "A2A") bits.push("外部协议");
+  else if (step.protocol) bits.push(step.protocol);
+
+  if (mode === "INLINE") bits.push("同次对话");
+  else if (mode === "TASK") bits.push("独立任务");
+  else if (step.mode) bits.push(step.mode);
+
+  // Origin only when it adds info beyond protocol (e.g. external inbound).
+  if (origin === "EXTERNAL") bits.push("外部发起");
+  else if (origin && origin !== "INTERNAL" && origin !== protocol) bits.push(origin);
+
+  if (step.depth != null) bits.push(step.depth === 0 ? "顶层" : `第 ${step.depth} 层`);
+
+  const status = (step.status || "").toUpperCase();
+  if (status === "SUCCEEDED" || status === "SUCCESS") bits.push("成功");
+  else if (status === "FAILED" || status === "ERROR") bits.push("失败");
+  else if (status === "RUNNING") bits.push("进行中");
+  else if (status === "TIMED_OUT") bits.push("超时");
+  else if (status === "CANCELLED") bits.push("已取消");
+  else if (step.status) bits.push(step.status);
+
   if (step.errorCode) bits.push(step.errorCode);
   return bits.join(" · ");
 }
@@ -428,7 +638,24 @@ async function runAction(action: () => Promise<void>, fallback: string) {
             <span class="aw-table-pill audit-model-pill">{{ row.model || "—" }}</span>
           </template>
           <template #cell-userLabel="{ row }">
-            <span class="aw-table-meta">{{ displayUserLabel(row.userLabel) }}</span>
+            <button
+              type="button"
+              class="aw-table-meta audit-user-chip audit-user-link"
+              :title="actorTooltipLines(row.user, row.userLabel).join('\n')"
+              :disabled="!canOpenActor(row.user, row.userLabel)"
+              @click.stop="openActor(row.user, row.userLabel)"
+            >
+              <i
+                :class="
+                  actorKind(row.user, row.userLabel) === 'SERVICE_PRINCIPAL' ||
+                  actorKind(row.user, row.userLabel) === 'SERVICE'
+                    ? 'fa-solid fa-id-card'
+                    : 'fa-solid fa-user'
+                "
+                aria-hidden="true"
+              />
+              {{ displayUserLabel(row.userLabel, row.user) }}
+            </button>
           </template>
           <template #cell-status="{ row }">
             <span class="aw-table-pill audit-status-pill" :class="row.status">{{ statusLabel(row.status) }}</span>
@@ -463,7 +690,42 @@ async function runAction(action: () => Promise<void>, fallback: string) {
           <div class="detail-meta muted">
             <span><i class="fa-solid fa-clock"></i> {{ formatTime(agentAudit.selected.startedAt) }}</span>
             <span><i class="fa-solid fa-microchip"></i> {{ agentAudit.selected.model }}</span>
-            <span><i class="fa-solid fa-user"></i> {{ displayUserLabel(agentAudit.selected.userLabel) }}</span>
+            <span class="audit-user-hover">
+              <i
+                :class="
+                  actorKind(agentAudit.selected.user, agentAudit.selected.userLabel) ===
+                    'SERVICE_PRINCIPAL' ||
+                  actorKind(agentAudit.selected.user, agentAudit.selected.userLabel) === 'SERVICE'
+                    ? 'fa-solid fa-id-card'
+                    : 'fa-solid fa-user'
+                "
+              ></i>
+              <button
+                type="button"
+                class="audit-user-trigger"
+                :disabled="!canOpenActor(agentAudit.selected.user, agentAudit.selected.userLabel)"
+                @click="openActor(agentAudit.selected.user, agentAudit.selected.userLabel)"
+              >
+                {{ displayUserLabel(agentAudit.selected.userLabel, agentAudit.selected.user) }}
+                <i class="fa-solid fa-arrow-up-right-from-square audit-user-go" aria-hidden="true" />
+              </button>
+              <div class="audit-user-card" role="tooltip">
+                <strong>{{
+                  actorPrimaryName(agentAudit.selected.user, agentAudit.selected.userLabel)
+                }}</strong>
+                <ul>
+                  <li
+                    v-for="(line, i) in actorTooltipLines(
+                      agentAudit.selected.user,
+                      agentAudit.selected.userLabel,
+                    )"
+                    :key="i"
+                  >
+                    {{ line }}
+                  </li>
+                </ul>
+              </div>
+            </span>
             <span
               >总耗时: <strong>{{ formatLatency(agentAudit.selected.latencyMs) }}</strong></span
             >
@@ -505,6 +767,121 @@ async function runAction(action: () => Promise<void>, fallback: string) {
   min-width: 0;
 }
 
+.audit-user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  color: #0f766e;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.audit-user-chip:disabled {
+  color: #64748b;
+  cursor: default;
+}
+
+.audit-user-chip i {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.audit-user-link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.audit-user-hover {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.audit-user-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  color: #0f766e;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px dashed rgba(13, 148, 136, 0.45);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.audit-user-trigger:disabled {
+  color: #64748b;
+  border-bottom-color: transparent;
+  cursor: default;
+}
+
+.audit-user-trigger:hover:not(:disabled) {
+  color: #0f766e;
+  border-bottom-style: solid;
+}
+
+.audit-user-go {
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+.audit-user-card {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  min-width: 200px;
+  max-width: 280px;
+  padding: 10px 12px;
+  color: #e2e8f0;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.28);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+
+.audit-user-hover:hover .audit-user-card,
+.audit-user-hover:focus-within .audit-user-card {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.audit-user-card strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.audit-user-card ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.audit-user-card li {
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .delegation-toggle {
   border: none;
   background: transparent;
@@ -533,18 +910,51 @@ async function runAction(action: () => Promise<void>, fallback: string) {
   background: #fafafa;
 }
 
+/* Parent-scoped legacy timeline helpers (recursive nodes use AgentAuditStepNode styles). */
+.timeline-icon.input {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+.timeline-icon.reasoning {
+  color: #7c3aed;
+  background: #f5f3ff;
+  border-color: #ddd6fe;
+}
 .timeline-icon.agent_delegation {
-  background: #ede9fe;
-  color: #6d28d9;
+  color: #4338ca;
+  background: #e0e7ff;
+  border-color: #c7d2fe;
+}
+.timeline-icon.tool {
+  color: #b45309;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+.timeline-icon.output {
+  color: #047857;
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+}
+.timeline-icon.context_compaction {
+  color: #0f766e;
+  background: #f0fdfa;
+  border-color: #99f6e4;
+}
+.timeline-icon.is-error {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
 }
 
 .timeline-card.agent_delegation {
-  border-color: #ddd6fe;
+  border-color: #c7d2fe;
 }
 
 .timeline-card.FAILED,
 .timeline-card.CANCELLED,
-.timeline-card.TIMED_OUT {
+.timeline-card.TIMED_OUT,
+.timeline-card.ERROR {
   border-color: #fecaca;
 }
 
@@ -728,20 +1138,7 @@ async function runAction(action: () => Promise<void>, fallback: string) {
   display: grid;
   place-items: center;
   background: white;
-}
-.timeline-icon.tool {
-  color: #3b82f6;
-  background: #eff6ff;
-  border-color: #dbeafe;
-}
-.timeline-icon.output {
-  color: #059669;
-  background: #ecfdf5;
-  border-color: #d1fae5;
-}
-.timeline-icon.reasoning {
-  color: #6b7280;
-  background: #f9fafb;
+  color: #64748b;
 }
 .time {
   color: #9ca3af;

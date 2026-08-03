@@ -8,6 +8,11 @@ import ManagementList from "../components/ManagementList.vue";
 import { APIError, apiClient, type AuthUserDTO } from "../services/api";
 import UserAccessView from "./UserAccessView.vue";
 
+vi.mock("vue-router", () => ({
+  useRoute: () => ({ query: {} }),
+  useRouter: () => ({ push: vi.fn() }),
+}));
+
 vi.mock("../services/api", async () => {
   const actual = await vi.importActual<typeof import("../services/api")>("../services/api");
   return { ...actual, apiClient: { get: vi.fn(), patch: vi.fn(), post: vi.fn() } };

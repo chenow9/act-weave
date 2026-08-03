@@ -1439,6 +1439,17 @@ export interface AgentAuditStats {
   avgLatencyMs: number;
 }
 
+/** Initiator of an agent run (USER / SYSTEM / service principal). */
+export interface AgentAuditActor {
+  type?: string;
+  id?: string;
+  username?: string;
+  displayName?: string;
+  /** Agent Access client id (when actor is a service principal). */
+  clientId?: string;
+  clientName?: string;
+}
+
 export interface AgentAuditTraceListItem {
   traceId: string;
   startedAt: string;
@@ -1446,6 +1457,7 @@ export interface AgentAuditTraceListItem {
   status: string;
   model: string;
   userLabel: string;
+  user?: AgentAuditActor;
   latencyMs?: number;
   stepCount: number;
   runIds: string[];
@@ -1481,6 +1493,8 @@ export interface AgentAuditStep {
   childRunId?: string;
   callerAgentId?: string;
   targetAgentId?: string;
+  callerAgentName?: string;
+  targetAgentName?: string;
   externalAgentRef?: string;
   mode?: string;
   protocol?: string;
@@ -1563,6 +1577,7 @@ export interface AgentAuditTraceDetail {
   status: string;
   model: string;
   userLabel: string;
+  user?: AgentAuditActor;
   debugMode: boolean;
   steps: AgentAuditStep[];
   runIds: string[];

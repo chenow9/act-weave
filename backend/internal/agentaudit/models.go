@@ -18,16 +18,30 @@ const (
 	ContentMissing  ContentState = "missing"
 )
 
+// ActorSummary is the human-facing initiator (USER/SYSTEM/service principal).
+type ActorSummary struct {
+	Type        string `json:"type,omitempty"`
+	ID          string `json:"id,omitempty"`
+	Username    string `json:"username,omitempty"`
+	DisplayName string `json:"displayName,omitempty"`
+	// Agent Access client (when actor is a service principal with a client).
+	ClientID   string `json:"clientId,omitempty"`
+	ClientName string `json:"clientName,omitempty"`
+}
+
 type TraceListItem struct {
 	TraceID    string     `json:"traceId"`
 	StartedAt  time.Time  `json:"startedAt"`
 	FinishedAt *time.Time `json:"finishedAt,omitempty"`
 	Status     string     `json:"status"`
 	Model      string     `json:"model"`
-	UserLabel  string     `json:"userLabel"`
-	LatencyMs  *int64     `json:"latencyMs,omitempty"`
-	StepCount  int        `json:"stepCount"`
-	RunIDs     []string   `json:"runIds"`
+	// UserLabel is the primary display string (prefer displayName/username over raw UUID).
+	UserLabel string `json:"userLabel"`
+	// User carries structured initiator details for list/detail hover cards.
+	User      *ActorSummary `json:"user,omitempty"`
+	LatencyMs *int64        `json:"latencyMs,omitempty"`
+	StepCount int           `json:"stepCount"`
+	RunIDs    []string      `json:"runIds"`
 }
 
 type Stats struct {
@@ -67,10 +81,13 @@ type Step struct {
 	ChildRunID         string `json:"childRunId,omitempty"`
 	CallerAgentID      string `json:"callerAgentId,omitempty"`
 	TargetAgentID      string `json:"targetAgentId,omitempty"`
-	ExternalRef        string `json:"externalAgentRef,omitempty"`
-	Mode               string `json:"mode,omitempty"`
-	Protocol           string `json:"protocol,omitempty"`
-	Origin             string `json:"origin,omitempty"`
+	// Human names when resolvable (audit UI path labels).
+	CallerAgentName string `json:"callerAgentName,omitempty"`
+	TargetAgentName string `json:"targetAgentName,omitempty"`
+	ExternalRef     string `json:"externalAgentRef,omitempty"`
+	Mode            string `json:"mode,omitempty"`
+	Protocol        string `json:"protocol,omitempty"`
+	Origin          string `json:"origin,omitempty"`
 	// Depth must always serialize (including 0 for EXTERNAL root inbound).
 	// omitempty would drop depth=0 and break API/UI contracts.
 	Depth        int    `json:"depth"`
@@ -107,6 +124,7 @@ type TraceDetail struct {
 	Status     string     `json:"status"`
 	Model      string     `json:"model"`
 	UserLabel  string     `json:"userLabel"`
+	User       *ActorSummary `json:"user,omitempty"`
 	DebugMode  bool       `json:"debugMode"`
 	Steps      []Step     `json:"steps"`
 	RunIDs     []string   `json:"runIds"`
@@ -136,9 +154,14 @@ type RunFact struct {
 	Status          string
 	TriggeredByType string
 	TriggeredByID   string
-	ModelSnapshot   json.RawMessage
-	StartedAt       time.Time
-	FinishedAt      *time.Time
+	// Optional profile when actor resolves (USER / SERVICE_PRINCIPAL).
+	TriggeredUsername    string
+	TriggeredDisplayName string
+	TriggeredClientID    string
+	TriggeredClientName  string
+	ModelSnapshot        json.RawMessage
+	StartedAt            time.Time
+	FinishedAt           *time.Time
 }
 
 type MessageFact struct {

@@ -116,39 +116,12 @@ func (s *Service) ListTraces(ctx context.Context, workspaceID string, filter Lis
 
 	byTrace := map[string][]RunFact{}
 	if len(order) > 0 {
-		rows, err := s.db.QueryContext(ctx, `
-			SELECT ar.id, ar.trace_id, ar.status, ar.triggered_by_type, ar.triggered_by_id,
-			       ar.model_snapshot, ar.started_at, ar.finished_at
-			FROM agent_runs ar
-			WHERE ar.workspace_id = $1
-			  AND ar.trace_id = ANY($2::text[])
-			ORDER BY ar.started_at DESC, ar.id DESC
-		`, workspaceID, pq.Array(order))
+		runs, err := s.loadRunsWithActors(ctx, workspaceID, order, true)
 		if err != nil {
-			return ListResult{}, fmt.Errorf("list agent runs: %w", err)
-		}
-		defer rows.Close()
-
-		for rows.Next() {
-			var run RunFact
-			var finished sql.NullTime
-			var model []byte
-			if err := rows.Scan(
-				&run.ID, &run.TraceID, &run.Status, &run.TriggeredByType, &run.TriggeredByID,
-				&model, &run.StartedAt, &finished,
-			); err != nil {
-				return ListResult{}, err
-			}
-			run.ModelSnapshot = append(json.RawMessage(nil), model...)
-			if finished.Valid {
-				t := finished.Time.UTC()
-				run.FinishedAt = &t
-			}
-			run.StartedAt = run.StartedAt.UTC()
-			byTrace[run.TraceID] = append(byTrace[run.TraceID], run)
-		}
-		if err := rows.Err(); err != nil {
 			return ListResult{}, err
+		}
+		for _, run := range runs {
+			byTrace[run.TraceID] = append(byTrace[run.TraceID], run)
 		}
 	}
 
@@ -213,36 +186,8 @@ func (s *Service) GetTrace(ctx context.Context, workspaceID, traceID string, fil
 	if workspaceID == "" || traceID == "" {
 		return TraceDetail{}, ErrInvalid
 	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, trace_id, status, triggered_by_type, triggered_by_id, model_snapshot, started_at, finished_at
-		FROM agent_runs
-		WHERE workspace_id = $1 AND trace_id = $2
-		ORDER BY started_at ASC, id ASC
-	`, workspaceID, traceID)
+	runs, err := s.loadRunsWithActors(ctx, workspaceID, []string{traceID}, false)
 	if err != nil {
-		return TraceDetail{}, err
-	}
-	defer rows.Close()
-	var runs []RunFact
-	for rows.Next() {
-		var run RunFact
-		var finished sql.NullTime
-		var model []byte
-		if err := rows.Scan(
-			&run.ID, &run.TraceID, &run.Status, &run.TriggeredByType, &run.TriggeredByID,
-			&model, &run.StartedAt, &finished,
-		); err != nil {
-			return TraceDetail{}, err
-		}
-		run.ModelSnapshot = append(json.RawMessage(nil), model...)
-		run.StartedAt = run.StartedAt.UTC()
-		if finished.Valid {
-			t := finished.Time.UTC()
-			run.FinishedAt = &t
-		}
-		runs = append(runs, run)
-	}
-	if err := rows.Err(); err != nil {
 		return TraceDetail{}, err
 	}
 	if len(runs) == 0 {
@@ -261,6 +206,9 @@ func (s *Service) GetTrace(ctx context.Context, workspaceID, traceID string, fil
 	// Build full ordered timeline, then page the presentation slice so the
 	// audit UI can infinite-scroll without shipping every tool body at once.
 	detail := PageTimelineSteps(BuildTimeline(runs, messages, steps, s.debugMode), filter)
+	if err := s.enrichStepAgentNames(ctx, workspaceID, detail.Steps); err != nil {
+		return TraceDetail{}, err
+	}
 	// AC-08 / IC-11: only when server debug is on, hydrate completed compact
 	// bodies from encrypted objects — never from protocol JSONB (T4-B).
 	// debug=false must perform zero SummaryBodyReader opens.
@@ -268,6 +216,183 @@ func (s *Service) GetTrace(ctx context.Context, workspaceID, traceID string, fil
 		s.hydrateCompactSummaryBodies(ctx, workspaceID, detail.Steps)
 	}
 	return detail, nil
+}
+
+// loadRunsWithActors loads agent_runs and joins USER / SERVICE_PRINCIPAL display names.
+// desc=true orders started_at DESC (list page); false orders ASC (detail page).
+func (s *Service) loadRunsWithActors(ctx context.Context, workspaceID string, traceIDs []string, desc bool) ([]RunFact, error) {
+	if len(traceIDs) == 0 {
+		return nil, nil
+	}
+	order := "ASC"
+	if desc {
+		order = "DESC"
+	}
+	// Join actors in SQL so list/detail always get human names without a second round-trip.
+	// Compare ids as text to avoid cast failures on legacy rows.
+	q := `
+		SELECT ar.id,
+		       ar.trace_id,
+		       ar.status,
+		       ar.triggered_by_type,
+		       BTRIM(ar.triggered_by_id::text),
+		       ar.model_snapshot,
+		       ar.started_at,
+		       ar.finished_at,
+		       COALESCE(u.username, ''),
+		       COALESCE(u.display_name, ''),
+		       COALESCE(sp.name, ''),
+		       COALESCE(c.client_id, ''),
+		       COALESCE(c.name, '')
+		FROM agent_runs ar
+		LEFT JOIN users u
+		  ON UPPER(BTRIM(ar.triggered_by_type::text)) = 'USER'
+		 AND u.id::text = BTRIM(ar.triggered_by_id::text)
+		LEFT JOIN service_principals sp
+		  ON sp.workspace_id = ar.workspace_id
+		 AND UPPER(BTRIM(ar.triggered_by_type::text)) IN ('SERVICE_PRINCIPAL', 'SERVICE')
+		 AND sp.id::text = BTRIM(ar.triggered_by_id::text)
+		LEFT JOIN LATERAL (
+			SELECT client_id, name
+			FROM agent_access_clients
+			WHERE workspace_id = ar.workspace_id
+			  AND service_principal_id = sp.id
+			  AND status IS DISTINCT FROM 'DISABLED'
+			ORDER BY created_at DESC NULLS LAST, id DESC
+			LIMIT 1
+		) c ON TRUE
+		WHERE ar.workspace_id = $1
+		  AND ar.trace_id = ANY($2::text[])
+		ORDER BY ar.started_at ` + order + `, ar.id ` + order + `
+	`
+	rows, err := s.db.QueryContext(ctx, q, workspaceID, pq.Array(traceIDs))
+	if err != nil {
+		return nil, fmt.Errorf("list agent runs with actors: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]RunFact, 0)
+	for rows.Next() {
+		var run RunFact
+		var finished sql.NullTime
+		var model []byte
+		var username, displayName, spName, clientID, clientName string
+		if err := rows.Scan(
+			&run.ID, &run.TraceID, &run.Status, &run.TriggeredByType, &run.TriggeredByID,
+			&model, &run.StartedAt, &finished,
+			&username, &displayName, &spName, &clientID, &clientName,
+		); err != nil {
+			return nil, err
+		}
+		run.ModelSnapshot = append(json.RawMessage(nil), model...)
+		run.StartedAt = run.StartedAt.UTC()
+		if finished.Valid {
+			t := finished.Time.UTC()
+			run.FinishedAt = &t
+		}
+		typ := strings.ToUpper(strings.TrimSpace(run.TriggeredByType))
+		switch typ {
+		case "USER":
+			run.TriggeredUsername = strings.TrimSpace(username)
+			run.TriggeredDisplayName = strings.TrimSpace(displayName)
+		case "SERVICE_PRINCIPAL", "SERVICE":
+			// Prefer client display name, then service principal name.
+			run.TriggeredClientID = strings.TrimSpace(clientID)
+			run.TriggeredClientName = strings.TrimSpace(clientName)
+			run.TriggeredDisplayName = firstNonEmpty(clientName, spName)
+			run.TriggeredUsername = firstNonEmpty(clientID, spName)
+		}
+		out = append(out, run)
+	}
+	return out, rows.Err()
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if s := strings.TrimSpace(v); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func (s *Service) enrichStepAgentNames(ctx context.Context, workspaceID string, steps []Step) error {
+	ids := collectAgentIDsFromSteps(steps)
+	if len(ids) == 0 {
+		return nil
+	}
+	names, err := s.loadAgentNames(ctx, workspaceID, ids)
+	if err != nil {
+		return err
+	}
+	applyAgentNamesToSteps(steps, names)
+	return nil
+}
+
+func collectAgentIDsFromSteps(steps []Step) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	var walk func([]Step)
+	walk = func(list []Step) {
+		for _, st := range list {
+			for _, id := range []string{st.CallerAgentID, st.TargetAgentID, st.AgentID} {
+				id = strings.TrimSpace(id)
+				if id == "" {
+					continue
+				}
+				if _, ok := seen[id]; ok {
+					continue
+				}
+				seen[id] = struct{}{}
+				out = append(out, id)
+			}
+			if len(st.Children) > 0 {
+				walk(st.Children)
+			}
+		}
+	}
+	walk(steps)
+	return out
+}
+
+func (s *Service) loadAgentNames(ctx context.Context, workspaceID string, agentIDs []string) (map[string]string, error) {
+	out := map[string]string{}
+	if len(agentIDs) == 0 {
+		return out, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id::text, COALESCE(name, '')
+		FROM agents
+		WHERE workspace_id = $1 AND id = ANY($2::uuid[])
+	`, workspaceID, pq.Array(agentIDs))
+	if err != nil {
+		return nil, fmt.Errorf("load agent names for audit: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(name) != "" {
+			out[id] = name
+		}
+	}
+	return out, rows.Err()
+}
+
+func applyAgentNamesToSteps(steps []Step, names map[string]string) {
+	for i := range steps {
+		if n := names[strings.TrimSpace(steps[i].CallerAgentID)]; n != "" {
+			steps[i].CallerAgentName = n
+		}
+		if n := names[strings.TrimSpace(steps[i].TargetAgentID)]; n != "" {
+			steps[i].TargetAgentName = n
+		}
+		if len(steps[i].Children) > 0 {
+			applyAgentNamesToSteps(steps[i].Children, names)
+		}
+	}
 }
 
 // hydrateCompactSummaryBodies fills context_compaction Content from encrypted objects.

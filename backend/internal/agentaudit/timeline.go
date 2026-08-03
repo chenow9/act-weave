@@ -19,12 +19,14 @@ func AggregateListItem(runs []RunFact, stepCount int) TraceListItem {
 		return runs[i].StartedAt.Before(runs[j].StartedAt)
 	})
 	first, last := runs[0], runs[len(runs)-1]
+	actor := actorSummary(first)
 	item := TraceListItem{
 		TraceID:   first.TraceID,
 		StartedAt: first.StartedAt,
 		Status:    aggregateStatus(runs),
 		Model:     modelNameFromSnapshot(last.ModelSnapshot),
 		UserLabel: userLabel(first),
+		User:      actor,
 		StepCount: stepCount,
 		RunIDs:    runIDs(runs),
 	}
@@ -84,13 +86,60 @@ func runIDs(runs []RunFact) []string {
 }
 
 func userLabel(run RunFact) string {
+	typ := strings.ToUpper(strings.TrimSpace(run.TriggeredByType))
+	// USER: prefer login username (stable for search / deep-link), then display name.
+	if typ == "USER" {
+		if name := strings.TrimSpace(run.TriggeredUsername); name != "" {
+			return name
+		}
+		if name := strings.TrimSpace(run.TriggeredDisplayName); name != "" {
+			return name
+		}
+	}
+	// Service principals / clients: prefer client name, then principal name, then client id.
+	if name := strings.TrimSpace(run.TriggeredClientName); name != "" {
+		return name
+	}
+	if name := strings.TrimSpace(run.TriggeredDisplayName); name != "" {
+		return name
+	}
+	if name := strings.TrimSpace(run.TriggeredUsername); name != "" {
+		return name
+	}
+	if id := strings.TrimSpace(run.TriggeredClientID); id != "" {
+		return id
+	}
 	if strings.TrimSpace(run.TriggeredByID) == "" {
-		return run.TriggeredByType
+		if t := strings.TrimSpace(run.TriggeredByType); t != "" {
+			return t
+		}
+		return "未知"
 	}
+	// Fallback when profile is missing: keep type prefix so UI can still group / deep-link.
 	if run.TriggeredByType != "" {
-		return run.TriggeredByType + ":" + run.TriggeredByID
+		return run.TriggeredByType + ":" + strings.TrimSpace(run.TriggeredByID)
 	}
-	return run.TriggeredByID
+	return strings.TrimSpace(run.TriggeredByID)
+}
+
+func actorSummary(run RunFact) *ActorSummary {
+	typ := strings.TrimSpace(run.TriggeredByType)
+	id := strings.TrimSpace(run.TriggeredByID)
+	if typ == "" && id == "" &&
+		strings.TrimSpace(run.TriggeredUsername) == "" &&
+		strings.TrimSpace(run.TriggeredDisplayName) == "" &&
+		strings.TrimSpace(run.TriggeredClientID) == "" &&
+		strings.TrimSpace(run.TriggeredClientName) == "" {
+		return nil
+	}
+	return &ActorSummary{
+		Type:        typ,
+		ID:          id,
+		Username:    strings.TrimSpace(run.TriggeredUsername),
+		DisplayName: strings.TrimSpace(run.TriggeredDisplayName),
+		ClientID:    strings.TrimSpace(run.TriggeredClientID),
+		ClientName:  strings.TrimSpace(run.TriggeredClientName),
+	}
 }
 
 func modelNameFromSnapshot(snapshot json.RawMessage) string {
@@ -199,7 +248,7 @@ func BuildTimeline(
 	detail := TraceDetail{
 		TraceID: list.TraceID, StartedAt: list.StartedAt, FinishedAt: list.FinishedAt,
 		LatencyMs: list.LatencyMs, Status: list.Status, Model: list.Model,
-		UserLabel: list.UserLabel, DebugMode: debugMode, Steps: out, RunIDs: list.RunIDs,
+		UserLabel: list.UserLabel, User: list.User, DebugMode: debugMode, Steps: out, RunIDs: list.RunIDs,
 		StepTotal: len(out), StepOffset: 0, StepLimit: len(out), HasMore: false,
 	}
 	return detail

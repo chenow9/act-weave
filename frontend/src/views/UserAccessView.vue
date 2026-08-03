@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import "./user-access-page.css";
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 
 import AppSelect, { type AppSelectOption } from "../components/AppSelect.vue";
 import ManagementList, { type ManagementListColumn } from "../components/ManagementList.vue";
@@ -11,6 +12,7 @@ import { useUserStore, type CreateUserInput, type UpdateUserProfileInput } from 
 import type { PlatformRole, User, UserStatus } from "../types/domain";
 
 const users = useUserStore();
+const route = useRoute();
 const filters = reactive({ query: "", status: "" as UserStatus | "", platformRole: "" as PlatformRole | "" });
 const userSummaryItems = computed<ManagementSummaryItem[]>(() => [
   { label: "用户总数", value: users.pagination.total, icon: "fa-solid fa-users" },
@@ -170,7 +172,25 @@ const pendingActionDescription = computed(() => {
     : `禁止 ${action.user.username} 登录并撤销其现有登录会话。`;
 });
 
-onMounted(() => void loadUsers());
+function applyRouteSearch() {
+  const q = route.query.q;
+  if (typeof q === "string" && q.trim()) {
+    filters.query = q.trim();
+  }
+}
+
+onMounted(() => {
+  applyRouteSearch();
+  void loadUsers(1);
+});
+
+watch(
+  () => route.query.q,
+  () => {
+    applyRouteSearch();
+    void loadUsers(1);
+  },
+);
 
 async function loadUsers(page = users.pagination.page, pageSize = users.pagination.pageSize) {
   clearFeedback();

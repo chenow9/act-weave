@@ -248,11 +248,12 @@ func (r *Repository) SearchUsers(ctx context.Context, query UserListQuery) (User
 	}
 	status, platformRole := optionalStatus(query.Status), optionalPlatformRole(query.PlatformRole)
 	var total int64
+	// Search username / display_name / email, and also full user id (audit deep-links).
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM users
 		WHERE ($1 = '' OR strpos(lower(
-			username::TEXT || ' ' || display_name || ' ' || COALESCE(email::TEXT, '')
+			username::TEXT || ' ' || display_name || ' ' || COALESCE(email::TEXT, '') || ' ' || id::TEXT
 		), lower($1)) > 0)
 		  AND ($2 = '' OR status = $2)
 		  AND ($3 = '' OR platform_role = $3)
@@ -262,7 +263,7 @@ func (r *Repository) SearchUsers(ctx context.Context, query UserListQuery) (User
 	rows, err := r.db.QueryContext(ctx, `SELECT `+userColumns+`
 		FROM users
 		WHERE ($1 = '' OR strpos(lower(
-			username::TEXT || ' ' || display_name || ' ' || COALESCE(email::TEXT, '')
+			username::TEXT || ' ' || display_name || ' ' || COALESCE(email::TEXT, '') || ' ' || id::TEXT
 		), lower($1)) > 0)
 		  AND ($2 = '' OR status = $2)
 		  AND ($3 = '' OR platform_role = $3)

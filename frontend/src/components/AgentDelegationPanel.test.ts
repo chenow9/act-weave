@@ -84,13 +84,12 @@ describe("AgentDelegationPanel", () => {
     });
     await flushPromises();
     expect(wrapper.text()).toContain("call_b");
-    expect(wrapper.text()).toContain("禁用");
+    expect(wrapper.text()).toContain("已停用");
     expect(wrapper.text()).toContain("remote_x");
     // authModes is authoritative: NONE absent when not listed by capabilities.
-    const noneOpt = wrapper
-      .findAll("option")
-      .find((o) => (o.element as HTMLOptionElement).value === "NONE");
-    expect(noneOpt).toBeFalsy();
+    const authSelects = wrapper.findAllComponents({ name: "AppSelect" });
+    const authOptions = authSelects.flatMap((s) => (s.props("options") as { value: string }[]) || []);
+    expect(authOptions.some((o) => o.value === "NONE")).toBe(false);
 
     // Re-enable exposure (optimistic version) — only disabled items have active 重新启用.
     const enableBtns = wrapper
@@ -146,10 +145,9 @@ describe("AgentDelegationPanel", () => {
     });
     await flushPromises();
     expect(mocks.getA2ACapabilities).toHaveBeenCalledWith("ws1");
-    const noneOpts = wrapper
-      .findAll("option")
-      .filter((o) => (o.element as HTMLOptionElement).value === "NONE");
-    expect(noneOpts.length).toBeGreaterThan(0);
+    const authSelects = wrapper.findAllComponents({ name: "AppSelect" });
+    const authOptions = authSelects.flatMap((s) => (s.props("options") as { value: string }[]) || []);
+    expect(authOptions.some((o) => o.value === "NONE")).toBe(true);
   });
 
   it("saves full binding and remote field edit payloads", async () => {
