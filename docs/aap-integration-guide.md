@@ -1,5 +1,7 @@
 # ActWeave Agent Access Protocol (AAP) — Third-Party Integration Guide
 
+[中文](./aap-integration-guide.zh-CN.md) · [Documentation home](./README.md) · [AAP integration index](./integrations/aap.md)
+
 | | |
 | --- | --- |
 | **Audience** | External platforms integrating with ActWeave Agents |
@@ -9,7 +11,7 @@
 | **Language** | English (API identifiers, codes, and examples are authoritative) |
 | **中文版** | [`aap-integration-guide.zh-CN.md`](./aap-integration-guide.zh-CN.md) |
 
-This is the **handoff document** for third-party integrators (paired with the Chinese edition). Field-level schemas and enums live in OpenAPI and the Schema Registry; do not invent fields from prose alone.
+This is the detailed **handoff document** for third-party integrators (paired with the Chinese edition). Field-level schemas and enums live in OpenAPI and the Schema Registry; do not invent fields from prose alone.
 
 Product overview and local run: root [`README.md`](../README.md) / [`README.zh-CN.md`](../README.zh-CN.md).
 
@@ -17,7 +19,7 @@ Product overview and local run: root [`README.md`](../README.md) / [`README.zh-C
 
 ## 1. What AAP is
 
-**Agent Access Protocol (AAP)** is the **external, stable API** for service principals to:
+**Agent Access Protocol (AAP)** is the versioned external runtime API for service principals to:
 
 1. Authenticate as an **Agent Access Client**
 2. Obtain a **short-lived Access Token** bound to one Workspace + one Agent

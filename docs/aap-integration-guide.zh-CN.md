@@ -1,5 +1,7 @@
 # ActWeave Agent Access Protocol（AAP）— 第三方对接指南
 
+[English](./aap-integration-guide.md) · [文档首页](./README.zh-CN.md) · [AAP 接入索引](./integrations/aap.zh-CN.md)
+
 | | |
 | --- | --- |
 | **读者** | 需要对接 ActWeave Agent 的外部平台 / 集成方 |
@@ -8,13 +10,13 @@
 | **TypeScript SDK** | `sdk/typescript` → `@actweave/agent-client` |
 | **英文版（同等内容）** | [`aap-integration-guide.md`](./aap-integration-guide.md) |
 
-本文是第三方对接的**唯一人类可读说明**。字段级 schema、枚举以 OpenAPI / Schema Registry 为准，不要仅凭文字臆造字段。
+本文是第三方对接的详细交付说明。字段级 schema、枚举以 OpenAPI / Schema Registry 为准，不要仅凭文字臆造字段。
 
 ---
 
 ## 1. AAP 是什么
 
-**Agent Access Protocol（AAP）** 是面向服务主体的**对外稳定 API**，用于：
+**Agent Access Protocol（AAP）** 是面向服务主体的版本化对外运行 API，用于：
 
 1. 以 **Agent Access Client** 身份完成客户端认证  
 2. 获取绑定 **一个 Workspace + 一个 Agent** 的**短期 Access Token**  
@@ -243,7 +245,7 @@ Content-Type: application/json
 }
 ```
 
-默认部署接受 **text** 消息内容。当 AAP files 已启用且文件为 `ready` 时，还可附加 `{ "type": "input_file", "fileId": "<uuid>" }` 部分（见 [§9.1](#91-文件可选)）。未知内容类型 → `UNSUPPORTED_CONTENT_TYPE`。多模态模型装配额外依赖 **`RuntimeMultimodal`**（运营开关；默认关闭）。
+默认部署接受 **text** 消息内容。当 AAP files 已启用且文件为 `ready` 时，还可附加 `{ "type": "input_file", "fileId": "<uuid>" }` 部分（见本页「9.1 文件（可选）」）。未知内容类型 → `UNSUPPORTED_CONTENT_TYPE`。多模态模型装配额外依赖 **`RuntimeMultimodal`**（运营开关；默认关闭）。
 
 ### 步骤 4 — 跟随 Run 事件（SSE）
 

@@ -5,19 +5,44 @@
  * Usage:
  *   node scripts/seed-readme-demo-workspace.mjs
  *   node scripts/capture-readme-screenshots.mjs
+ *
+ * Optional English capture (separate assets, excluding views with visible
+ * untranslated strings):
+ *   ACTWEAVE_SCREENSHOT_LOCALE=en \
+ *   ACTWEAVE_SCREENSHOT_OUTPUT_DIR=docs/images/readme/en \
+ *   node scripts/capture-readme-screenshots.mjs
  */
 import { chromium } from "../frontend/node_modules/playwright/index.mjs";
-import { mkdirSync, readFileSync, existsSync, readdirSync, unlinkSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  existsSync,
+  readdirSync,
+  unlinkSync,
+} from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
-const OUT = resolve(ROOT, "docs/images/readme");
+const SCREENSHOT_LOCALE =
+  process.env.ACTWEAVE_SCREENSHOT_LOCALE === "en" ? "en" : "zh-CN";
+const OUT = resolve(
+  ROOT,
+  process.env.ACTWEAVE_SCREENSHOT_OUTPUT_DIR ||
+    (SCREENSHOT_LOCALE === "en"
+      ? "docs/images/readme/en"
+      : "docs/images/readme"),
+);
 const BASE = process.env.ACTWEAVE_UI_URL || "http://127.0.0.1:5173";
 const USER = process.env.ACTWEAVE_ADMIN_USER || "admin";
 const PASS = process.env.ACTWEAVE_ADMIN_PASS || "actweave-admin-dev-change-me";
 const ACTIVE_WS_KEY = "actweave:active-workspace-id";
+const DEMO_WORKSPACE_FILTER =
+  process.env.ACTWEAVE_DEMO_WORKSPACE_FILTER ||
+  (SCREENSHOT_LOCALE === "en"
+    ? "Acme Commerce Demo — English"
+    : "Acme Commerce");
 
 mkdirSync(OUT, { recursive: true });
 
@@ -35,17 +60,33 @@ function clearOldPngs() {
 }
 
 const pages = [
-  { name: "01-login", path: "/login", needAuth: false, wait: 700 },
+  ...(SCREENSHOT_LOCALE === "en"
+    ? []
+    : [{ name: "01-login", path: "/login", needAuth: false, wait: 700 }]),
   { name: "02-overview", path: "/overview", needAuth: true, wait: 1400 },
   { name: "03-workspaces", path: "/workspaces", needAuth: true, wait: 1200 },
   { name: "04-agents", path: "/agents", needAuth: true, wait: 1500 },
   { name: "05-tools", path: "/tools", needAuth: true, wait: 1500 },
   { name: "06-workflow", path: "/workflow", needAuth: true, wait: 1500 },
-  { name: "07-smart-dag", path: "/smart-dag", needAuth: true, wait: 1400 },
+  ...(SCREENSHOT_LOCALE === "en"
+    ? []
+    : [
+        {
+          name: "07-smart-dag",
+          path: "/smart-dag",
+          needAuth: true,
+          wait: 1400,
+        },
+      ]),
   { name: "08-providers", path: "/providers", needAuth: true, wait: 1200 },
   { name: "09-connections", path: "/connections", needAuth: true, wait: 1200 },
   { name: "10-model-apis", path: "/model-apis", needAuth: true, wait: 1200 },
-  { name: "11-agent-access", path: "/agent-access", needAuth: true, wait: 1400 },
+  {
+    name: "11-agent-access",
+    path: "/agent-access",
+    needAuth: true,
+    wait: 1400,
+  },
   { name: "12-chat", path: "/chat", needAuth: true, wait: 1500 },
   { name: "13-logs", path: "/logs", needAuth: true, wait: 1400 },
 ];
@@ -57,7 +98,14 @@ async function shot(page, name) {
 }
 
 async function login(page, workspaceId) {
-  await page.goto(`${BASE}/login`, { waitUntil: "networkidle", timeout: 60_000 });
+  await page.goto(`${BASE}/login`, {
+    waitUntil: "networkidle",
+    timeout: 60_000,
+  });
+  if (SCREENSHOT_LOCALE === "en") {
+    const english = page.locator('[data-testid="login-lang-en"]');
+    if (await english.isVisible().catch(() => false)) await english.click();
+  }
   if (workspaceId) {
     await page.evaluate(
       ([key, id]) => localStorage.setItem(key, id),
@@ -65,9 +113,16 @@ async function login(page, workspaceId) {
     );
   }
   await page.fill('input[autocomplete="username"]', USER);
-  await page.fill('input[type="password"], input[autocomplete="current-password"]', PASS);
+  await page.fill(
+    'input[type="password"], input[autocomplete="current-password"]',
+    PASS,
+  );
   await Promise.all([
-    page.waitForURL((url) => !url.pathname.includes("/login"), { timeout: 30_000 }).catch(() => null),
+    page
+      .waitForURL((url) => !url.pathname.includes("/login"), {
+        timeout: 30_000,
+      })
+      .catch(() => null),
     page.click('button[type="submit"]'),
   ]);
   await page.waitForTimeout(900);
@@ -83,7 +138,9 @@ async function openNav(page) {
   const trigger = page.locator("button.fluid-trigger").first();
   await trigger.click();
   await page.waitForTimeout(500);
-  await page.locator(".fluid-content").waitFor({ state: "visible", timeout: 5000 });
+  await page
+    .locator(".fluid-content")
+    .waitFor({ state: "visible", timeout: 5000 });
 }
 
 async function closeNav(page) {
@@ -125,15 +182,24 @@ const context = await browser.newContext({
 const page = await context.newPage();
 
 try {
-  // 01 login
-  await page.goto(`${BASE}/login`, { waitUntil: "networkidle", timeout: 60_000 });
-  await page.waitForTimeout(600);
-  await shot(page, "01-login");
+  // 01 login: the English UI still shows a Chinese locale option, so do not
+  // write it into the English documentation screenshot set.
+  if (SCREENSHOT_LOCALE !== "en") {
+    await page.goto(`${BASE}/login`, {
+      waitUntil: "networkidle",
+      timeout: 60_000,
+    });
+    await page.waitForTimeout(600);
+    await shot(page, "01-login");
+  }
 
   await login(page, workspaceId);
 
   // 00 navigation menu (open island with full module list)
-  await page.goto(`${BASE}/agents`, { waitUntil: "networkidle", timeout: 60_000 });
+  await page.goto(`${BASE}/agents`, {
+    waitUntil: "networkidle",
+    timeout: 60_000,
+  });
   await page.waitForTimeout(800);
   await ensureWorkspaceSelected(page, workspaceId);
   await openNav(page);
@@ -142,16 +208,21 @@ try {
   await closeNav(page);
 
   // 00b workspace switcher — filter to demo name so README does not show other tenants
-  await page.goto(`${BASE}/tools`, { waitUntil: "networkidle", timeout: 60_000 });
+  await page.goto(`${BASE}/tools`, {
+    waitUntil: "networkidle",
+    timeout: 60_000,
+  });
   await page.waitForTimeout(700);
   await ensureWorkspaceSelected(page, workspaceId);
   const sw = page.locator('[data-testid="workspace-switcher"]');
   if (await sw.isVisible().catch(() => false)) {
     await sw.click();
     await page.waitForTimeout(400);
-    const search = page.locator('.workspace-switcher-menu input[type="search"]');
+    const search = page.locator(
+      '.workspace-switcher-menu input[type="search"]',
+    );
     if (await search.isVisible().catch(() => false)) {
-      await search.fill("Acme Commerce");
+      await search.fill(DEMO_WORKSPACE_FILTER);
       await page.waitForTimeout(400);
     }
     await shot(page, "00-workspace-switcher");
@@ -161,16 +232,35 @@ try {
 
   for (const item of pages) {
     if (!item.needAuth) continue;
-    await page.goto(`${BASE}${item.path}`, { waitUntil: "networkidle", timeout: 60_000 });
+    await page.goto(`${BASE}${item.path}`, {
+      waitUntil: "networkidle",
+      timeout: 60_000,
+    });
     await page.waitForTimeout(item.wait);
-    if (item.path !== "/overview" && item.path !== "/workspaces" && item.path !== "/logs") {
+    if (
+      item.path !== "/overview" &&
+      item.path !== "/workspaces" &&
+      item.path !== "/logs"
+    ) {
       await ensureWorkspaceSelected(page, workspaceId);
       // re-goto so page reloads under selected workspace
-      await page.goto(`${BASE}${item.path}`, { waitUntil: "networkidle", timeout: 60_000 });
+      await page.goto(`${BASE}${item.path}`, {
+        waitUntil: "networkidle",
+        timeout: 60_000,
+      });
       await page.waitForTimeout(item.wait);
     }
+    if (item.path === "/workspaces" && SCREENSHOT_LOCALE === "en") {
+      const search = page.locator('input[type="search"]');
+      if (await search.isVisible().catch(() => false)) {
+        await search.fill(DEMO_WORKSPACE_FILTER);
+        await page.waitForTimeout(400);
+      }
+    }
     // dismiss dialogs
-    const close = page.locator('.el-dialog__headerbtn, button:has-text("取消")').first();
+    const close = page
+      .locator('.el-dialog__headerbtn, button:has-text("取消")')
+      .first();
     if (await close.isVisible().catch(() => false)) {
       await close.click().catch(() => null);
       await page.waitForTimeout(200);
@@ -182,4 +272,3 @@ try {
 }
 
 console.log("done ->", OUT);
-
