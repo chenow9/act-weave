@@ -5,6 +5,7 @@
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type { AgentAuditStep } from "../types/domain";
+import { localizedAuditStepTitle } from "../utils/audit-step-i18n";
 import AgentAuditStepNode from "./AgentAuditStepNode.vue";
 
 const { t } = useI18n();
@@ -21,6 +22,9 @@ const props = defineProps<{
 }>();
 
 const expanded = ref(!(props.step.collapsed || (props.step.depth != null && props.step.depth > 1)));
+
+/** Locale-aware title — backend still ships fixed Chinese step titles. */
+const displayTitle = computed(() => localizedAuditStepTitle(props.step, t));
 
 function toggle() {
   expanded.value = !expanded.value;
@@ -103,7 +107,7 @@ function delegationPath(step: AgentAuditStep): string {
           >
             <i :class="expanded ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'"></i>
           </button>
-          {{ step.title }}
+          {{ displayTitle }}
         </h3>
         <span v-if="step.latencyMs != null" class="mono pill">{{ formatLatency(step.latencyMs) }}</span>
         <span

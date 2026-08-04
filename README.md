@@ -122,7 +122,9 @@ Screenshots in this English document use the fictional `Acme Commerce Demo — E
 | --- | --- |
 | ![Agent management](./docs/images/readme/en/04-agents.png) | ![Workflow](./docs/images/readme/en/06-workflow.png) |
 
-![Agent audit center](./docs/images/readme/en/13-logs.png)
+Agent audit Trace detail for a demo order flow: AAP Client `Acme Partner App` → Conversation/Run → model turn → inventory Agent delegation (`check_inventory`) → `create_order` → final output (latency and success status on the timeline).
+
+![Agent audit Trace detail](./docs/images/readme/en/13-logs.png)
 
 ## Quick start
 

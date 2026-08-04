@@ -14,6 +14,7 @@ import { useAgentAuditStore } from "../stores/agentAudit";
 import { useAuthStore } from "../stores/auth";
 import { useWorkspaceStore } from "../stores/workspaces";
 import type { AgentAuditActor, AgentAuditStep, AgentAuditTraceListItem } from "../types/domain";
+import { isMissingReasoningContent } from "../utils/audit-step-i18n";
 
 const { t } = useI18n();
 const agentAudit = useAgentAuditStore();
@@ -557,12 +558,9 @@ function delegationMeta(step: AgentAuditStep) {
 }
 
 function stepText(step: AgentAuditStep) {
-  if (
-    step.type === "reasoning" &&
-    (!step.content || step.contentState === "missing" || step.contentState === "redacted")
-  ) {
-    const fallback = step.content || t("logs.noReasoning");
-    return agentAudit.isMasked ? maskSensitiveText(fallback) : fallback;
+  // Backend MissingReasoningText is fixed Chinese; always map to locale string.
+  if (isMissingReasoningContent(step)) {
+    return t("logs.noReasoning");
   }
   if (!step.content) return "";
   return agentAudit.isMasked ? maskSensitiveText(step.content) : step.content;

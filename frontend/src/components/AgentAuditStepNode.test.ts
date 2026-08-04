@@ -172,4 +172,40 @@ describe("AgentAuditStepNode origin-aware path", () => {
     expect(w.find('[data-testid="delegation-attempts"]').exists()).toBe(false);
     w.unmount();
   });
+
+  it("localizes Chinese backend titles when UI locale is English", () => {
+    const step: AgentAuditStep = {
+      type: "tool",
+      title: "工具调用: check_inventory",
+      timeOffsetMs: 0,
+    };
+    const w = mount(AgentAuditStepNode, {
+      props: { step, index: 0, depth: 0, ...stubs },
+      global: { plugins: [createTestI18n("en")] },
+    });
+    expect(w.get("h3").text()).toContain("Tool call: check_inventory");
+    expect(w.get("h3").text()).not.toContain("工具调用");
+    w.unmount();
+  });
+
+  it("localizes agent_delegation title prefix in English", () => {
+    const step: AgentAuditStep = {
+      type: "agent_delegation",
+      title: "Agent 调用: inventory_agent (019fca7b → 5290c409)",
+      timeOffsetMs: 0,
+      protocol: "INTERNAL",
+      origin: "INTERNAL",
+      mode: "TASK",
+      depth: 1,
+      children: [{ type: "tool", title: "工具调用: x", timeOffsetMs: 1 }],
+    };
+    const w = mount(AgentAuditStepNode, {
+      props: { step, index: 0, depth: 0, ...stubs },
+      global: { plugins: [createTestI18n("en")] },
+    });
+    expect(w.get("h3").text()).toContain("Agent call: inventory_agent");
+    expect(w.get("h3").text()).toContain("(019fca7b → 5290c409)");
+    expect(w.get("h3").text()).not.toMatch(/Agent 调用/);
+    w.unmount();
+  });
 });

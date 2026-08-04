@@ -48,7 +48,7 @@ Agent Access 管理 AAP Client、凭证与授权等控制面对象。运行调�
 
 ## 审计
 
-Agent 审计中心截图位于[项目首页](../README.zh-CN.md#产品预览)。平台管理员可按 Trace 查看运行时间轴；可关联的细节和可读取的正文受权限、保留与调试配置影响，详见[架构](./architecture.zh-CN.md#运行面)。
+Agent 审计 Trace 详情截图位于[项目首页](../README.zh-CN.md#产品预览)。截图展示演示下单链路：AAP Client → Conversation/Run → 模型决策 → 委派库存 Agent（`check_inventory`）→ `create_order` → 最终输出。平台管理员可按 Trace 查看运行时间轴；可关联的细节和可读取的正文受权限、保留与调试配置影响，详见[架构](./architecture.zh-CN.md#运行面)。
 
 ## 重新生成截图
 

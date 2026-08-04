@@ -4,6 +4,7 @@
  *
  * Usage:
  *   node scripts/seed-readme-demo-workspace.mjs
+ *   node scripts/seed-readme-audit-trace.mjs          # full AAP→delegation Trace
  *   node scripts/capture-readme-screenshots.mjs
  *
  * Optional English capture (separate assets, excluding views with visible
@@ -11,6 +12,13 @@
  *   ACTWEAVE_SCREENSHOT_LOCALE=en \
  *   ACTWEAVE_SCREENSHOT_OUTPUT_DIR=docs/images/readme/en \
  *   node scripts/capture-readme-screenshots.mjs
+ *
+ * For both locales of the audit Trace screenshot after reseeding:
+ *   node scripts/seed-readme-audit-trace.mjs --both
+ *   ACTWEAVE_UI_URL=http://127.0.0.1:5174 node scripts/capture-readme-screenshots.mjs
+ *   ACTWEAVE_SCREENSHOT_LOCALE=en ACTWEAVE_UI_URL=http://127.0.0.1:5174 \
+ *     ACTWEAVE_SCREENSHOT_OUTPUT_DIR=docs/images/readme/en \
+ *     node scripts/capture-readme-screenshots.mjs
  */
 import { chromium } from "../frontend/node_modules/playwright/index.mjs";
 import {
@@ -34,15 +42,29 @@ const OUT = resolve(
       ? "docs/images/readme/en"
       : "docs/images/readme"),
 );
-const BASE = process.env.ACTWEAVE_UI_URL || "http://127.0.0.1:5173";
+const BASE = process.env.ACTWEAVE_UI_URL || "http://127.0.0.1:5174";
 const USER = process.env.ACTWEAVE_ADMIN_USER || "admin";
 const PASS = process.env.ACTWEAVE_ADMIN_PASS || "actweave-admin-dev-change-me";
 const ACTIVE_WS_KEY = "actweave:active-workspace-id";
+const LOCALE_STORAGE_KEY = "actweave.locale";
 const DEMO_WORKSPACE_FILTER =
   process.env.ACTWEAVE_DEMO_WORKSPACE_FILTER ||
   (SCREENSHOT_LOCALE === "en"
     ? "Acme Commerce Demo — English"
     : "Acme Commerce");
+
+function loadDemoTraceId() {
+  const p = resolve(OUT, "demo-audit-trace.json");
+  if (existsSync(p)) {
+    try {
+      const meta = JSON.parse(readFileSync(p, "utf8"));
+      if (meta?.traceId) return String(meta.traceId);
+    } catch {
+      // ignore
+    }
+  }
+  return process.env.ACTWEAVE_DEMO_TRACE_ID || "";
+}
 
 mkdirSync(OUT, { recursive: true });
 
@@ -91,10 +113,57 @@ const pages = [
   { name: "13-logs", path: "/logs", needAuth: true, wait: 1400 },
 ];
 
-async function shot(page, name) {
+async function shot(page, name, { fullPage = false } = {}) {
   const file = resolve(OUT, `${name}.png`);
-  await page.screenshot({ path: file, fullPage: false });
+  await page.screenshot({ path: file, fullPage });
   console.log("wrote", file);
+}
+
+async function forceLocale(page) {
+  const langBtn = page.locator(
+    SCREENSHOT_LOCALE === "en"
+      ? '[data-testid="login-lang-en"]'
+      : '[data-testid="login-lang-zh-CN"]',
+  );
+  if (await langBtn.isVisible().catch(() => false)) await langBtn.click();
+  await page.evaluate(
+    ([key, loc]) => localStorage.setItem(key, loc),
+    [LOCALE_STORAGE_KEY, SCREENSHOT_LOCALE],
+  );
+}
+
+/** After login, server user.locale may override storage — switch via shell menu. */
+async function forceLocaleAfterLogin(page) {
+  await page.evaluate(
+    ([key, loc]) => localStorage.setItem(key, loc),
+    [LOCALE_STORAGE_KEY, SCREENSHOT_LOCALE],
+  );
+  const triggers = [
+    '[data-testid="user-menu-trigger"]',
+    '[data-testid="profile-menu-trigger"]',
+    "button:has-text('AA')",
+    ".topbar-avatar",
+    ".profile-trigger",
+  ];
+  for (const sel of triggers) {
+    const el = page.locator(sel).first();
+    if (await el.isVisible().catch(() => false)) {
+      await el.click().catch(() => null);
+      await page.waitForTimeout(200);
+      break;
+    }
+  }
+  const lang = page.locator(
+    SCREENSHOT_LOCALE === "en"
+      ? '[data-testid="lang-en"]'
+      : '[data-testid="lang-zh-CN"]',
+  );
+  if (await lang.isVisible().catch(() => false)) {
+    await lang.click();
+    await page.waitForTimeout(400);
+    return;
+  }
+  await page.keyboard.press("Escape").catch(() => null);
 }
 
 async function login(page, workspaceId) {
@@ -102,10 +171,7 @@ async function login(page, workspaceId) {
     waitUntil: "networkidle",
     timeout: 60_000,
   });
-  if (SCREENSHOT_LOCALE === "en") {
-    const english = page.locator('[data-testid="login-lang-en"]');
-    if (await english.isVisible().catch(() => false)) await english.click();
-  }
+  await forceLocale(page);
   if (workspaceId) {
     await page.evaluate(
       ([key, id]) => localStorage.setItem(key, id),
@@ -132,6 +198,7 @@ async function login(page, workspaceId) {
       [ACTIVE_WS_KEY, workspaceId],
     );
   }
+  await forceLocaleAfterLogin(page);
 }
 
 async function openNav(page) {
@@ -172,12 +239,16 @@ async function ensureWorkspaceSelected(page, workspaceId) {
 
 clearOldPngs();
 const workspaceId = loadWorkspaceId();
+const demoTraceId = loadDemoTraceId();
 console.log("demo workspaceId:", workspaceId || "(none — will use default)");
+console.log("demo traceId:", demoTraceId || "(open first list row)");
 
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({
-  viewport: { width: 1440, height: 900 },
+  // Taller viewport so expanded Trace detail fits README screenshots.
+  viewport: { width: 1440, height: 1700 },
   deviceScaleFactor: 1,
+  locale: SCREENSHOT_LOCALE === "en" ? "en-US" : "zh-CN",
 });
 const page = await context.newPage();
 
@@ -257,6 +328,19 @@ try {
         await page.waitForTimeout(400);
       }
     }
+
+    // Agent audit: capture expanded Trace detail (not the empty list state).
+    if (item.path === "/logs") {
+      await ensureWorkspaceSelected(page, workspaceId);
+      await page.goto(`${BASE}/logs`, {
+        waitUntil: "networkidle",
+        timeout: 60_000,
+      });
+      await page.waitForTimeout(1200);
+      await openAuditTraceDetail(page, demoTraceId);
+      await page.waitForTimeout(900);
+    }
+
     // dismiss dialogs
     const close = page
       .locator('.el-dialog__headerbtn, button:has-text("取消")')
@@ -265,10 +349,71 @@ try {
       await close.click().catch(() => null);
       await page.waitForTimeout(200);
     }
-    await shot(page, item.name);
+    // Trace detail benefits from fullPage so nested Agent/Tool steps are visible.
+    await shot(page, item.name, { fullPage: item.path === "/logs" });
   }
 } finally {
   await browser.close();
+}
+
+/**
+ * Open the seeded (or first) audit Trace detail so README shows the
+ * Client → Run → Model → Agent delegation → Tool timeline.
+ */
+async function openAuditTraceDetail(page, preferredTraceId) {
+  // Prefer clicking the seeded trace row when present.
+  if (preferredTraceId) {
+    const row = page
+      .locator("code.aw-table-mono, .aw-table-mono")
+      .filter({ hasText: preferredTraceId })
+      .first();
+    if (await row.isVisible().catch(() => false)) {
+      await row.click();
+      await page
+        .locator(".timeline, .timeline-item, .detail-header")
+        .first()
+        .waitFor({ state: "visible", timeout: 15_000 })
+        .catch(() => null);
+      await expandDelegations(page);
+      return;
+    }
+  }
+
+  // Fallback: first data row / detail action in the audit list.
+  const detailLink = page.locator(".audit-detail-link, tr.aw-table-row, tbody tr").first();
+  if (await detailLink.isVisible().catch(() => false)) {
+    await detailLink.click();
+    await page
+      .locator(".timeline, .timeline-item, .detail-header")
+      .first()
+      .waitFor({ state: "visible", timeout: 15_000 })
+      .catch(() => null);
+    await expandDelegations(page);
+  }
+}
+
+async function expandDelegations(page) {
+  const toggles = page.locator(
+    'button.delegation-toggle[aria-expanded="false"]',
+  );
+  const count = await toggles.count().catch(() => 0);
+  for (let i = 0; i < count; i++) {
+    const btn = toggles.nth(i);
+    if (await btn.isVisible().catch(() => false)) {
+      await btn.click().catch(() => null);
+      await page.waitForTimeout(150);
+    }
+  }
+  // Ensure nested tool/model cards are in view for the screenshot.
+  const nested = page.locator(".timeline-item.nested, .timeline-card.nested").first();
+  if (await nested.isVisible().catch(() => false)) {
+    await nested.scrollIntoViewIfNeeded().catch(() => null);
+  }
+  // Scroll timeline header into view so Client/status meta is visible.
+  const header = page.locator(".detail-header").first();
+  if (await header.isVisible().catch(() => false)) {
+    await header.scrollIntoViewIfNeeded().catch(() => null);
+  }
 }
 
 console.log("done ->", OUT);

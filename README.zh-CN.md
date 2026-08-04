@@ -122,7 +122,9 @@ ActWeave 旨在把企业已拥有的 API 安全地组织进 Agent 运行链路�
 | --- | --- |
 | ![Agent 管理](./docs/images/readme/04-agents.png) | ![Workflow](./docs/images/readme/06-workflow.png) |
 
-![Agent 审计中心](./docs/images/readme/13-logs.png)
+Agent 审计 Trace 详情（演示下单链路）：AAP Client `Acme Partner App` → Conversation/Run → 模型决策 → 委派库存 Agent（`check_inventory`）→ `create_order` → 最终输出；时间轴上可见发起方、状态、耗时与嵌套步骤。
+
+![Agent 审计 Trace 详情](./docs/images/readme/13-logs.png)
 
 ## 快速开始
 

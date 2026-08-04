@@ -48,7 +48,7 @@ Agent Access manages control-plane AAP Client, credential, and grant objects. Co
 
 ## Audit
 
-The Agent audit-center screenshot is on the [project home](../README.md#product-preview). Platform administrators can inspect Trace timelines; available detail and readable bodies depend on permissions, retention, and debug configuration. See [runtime plane](./architecture.md#runtime-plane).
+The Agent audit Trace detail screenshot is on the [project home](../README.md#product-preview). It shows a demo order path: AAP Client → Conversation/Run → model turn → inventory Agent delegation with `check_inventory` → `create_order` → final output. Platform administrators can inspect Trace timelines; available detail and readable bodies depend on permissions, retention, and debug configuration. See [runtime plane](./architecture.md#runtime-plane).
 
 ## Regenerate screenshots
 
