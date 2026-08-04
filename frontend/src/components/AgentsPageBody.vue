@@ -10,8 +10,10 @@ import ManagementSummaryStrip from "./ManagementSummaryStrip.vue";
 import AgentsStudioPanel from "./AgentsStudioPanel.vue";
 import AgentsDialogs from "./AgentsDialogs.vue";
 import WorkspaceContextState from "./WorkspaceContextState.vue";
+import { useI18n } from "vue-i18n";
 import { useAgentsPageContext } from "../composables/useAgentsPageContext";
 
+const { t } = useI18n();
 const scp = useAgentsPageContext();
 /* prettier-ignore */
 const {
@@ -33,12 +35,12 @@ void WorkspaceContextState;
   <div
     class="page-grid agent-grid management-page-grid"
     v-loading="pageInitialLoading"
-    element-loading-text="正在加载 Agent 列表…"
+    :element-loading-text="t('common.loading')"
   >
     <ManagementPageHeader
       class="span-12"
-      title="Agent 管理"
-      description="维护职责、绑定空间、模型配置与系统提示词。"
+      :title="t('agents.title')"
+      :description="t('agents.subtitle')"
       icon="fa-solid fa-user-gear"
     >
       <template #actions>
@@ -49,7 +51,7 @@ void WorkspaceContextState;
           @click="enterCreateMode"
         >
           <i class="fa-solid fa-circle-plus" aria-hidden="true" />
-          <span>新建 Agent</span>
+          <span>{{ t("agents.newAgent") }}</span>
         </button>
       </template>
     </ManagementPageHeader>
@@ -62,7 +64,7 @@ void WorkspaceContextState;
         <span>{{ statusSourceText }}</span>
       </div>
       <p v-if="hasAgentRecords" class="agent-narrow-notice" role="note">
-        当前页面按桌面宽度设计；在窄视口下请左右滚动表格查看完整列。
+        {{ t("agents.narrowNotice") }}
       </p>
 
       <ManagementList
@@ -79,8 +81,8 @@ void WorkspaceContextState;
         :error="agents.pageError"
         :has-loaded="agents.pageHasLoaded"
         :search="query"
-        search-placeholder="搜索 Agent / 角色职责..."
-        search-aria-label="搜索 Agent 或角色职责"
+        :search-placeholder="t('agents.search')"
+        :search-aria-label="t('agents.search')"
         :reset-disabled="!query && agentStatusFilter === 'ALL'"
         :pagination="agents.pagination"
         :sort-by="agents.listQuery?.sortBy"
@@ -95,7 +97,7 @@ void WorkspaceContextState;
           <ManagementSegmentedFilter
             :model-value="agentStatusFilter"
             :options="agentManagementFilterOptions"
-            ariaLabel="Agent 状态筛选"
+            :ariaLabel="t('agents.statusFilterAria')"
             @update:model-value="setAgentStatusFilter($event as AgentStatusFilter)"
           />
         </template>
@@ -128,16 +130,16 @@ void WorkspaceContextState;
             <button
               type="button"
               class="prompt-preview-trigger"
-              :title="agent.currentPromptRevisionId ? '查看系统提示词' : '该 Agent 尚无系统提示词'"
+              :title="agent.currentPromptRevisionId ? t('agents.viewPrompt') : t('agents.noPromptYet')"
               :aria-label="
-                agent.currentPromptRevisionId ? `查看 ${agent.name} 系统提示词` : `${agent.name} 暂无系统提示词`
+                agent.currentPromptRevisionId ? t('agents.viewPromptNamed', { name: agent.name }) : t('agents.noPromptNamed', { name: agent.name })
               "
               :disabled="!agent.currentPromptRevisionId"
               :aria-disabled="!agent.currentPromptRevisionId"
               @click.stop="agent.currentPromptRevisionId && openPromptDetail(agent)"
             >
               <i class="fa-solid fa-file-lines" aria-hidden="true" /><span>{{
-                agent.currentPromptRevisionId ? "查看" : "暂无提示词"
+                agent.currentPromptRevisionId ? t("agents.view") : t("agents.noPrompt")
               }}</span>
             </button>
           </span>
@@ -156,15 +158,15 @@ void WorkspaceContextState;
         <template #empty>
           <div v-if="!hasAgentRecords" class="empty-state registry-empty-state management-registry-empty-state">
             <div class="management-empty-state-icon"><i class="fa-solid fa-robot" aria-hidden="true" /></div>
-            <h2>暂无 Agent</h2>
-            <p>创建 Agent 后再绑定业务空间、模型配置和系统提示词。</p>
-            <button class="primary-button" type="button" @click="enterCreateMode">创建 Agent</button>
+            <h2>{{ t("agents.emptyTitle") }}</h2>
+            <p>{{ t("agents.emptyBody") }}</p>
+            <button class="primary-button" type="button" @click="enterCreateMode">{{ t("agents.createAgent") }}</button>
           </div>
           <div v-else class="empty-state registry-empty-state management-registry-empty-state">
             <div class="management-empty-state-icon"><i class="fa-solid fa-magnifying-glass" aria-hidden="true" /></div>
-            <h2>没有匹配的 Agent</h2>
-            <p>调整搜索词或状态后再试，或切换顶部业务空间查看其他空间的 Agent。</p>
-            <button class="ghost-button" type="button" @click="resetFilters">重置检索</button>
+            <h2>{{ t("agents.noMatchTitle") }}</h2>
+            <p>{{ t("agents.noMatchBody") }}</p>
+            <button class="ghost-button" type="button" @click="resetFilters">{{ t("agents.resetSearch") }}</button>
           </div>
         </template>
       </ManagementList>

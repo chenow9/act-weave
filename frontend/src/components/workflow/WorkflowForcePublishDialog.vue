@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 
 const props = defineProps<{
   visible: boolean;
@@ -11,6 +12,8 @@ const emit = defineEmits<{
   submit: [reason: string];
   close: [];
 }>();
+
+const { t } = useI18n();
 
 const dialogRef = ref<HTMLElement>();
 const reasonInputRef = ref<HTMLInputElement>();
@@ -94,15 +97,22 @@ function trapDialogFocus(event: KeyboardEvent) {
           <i class="fa-solid fa-bolt" />
         </div>
         <div>
-          <span>平台管理员 · 强制发布</span>
-          <h4 id="workflow-force-publish-title">{{ workflowName || "当前流程" }}</h4>
+          <span>{{ t("workflow.forcePublishBadge") }}</span>
+          <h4 id="workflow-force-publish-title">{{ workflowName || t("workflow.currentWorkflow") }}</h4>
           <p>
-            将<strong>跳过试运行</strong>，把当前 VALID
-            编译直接冻结为已发布版本。不会调用真实业务链路做验证，请确认影响面后继续。
+            {{ t("workflow.forcePublishDescLead")
+            }}<strong>{{ t("workflow.forcePublishDescStrong") }}</strong
+            >{{ t("workflow.forcePublishDescTail") }}
           </p>
         </div>
-        <button class="ghost-button" type="button" :disabled="submitting" aria-label="关闭" @click="closeIfIdle">
-          关闭
+        <button
+          class="ghost-button"
+          type="button"
+          :disabled="submitting"
+          :aria-label="t('common.close')"
+          @click="closeIfIdle"
+        >
+          {{ t("common.close") }}
         </button>
       </header>
 
@@ -110,13 +120,13 @@ function trapDialogFocus(event: KeyboardEvent) {
         <div class="workflow-force-publish-warning" role="note">
           <i class="fa-solid fa-triangle-exclamation" aria-hidden="true" />
           <div>
-            <strong>高风险操作</strong>
-            <span>Agent 将可立即调用该版本；若工具配置有误，会直接进入生产可调用状态。</span>
+            <strong>{{ t("workflow.highRisk") }}</strong>
+            <span>{{ t("workflow.highRiskDetail") }}</span>
           </div>
         </div>
 
         <label class="workflow-force-publish-field">
-          <span>发布原因 <em>（至少 8 个字符，用于审计）</em></span>
+          <span>{{ t("workflow.publishReason") }} <em>{{ t("workflow.publishReasonHint") }}</em></span>
           <input
             ref="reasonInputRef"
             v-model="reason"
@@ -124,19 +134,23 @@ function trapDialogFocus(event: KeyboardEvent) {
             name="force-publish-reason"
             autocomplete="off"
             maxlength="500"
-            placeholder="例如：local-dev skip trial for AI pipeline"
+            :placeholder="t('workflow.forcePublishReasonPh')"
             :disabled="submitting"
             :aria-invalid="showError"
             @keydown.enter.prevent="submit"
             @input="touched = true"
           />
-          <small v-if="showError" class="workflow-force-publish-error">请填写至少 8 个字符的原因。</small>
+          <small v-if="showError" class="workflow-force-publish-error">{{
+            t("workflow.forcePublishReasonMinError")
+          }}</small>
           <small v-else class="workflow-force-publish-hint">{{ reasonTrimmed.length }} / 500</small>
         </label>
       </div>
 
       <footer class="workflow-force-publish-actions">
-        <button class="ghost-button" type="button" :disabled="submitting" @click="closeIfIdle">取消</button>
+        <button class="ghost-button" type="button" :disabled="submitting" @click="closeIfIdle">
+          {{ t("common.cancel") }}
+        </button>
         <button
           class="workflow-force-publish-confirm"
           type="button"
@@ -144,7 +158,7 @@ function trapDialogFocus(event: KeyboardEvent) {
           :disabled="submitting || !reasonValid"
           @click="submit"
         >
-          {{ submitting ? "正在强制发布…" : "确认强制发布" }}
+          {{ submitting ? t("workflow.forcePublishing") : t("workflow.confirmForcePublish") }}
         </button>
       </footer>
     </section>

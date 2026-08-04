@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { computed } from "vue";
+import { useI18n } from "vue-i18n";
+
 import type { WorkflowGraphNodeType } from "../../types/domain";
 
 const props = defineProps<{
@@ -9,27 +12,58 @@ const emit = defineEmits<{
   (event: "add-node", nodeType: WorkflowGraphNodeType): void;
 }>();
 
+const { t } = useI18n();
 const emptyVariableRef = "{{input.orderId}}";
 
-const nodeLibrary: Array<{ type: WorkflowGraphNodeType; icon: string; title: string; description: string }> = [
-  { type: "Start", icon: "fa-solid fa-play", title: "开始", description: "定义流程输入" },
-  { type: "Tool", icon: "fa-solid fa-plug", title: "工具调用", description: "执行已接入能力" },
-  { type: "Condition", icon: "fa-solid fa-code-branch", title: "条件判断", description: "根据结果分支" },
-  { type: "SubWorkflow", icon: "fa-solid fa-diagram-project", title: "子流程", description: "执行已发布 Workflow" },
-  { type: "Transform", icon: "fa-solid fa-shuffle", title: "参数整理", description: "转换上下文变量" },
-  { type: "Parallel", icon: "fa-solid fa-grip-lines-vertical", title: "并行分支", description: "声明多条并行分支语义" },
-  { type: "ForEach", icon: "fa-solid fa-repeat", title: "批量遍历", description: "按集合逐项执行下游节点" },
-  { type: "Approval", icon: "fa-solid fa-clipboard-check", title: "人工确认", description: "等待人工决策" },
-  { type: "End", icon: "fa-solid fa-flag-checkered", title: "结束", description: "汇总流程输出" },
-];
+const nodeLibrary = computed(() => [
+  { type: "Start" as const, icon: "fa-solid fa-play", title: t("workflow.nodeStart"), description: t("workflow.nodeStartDesc") },
+  { type: "Tool" as const, icon: "fa-solid fa-plug", title: t("workflow.nodeTool"), description: t("workflow.nodeToolDesc") },
+  {
+    type: "Condition" as const,
+    icon: "fa-solid fa-code-branch",
+    title: t("workflow.nodeCondition"),
+    description: t("workflow.nodeConditionDesc"),
+  },
+  {
+    type: "SubWorkflow" as const,
+    icon: "fa-solid fa-diagram-project",
+    title: t("workflow.nodeSubWorkflow"),
+    description: t("workflow.nodeSubWorkflowDesc"),
+  },
+  {
+    type: "Transform" as const,
+    icon: "fa-solid fa-shuffle",
+    title: t("workflow.nodeTransform"),
+    description: t("workflow.nodeTransformDesc"),
+  },
+  {
+    type: "Parallel" as const,
+    icon: "fa-solid fa-grip-lines-vertical",
+    title: t("workflow.nodeParallel"),
+    description: t("workflow.nodeParallelDesc"),
+  },
+  {
+    type: "ForEach" as const,
+    icon: "fa-solid fa-repeat",
+    title: t("workflow.nodeForEach"),
+    description: t("workflow.nodeForEachDesc"),
+  },
+  {
+    type: "Approval" as const,
+    icon: "fa-solid fa-clipboard-check",
+    title: t("workflow.nodeApproval"),
+    description: t("workflow.nodeApprovalDesc"),
+  },
+  { type: "End" as const, icon: "fa-solid fa-flag-checkered", title: t("workflow.nodeEnd"), description: t("workflow.nodeEndDesc") },
+]);
 </script>
 
 <template>
   <aside class="workflow-node-palette">
     <div class="workflow-panel-heading">
-      <span>节点库</span>
+      <span>{{ t("workflow.nodeLibrary") }}</span>
       <h3>Workflow Blocks</h3>
-      <p>保持编排图精简，先放主路径，再补充分支和审批。</p>
+      <p>{{ t("workflow.nodeLibraryHint") }}</p>
     </div>
 
     <div class="workflow-node-library">
@@ -50,8 +84,8 @@ const nodeLibrary: Array<{ type: WorkflowGraphNodeType; icon: string; title: str
 
     <section class="workflow-variable-library">
       <div class="workflow-section-caption">
-        <strong>变量引用</strong>
-        <small>来自当前草稿图</small>
+        <strong>{{ t("workflow.variableRefs") }}</strong>
+        <small>{{ t("workflow.variableRefsHint") }}</small>
       </div>
       <div class="workflow-token-list">
         <span v-for="variable in props.variableRefs" :key="variable" class="workflow-token">{{ variable }}</span>

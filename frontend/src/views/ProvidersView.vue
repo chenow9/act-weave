@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import "./providers-page.css";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 
 import AppSelect from "../components/AppSelect.vue";
 import ManagementList, { type ManagementListColumn } from "../components/ManagementList.vue";
@@ -100,6 +101,7 @@ interface ProviderSyncOutcome {
 
 let draftRowSequence = 0;
 
+const { t, locale } = useI18n();
 const providerStore = useProvidersStore();
 const workspaces = useWorkspaceStore();
 const canEditWorkspace = computed(() =>
@@ -144,17 +146,17 @@ const deleting = ref(false);
 const actionNote = ref("");
 const actionTone = ref<"success" | "warning" | "error">("success");
 
-const statusOptions = [
-  { label: "全部", value: "ALL" },
-  { label: "运行中", value: "ACTIVE" },
-  { label: "异常", value: "ERROR" },
-  { label: "已停用", value: "DISABLED" },
-];
+const statusOptions = computed(() => [
+  { label: t("providers.statusAll"), value: "ALL" },
+  { label: t("providers.statusActive"), value: "ACTIVE" },
+  { label: t("providers.statusError"), value: "ERROR" },
+  { label: t("providers.statusDisabled"), value: "DISABLED" },
+]);
 const discoveryModeOptions = computed(() => [
-  { label: "不启用自动发现", value: "MANUAL" },
-  { label: "按需发现 OpenAPI", value: "ON_DEMAND" },
+  { label: t("providers.discoveryManual"), value: "MANUAL" },
+  { label: t("providers.discoveryOnDemand"), value: "ON_DEMAND" },
   ...(providerDraft.value.discoveryMode === "POLLING"
-    ? [{ label: "旧配置：定时轮询（当前无调度器）", value: "POLLING", disabled: true }]
+    ? [{ label: t("providers.discoveryPollingLegacy"), value: "POLLING", disabled: true }]
     : []),
 ]);
 const verificationMethodOptions = ["GET", "HEAD", "POST"].map((value) => ({ label: value, value }));
@@ -162,23 +164,23 @@ const _clientAuthMethodOptions = ["client_secret_basic", "client_secret_post"].m
   label: value,
   value,
 }));
-const _oauthFieldKindOptions = [
-  { label: "文本", value: "TEXT" },
-  { label: "下拉选择", value: "SELECT" },
-];
-const _tokenParameterSourceOptions = [
-  { label: "Connection 字段", value: "FIELD" },
-  { label: "固定值", value: "VALUE" },
-];
-const _refreshStrategyOptions = [
-  { label: "重新获取 Client Credentials", value: "CLIENT_CREDENTIALS" },
-  { label: "使用 Refresh Token", value: "REFRESH_TOKEN" },
-];
+const _oauthFieldKindOptions = computed(() => [
+  { label: t("providers.fieldKindText"), value: "TEXT" },
+  { label: t("providers.fieldKindSelect"), value: "SELECT" },
+]);
+const _tokenParameterSourceOptions = computed(() => [
+  { label: t("providers.tokenParamFromField"), value: "FIELD" },
+  { label: t("providers.tokenParamFixedValue"), value: "VALUE" },
+]);
+const _refreshStrategyOptions = computed(() => [
+  { label: t("providers.refreshClientCredentials"), value: "CLIENT_CREDENTIALS" },
+  { label: t("providers.refreshToken"), value: "REFRESH_TOKEN" },
+]);
 
 const providerColumns = computed<ManagementListColumn<CapabilityProvider>[]>(() => [
   {
     key: "name",
-    label: "Provider",
+    label: t("providers.colProvider"),
     width: 244,
     sortable: true,
     sortKey: "name",
@@ -186,7 +188,7 @@ const providerColumns = computed<ManagementListColumn<CapabilityProvider>[]>(() 
   },
   {
     key: "status",
-    label: "状态",
+    label: t("providers.colStatus"),
     width: 108,
     align: "center",
     headerAlign: "center",
@@ -194,19 +196,37 @@ const providerColumns = computed<ManagementListColumn<CapabilityProvider>[]>(() 
     sortKey: "status",
     getValue: (provider) => provider.status,
   },
-  { key: "serviceBaseUrl", label: "运行地址", width: 250, hidable: true, getValue: providerServiceBaseUrl },
-  { key: "documentUrl", label: "OpenAPI（可选）", width: 270, hidable: true, getValue: providerDocumentUrl },
-  { key: "authentication", label: "认证", width: 190, hidable: true, getValue: authSchemeSummary },
+  {
+    key: "serviceBaseUrl",
+    label: t("providers.colServiceBaseUrl"),
+    width: 250,
+    hidable: true,
+    getValue: providerServiceBaseUrl,
+  },
+  {
+    key: "documentUrl",
+    label: t("providers.colDocumentUrl"),
+    width: 270,
+    hidable: true,
+    getValue: providerDocumentUrl,
+  },
+  {
+    key: "authentication",
+    label: t("providers.colAuthentication"),
+    width: 190,
+    hidable: true,
+    getValue: authSchemeSummary,
+  },
   {
     key: "lastSyncedAt",
-    label: "最近同步",
+    label: t("providers.colLastSynced"),
     width: 164,
     hidable: true,
     sortable: true,
     sortKey: "lastSyncedAt",
     getValue: (provider) => provider.lastSyncedAt || "",
   },
-  { key: "actions", label: "操作", width: 68, align: "right", headerAlign: "center" },
+  { key: "actions", label: t("providers.colActions"), width: 68, align: "right", headerAlign: "center" },
 ]);
 
 const filteredProviders = computed(() => {
@@ -252,7 +272,7 @@ const availableOAuthFieldKeys = computed(() => [
   ...providerDraft.value.extraFields.map((field) => field.key.trim()).filter(Boolean),
 ]);
 const _availableOAuthFieldOptions = computed(() => [
-  { label: "请选择", value: "" },
+  { label: t("providers.pleaseSelect"), value: "" },
   ...availableOAuthFieldKeys.value.map((fieldKey) => ({ label: fieldKey, value: fieldKey })),
 ]);
 const deleteConfirmMatches = computed(() => deleteConfirmText.value.trim() === pendingDeleteProvider.value?.name);
@@ -264,7 +284,7 @@ onMounted(async () => {
     if (hasWorkspaceContext.value) await loadProviders();
     else hasLoaded.value = true;
   } catch (error) {
-    loadError.value = errorMessage(error, "加载 Provider 失败，请稍后重试。");
+    loadError.value = errorMessage(error, t("providers.loadFailed"));
     hasLoaded.value = true;
   }
 });
@@ -279,7 +299,7 @@ async function loadProviders() {
     await providerStore.loadProviders();
     clampPage();
   } catch (error) {
-    loadError.value = errorMessage(error, "加载 Provider 失败，请稍后重试。");
+    loadError.value = errorMessage(error, t("providers.loadFailed"));
   } finally {
     loading.value = false;
     hasLoaded.value = true;
@@ -327,13 +347,13 @@ function providerSortValue(provider: CapabilityProvider, key: string) {
 
 function providerServiceBaseUrl(provider: CapabilityProvider) {
   const endpoint = asRecord(provider.endpointConfig);
-  return firstString(endpoint.serviceBaseUrl, endpoint.baseUrl, endpoint.url) || "未配置";
+  return firstString(endpoint.serviceBaseUrl, endpoint.baseUrl, endpoint.url) || t("providers.notConfigured");
 }
 
 function providerDocumentUrl(provider: CapabilityProvider) {
   const endpoint = asRecord(provider.endpointConfig);
   const discovery = asRecord(endpoint.discovery);
-  return firstString(discovery.documentUrl, endpoint.sourceUri) || "未配置（不启用自动发现）";
+  return firstString(discovery.documentUrl, endpoint.sourceUri) || t("providers.notConfiguredNoDiscovery");
 }
 
 function hasProviderDocument(provider: CapabilityProvider) {
@@ -347,9 +367,9 @@ function canSyncProvider(provider: CapabilityProvider) {
 }
 
 function providerSyncTitle(provider: CapabilityProvider) {
-  if (!hasProviderDocument(provider)) return "未配置 OpenAPI 文档，无法自动同步；不影响 Connection 和运行调用";
-  if (provider.discoveryMode === "MANUAL") return "发现策略为“不启用自动发现”；切换为按需发现后可同步";
-  return "从 OpenAPI 文档同步能力";
+  if (!hasProviderDocument(provider)) return t("providers.syncTitleNoDoc");
+  if (provider.discoveryMode === "MANUAL") return t("providers.syncTitleManual");
+  return t("providers.syncTitleOk");
 }
 
 function providerVerificationSummary(provider: CapabilityProvider) {
@@ -359,10 +379,10 @@ function providerVerificationSummary(provider: CapabilityProvider) {
 }
 
 function statusLabel(status: string) {
-  if (status === "ACTIVE") return "运行中";
-  if (status === "ERROR") return "异常";
-  if (status === "DISABLED") return "已停用";
-  return status || "未知";
+  if (status === "ACTIVE") return t("providers.statusActive");
+  if (status === "ERROR") return t("providers.statusError");
+  if (status === "DISABLED") return t("providers.statusDisabled");
+  return status || t("providers.statusUnknown");
 }
 
 function statusTone(status: string) {
@@ -373,9 +393,10 @@ function statusTone(status: string) {
 }
 
 function formatDate(value?: string) {
-  if (!value) return "尚未同步";
+  if (!value) return t("providers.neverSynced");
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("zh-CN");
+  const dateLocale = locale.value === "en" ? "en-US" : "zh-CN";
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString(dateLocale);
 }
 
 function isSyncing(providerId: string) {
@@ -392,14 +413,14 @@ function providerMenuActions(provider: CapabilityProvider): ManagementRowAction[
   return [
     {
       key: "edit",
-      label: `编辑 ${provider.name}`,
-      shortLabel: "编辑",
+      label: t("providers.editNamed", { name: provider.name }),
+      shortLabel: t("providers.edit"),
       icon: "fa-solid fa-pen-to-square",
     },
     {
       key: "sync",
-      label: `同步 ${provider.name}`,
-      shortLabel: "同步",
+      label: t("providers.syncNamed", { name: provider.name }),
+      shortLabel: t("providers.sync"),
       icon: "fa-solid fa-rotate",
       tone: "primary",
       disabled: !syncAvailable,
@@ -408,14 +429,14 @@ function providerMenuActions(provider: CapabilityProvider): ManagementRowAction[
     },
     {
       key: "assets",
-      label: `查看 ${provider.name} 的能力资产`,
-      shortLabel: "查看能力资产",
+      label: t("providers.viewAssetsNamed", { name: provider.name }),
+      shortLabel: t("providers.viewAssets"),
       icon: "fa-solid fa-cubes",
     },
     {
       key: "delete",
-      label: `删除 ${provider.name}`,
-      shortLabel: "删除",
+      label: t("providers.deleteNamed", { name: provider.name }),
+      shortLabel: t("providers.delete"),
       icon: "fa-solid fa-trash-can",
       tone: "danger",
     },
@@ -441,7 +462,7 @@ function handleProviderRowAction(actionKey: string, provider: CapabilityProvider
 async function syncProvider(provider: CapabilityProvider) {
   if (isSyncing(provider.id)) return;
   if (!canSyncProvider(provider)) {
-    showActionNote(`${provider.name} 当前未启用 OpenAPI 自动发现；这不影响 Connection 和运行调用。`, "warning");
+    showActionNote(t("providers.syncDisabledNote", { name: provider.name }), "warning");
     return;
   }
   syncingProviderIds.value = [...syncingProviderIds.value, provider.id];
@@ -451,18 +472,24 @@ async function syncProvider(provider: CapabilityProvider) {
     const result = normalizeSyncOutcome(raw);
     syncResults.value = { ...syncResults.value, [provider.id]: result };
     if (result.status === "SUCCEEDED") {
-      showActionNote(`${provider.name} 同步完成：发现 ${result.discoveredCount}，变化 ${result.changedCount}。`);
+      showActionNote(
+        t("providers.syncSucceeded", {
+          name: provider.name,
+          discovered: result.discoveredCount,
+          changed: result.changedCount,
+        }),
+      );
       if (expandedProviderId.value === provider.id) await loadAssets(provider.id);
     } else {
-      showActionNote(`${provider.name} 同步失败：${syncErrorText(result)}`, "error");
+      showActionNote(t("providers.syncFailed", { name: provider.name, message: syncErrorText(result) }), "error");
     }
   } catch (error) {
-    const message = errorMessage(error, "同步请求失败。");
+    const message = errorMessage(error, t("providers.syncRequestFailed"));
     syncResults.value = {
       ...syncResults.value,
       [provider.id]: { status: "FAILED", discoveredCount: 0, changedCount: 0, errorSummary: { message } },
     };
-    showActionNote(`${provider.name} 同步失败：${message}`, "error");
+    showActionNote(t("providers.syncFailed", { name: provider.name, message }), "error");
   } finally {
     syncingProviderIds.value = syncingProviderIds.value.filter((id) => id !== provider.id);
   }
@@ -484,7 +511,7 @@ async function loadAssets(providerId: string) {
   try {
     await providerStore.loadProviderAssets(providerId);
   } catch (error) {
-    assetErrors.value = { ...assetErrors.value, [providerId]: errorMessage(error, "加载能力资产失败。") };
+    assetErrors.value = { ...assetErrors.value, [providerId]: errorMessage(error, t("providers.loadAssetsFailed")) };
   } finally {
     assetLoadingProviderIds.value = assetLoadingProviderIds.value.filter((id) => id !== providerId);
   }
@@ -495,9 +522,9 @@ async function materializeAsset(provider: CapabilityProvider, asset: ProviderAss
   materializingAssetId.value = asset.id;
   try {
     await providerStore.materializeProviderAsset(provider.id, asset.id);
-    showActionNote(`${asset.name} 已物化为 Tool Draft。`);
+    showActionNote(t("providers.materializedOk", { name: asset.name }));
   } catch (error) {
-    showActionNote(errorMessage(error, `${asset.name} 物化失败。`), "error");
+    showActionNote(errorMessage(error, t("providers.materializeFailed", { name: asset.name })), "error");
   } finally {
     materializingAssetId.value = "";
   }
@@ -594,7 +621,7 @@ async function saveProvider() {
   if (validationError) {
     formError.value = validationError;
     if (!providerDraft.value.supportBrokerObo && !providerDraft.value.supportRequestPassthrough) {
-      identityModeError.value = "至少选择一种";
+      identityModeError.value = t("providers.selectAtLeastOne");
       await nextTick();
       const focusTarget =
         identityModeGroupRef.value?.querySelector<HTMLInputElement>('input[type="checkbox"]') ||
@@ -614,10 +641,15 @@ async function saveProvider() {
       editorMode.value === "edit"
         ? await providerStore.updateProvider(provider)
         : await providerStore.createProvider(provider);
-    showActionNote(`${saved.name} Provider 已${editorMode.value === "edit" ? "更新" : "创建"}。`);
+    showActionNote(
+      t("providers.providerSaved", {
+        name: saved.name,
+        action: editorMode.value === "edit" ? t("providers.actionUpdated") : t("providers.actionCreated"),
+      }),
+    );
     dismissEditor();
   } catch (error) {
-    formError.value = errorMessage(error, "保存 Provider 失败，请检查端点和认证契约。");
+    formError.value = errorMessage(error, t("providers.saveFailed"));
   } finally {
     saving.value = false;
   }
@@ -654,11 +686,11 @@ async function confirmDeleteProvider() {
   try {
     await providerStore.deleteProvider(provider.id);
     if (expandedProviderId.value === provider.id) expandedProviderId.value = "";
-    showActionNote(`${provider.name} Provider 已删除。`, "warning");
+    showActionNote(t("providers.providerDeleted", { name: provider.name }), "warning");
     dismissDeleteDialog();
     clampPage();
   } catch (error) {
-    deleteError.value = errorMessage(error, "删除失败；请先检查关联的 Connection 和 Tool。");
+    deleteError.value = errorMessage(error, t("providers.deleteFailed"));
   } finally {
     deleting.value = false;
   }
@@ -914,15 +946,21 @@ function _buildAuthenticationContract(draft: ProviderFormDraft): ProviderAuthCon
     return contract;
   }
   const fields: ProviderAuthField[] = [
-    { key: "clientId", label: "Client ID", kind: "TEXT", required: true, placeholder: "客户端标识" },
+    {
+      key: "clientId",
+      label: "Client ID",
+      kind: "TEXT",
+      required: true,
+      placeholder: t("providers.oauthClientIdPlaceholder"),
+    },
     {
       key: "clientSecret",
       label: "Client Secret",
       kind: "SECRET",
       required: true,
-      help: "明文只用于创建或替换 Secret。",
+      help: t("providers.oauthClientSecretHelp"),
     },
-    { key: "scope", label: "Scope", kind: "TEXT", placeholder: "例如：read write" },
+    { key: "scope", label: "Scope", kind: "TEXT", placeholder: t("providers.oauthScopePlaceholder") },
     ...draft.extraFields.map(
       (field) =>
         ({
@@ -976,28 +1014,26 @@ function _buildAuthenticationContract(draft: ProviderFormDraft): ProviderAuthCon
 }
 
 function validateProviderDraft(draft: ProviderFormDraft) {
-  if (!draft.name.trim()) return "请输入 Provider 名称。";
-  if (!validServiceBaseURL(draft.serviceBaseUrl)) return "请输入不含 Query 或 Fragment 的 HTTP(S) 运行地址。";
-  if (draft.documentUrl.trim() && !validHTTPURL(draft.documentUrl))
-    return "OpenAPI 文档地址不是有效的 HTTP(S) URL；如无在线文档可留空。";
-  if (draft.discoveryMode !== "MANUAL" && !draft.documentUrl.trim())
-    return "按需发现需要 OpenAPI 文档地址；如无在线文档，请选择“不启用自动发现”。";
+  if (!draft.name.trim()) return t("providers.validationNameRequired");
+  if (!validServiceBaseURL(draft.serviceBaseUrl)) return t("providers.validationServiceBaseUrl");
+  if (draft.documentUrl.trim() && !validHTTPURL(draft.documentUrl)) return t("providers.validationDocumentUrl");
+  if (draft.discoveryMode !== "MANUAL" && !draft.documentUrl.trim()) return t("providers.validationDiscoveryNeedsDoc");
   if (
     draft.verificationPath.trim() &&
     (/^https?:\/\//i.test(draft.verificationPath.trim()) || draft.verificationPath.trim().startsWith("//"))
   ) {
-    return "验证路径必须是 Provider 运行地址下的相对路径。";
+    return t("providers.validationVerificationPath");
   }
   try {
     parseStatuses(draft.expectedStatuses);
   } catch {
-    return "期望状态码应为 100–599 的逗号分隔数字，且不能重复。";
+    return t("providers.validationExpectedStatuses");
   }
   let allowedCIDRs: string[];
   try {
     allowedCIDRs = parseCIDRList(draft.allowedCIDRs, true);
   } catch {
-    return "允许的私网 CIDR 格式无效；IPv4 示例：192.168.10.0/24。";
+    return t("providers.validationCidr");
   }
   const privateAddress = privateLiteralAddress(draft.serviceBaseUrl);
   const privateAddressAllowed = privateAddress.includes(":")
@@ -1005,17 +1041,17 @@ function validateProviderDraft(draft: ProviderFormDraft) {
     : allowedCIDRs.some((cidr) => cidrContainsIPv4(cidr, privateAddress));
   if (privateAddress && !privateAddressAllowed) {
     const singleHostCIDR = privateAddress.includes(":") ? `${privateAddress}/128` : `${privateAddress}/32`;
-    return `私网运行地址 ${privateAddress} 需要显式加入允许的私网 CIDR（可使用 ${singleHostCIDR}）。`;
+    return t("providers.validationPrivateAddress", { address: privateAddress, cidr: singleHostCIDR });
   }
   if (!draft.supportBrokerObo && !draft.supportRequestPassthrough) {
-    return "至少选择一种";
+    return t("providers.selectAtLeastOne");
   }
   if (!validHeaderName(draft.businessInjectionHeader || "Authorization")) {
-    return "业务 Token 注入 Header 名称无效。";
+    return t("providers.validationInjectionHeader");
   }
   if (draft.supportBrokerObo) {
-    if (!validHTTPURL(draft.brokerTokenEndpoint)) return "请输入有效的 Broker Token Endpoint。";
-    if (!draft.brokerAudience.trim()) return "请输入 Broker Audience。";
+    if (!validHTTPURL(draft.brokerTokenEndpoint)) return t("providers.validationBrokerEndpoint");
+    if (!draft.brokerAudience.trim()) return t("providers.validationBrokerAudience");
   }
   return "";
 }
@@ -1165,7 +1201,7 @@ function normalizeSyncOutcome(value: ProviderSyncOutcome): ProviderSyncOutcome {
 function syncErrorText(result: ProviderSyncOutcome) {
   const summary = Object.entries(result.errorSummary)
     .map(([key, value]) => `${key}: ${String(value)}`)
-    .join("；");
+    .join("; ");
   return summary || result.status;
 }
 
@@ -1197,15 +1233,15 @@ function errorMessage(error: unknown, fallback: string) {
   <div class="providers-page management-page-grid management-page-grid--two-rows">
     <ManagementPageHeader
       class="providers-page-header"
-      title="服务 Provider"
-      description="统一维护服务运行端点、OpenAPI 发现来源、验证策略与版本化认证契约，再由 Connection 绑定具体环境和凭据。"
+      :title="t('providers.title')"
+      :description="t('providers.subtitle')"
       icon="fa-solid fa-cloud-arrow-down"
       eyebrow="Integration Registry"
     >
       <template #actions>
         <div class="providers-header-actions">
           <RouterLink class="ghost-button" to="/connections">
-            <i class="fa-solid fa-plug-circle-bolt" aria-hidden="true" />服务连接
+            <i class="fa-solid fa-plug-circle-bolt" aria-hidden="true" />{{ t("providers.serviceConnections") }}
           </RouterLink>
           <button
             v-if="canEditWorkspace"
@@ -1215,7 +1251,7 @@ function errorMessage(error: unknown, fallback: string) {
             :disabled="!hasWorkspaceContext"
             @click="openCreateEditor"
           >
-            <i class="fa-solid fa-circle-plus" aria-hidden="true" />新建 Provider
+            <i class="fa-solid fa-circle-plus" aria-hidden="true" />{{ t("providers.create") }}
           </button>
         </div>
       </template>
@@ -1239,9 +1275,9 @@ function errorMessage(error: unknown, fallback: string) {
         :pagination="providerPagination"
         :sort-by="sortBy"
         :sort-order="sortOrder"
-        search-placeholder="搜索 Provider / 地址 / 认证方式"
-        search-aria-label="搜索服务 Provider"
-        clear-search-aria-label="清除 Provider 搜索"
+        :search-placeholder="t('providers.searchPlaceholder')"
+        :search-aria-label="t('providers.searchAria')"
+        :clear-search-aria-label="t('providers.clearSearchAria')"
         :reset-disabled="!search && statusFilter === 'ALL'"
         @update:search="updateSearch"
         @reset="resetFilters"
@@ -1252,7 +1288,7 @@ function errorMessage(error: unknown, fallback: string) {
           <ManagementSegmentedFilter
             :model-value="statusFilter"
             :options="statusOptions"
-            ariaLabel="Provider 状态筛选"
+            :ariaLabel="t('providers.statusFilterAria')"
             @update:model-value="updateStatusFilter"
           />
         </template>
@@ -1286,25 +1322,29 @@ function errorMessage(error: unknown, fallback: string) {
         <template #cell-actions="{ row: provider }">
           <ManagementRowActions
             :menu-actions="providerMenuActions(provider)"
-            :menu-label="`${provider.name} 更多操作`"
+            :menu-label="t('providers.moreActions', { name: provider.name })"
             @action="handleProviderRowAction($event, provider)"
           />
         </template>
 
         <template #row-detail="{ row: provider }">
-          <section class="provider-detail-row" :aria-label="`${provider.name} Provider 详情`">
+          <section class="provider-detail-row" :aria-label="t('providers.detailAria', { name: provider.name })">
             <div class="provider-contract-summary">
               <div>
-                <span>运行端点</span><code>{{ providerServiceBaseUrl(provider) }}</code>
+                <span>{{ t("providers.runtimeEndpoint") }}</span
+                ><code>{{ providerServiceBaseUrl(provider) }}</code>
               </div>
               <div>
-                <span>OpenAPI 自动发现</span><code>{{ providerDocumentUrl(provider) }}</code>
+                <span>{{ t("providers.openapiDiscovery") }}</span
+                ><code>{{ providerDocumentUrl(provider) }}</code>
               </div>
               <div>
-                <span>连接验证</span><strong>{{ providerVerificationSummary(provider) }}</strong>
+                <span>{{ t("providers.connectionVerification") }}</span
+                ><strong>{{ providerVerificationSummary(provider) }}</strong>
               </div>
               <div>
-                <span>认证契约</span><strong>{{ authSchemeSummary(provider) }}</strong>
+                <span>{{ t("providers.authContract") }}</span
+                ><strong>{{ authSchemeSummary(provider) }}</strong>
               </div>
             </div>
             <div
@@ -1323,30 +1363,32 @@ function errorMessage(error: unknown, fallback: string) {
               />
               <span>
                 <strong>{{
-                  syncResults[provider.id].status === "SUCCEEDED" ? "最近一次同步成功" : "最近一次同步失败"
+                  syncResults[provider.id].status === "SUCCEEDED"
+                    ? t("providers.lastSyncSucceeded")
+                    : t("providers.lastSyncFailed")
                 }}</strong>
-                <small v-if="syncResults[provider.id].status === 'SUCCEEDED'"
-                  >发现 {{ syncResults[provider.id].discoveredCount }}，变化
-                  {{ syncResults[provider.id].changedCount }}</small
-                >
+                <small v-if="syncResults[provider.id].status === 'SUCCEEDED'">{{
+                  t("providers.syncCounts", {
+                    discovered: syncResults[provider.id].discoveredCount,
+                    changed: syncResults[provider.id].changedCount,
+                  })
+                }}</small>
                 <small v-else>{{ syncErrorText(syncResults[provider.id]) }}</small>
               </span>
             </div>
             <div class="provider-assets-heading">
               <div>
-                <h3>能力资产</h3>
+                <h3>{{ t("providers.capabilityAssets") }}</h3>
                 <p>
                   {{
-                    hasProviderDocument(provider)
-                      ? "同步 OpenAPI 后，可将端点物化为 Tool Draft。"
-                      : "未配置在线文档，不启用自动发现；已有资产仍可查看和物化。"
+                    hasProviderDocument(provider) ? t("providers.assetsHintWithDoc") : t("providers.assetsHintNoDoc")
                   }}
                 </p>
               </div>
               <button type="button" :disabled="isLoadingAssets(provider.id)" @click="loadAssets(provider.id)">
                 <i
                   :class="isLoadingAssets(provider.id) ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-rotate'"
-                />刷新资产
+                />{{ t("providers.refreshAssets") }}
               </button>
             </div>
             <p v-if="assetErrors[provider.id]" class="provider-inline-error" role="alert">
@@ -1357,16 +1399,14 @@ function errorMessage(error: unknown, fallback: string) {
               class="provider-assets-state"
               role="status"
             >
-              正在加载能力资产…
+              {{ t("providers.loadingAssets") }}
             </div>
             <div
               v-else-if="!(providerStore.providerAssetsByProvider[provider.id] || []).length"
               class="provider-assets-state"
             >
               {{
-                hasProviderDocument(provider)
-                  ? "尚无资产，请先同步 Provider。"
-                  : "尚无资产。可继续用此 Provider 创建 Connection；能力可在获得文档后再同步。"
+                hasProviderDocument(provider) ? t("providers.noAssetsSyncFirst") : t("providers.noAssetsContinue")
               }}
             </div>
             <div v-else class="provider-assets-list">
@@ -1378,7 +1418,9 @@ function errorMessage(error: unknown, fallback: string) {
                   <strong>{{ asset.name }}</strong
                   ><small>{{ asset.description || asset.externalId }}</small>
                 </div>
-                <span class="asset-status">{{ asset.materializedCapabilityId ? "已物化" : asset.status }}</span>
+                <span class="asset-status">{{
+                  asset.materializedCapabilityId ? t("providers.materialized") : asset.status
+                }}</span>
                 <button
                   :data-testid="`provider-materialize-${asset.id}`"
                   type="button"
@@ -1394,7 +1436,7 @@ function errorMessage(error: unknown, fallback: string) {
                           : 'fa-solid fa-wand-magic-sparkles'
                     "
                   />
-                  {{ asset.materializedCapabilityId ? "已生成 Tool" : "物化为 Tool" }}
+                  {{ asset.materializedCapabilityId ? t("providers.toolCreated") : t("providers.materializeToTool") }}
                 </button>
               </article>
             </div>
@@ -1417,38 +1459,40 @@ function errorMessage(error: unknown, fallback: string) {
             </header>
             <dl>
               <div>
-                <dt>运行地址</dt>
+                <dt>{{ t("providers.mobileRuntimeUrl") }}</dt>
                 <dd>
                   <code>{{ providerServiceBaseUrl(provider) }}</code>
                 </dd>
               </div>
               <div>
-                <dt>发现地址</dt>
+                <dt>{{ t("providers.mobileDiscoveryUrl") }}</dt>
                 <dd>
                   <code>{{ providerDocumentUrl(provider) }}</code>
                 </dd>
               </div>
               <div>
-                <dt>认证</dt>
+                <dt>{{ t("providers.mobileAuth") }}</dt>
                 <dd>{{ authSchemeSummary(provider) }}</dd>
               </div>
               <div>
-                <dt>最近同步</dt>
+                <dt>{{ t("providers.mobileLastSync") }}</dt>
                 <dd>{{ formatDate(provider.lastSyncedAt) }}</dd>
               </div>
             </dl>
             <div class="provider-actions mobile">
-              <button type="button" @click="openEditEditor(provider)"><i class="fa-solid fa-pen" />编辑</button
+              <button type="button" @click="openEditEditor(provider)"
+                ><i class="fa-solid fa-pen" />{{ t("providers.edit") }}</button
               ><button
                 type="button"
                 :title="providerSyncTitle(provider)"
                 :disabled="isSyncing(provider.id) || !canSyncProvider(provider)"
                 @click="syncProvider(provider)"
               >
-                <i class="fa-solid fa-rotate" />同步</button
-              ><button type="button" @click="toggleAssets(provider)"><i class="fa-solid fa-cubes" />资产</button
+                <i class="fa-solid fa-rotate" />{{ t("providers.sync") }}</button
+              ><button type="button" @click="toggleAssets(provider)"
+                ><i class="fa-solid fa-cubes" />{{ t("providers.assets") }}</button
               ><button class="danger" type="button" @click="requestDeleteProvider(provider)">
-                <i class="fa-solid fa-trash-can" />删除
+                <i class="fa-solid fa-trash-can" />{{ t("providers.delete") }}
               </button>
             </div>
           </article>
@@ -1458,18 +1502,20 @@ function errorMessage(error: unknown, fallback: string) {
           <WorkspaceContextState
             v-if="!hasWorkspaceContext"
             embedded-in-list
-            feature="服务 Provider"
+            :feature="t('providers.featureName')"
             icon="fa-solid fa-cloud-arrow-down"
             @retry="loadProviders"
           />
           <div v-else class="providers-empty-state">
             <span><i class="fa-solid fa-cloud-arrow-down" /></span>
-            <h2>{{ search || statusFilter !== "ALL" ? "没有符合条件的 Provider" : "还没有服务 Provider" }}</h2>
+            <h2>
+              {{
+                search || statusFilter !== "ALL" ? t("providers.noMatchTitle") : t("providers.emptyTitle")
+              }}
+            </h2>
             <p>
               {{
-                search || statusFilter !== "ALL"
-                  ? "调整搜索或状态筛选后重试。"
-                  : "先登记运行端点和认证契约；OpenAPI 文档可稍后补充，再创建服务连接。"
+                search || statusFilter !== "ALL" ? t("providers.noMatchBody") : t("providers.emptyBody")
               }}
             </p>
             <button
@@ -1477,15 +1523,15 @@ function errorMessage(error: unknown, fallback: string) {
               type="button"
               @click="openCreateEditor"
             >
-              新建 Provider
+              {{ t("providers.create") }}
             </button>
           </div>
         </template>
         <template #error="{ error }"
           ><div class="providers-error-state" role="alert">
-            <strong>Provider 加载失败</strong>
+            <strong>{{ t("providers.loadFailedTitle") }}</strong>
             <p>{{ error }}</p>
-            <button type="button" @click="loadProviders">重新加载</button>
+            <button type="button" @click="loadProviders">{{ t("providers.reload") }}</button>
           </div></template
         >
       </ManagementList>
@@ -1506,11 +1552,18 @@ function errorMessage(error: unknown, fallback: string) {
             ><span
               ><small>Provider Registry</small>
               <h2 id="provider-editor-title">
-                {{ editorMode === "create" ? "新建服务 Provider" : "编辑服务 Provider" }}
+                {{
+                  editorMode === "create" ? t("providers.editorCreateTitle") : t("providers.editorEditTitle")
+                }}
               </h2></span
             >
           </div>
-          <button type="button" aria-label="关闭 Provider 编辑器" :disabled="saving" @click="closeEditor">
+          <button
+            type="button"
+            :aria-label="t('providers.closeEditorAria')"
+            :disabled="saving"
+            @click="closeEditor"
+          >
             <i class="fa-solid fa-xmark" />
           </button>
         </header>
@@ -1523,64 +1576,59 @@ function errorMessage(error: unknown, fallback: string) {
               <div class="provider-section-heading">
                 <span>1</span>
                 <div>
-                  <h3>服务与发现</h3>
-                  <p>运行地址用于 Tool 调用；OpenAPI 文档仅用于自动发现和同步，不影响 Connection 或运行调用。</p>
+                  <h3>{{ t("providers.sectionServiceDiscovery") }}</h3>
+                  <p>{{ t("providers.sectionServiceDiscoveryHint") }}</p>
                 </div>
               </div>
               <div class="provider-form-grid two">
                 <label
-                  ><span>Provider 名称 <b>*</b></span
+                  ><span>{{ t("providers.fieldName") }} <b>*</b></span
                   ><input
                     ref="providerNameInput"
                     v-model="providerDraft.name"
                     data-testid="provider-name"
                     required
-                    placeholder="例如：订单服务"
+                    :placeholder="t('providers.namePlaceholder')"
                 /></label>
                 <label
-                  ><span>发现策略</span
+                  ><span>{{ t("providers.fieldDiscoveryMode") }}</span
                   ><AppSelect
                     v-model="providerDraft.discoveryMode"
                     class="provider-form-select"
                     data-testid="provider-discovery-mode"
                     :options="discoveryModeOptions"
-                    aria-label="发现策略"
+                    :ariaLabel="t('providers.discoveryModeAria')"
                 /></label>
               </div>
               <label
-                ><span>服务运行地址 <b>*</b></span
+                ><span>{{ t("providers.fieldServiceBaseUrl") }} <b>*</b></span
                 ><input
                   v-model="providerDraft.serviceBaseUrl"
                   data-testid="provider-service-base-url"
                   class="mono"
                   required
                   placeholder="https://api.example.com/v1"
-                /><small>正式调用使用的 Base URL，不要填写 OpenAPI 文档路径。</small></label
+                /><small>{{ t("providers.serviceBaseUrlHint") }}</small></label
               >
               <label
-                ><span>OpenAPI 文档地址 <em>可选</em></span
+                ><span>{{ t("providers.fieldDocumentUrl") }} <em>{{ t("providers.optional") }}</em></span
                 ><input
                   v-model="providerDraft.documentUrl"
                   data-testid="provider-document-url"
                   class="mono"
                   inputmode="url"
                   placeholder="https://api.example.com/openapi.json"
-                /><small
-                  >仅用于自动发现和同步能力。第三方未提供在线文档时可留空，不影响保存 Provider、创建 Connection
-                  或正式调用。</small
-                ></label
+                /><small>{{ t("providers.documentUrlHint") }}</small></label
               >
               <label
-                ><span>允许的私网 CIDR <em>按需</em></span
+                ><span>{{ t("providers.fieldAllowedCidrs") }} <em>{{ t("providers.asNeeded") }}</em></span
                 ><textarea
                   v-model="providerDraft.allowedCIDRs"
                   data-testid="provider-allowed-cidrs"
                   class="mono"
                   rows="2"
                   placeholder="192.168.10.0/24"
-                /><small
-                  >仅内网或回环地址需要显式授权，每行一个 CIDR。公网地址请留空；单个 IPv4 地址可使用 /32。</small
-                ></label
+                /><small>{{ t("providers.allowedCidrsHint") }}</small></label
               >
             </section>
 
@@ -1588,22 +1636,22 @@ function errorMessage(error: unknown, fallback: string) {
               <div class="provider-section-heading">
                 <span>2</span>
                 <div>
-                  <h3>连接验证</h3>
-                  <p>Connection 验证会基于运行地址和以下规则发起安全请求。</p>
+                  <h3>{{ t("providers.sectionVerification") }}</h3>
+                  <p>{{ t("providers.sectionVerificationHint") }}</p>
                 </div>
               </div>
               <div class="provider-form-grid verification">
                 <label
-                  ><span>方法</span
+                  ><span>{{ t("providers.fieldMethod") }}</span
                   ><AppSelect
                     v-model="providerDraft.verificationMethod"
                     class="provider-form-select"
                     data-testid="provider-verification-method"
                     :options="verificationMethodOptions"
-                    aria-label="连接验证方法"
+                    :ariaLabel="t('providers.verificationMethodAria')"
                 /></label>
                 <label
-                  ><span>相对路径</span
+                  ><span>{{ t("providers.fieldRelativePath") }}</span
                   ><input
                     v-model="providerDraft.verificationPath"
                     data-testid="provider-verification-path"
@@ -1611,7 +1659,7 @@ function errorMessage(error: unknown, fallback: string) {
                     placeholder="/health"
                 /></label>
                 <label
-                  ><span>期望状态码</span
+                  ><span>{{ t("providers.fieldExpectedStatuses") }}</span
                   ><input
                     v-model="providerDraft.expectedStatuses"
                     data-testid="provider-expected-statuses"
@@ -1630,17 +1678,13 @@ function errorMessage(error: unknown, fallback: string) {
               <div class="provider-section-heading">
                 <span>3</span>
                 <div>
-                  <h3>用户调用身份</h3>
-                  <p>
-                    选择这个 Provider 支持的身份方式（可多选）。创建 Connection
-                    时，必须从已支持的方式中选择且只能选择一种；不支持共享账号或免鉴权。
-                  </p>
+                  <h3>{{ t("providers.sectionIdentity") }}</h3>
+                  <p>{{ t("providers.sectionIdentityHint") }}</p>
                 </div>
               </div>
               <p v-if="providerDraft.legacyAuthentication" class="provider-migration-note">
                 <i class="fa-solid fa-triangle-exclamation" />
-                检测到旧版 service-auth 契约。保存时将硬切为
-                <code>outbound-identity.v1</code>；请勾选至少一种模式并补全字段。
+                {{ t("providers.legacyAuthNote", { schema: "outbound-identity.v1" }) }}
               </p>
               <p
                 v-if="identityModeError"
@@ -1654,7 +1698,7 @@ function errorMessage(error: unknown, fallback: string) {
                 ref="identityModeGroupRef"
                 class="provider-auth-choice provider-identity-choice"
                 role="group"
-                aria-label="支持的身份方式（可多选）"
+                :aria-label="t('providers.identityModesAria')"
                 :aria-describedby="identityModeError ? 'provider-identity-mode-error-text' : undefined"
               >
                 <label class="provider-identity-card" :class="{ selected: providerDraft.supportBrokerObo }">
@@ -1667,12 +1711,12 @@ function errorMessage(error: unknown, fallback: string) {
                   />
                   <span class="provider-identity-card-body">
                     <b v-if="providerDraft.supportBrokerObo" class="provider-identity-badge" aria-hidden="true">
-                      <i class="fa-solid fa-check" />已支持
+                      <i class="fa-solid fa-check" />{{ t("providers.modeSupported") }}
                     </b>
                     <i class="fa-solid fa-key provider-identity-icon" aria-hidden="true" />
                     <span class="provider-identity-copy">
-                      <strong>Broker / OBO</strong>
-                      <small>平台按当前用户身份换取短期业务 Token</small>
+                      <strong>{{ t("providers.modeBrokerTitle") }}</strong>
+                      <small>{{ t("providers.modeBrokerDesc") }}</small>
                     </span>
                   </span>
                 </label>
@@ -1690,12 +1734,12 @@ function errorMessage(error: unknown, fallback: string) {
                       class="provider-identity-badge"
                       aria-hidden="true"
                     >
-                      <i class="fa-solid fa-check" />已支持
+                      <i class="fa-solid fa-check" />{{ t("providers.modeSupported") }}
                     </b>
                     <i class="fa-solid fa-right-left provider-identity-icon" aria-hidden="true" />
                     <span class="provider-identity-copy">
-                      <strong>本次请求透传</strong>
-                      <small>调用方为本次请求提供 Token，平台只用于本次调用且不会保存</small>
+                      <strong>{{ t("providers.modePassthroughTitle") }}</strong>
+                      <small>{{ t("providers.modePassthroughDesc") }}</small>
                     </span>
                   </span>
                 </label>
@@ -1705,7 +1749,7 @@ function errorMessage(error: unknown, fallback: string) {
               </p>
               <div class="provider-form-grid two">
                 <label
-                  ><span>业务 Token 注入 Header <b>*</b></span
+                  ><span>{{ t("providers.fieldInjectionHeader") }} <b>*</b></span
                   ><input
                     v-model="providerDraft.businessInjectionHeader"
                     data-testid="provider-injection-header"
@@ -1713,7 +1757,7 @@ function errorMessage(error: unknown, fallback: string) {
                     placeholder="Authorization"
                 /></label>
                 <label
-                  ><span>前缀</span
+                  ><span>{{ t("providers.fieldPrefix") }}</span
                   ><input
                     v-model="providerDraft.businessInjectionPrefix"
                     data-testid="provider-injection-prefix"
@@ -1728,7 +1772,7 @@ function errorMessage(error: unknown, fallback: string) {
               >
                 <div class="provider-form-grid two">
                   <label
-                    ><span>Broker Token Endpoint <b>*</b></span
+                    ><span>{{ t("providers.fieldBrokerTokenEndpoint") }} <b>*</b></span
                     ><input
                       v-model="providerDraft.brokerTokenEndpoint"
                       data-testid="provider-broker-token-endpoint"
@@ -1736,7 +1780,7 @@ function errorMessage(error: unknown, fallback: string) {
                       placeholder="https://broker.example.com/oauth/token"
                   /></label>
                   <label
-                    ><span>Audience <b>*</b></span
+                    ><span>{{ t("providers.fieldAudience") }} <b>*</b></span
                     ><input
                       v-model="providerDraft.brokerAudience"
                       data-testid="provider-broker-audience"
@@ -1745,45 +1789,52 @@ function errorMessage(error: unknown, fallback: string) {
                   /></label>
                 </div>
                 <label
-                  ><span>Allowed Scopes</span
+                  ><span>{{ t("providers.fieldAllowedScopes") }}</span
                   ><input
                     v-model="providerDraft.brokerAllowedScopes"
                     data-testid="provider-broker-scopes"
                     class="mono"
                     placeholder="orders.read inventory.read"
-                  /><small>空格或逗号分隔；Connection 选择的 scope 必须在此 allowlist 内。</small></label
+                  /><small>{{ t("providers.allowedScopesHint") }}</small></label
                 >
-                <p class="provider-field-help">
-                  平台使用 private_key_jwt 向 Broker 证明自身身份；当前仅支持用户主体（USER）。
-                </p>
+                <p class="provider-field-help">{{ t("providers.brokerHelp") }}</p>
               </div>
               <p
                 v-if="providerDraft.supportRequestPassthrough"
                 class="provider-field-help"
                 data-testid="provider-passthrough-summary"
               >
-                仅接收 Access Token。调用方每次提供 Token 及有效期；平台不写入会话、历史或本地存储。
+                {{ t("providers.passthroughHelp") }}
               </p>
               <details class="provider-identity-tech" data-testid="provider-identity-tech-details">
-                <summary>查看技术约束</summary>
+                <summary>{{ t("providers.techConstraints") }}</summary>
                 <ul>
                   <li>
-                    契约：<code>outbound-identity.v1</code>；模式仅 <code>BROKER_OBO</code> /
-                    <code>REQUEST_PASSTHROUGH</code>。
+                    {{
+                      t("providers.techContract", {
+                        schema: "outbound-identity.v1",
+                        broker: "BROKER_OBO",
+                        passthrough: "REQUEST_PASSTHROUGH",
+                      })
+                    }}
                   </li>
-                  <li>主体类型：仅 <code>USER</code>。</li>
-                  <li>Broker 机器认证：<code>private_key_jwt</code>。</li>
-                  <li>透传凭据类型：<code>ACCESS_TOKEN</code>；调用方提供 <code>expiresAt</code>。</li>
-                  <li>用户业务 Token 不进入 Provider / Connection 配置、日志、本地存储、会话历史或 Revision。</li>
+                  <li>{{ t("providers.techSubject", { user: "USER" }) }}</li>
+                  <li>{{ t("providers.techBrokerAuth", { method: "private_key_jwt" }) }}</li>
+                  <li>
+                    {{ t("providers.techPassthroughCred", { type: "ACCESS_TOKEN", expiresAt: "expiresAt" }) }}
+                  </li>
+                  <li>{{ t("providers.techTokenBoundary") }}</li>
                 </ul>
               </details>
             </section>
           </div>
           <footer>
-            <button class="ghost-button" type="button" :disabled="saving" @click="closeEditor">取消</button
+            <button class="ghost-button" type="button" :disabled="saving" @click="closeEditor">{{
+              t("providers.cancel")
+            }}</button
             ><button data-testid="provider-save" class="primary-button" type="submit" :disabled="saving">
               <i :class="saving ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-floppy-disk'" />{{
-                saving ? "保存中" : "保存 Provider"
+                saving ? t("providers.saving") : t("providers.saveProvider")
               }}
             </button>
           </footer>
@@ -1794,17 +1845,21 @@ function errorMessage(error: unknown, fallback: string) {
     <div v-if="pendingDeleteProvider" class="provider-modal-backdrop" @click.self="closeDeleteDialog">
       <section class="provider-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="provider-delete-title">
         <span class="provider-delete-icon"><i class="fa-solid fa-trash-can" /></span>
-        <h2 id="provider-delete-title">删除 Provider</h2>
+        <h2 id="provider-delete-title">{{ t("providers.deleteTitle") }}</h2>
         <p>
-          删除 <strong>{{ pendingDeleteProvider.name }}</strong> 后将无法继续同步；已有 Connection 和 Tool 也可能失效。
+          <i18n-t keypath="providers.deleteBody" tag="span">
+            <template #name>
+              <strong>{{ pendingDeleteProvider.name }}</strong>
+            </template>
+          </i18n-t>
         </p>
         <label
-          ><span>输入 Provider 名称确认</span
+          ><span>{{ t("providers.deleteConfirmLabel") }}</span
           ><input v-model="deleteConfirmText" data-testid="provider-delete-confirm-input" autocomplete="off"
         /></label>
         <p v-if="deleteError" class="provider-form-error" role="alert">{{ deleteError }}</p>
         <footer>
-          <button type="button" :disabled="deleting" @click="closeDeleteDialog">取消</button
+          <button type="button" :disabled="deleting" @click="closeDeleteDialog">{{ t("providers.cancel") }}</button
           ><button
             data-testid="provider-delete-confirm"
             class="danger"
@@ -1812,7 +1867,9 @@ function errorMessage(error: unknown, fallback: string) {
             :disabled="deleting || !deleteConfirmMatches"
             @click="confirmDeleteProvider"
           >
-            <i :class="deleting ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-trash-can'" />确认删除
+            <i :class="deleting ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-trash-can'" />{{
+              t("providers.confirmDelete")
+            }}
           </button>
         </footer>
       </section>
@@ -1828,7 +1885,9 @@ function errorMessage(error: unknown, fallback: string) {
               : 'fa-solid fa-circle-check'
         "
       />{{ actionNote
-      }}<button type="button" aria-label="关闭提示" @click="actionNote = ''"><i class="fa-solid fa-xmark" /></button>
+      }}<button type="button" :aria-label="t('providers.closeNoteAria')" @click="actionNote = ''"
+        ><i class="fa-solid fa-xmark"
+      /></button>
     </div>
   </div>
 </template>

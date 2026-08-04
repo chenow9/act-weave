@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { computed } from "vue";
+import { useI18n } from "vue-i18n";
+
 import AppSelect from "./AppSelect.vue";
 import type { ToolSchemaNode, ToolSchemaNodeType } from "../types/domain";
 
@@ -11,11 +14,12 @@ const emit = defineEmits<{
   "update:modelValue": [value: ToolSchemaNode[]];
 }>();
 
-const descriptions = {
-  Path: "Path 参数直接映射到路径中的花括号占位符，通常数量少且不嵌套。",
-  Query: "定义接口的查询参数（Query），拼接在 URL 之后，如 ?status=active。",
-  Header: "定义请求需要携带的 Header 字段，用于鉴权、追踪等场景。",
-};
+const { t } = useI18n();
+const descriptions = computed(() => ({
+  Path: t("tools.flatDescPath"),
+  Query: t("tools.flatDescQuery"),
+  Header: t("tools.flatDescHeader"),
+}));
 const fieldTypeOptions = ["string", "integer", "number", "boolean"].map((type) => ({ label: type, value: type }));
 
 function createNode(): ToolSchemaNode {
@@ -53,7 +57,7 @@ function removeField(index: number) {
 </script>
 
 <template>
-  <section class="tool-flat-contract-editor" :aria-label="`${location} 参数`">
+  <section class="tool-flat-contract-editor" :aria-label="t('tools.paramsAria', { location })">
     <p class="tool-flat-contract-description">
       {{ descriptions[location] }}
     </p>
@@ -62,12 +66,12 @@ function removeField(index: number) {
       <table class="tool-flat-contract-table">
         <thead>
           <tr>
-            <th>字段名称</th>
-            <th>数据类型</th>
-            <th>必填</th>
-            <th>字段说明</th>
-            <th>默认值与来源</th>
-            <th><span class="sr-only">操作</span></th>
+            <th>{{ t("tools.fieldName") }}</th>
+            <th>{{ t("tools.dataType") }}</th>
+            <th>{{ t("common.required") }}</th>
+            <th>{{ t("tools.fieldDescription") }}</th>
+            <th>{{ t("tools.defaultAndSource") }}</th>
+            <th><span class="sr-only">{{ t("tools.actions") }}</span></th>
           </tr>
         </thead>
         <tbody>
@@ -75,7 +79,7 @@ function removeField(index: number) {
             <td>
               <input
                 :value="node.name"
-                placeholder="字段名称"
+                :placeholder="t('tools.fieldNamePlaceholder')"
                 @input="updateField(index, 'name', ($event.target as HTMLInputElement).value)"
               />
             </td>
@@ -85,7 +89,11 @@ function removeField(index: number) {
                 :model-value="node.type"
                 :options="fieldTypeOptions"
                 compact
-                :aria-label="`${node.name || `字段 ${index + 1}`}数据类型`"
+                :aria-label="
+                  t('tools.fieldTypeAria', {
+                    name: node.name || t('tools.fieldFallbackName', { n: index + 1 }),
+                  })
+                "
                 @update:model-value="updateField(index, 'type', String($event) as ToolSchemaNodeType)"
               />
             </td>
@@ -94,7 +102,9 @@ function removeField(index: number) {
                 class="tool-flat-required-toggle"
                 :class="{ on: node.required }"
                 type="button"
-                :aria-label="`${node.name || '当前字段'}${node.required ? '设为选填' : '设为必填'}`"
+                :aria-label="
+                  `${node.name || t('tools.currentField')}${node.required ? t('tools.setOptional') : t('tools.setRequired')}`
+                "
                 :aria-pressed="node.required"
                 @click="updateField(index, 'required', !node.required)"
               >
@@ -104,14 +114,14 @@ function removeField(index: number) {
             <td>
               <input
                 :value="node.description"
-                placeholder="字段说明（可选）"
+                :placeholder="t('tools.fieldDescOptional')"
                 @input="updateField(index, 'description', ($event.target as HTMLInputElement).value)"
               />
             </td>
             <td>
               <input
                 :value="String(node.defaultValue ?? node.valueSource ?? '')"
-                placeholder="默认值 / 来源"
+                :placeholder="t('tools.defaultSourcePlaceholder')"
                 @input="updateField(index, 'defaultValue', ($event.target as HTMLInputElement).value)"
               />
             </td>
@@ -119,7 +129,7 @@ function removeField(index: number) {
               <button
                 class="tool-flat-delete"
                 type="button"
-                :aria-label="`删除字段 ${node.name || index + 1}`"
+                :aria-label="t('tools.deleteFieldAria', { name: node.name || index + 1 })"
                 @click="removeField(index)"
               >
                 <i class="fa-solid fa-xmark" />
@@ -127,12 +137,14 @@ function removeField(index: number) {
             </td>
           </tr>
           <tr v-if="!modelValue.length">
-            <td colspan="6"><div class="tool-flat-empty">暂无参数，点击下方“添加字段”开始配置</div></td>
+            <td colspan="6"><div class="tool-flat-empty">{{ t("tools.flatEmpty") }}</div></td>
           </tr>
         </tbody>
       </table>
     </div>
-    <button class="tool-flat-add" type="button" @click="addField"><i class="fa-solid fa-plus" /> 添加字段</button>
+    <button class="tool-flat-add" type="button" @click="addField">
+      <i class="fa-solid fa-plus" /> {{ t("tools.addField") }}
+    </button>
   </section>
 </template>
 

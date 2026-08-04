@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import VxeUITable from "vxe-table";
 
 import type { ToolSchemaNode } from "../types/domain";
+import { createTestI18n } from "../test-utils/i18n";
 import ToolSchemaTreeView from "./ToolSchemaTreeView.vue";
 
 function makeNode(partial: Partial<ToolSchemaNode> & Pick<ToolSchemaNode, "id" | "name">): ToolSchemaNode {
@@ -20,7 +21,7 @@ function mountSchemaView(props: InstanceType<typeof ToolSchemaTreeView>["$props"
     props,
     global: {
       // Component also calls ensureVxe; double-install is harmless beyond a Vue warn.
-      plugins: [VxeUITable],
+      plugins: [createTestI18n("zh-CN"), VxeUITable],
     },
   });
 }

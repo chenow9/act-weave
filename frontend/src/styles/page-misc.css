@@ -1372,6 +1372,83 @@
   background: var(--aw-red-soft);
 }
 
+/* Language block: same row language as menu actions, not a bolted-on pill pair */
+.profile-menu-section {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 4px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--aw-line);
+}
+
+.profile-menu-section-label {
+  margin: 2px 4px 4px;
+  padding: 0 7px;
+  color: var(--aw-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.profile-menu-choice {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--aw-body);
+  font-size: 11px;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profile-menu-choice > i:first-child {
+  width: 12px;
+  color: var(--aw-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.profile-menu-choice > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-menu-choice-check {
+  margin-left: auto;
+  color: var(--aw-green, #0f9f6e);
+  font-size: 10px;
+}
+
+.profile-menu-choice:hover {
+  background: var(--aw-green-soft);
+  color: var(--aw-green-ink);
+}
+
+.profile-menu-choice:hover > i:first-child {
+  color: var(--aw-green-ink);
+}
+
+.profile-menu-choice.active {
+  background: var(--aw-green-soft);
+  color: var(--aw-green-ink);
+}
+
+.profile-menu-choice.active > i:first-child {
+  color: var(--aw-green-ink);
+}
+
+.profile-menu-choice:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--aw-green, #0f9f6e) 55%, transparent);
+  outline-offset: 1px;
+}
+
 .management-page-grid > .workspace-list-card > .workspace-resource-mode-bar,
 .management-page-grid > .agent-registry-card > .source-note,
 .management-page-grid > .agent-registry-card > .agent-narrow-notice,

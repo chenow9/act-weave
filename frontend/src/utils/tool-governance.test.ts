@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
+import { setI18nLocale } from "../i18n";
+import { tt } from "../i18n/tt";
+import type { ServiceConnection, Tool } from "../types/domain";
 import {
   buildToolPublishChecklist,
   getToolLifecycleStatus,
@@ -8,7 +11,11 @@ import {
   getToolUnifiedStatus,
   toolHasConnectionAttention,
 } from "./tool-governance";
-import type { ServiceConnection, Tool } from "../types/domain";
+
+beforeAll(() => {
+  // Governance labels follow active UI locale; keep these unit tests on zh-CN.
+  setI18nLocale("zh-CN");
+});
 
 function makeTool(overrides: Partial<Tool> = {}): Tool {
   return {
@@ -125,9 +132,11 @@ describe("tool governance helpers", () => {
       },
     });
 
-    expect(getToolLifecycleStatus(tool).label).toBe("已发布");
-    expect(getToolTestStatus(tool).label).toBe("测试失败");
-    expect(getToolRunStatus(tool, makeConnection({ status: "Needs attention" })).label).toBe("连接需处理");
+    expect(getToolLifecycleStatus(tool).label).toBe(tt("tools.govPublished"));
+    expect(getToolTestStatus(tool).label).toBe(tt("tools.govTestFail"));
+    expect(getToolRunStatus(tool, makeConnection({ status: "Needs attention" })).label).toBe(
+      tt("tools.govConnAttention"),
+    );
   });
 
   it("keeps lifecycle visible when connection attention overrides the table status", () => {
@@ -138,16 +147,16 @@ describe("tool governance helpers", () => {
     expect(toolHasConnectionAttention(published, broken)).toBe(true);
     expect(unified.connectionAttention).toBe(true);
     // Composite label for search/sort; UI scheme A splits lifecycle + run lines.
-    expect(unified.label).toBe("已发布 · 连接需处理");
-    expect(unified.lifecycleLabel).toBe("已发布");
-    expect(unified.runLabel).toBe("连接需处理");
+    expect(unified.label).toBe(`${tt("tools.govPublished")} · ${tt("tools.govConnAttention")}`);
+    expect(unified.lifecycleLabel).toBe(tt("tools.govPublished"));
+    expect(unified.runLabel).toBe(tt("tools.govConnAttention"));
     expect(unified.tone).toBe("danger");
-    expect(unified.description).toContain("已发布但当前不可安全调用");
+    expect(unified.description).toContain(tt("tools.govPublishedUnsafe"));
 
     const healthy = getToolUnifiedStatus(published, makeConnection({ status: "VERIFIED" }));
     expect(toolHasConnectionAttention(published, makeConnection({ status: "VERIFIED" }))).toBe(false);
-    expect(healthy.label).toBe("已发布");
-    expect(healthy.lifecycleLabel).toBe("已发布");
+    expect(healthy.label).toBe(tt("tools.govPublished"));
+    expect(healthy.lifecycleLabel).toBe(tt("tools.govPublished"));
     expect(healthy.runLabel).toBeUndefined();
     expect(healthy.connectionAttention).toBe(false);
   });

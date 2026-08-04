@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, getCurrentInstance } from "vue";
+import { useI18n } from "vue-i18n";
 
 import { ensureVxe } from "../plugins/register-vxe";
 import type { ToolSchemaNode } from "../types/domain";
 
+const { t } = useI18n();
 const app = getCurrentInstance()?.appContext.app;
 if (app) ensureVxe(app);
 
@@ -36,7 +38,7 @@ const summaryText = computed(() => {
   const total = countNodes(props.nodes);
   const required = countRequiredNodes(props.nodes);
   const depth = maxDepth(props.nodes);
-  return `${total} 个节点 · ${required} 个必填 · ${depth} 层结构`;
+  return t("tools.schemaSummary", { total, required, depth });
 });
 
 function toTableRow(node: ToolSchemaNode, kind: SchemaRowKind = "node"): SchemaTableRow {
@@ -70,13 +72,13 @@ function containsLocation(nodes: ToolSchemaNode[]): boolean {
 }
 
 function typeLabel(type: string, variant: "default" | "spec") {
-  const chineseLabels: Record<string, string> = {
-    string: "字符串",
-    integer: "整数",
-    number: "数字",
-    boolean: "布尔值",
-    object: "对象",
-    array: "数组",
+  const defaultLabels: Record<string, string> = {
+    string: t("tools.typeString"),
+    integer: t("tools.typeInteger"),
+    number: t("tools.typeNumber"),
+    boolean: t("tools.typeBoolean"),
+    object: t("tools.typeObject"),
+    array: t("tools.typeArray"),
   };
   const specLabels: Record<string, string> = {
     string: "STRING",
@@ -86,16 +88,16 @@ function typeLabel(type: string, variant: "default" | "spec") {
     object: "OBJECT",
     array: "ARRAY",
   };
-  return (variant === "spec" ? specLabels : chineseLabels)[type] || type;
+  return (variant === "spec" ? specLabels : defaultLabels)[type] || type;
 }
 
 function locationLabel(location: string | undefined, variant: "default" | "spec") {
   const defaultLabels: Record<string, string> = {
-    Path: "路径参数",
-    Query: "查询参数",
-    Body: "请求体",
-    Header: "请求头",
-    Response: "响应体",
+    Path: t("tools.locPath"),
+    Query: t("tools.locQuery"),
+    Body: t("tools.locBody"),
+    Header: t("tools.locHeader"),
+    Response: t("tools.locResponse"),
   };
   const specLabels: Record<string, string> = {
     Path: "Path",
@@ -109,9 +111,9 @@ function locationLabel(location: string | undefined, variant: "default" | "spec"
 
 function nameLabel(row: SchemaTableRow) {
   if (row.__kind === "array-item") {
-    return "数组元素";
+    return t("tools.arrayItem");
   }
-  return row.name || "(未命名字段)";
+  return row.name || t("tools.unnamedFieldParen");
 }
 
 function buildPath(row: SchemaTableRow, parentPath = ""): string {
@@ -132,13 +134,13 @@ function requiredLabel(required: boolean, variant: "default" | "spec") {
   if (variant === "spec") {
     return required ? "YES" : "Optional";
   }
-  return required ? "必填" : "可选";
+  return required ? t("common.required") : t("common.optional");
 }
 
 function descriptionDisplay(description: string | undefined, variant: "default" | "spec") {
   const text = (description || "").trim();
   if (text) return text;
-  return variant === "spec" ? "暂无说明" : "—";
+  return variant === "spec" ? t("tools.noDescriptionDash") : "—";
 }
 
 function annotateDepth(rows: SchemaTableRow[], depth = 0, parentPath = "", inheritedLocation = ""): SchemaTableRow[] {
@@ -195,7 +197,7 @@ function maxDepth(nodes: ToolSchemaNode[], depth = 1): number {
         <span v-if="summaryDescription">{{ summaryDescription }}</span>
       </div>
       <span class="tool-schema-view-summary">{{
-        variantMode === "spec" ? `${countActiveFields(nodes)} 个活跃字段` : summaryText
+        variantMode === "spec" ? t("tools.activeFields", { n: countActiveFields(nodes) }) : summaryText
       }}</span>
     </div>
     <div v-if="tableRows.length" class="tool-schema-tree" :class="{ 'tool-schema-tree-spec': variantMode === 'spec' }">
@@ -211,7 +213,12 @@ function maxDepth(nodes: ToolSchemaNode[], depth = 1): number {
         :tree-config="{ childrenField: 'children', expandAll: true, showLine: true }"
         show-overflow="title"
       >
-        <vxe-column v-if="showLocationColumn && variantMode !== 'spec'" field="location" title="参数位置" width="140">
+        <vxe-column
+          v-if="showLocationColumn && variantMode !== 'spec'"
+          field="location"
+          :title="t('tools.schemaColLocation')"
+          width="140"
+        >
           <template #default="{ row }">
             <span class="tool-schema-cell-text">
               {{ locationLabel(row.__locationLabel, variantMode) }}
@@ -220,7 +227,7 @@ function maxDepth(nodes: ToolSchemaNode[], depth = 1): number {
         </vxe-column>
         <vxe-column
           field="name"
-          :title="variantMode === 'spec' ? '字段名' : '字段名'"
+          :title="t('tools.schemaColFieldName')"
           tree-node
           :min-width="variantMode === 'spec' ? 220 : 220"
         >
@@ -251,7 +258,12 @@ function maxDepth(nodes: ToolSchemaNode[], depth = 1): number {
             </div>
           </template>
         </vxe-column>
-        <vxe-column v-if="showLocationColumn && variantMode === 'spec'" field="location" title="位置" width="92">
+        <vxe-column
+          v-if="showLocationColumn && variantMode === 'spec'"
+          field="location"
+          :title="t('tools.schemaColLocationShort')"
+          width="92"
+        >
           <template #default="{ row }">
             <span class="tool-schema-cell-text tool-schema-cell-text-spec">
               {{ locationLabel(row.__locationLabel, variantMode) }}
@@ -260,7 +272,7 @@ function maxDepth(nodes: ToolSchemaNode[], depth = 1): number {
         </vxe-column>
         <vxe-column
           field="type"
-          :title="variantMode === 'spec' ? '数据类型' : '类型'"
+          :title="variantMode === 'spec' ? t('tools.schemaColDataType') : t('tools.schemaColType')"
           :width="variantMode === 'spec' ? 108 : 112"
         >
           <template #default="{ row }">
@@ -269,7 +281,7 @@ function maxDepth(nodes: ToolSchemaNode[], depth = 1): number {
         </vxe-column>
         <vxe-column
           field="required"
-          :title="variantMode === 'spec' ? '必填状态' : '必填'"
+          :title="variantMode === 'spec' ? t('tools.schemaColRequiredState') : t('tools.schemaColRequired')"
           :width="variantMode === 'spec' ? 96 : 88"
         >
           <template #default="{ row }">
@@ -280,7 +292,7 @@ function maxDepth(nodes: ToolSchemaNode[], depth = 1): number {
         </vxe-column>
         <vxe-column
           field="description"
-          :title="variantMode === 'spec' ? '字段说明' : '说明'"
+          :title="variantMode === 'spec' ? t('tools.schemaColFieldDesc') : t('tools.schemaColDesc')"
           :min-width="variantMode === 'spec' ? 220 : 240"
         >
           <template #default="{ row }">
@@ -291,6 +303,6 @@ function maxDepth(nodes: ToolSchemaNode[], depth = 1): number {
         </vxe-column>
       </vxe-table>
     </div>
-    <div v-else class="tool-schema-empty">{{ emptyText || "暂无结构化字段" }}</div>
+    <div v-else class="tool-schema-empty">{{ emptyText || t("tools.noStructuredFields") }}</div>
   </div>
 </template>

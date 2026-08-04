@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import "./audit-logs-page.css";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 
 import AgentAuditStepNode from "../components/AgentAuditStepNode.vue";
@@ -14,6 +15,7 @@ import { useAuthStore } from "../stores/auth";
 import { useWorkspaceStore } from "../stores/workspaces";
 import type { AgentAuditActor, AgentAuditStep, AgentAuditTraceListItem } from "../types/domain";
 
+const { t } = useI18n();
 const agentAudit = useAgentAuditStore();
 const auth = useAuthStore();
 const workspaces = useWorkspaceStore();
@@ -48,24 +50,24 @@ const SENSITIVE_KEY_NEEDLES = [
 
 const auditSummaryItems = computed<ManagementSummaryItem[]>(() => [
   {
-    label: "总调用次数",
+    label: t("logs.summaryTotal"),
     value: agentAudit.stats.totalRuns.toLocaleString(),
     icon: "fa-solid fa-layer-group",
   },
   {
-    label: "成功率",
+    label: t("logs.summarySuccessRate"),
     value: `${agentAudit.stats.successRate.toFixed(1)}%`,
     icon: "fa-solid fa-circle-check",
     tone: "info",
   },
   {
-    label: "失败率",
+    label: t("logs.summaryFailureRate"),
     value: `${agentAudit.stats.failureRate.toFixed(1)}%`,
     icon: "fa-solid fa-circle-xmark",
     tone: "warning",
   },
   {
-    label: "平均耗时",
+    label: t("logs.summaryAvgLatency"),
     value: formatLatency(agentAudit.stats.avgLatencyMs),
     icon: "fa-solid fa-clock",
   },
@@ -74,43 +76,43 @@ const auditSummaryItems = computed<ManagementSummaryItem[]>(() => [
 const auditColumns = computed<ManagementListColumn<AgentAuditTraceListItem>[]>(() => [
   {
     key: "traceId",
-    label: "Trace ID",
+    label: t("logs.colTraceId"),
     width: 220,
     getValue: (row) => row.traceId,
   },
   {
     key: "startedAt",
-    label: "触发时间",
+    label: t("logs.colStartedAt"),
     width: 160,
     getValue: (row) => formatTime(row.startedAt),
   },
   {
     key: "model",
-    label: "模型",
+    label: t("logs.colModel"),
     width: 140,
     getValue: (row) => row.model || "—",
   },
   {
     key: "userLabel",
-    label: "用户",
+    label: t("logs.colUser"),
     width: 160,
     getValue: (row) => displayUserLabel(row.userLabel, row.user),
   },
   {
     key: "status",
-    label: "状态",
+    label: t("logs.colStatus"),
     width: 100,
     getValue: (row) => statusLabel(row.status),
   },
   {
     key: "latencyMs",
-    label: "耗时",
+    label: t("logs.colLatency"),
     width: 100,
     getValue: (row) => formatLatency(row.latencyMs),
   },
   {
     key: "actions",
-    label: "操作",
+    label: t("logs.colActions"),
     width: 96,
     align: "right",
     headerAlign: "right",
@@ -131,14 +133,14 @@ onMounted(async () => {
   agentAudit.goToList();
   await runAction(async () => {
     if (!isPlatformAdmin.value) {
-      actionError.value = "仅平台管理员可查看 Agent 全链路审计。";
+      actionError.value = t("logs.adminOnly");
       return;
     }
     if (!workspaces.items.length) await workspaces.load();
     if (!workspaceId.value) return;
     await agentAudit.loadTraces(workspaceId.value, { q: searchInput.value, page: 1 });
     listHasLoaded.value = true;
-  }, "全链路审计初始化失败，请稍后重试。");
+  }, t("logs.initFailed"));
 });
 
 watch(workspaceId, async (next, previous) => {
@@ -156,7 +158,7 @@ async function refreshList(overrides: { page?: number; pageSize?: number } = {})
       pageSize: overrides.pageSize ?? agentAudit.pageSize,
     });
     listHasLoaded.value = true;
-  }, "加载调用记录失败。");
+  }, t("logs.loadListFailed"));
 }
 
 async function searchList() {
@@ -187,7 +189,7 @@ async function openDetail(traceId: string) {
   await runAction(async () => {
     await agentAudit.loadTraceDetail(workspaceId.value, traceId);
     await resolveSelectedActorProfile();
-  }, "加载链路详情失败。");
+  }, t("logs.loadDetailFailed"));
   // List→detail reuses the same scroll container; reset so the header is visible without manual scroll.
   await scrollAuditToTop();
   await setupTimelineInfiniteScroll();
@@ -239,7 +241,7 @@ async function loadMoreTimeline() {
   if (!workspaceId.value || !agentAudit.detailHasMore || agentAudit.detailLoadingMore) return;
   await runAction(async () => {
     await agentAudit.loadMoreTraceSteps(workspaceId.value);
-  }, "加载更多链路步骤失败。");
+  }, t("logs.loadMoreFailed"));
   // Keep observing; when hasMore becomes false, sentinel still sits at end (harmless).
 }
 
@@ -278,9 +280,9 @@ function formatTime(value?: string) {
 }
 
 function statusLabel(status: string) {
-  if (status === "success") return "成功";
-  if (status === "error") return "失败";
-  if (status === "running") return "运行中";
+  if (status === "success") return t("logs.statusSuccess");
+  if (status === "error") return t("logs.statusError");
+  if (status === "running") return t("logs.statusRunning");
   return status || "—";
 }
 
@@ -305,8 +307,8 @@ function maskValue(key: string, value: unknown): unknown {
 }
 
 function displayJson(data: unknown, state?: string) {
-  if (state === "cipher") return { _state: "cipher", message: "（密文不可读）" };
-  if (state === "missing") return { _state: "missing", message: "（无数据）" };
+  if (state === "cipher") return { _state: "cipher", message: t("logs.cipherUnreadable") };
+  if (state === "missing") return { _state: "missing", message: t("logs.noData") };
   if (data == null) return {};
   if (typeof data === "object") return maskValue("", data);
   if (agentAudit.isMasked && typeof data === "string") return maskSensitiveText(data);
@@ -355,10 +357,10 @@ function actorPrimaryName(actor?: AgentAuditActor | null, fallbackLabel?: string
   const raw = (fallbackLabel || actor?.id || "").trim();
   if (raw) {
     const id = raw.includes(":") ? raw.slice(raw.indexOf(":") + 1).trim() : raw;
-    if (id && agentAudit.isMasked) return "已脱敏";
+    if (id && agentAudit.isMasked) return t("logs.masked");
     if (id) return id.length > 12 ? `${id.slice(0, 8)}…` : id;
   }
-  return "未知主体";
+  return t("logs.unknownActor");
 }
 
 function looksLikeUuid(value?: string | null) {
@@ -368,11 +370,11 @@ function looksLikeUuid(value?: string | null) {
 }
 
 function actorTypeLabel(type?: string) {
-  const t = (type || "").toUpperCase();
-  if (t === "USER") return "用户";
-  if (t === "SYSTEM") return "系统";
-  if (t === "SERVICE" || t === "SERVICE_PRINCIPAL") return "服务账号";
-  return type || "主体";
+  const kind = (type || "").toUpperCase();
+  if (kind === "USER") return t("logs.actorUser");
+  if (kind === "SYSTEM") return t("logs.actorSystem");
+  if (kind === "SERVICE" || kind === "SERVICE_PRINCIPAL") return t("logs.actorService");
+  return type || t("logs.actorPrincipal");
 }
 
 /** List cell / compact label — always prefer real names; never collapse to「用户」. */
@@ -383,19 +385,19 @@ function displayUserLabel(label?: string | null, actor?: AgentAuditActor | null)
 function actorTooltipLines(actor?: AgentAuditActor | null, fallbackLabel?: string | null): string[] {
   const lines: string[] = [];
   const kind = actorKind(actor, fallbackLabel);
-  lines.push(`类型：${actorTypeLabel(kind)}`);
-  if (actor?.displayName) lines.push(`显示名：${actor.displayName}`);
-  if (actor?.username) lines.push(`用户名：${actor.username}`);
-  if (actor?.clientName) lines.push(`Client 名称：${actor.clientName}`);
-  if (actor?.clientId && !agentAudit.isMasked) lines.push(`Client ID：${actor.clientId}`);
-  else if (actor?.clientId && agentAudit.isMasked) lines.push("Client ID：********");
-  if (actor?.id && !agentAudit.isMasked) lines.push(`主体 ID：${actor.id}`);
-  else if (actor?.id && agentAudit.isMasked) lines.push("主体 ID：********");
+  lines.push(t("logs.actorType", { type: actorTypeLabel(kind) }));
+  if (actor?.displayName) lines.push(t("logs.actorDisplayName", { name: actor.displayName }));
+  if (actor?.username) lines.push(t("logs.actorUsername", { name: actor.username }));
+  if (actor?.clientName) lines.push(t("logs.actorClientName", { name: actor.clientName }));
+  if (actor?.clientId && !agentAudit.isMasked) lines.push(t("logs.actorClientId", { id: actor.clientId }));
+  else if (actor?.clientId && agentAudit.isMasked) lines.push(t("logs.actorClientIdMasked"));
+  if (actor?.id && !agentAudit.isMasked) lines.push(t("logs.actorId", { id: actor.id }));
+  else if (actor?.id && agentAudit.isMasked) lines.push(t("logs.actorIdMasked"));
   if (!actor?.displayName && !actor?.username && !actor?.clientName && fallbackLabel && !actor?.id) {
-    lines.push(`标识：${fallbackLabel}`);
+    lines.push(t("logs.actorFallback", { label: fallbackLabel }));
   }
   if (canOpenActor(actor, fallbackLabel)) {
-    lines.push("点击可跳转查看详情");
+    lines.push(t("logs.clickForDetail"));
   }
   return lines;
 }
@@ -434,7 +436,7 @@ async function openActor(actor?: AgentAuditActor | null, fallbackLabel?: string 
   }
   // Do not fall back to raw UUID — it will not match username search.
   if (!username || looksLikeUuid(username)) {
-    actionError.value = "未能解析用户名，请确认该用户仍存在于平台。";
+    actionError.value = t("logs.resolveUsernameFailed");
     return;
   }
   void router.push({ path: "/users", query: { q: username } });
@@ -526,26 +528,28 @@ function delegationMeta(step: AgentAuditStep) {
   const origin = (step.origin || "").toUpperCase();
   const mode = (step.mode || "").toUpperCase();
 
-  if (protocol === "INTERNAL") bits.push("内部协作");
-  else if (protocol === "A2A") bits.push("外部协议");
+  if (protocol === "INTERNAL") bits.push(t("logs.delegationInternal"));
+  else if (protocol === "A2A") bits.push(t("logs.delegationA2A"));
   else if (step.protocol) bits.push(step.protocol);
 
-  if (mode === "INLINE") bits.push("同次对话");
-  else if (mode === "TASK") bits.push("独立任务");
+  if (mode === "INLINE") bits.push(t("logs.delegationInline"));
+  else if (mode === "TASK") bits.push(t("logs.delegationTask"));
   else if (step.mode) bits.push(step.mode);
 
   // Origin only when it adds info beyond protocol (e.g. external inbound).
-  if (origin === "EXTERNAL") bits.push("外部发起");
+  if (origin === "EXTERNAL") bits.push(t("logs.delegationExternal"));
   else if (origin && origin !== "INTERNAL" && origin !== protocol) bits.push(origin);
 
-  if (step.depth != null) bits.push(step.depth === 0 ? "顶层" : `第 ${step.depth} 层`);
+  if (step.depth != null) {
+    bits.push(step.depth === 0 ? t("logs.delegationTop") : t("logs.delegationDepth", { n: step.depth }));
+  }
 
   const status = (step.status || "").toUpperCase();
-  if (status === "SUCCEEDED" || status === "SUCCESS") bits.push("成功");
-  else if (status === "FAILED" || status === "ERROR") bits.push("失败");
-  else if (status === "RUNNING") bits.push("进行中");
-  else if (status === "TIMED_OUT") bits.push("超时");
-  else if (status === "CANCELLED") bits.push("已取消");
+  if (status === "SUCCEEDED" || status === "SUCCESS") bits.push(t("logs.statusSucceeded"));
+  else if (status === "FAILED" || status === "ERROR") bits.push(t("logs.statusFailed"));
+  else if (status === "RUNNING") bits.push(t("logs.statusInProgress"));
+  else if (status === "TIMED_OUT") bits.push(t("logs.statusTimedOut"));
+  else if (status === "CANCELLED") bits.push(t("logs.statusCancelled"));
   else if (step.status) bits.push(step.status);
 
   if (step.errorCode) bits.push(step.errorCode);
@@ -557,7 +561,7 @@ function stepText(step: AgentAuditStep) {
     step.type === "reasoning" &&
     (!step.content || step.contentState === "missing" || step.contentState === "redacted")
   ) {
-    const fallback = step.content || "无推理数据";
+    const fallback = step.content || t("logs.noReasoning");
     return agentAudit.isMasked ? maskSensitiveText(fallback) : fallback;
   }
   if (!step.content) return "";
@@ -578,21 +582,21 @@ async function runAction(action: () => Promise<void>, fallback: string) {
   <div ref="pageRef" class="page-grid management-page-grid agent-audit-page">
     <ManagementPageHeader
       class="span-12"
-      title="Agent 审计中心"
-      description="按 Trace ID 查看全链路运行时间轴（仅平台管理员）"
+      :title="t('logs.title')"
+      :description="t('logs.description')"
       icon="fa-solid fa-clock-rotate-left"
       eyebrow="ACTWEAVE CONTROL PLANE"
     >
       <template #actions>
         <div class="agent-audit-mask" :class="{ off: !agentAudit.isMasked }">
           <i :class="agentAudit.isMasked ? 'fa-solid fa-shield' : 'fa-solid fa-shield-halved'"></i>
-          <span>数据脱敏</span>
+          <span>{{ t("logs.dataMasking") }}</span>
           <button
             type="button"
             class="toggle"
             :class="{ on: agentAudit.isMasked }"
             :disabled="!agentAudit.debugMode"
-            :title="agentAudit.debugMode ? '切换展示层脱敏' : 'debug 关闭时固定脱敏'"
+            :title="agentAudit.debugMode ? t('logs.toggleMask') : t('logs.maskFixed')"
             @click="agentAudit.toggleMask()"
           >
             <span class="dot"></span>
@@ -618,10 +622,10 @@ async function runAction(action: () => Promise<void>, fallback: string) {
           :loading="agentAudit.loading"
           :has-loaded="listHasLoaded"
           :search="searchInput"
-          search-placeholder="搜索 Trace ID 或 User..."
-          search-aria-label="搜索调用记录"
-          reset-label="重置"
-          reset-aria-label="重置搜索"
+          :search-placeholder="t('logs.searchPlaceholder')"
+          :search-aria-label="t('logs.searchAria')"
+          :reset-label="t('logs.reset')"
+          :reset-aria-label="t('logs.resetAria')"
           :pagination="auditPagination"
           @select-row="onAuditSelectRow"
           @update:search="onAuditSearchUpdate"
@@ -664,13 +668,13 @@ async function runAction(action: () => Promise<void>, fallback: string) {
             <span class="aw-table-mono">{{ formatLatency(row.latencyMs) }}</span>
           </template>
           <template #cell-actions>
-            <span class="audit-detail-link">详情</span>
+            <span class="audit-detail-link">{{ t("logs.detail") }}</span>
           </template>
           <template #empty>
             <div class="empty-state management-registry-empty-state">
               <div class="management-empty-state-icon"><i class="fa-solid fa-chart-line" /></div>
-              <h2>暂无调用记录</h2>
-              <p>在业务空间内产生 Agent 运行后，将在此按 Trace 展示。</p>
+              <h2>{{ t("logs.emptyTitle") }}</h2>
+              <p>{{ t("logs.emptyBody") }}</p>
             </div>
           </template>
         </ManagementList>
@@ -684,7 +688,7 @@ async function runAction(action: () => Promise<void>, fallback: string) {
         </button>
         <div>
           <h2>
-            链路详情
+            {{ t("logs.traceDetail") }}
             <span class="mono pill">{{ agentAudit.selected.traceId }}</span>
           </h2>
           <div class="detail-meta muted">
@@ -727,13 +731,14 @@ async function runAction(action: () => Promise<void>, fallback: string) {
               </div>
             </span>
             <span
-              >总耗时: <strong>{{ formatLatency(agentAudit.selected.latencyMs) }}</strong></span
+              >{{ t("logs.totalLatency") }}
+              <strong>{{ formatLatency(agentAudit.selected.latencyMs) }}</strong></span
             >
           </div>
         </div>
       </div>
 
-      <div v-if="agentAudit.detailLoading" class="span-12 empty">加载详情中…</div>
+      <div v-if="agentAudit.detailLoading" class="span-12 empty">{{ t("logs.loadingDetail") }}</div>
       <div v-else class="span-12 timeline">
         <!-- Recursive node supports A→B→C… agent_delegation nesting of any depth -->
         <AgentAuditStepNode
@@ -749,12 +754,16 @@ async function runAction(action: () => Promise<void>, fallback: string) {
           :delegation-meta="delegationMeta"
         />
         <div ref="timelineSentinelRef" class="timeline-sentinel" aria-hidden="true" />
-        <div v-if="agentAudit.detailLoadingMore" class="timeline-loading muted">加载更多步骤…</div>
-        <div v-else-if="agentAudit.detailHasMore" class="timeline-loading muted">下拉继续加载</div>
+        <div v-if="agentAudit.detailLoadingMore" class="timeline-loading muted">
+          {{ t("logs.loadingMoreSteps") }}
+        </div>
+        <div v-else-if="agentAudit.detailHasMore" class="timeline-loading muted">
+          {{ t("logs.scrollForMore") }}
+        </div>
         <div v-else class="timeline-end">
           End of Trace
           <span v-if="(agentAudit.selected.stepTotal ?? 0) > 0" class="muted">
-            · 共 {{ agentAudit.selected.stepTotal }} 步
+            {{ t("logs.stepTotal", { n: agentAudit.selected.stepTotal }) }}
           </span>
         </div>
       </div>

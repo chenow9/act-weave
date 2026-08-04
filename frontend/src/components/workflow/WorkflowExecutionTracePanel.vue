@@ -1,5 +1,9 @@
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
+
 import type { Execution, ExecutionStepRecord } from "../../types/domain";
+
+const { t } = useI18n();
 
 defineProps<{
   execution?: Execution;
@@ -98,7 +102,7 @@ function stepLabel(step: ExecutionStepRecord) {
 
     <div v-else class="workflow-execution-trace-empty">
       <i class="fa-solid fa-vial-circle-check" />
-      <span>暂无试运行执行轨迹。</span>
+      <span>{{ t("workflow.noTrialTrace") }}</span>
     </div>
   </section>
 </template>

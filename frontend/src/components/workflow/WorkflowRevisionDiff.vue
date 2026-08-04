@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 
 import type { WorkflowRevisionDiff } from "../../types/domain";
 
@@ -8,24 +9,26 @@ const props = defineProps<{
   emptyText?: string;
 }>();
 
+const { t, locale } = useI18n();
+
 const nodeChanges = computed(() => props.diff?.nodeChanges ?? []);
 const edgeChanges = computed(() => props.diff?.edgeChanges ?? []);
 const snapshotChanges = computed(() => {
   const changes = props.diff?.changes;
   if (!changes) return [];
   return [
-    { key: "draft", label: "Draft 快照", changed: changes.draft },
-    { key: "spec", label: "Spec 快照", changed: changes.spec },
-    { key: "plan", label: "Plan 快照", changed: changes.plan },
-    { key: "planHash", label: "Plan Hash", changed: changes.planHash },
+    { key: "draft", label: t("workflow.snapshotDraft"), changed: changes.draft },
+    { key: "spec", label: t("workflow.snapshotSpec"), changed: changes.spec },
+    { key: "plan", label: t("workflow.snapshotPlan"), changed: changes.plan },
+    { key: "planHash", label: t("workflow.snapshotPlanHash"), changed: changes.planHash },
   ];
 });
 
 function formatDate(value?: string) {
-  if (!value) return "未比较";
+  if (!value) return t("workflow.notCompared");
   const timestamp = Date.parse(value);
   if (Number.isNaN(timestamp)) return value;
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(locale.value === "zh-CN" ? "zh-CN" : "en", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -42,9 +45,9 @@ function nodeChangeSummary(change: WorkflowRevisionDiff["nodeChanges"][number]) 
     return `${change.leftType || "-"} -> ${change.rightType || "-"}`;
   }
   if (change.changeType === "DataChanged") {
-    return "节点配置已变化";
+    return t("workflow.nodeConfigChanged");
   }
-  return change.rightType || change.leftType || "节点";
+  return change.rightType || change.leftType || t("workflow.nodeGeneric");
 }
 
 function edgeChangeSummary(change: WorkflowRevisionDiff["edgeChanges"][number]) {
@@ -59,16 +62,16 @@ function edgeChangeSummary(change: WorkflowRevisionDiff["edgeChanges"][number]) 
   <section class="workflow-revision-diff">
     <header class="workflow-revision-diff-head">
       <div>
-        <span>版本差异</span>
+        <span>{{ t("workflow.revisionDiff") }}</span>
         <strong v-if="diff">{{ diff.leftRevisionId }} -> {{ diff.rightRevisionId }}</strong>
-        <strong v-else>未选择版本对比</strong>
+        <strong v-else>{{ t("workflow.noDiffSelected") }}</strong>
       </div>
       <small>{{ formatDate(diff?.comparedAt) }}</small>
     </header>
 
     <div v-if="diff" class="workflow-revision-diff-body">
       <div v-if="snapshotChanges.length" class="workflow-revision-diff-group">
-        <h4>不可变快照变化</h4>
+        <h4>{{ t("workflow.immutableSnapshotChanges") }}</h4>
         <div class="workflow-revision-diff-list">
           <article v-for="change in snapshotChanges" :key="change.key" class="workflow-revision-diff-item">
             <span class="status-pill" :class="change.changed ? 'datachanged' : 'unchanged'">{{
@@ -76,7 +79,7 @@ function edgeChangeSummary(change: WorkflowRevisionDiff["edgeChanges"][number]) 
             }}</span>
             <span>
               <strong>{{ change.label }}</strong>
-              <small>{{ change.changed ? "两个 revision 的快照不同" : "两个 revision 的快照一致" }}</small>
+              <small>{{ change.changed ? t("workflow.snapshotDiffers") : t("workflow.snapshotSame") }}</small>
             </span>
           </article>
         </div>
@@ -84,7 +87,7 @@ function edgeChangeSummary(change: WorkflowRevisionDiff["edgeChanges"][number]) 
 
       <template v-else>
         <div class="workflow-revision-diff-group">
-          <h4>节点变化</h4>
+          <h4>{{ t("workflow.nodeChanges") }}</h4>
           <div v-if="nodeChanges.length" class="workflow-revision-diff-list">
             <article
               v-for="change in nodeChanges"
@@ -98,11 +101,11 @@ function edgeChangeSummary(change: WorkflowRevisionDiff["edgeChanges"][number]) 
               </span>
             </article>
           </div>
-          <p v-else>节点没有变化。</p>
+          <p v-else>{{ t("workflow.noNodeChanges") }}</p>
         </div>
 
         <div class="workflow-revision-diff-group">
-          <h4>连线变化</h4>
+          <h4>{{ t("workflow.edgeChanges") }}</h4>
           <div v-if="edgeChanges.length" class="workflow-revision-diff-list">
             <article
               v-for="change in edgeChanges"
@@ -116,12 +119,12 @@ function edgeChangeSummary(change: WorkflowRevisionDiff["edgeChanges"][number]) 
               </span>
             </article>
           </div>
-          <p v-else>连线没有变化。</p>
+          <p v-else>{{ t("workflow.noEdgeChanges") }}</p>
         </div>
       </template>
     </div>
 
-    <p v-else>{{ emptyText || "选择两个 revision 或点击版本行的对比按钮后，这里会显示节点和连线差异。" }}</p>
+    <p v-else>{{ emptyText || t("workflow.diffEmptyDefault") }}</p>
   </section>
 </template>
 

@@ -1,3 +1,4 @@
+import { tt } from "../i18n/tt";
 /**
  * Agents page model (ZKL-64 item 16).
  */
@@ -93,7 +94,7 @@ export function createAgentsPageModel() {
   /** Selected capability IDs for batch bind/unbind in the capability dialog. */
   const capabilitySelectedIds = ref<string[]>([]);
 
-  const statusSourceText = "状态由 Agent 配置维护；Tool/Workflow 数量从当前启用的能力绑定只读派生。";
+  const statusSourceText = computed(() => tt("agents.statusSource"));
 
   const selectedAgent = computed(() => agents.selectedAgent || agents.items[0] || null);
   const hasAgentRecords = computed(() => agents.items.length > 0);
@@ -103,15 +104,15 @@ export function createAgentsPageModel() {
     const paused = agents.items.filter((agent) => agent.status === "DISABLED").length;
     const modelCount = new Set(agents.items.map((agent) => agent.modelConfigId).filter(Boolean)).size;
     return [
-      { label: "Agent 总数", value: total, icon: "fa-solid fa-user-gear" },
+      { label: tt("agents.summaryTotal"), value: total, icon: "fa-solid fa-user-gear" },
       {
-        label: "运行中",
+        label: tt("agents.summaryRunning"),
         value: active,
         note: total ? `${((active / total) * 100).toFixed(1)}%` : "0%",
         icon: "fa-solid fa-circle-check",
       },
-      { label: "已暂停", value: paused, icon: "fa-solid fa-circle-pause", tone: "warning" },
-      { label: "模型配置", value: modelCount, icon: "fa-solid fa-brain" },
+      { label: tt("agents.summaryPaused"), value: paused, icon: "fa-solid fa-circle-pause", tone: "warning" },
+      { label: tt("agents.summaryModels"), value: modelCount, icon: "fa-solid fa-brain" },
     ];
   });
   const workspaceOptions = computed(() =>
@@ -134,17 +135,17 @@ export function createAgentsPageModel() {
       }
     },
   });
-  const studioTitle = computed(() => (studioMode.value === "create" ? "创建 Agent" : "编辑 Agent"));
+  const studioTitle = computed(() => (studioMode.value === "create" ? tt("agents.createTitle") : tt("agents.editTitle")));
   const promptDetailHTML = computed(() => renderPromptMarkdown(currentPromptBody.value || ""));
   const agentManagementFilterOptions = computed<Array<{ label: string; value: AgentStatusFilter }>>(() => [
-    { label: "全部", value: "ALL" },
-    { label: "运行中", value: "ACTIVE" },
-    { label: "暂停", value: "DISABLED" },
+    { label: tt("agents.filterAll"), value: "ALL" },
+    { label: tt("agents.summaryRunning"), value: "ACTIVE" },
+    { label: tt("agents.filterPaused"), value: "DISABLED" },
   ]);
   const agentColumns = computed<ManagementListColumn<Agent>[]>(() => [
     {
       key: "identity",
-      label: "Agent",
+      label: tt("agents.colIdentity"),
       width: 286,
       sortable: true,
       sortKey: "name",
@@ -152,7 +153,7 @@ export function createAgentsPageModel() {
     },
     {
       key: "workspace",
-      label: "绑定空间",
+      label: tt("agents.colWorkspace"),
       width: 190,
       hidable: true,
       sortable: true,
@@ -161,7 +162,7 @@ export function createAgentsPageModel() {
     },
     {
       key: "model",
-      label: "决策模型",
+      label: tt("agents.colModel"),
       width: 180,
       hidable: true,
       sortable: true,
@@ -170,14 +171,14 @@ export function createAgentsPageModel() {
     },
     {
       key: "prompt",
-      label: "系统提示词",
+      label: tt("agents.colPrompt"),
       width: 150,
       hidable: true,
       getValue: (agent) => agent.currentPromptRevisionId || "-",
     },
     {
       key: "status",
-      label: "状态",
+      label: tt("agents.colStatus"),
       width: 140,
       hidable: true,
       sortable: true,
@@ -186,25 +187,25 @@ export function createAgentsPageModel() {
     },
     {
       key: "updatedAt",
-      label: "最近修改",
+      label: tt("agents.colUpdated"),
       width: 130,
       hidable: true,
       sortable: true,
       sortKey: "updatedAt",
       getValue: formatAgentUpdatedAt,
     },
-    { key: "actions", label: "操作", width: 68, align: "right", headerAlign: "center" },
+    { key: "actions", label: tt("agents.colActions"), width: 68, align: "right", headerAlign: "center" },
   ]);
   const isAgentDeleteConfirmDirty = computed(() => agentDeleteConfirmName.value.trim().length > 0);
   const isAgentStudioDirty = computed(() => {
     return Boolean(studioMode.value && serializeAgentDraft(draftAgent.value) !== agentStudioInitialSnapshot.value);
   });
-  const agentNameError = computed(() => (draftAgent.value.name.trim() ? "" : "请输入 Agent 运行名称。"));
-  const agentWorkspaceError = computed(() => (draftAgent.value.workspaceId ? "" : "请选择绑定业务空间。"));
-  const agentModelError = computed(() => (draftAgent.value.modelConfigId ? "" : "请选择决策大模型。"));
-  const agentRoleError = computed(() => (draftAgent.value.roleDescription.trim() ? "" : "请输入场景决策职责。"));
+  const agentNameError = computed(() => (draftAgent.value.name.trim() ? "" : tt("agents.nameRequired")));
+  const agentWorkspaceError = computed(() => (draftAgent.value.workspaceId ? "" : tt("agents.workspaceRequired")));
+  const agentModelError = computed(() => (draftAgent.value.modelConfigId ? "" : tt("agents.modelRequired")));
+  const agentRoleError = computed(() => (draftAgent.value.roleDescription.trim() ? "" : tt("agents.roleRequired")));
   const agentPromptError = computed(() =>
-    studioMode.value === "create" && !draftAgent.value.systemPrompt.trim() ? "请输入系统提示词。" : "",
+    studioMode.value === "create" && !draftAgent.value.systemPrompt.trim() ? tt("agents.promptRequired") : "",
   );
   const promptLineCount = computed(() => {
     const value = draftAgent.value.systemPrompt.trim();
@@ -216,7 +217,7 @@ export function createAgentsPageModel() {
         .split(/\r?\n/)
         .map((line) => line.trim())
         .find(Boolean) || "";
-    if (!value) return "暂无提示词内容。";
+    if (!value) return tt("agents.noPromptContent");
     return value.length > 140 ? `${value.slice(0, 140)}...` : value;
   });
   const isAgentDraftValid = computed(
@@ -244,8 +245,8 @@ export function createAgentsPageModel() {
     capabilityAgent.value ? agents.capabilitiesByWorkspace[capabilityAgent.value.workspaceId] || [] : [],
   );
   const agentSaveButtonLabel = computed(() => {
-    if (savingAgent.value) return studioMode.value === "create" ? "创建中..." : "保存中...";
-    return studioMode.value === "create" ? "创建 Agent" : "保存 Agent";
+    if (savingAgent.value) return studioMode.value === "create" ? tt("agents.creating") : tt("agents.saving");
+    return studioMode.value === "create" ? tt("agents.createAgentBtn") : tt("agents.saveAgentBtn");
   });
   const canEnhanceDraftPrompt = computed(() => {
     if (!canEditWorkspace.value) return false;
@@ -268,7 +269,7 @@ export function createAgentsPageModel() {
     const agent = agentDeleteTarget.value;
     if (!agent || !agentDeleteConfirmName.value) return "";
     if (agentDeleteConfirmName.value.trim() === agent.name) return "";
-    return `名称需与 ${agent.name} 完全一致，区分大小写并忽略首尾空格。`;
+    return tt("agents.confirmNameHint", { name: agent.name });
   });
 
   onMounted(async () => {
@@ -300,10 +301,10 @@ export function createAgentsPageModel() {
     return {
       id: "",
       workspaceId,
-      name: "售后处理 Agent",
-      roleDescription: "处理售后通知、退款前置校验与异常升级",
+      name: tt("agents.defaultRunName"),
+      roleDescription: tt("agents.defaultRoleDescription"),
       modelConfigId: workspace?.defaultModelConfigId || modelConfigs.items[0]?.id || "",
-      systemPrompt: "负责处理当前业务空间内的售后问题，必要时调用已授权的 Tool 或 Workflow。",
+      systemPrompt: tt("agents.defaultSystemPrompt"),
       isDefault: false,
       status: "ACTIVE",
       contextPolicy: {
@@ -352,7 +353,7 @@ export function createAgentsPageModel() {
   }
 
   function statusLabel(status: string) {
-    return status === "ACTIVE" ? "运行中" : "已暂停";
+    return status === "ACTIVE" ? tt("agents.running") : tt("agents.paused");
   }
 
   function formatAgentUpdatedAt(agent: Agent) {
@@ -360,19 +361,19 @@ export function createAgentsPageModel() {
     const timestamp = Date.parse(agent.updatedAt);
     if (!Number.isFinite(timestamp)) return agent.updatedAt;
     const elapsedMinutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
-    if (elapsedMinutes < 1) return "刚刚";
-    if (elapsedMinutes < 60) return `${elapsedMinutes} 分钟前`;
+    if (elapsedMinutes < 1) return tt("agents.justNow");
+    if (elapsedMinutes < 60) return tt("agents.minutesAgo", { n: elapsedMinutes });
     const elapsedHours = Math.floor(elapsedMinutes / 60);
-    if (elapsedHours < 24) return `${elapsedHours} 小时前`;
-    return `${Math.floor(elapsedHours / 24)} 天前`;
+    if (elapsedHours < 24) return tt("agents.hoursAgo", { n: elapsedHours });
+    return tt("agents.daysAgo", { n: Math.floor(elapsedHours / 24) });
   }
 
   function modelConfigOptionLabel(config: ModelApiConfig) {
-    return `${config.modelName}${config.id === workspaceById(draftAgent.value.workspaceId)?.modelConfigId ? " · 当前空间默认" : ""}`;
+    return `${config.modelName}${config.id === workspaceById(draftAgent.value.workspaceId)?.modelConfigId ? tt("agents.workspaceDefaultSuffix") : ""}`;
   }
 
   function renderPromptMarkdown(source: string) {
-    return renderMarkdown(source, "暂无系统提示词内容。");
+    return renderMarkdown(source, tt("agents.emptyPromptMarkdown"));
   }
 
   function buildPromptDiffSummary(before: string, after: string) {
@@ -401,12 +402,12 @@ export function createAgentsPageModel() {
     const responseError = (error as { response?: { data?: { error?: string } } }).response?.data?.error || "";
     const timeoutCode = (error as { code?: string }).code || "";
     if (responseError) {
-      return `整理失败：${responseError}`;
+      return tt("agents.enhanceFailedWithError", { error: responseError });
     }
     if (timeoutCode === "ECONNABORTED") {
-      return "整理失败：模型响应超时，请稍后重试。";
+      return tt("agents.enhanceFailedTimeout");
     }
-    return "整理失败：模型调用未成功完成，请检查模型配置和网络后重试。";
+    return tt("agents.enhanceFailedGeneric");
   }
 
   function statusTone(status: string) {
@@ -668,8 +669,8 @@ export function createAgentsPageModel() {
   function requestCloseStudio(_source: "backdrop" | "keyboard" | "back") {
     if (!studioMode.value || savingAgent.value) return;
     if (isAgentStudioDirty.value) {
-      agentStudioInlineWarning.value = "已有未保存修改，请先创建/保存 Agent，或使用“放弃改动”明确退出。";
-      showAgentToast("Agent 草稿已修改，请先创建/保存 Agent 或放弃改动，再离开当前编辑窗口。", "error");
+      agentStudioInlineWarning.value = tt("agents.unsavedChangesWarning");
+      showAgentToast(tt("agents.unsavedChangesToast"), "error");
       return;
     }
     closeStudio();
@@ -751,15 +752,15 @@ export function createAgentsPageModel() {
 
   async function enhancePrompt() {
     if (!canEnhanceDraftPrompt.value) {
-      showAgentToast("请完善业务空间、模型和系统提示词后再整理。", "error");
+      showAgentToast(tt("agents.enhanceNeedFields"), "error");
       return;
     }
     const isCreate = studioMode.value === "create" || !draftAgent.value.id;
     enhancingAgentId.value = draftAgent.value.id || "create-draft";
     showAgentToast(
       isCreate
-        ? "正在生成系统提示词整理预览，通常需要 1 到 2 分钟。"
-        : `${draftAgent.value.name} 正在生成系统提示词整理预览，通常需要 1 到 2 分钟。`,
+        ? tt("agents.enhancePreviewGenerating")
+        : tt("agents.enhancePreviewGeneratingNamed", { name: draftAgent.value.name }),
       "success",
       false,
     );
@@ -786,7 +787,7 @@ export function createAgentsPageModel() {
           latest.modelConfigId !== draftAgent.value.modelConfigId ||
           latest.input !== draftAgent.value.systemPrompt
         ) {
-          showAgentToast("草稿已变化，已丢弃过期的整理结果，请重新整理。", "error");
+          showAgentToast(tt("agents.enhancePreviewStale"), "error");
           return;
         }
         weavePreviewAgent.value = {
@@ -797,13 +798,13 @@ export function createAgentsPageModel() {
           createdAt: preview.createdAt,
           expiresAt: preview.expiresAt,
         };
-        showAgentToast("系统提示词整理预览已生成，可应用到草稿后创建 Agent。");
+        showAgentToast(tt("agents.enhancePreviewReadyCreate"));
       } else {
         const preview = await agents.enhanceAgentPrompt(draftAgent.value, draftAgent.value.systemPrompt, {
           preview: true,
         });
         weavePreviewAgent.value = preview;
-        showAgentToast(`${draftAgent.value.name} 的系统提示词整理预览已生成，请审查后再采纳为新版本。`);
+        showAgentToast(tt("agents.enhancePreviewReadyEdit", { name: draftAgent.value.name }));
       }
       void nextTick(() => focusDialog(promptDetailDialogRef.value));
     } catch (error) {
@@ -831,7 +832,7 @@ export function createAgentsPageModel() {
       };
       sourcePromptPreviewRunId.value = weavePreviewAgent.value.runId;
       weavePreviewAgent.value = null;
-      showAgentToast("已应用到草稿。请检查后点击「创建 Agent」保存。");
+      showAgentToast(tt("agents.enhanceAppliedToDraft"));
       void focusAgentStudio();
       return;
     }
@@ -849,7 +850,7 @@ export function createAgentsPageModel() {
         agentStudioInitialSnapshot.value = serializeAgentDraft(draftAgent.value);
       }
       weavePreviewAgent.value = null;
-      showAgentToast(`已采纳为新版本（版本 ${accepted.revisionNo || ""}）。`);
+      showAgentToast(tt("agents.enhanceAcceptedRevision", { n: accepted.revisionNo || "" }));
       void focusAgentStudio();
     } catch (error) {
       showAgentToast(agentActionErrorMessage(error), "error");
@@ -868,7 +869,7 @@ export function createAgentsPageModel() {
       const updated = await agents.updateAgent(agent.id, agent);
       await loadAgentRegistry();
       agents.selectedAgentId = updated.id;
-      showAgentToast(`${updated.name} 已保存，状态将由运行时信号继续自动汇总。`);
+      showAgentToast(tt("agents.agentSavedNamed", { name: updated.name }));
       agentStudioInitialSnapshot.value = serializeAgentDraft(updated);
       agentStudioOriginalAgent.value = { ...updated };
       closeStudio();
@@ -890,7 +891,7 @@ export function createAgentsPageModel() {
     sourcePromptPreviewRunId.value = "";
     await loadAgentRegistry({ page: 1 });
     agents.selectedAgentId = saved.id;
-    showAgentToast(`${saved.name} 已创建。`);
+    showAgentToast(tt("agents.agentCreatedNamed", { name: saved.name }));
     agentStudioInitialSnapshot.value = serializeAgentDraft(saved);
     closeStudio();
   }
@@ -960,7 +961,7 @@ export function createAgentsPageModel() {
     try {
       await persistDraftAgent(agent);
     } catch {
-      showAgentToast("Agent 保存失败，请检查业务空间、模型配置和网络后重试。", "error");
+      showAgentToast(tt("agents.agentSaveFailed"), "error");
     } finally {
       savingAgent.value = false;
     }
@@ -975,8 +976,8 @@ export function createAgentsPageModel() {
     if (savingAgent.value) return;
     if (!canSaveAgent.value) {
       agentStudioInlineWarning.value = isAgentDraftValid.value
-        ? "请先修改至少一项 Agent 配置后再提交。"
-        : "请补全必填信息后再提交 Agent。";
+        ? tt("agents.noChangesToSubmit")
+        : tt("agents.fillRequiredFields");
       return;
     }
     if (isProductionPromptChange(draftAgent.value)) {
@@ -988,7 +989,7 @@ export function createAgentsPageModel() {
     try {
       await persistDraftAgent(draftAgent.value);
     } catch {
-      showAgentToast("Agent 保存失败，请检查业务空间、模型配置和网络后重试。", "error");
+      showAgentToast(tt("agents.agentSaveFailed"), "error");
     } finally {
       savingAgent.value = false;
     }
@@ -997,15 +998,15 @@ export function createAgentsPageModel() {
   function agentMenuActions(agent: Agent): ManagementRowAction[] {
     const deletable = canDeleteAgent(agent);
     return [
-      { key: "debug", label: "编辑", icon: "fa-solid fa-pen", tone: "primary" },
-      { key: "capabilities", label: "管理能力绑定", icon: "fa-solid fa-link" },
+      { key: "debug", label: tt("agents.edit"), icon: "fa-solid fa-pen", tone: "primary" },
+      { key: "capabilities", label: tt("agents.manageCapabilities"), icon: "fa-solid fa-link" },
       {
         key: "delete",
-        label: "删除",
+        label: tt("agents.delete"),
         icon: "fa-solid fa-trash",
         tone: "danger",
         disabled: !deletable,
-        disabledReason: deletable ? undefined : "默认 Agent 不能删除",
+        disabledReason: deletable ? undefined : tt("agents.defaultNotDeletable"),
       },
     ];
   }
@@ -1028,7 +1029,7 @@ export function createAgentsPageModel() {
 
   function deleteAgent(agent: Agent) {
     if (!canDeleteAgent(agent)) {
-      showAgentToast("默认 Agent 不能删除，可在编辑中调整职责和系统提示词。", "error");
+      showAgentToast(tt("agents.defaultAgentDeleteBlocked"), "error");
       return;
     }
     lastFocusBeforeModal.value = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -1050,10 +1051,7 @@ export function createAgentsPageModel() {
   function requestCloseAgentDeleteConfirm(_source: "backdrop" | "keyboard") {
     if (!agentDeleteTarget.value || agentDeleting.value) return;
     if (isAgentDeleteConfirmDirty.value) {
-      showAgentToast(
-        "为避免误关闭，已禁用当前删除确认弹框的遮罩和 Esc 关闭。请使用取消或右上角关闭明确放弃删除。",
-        "error",
-      );
+      showAgentToast(tt("agents.deleteConfirmEscBlocked"), "error");
       return;
     }
     closeAgentDeleteConfirm();
@@ -1078,10 +1076,10 @@ export function createAgentsPageModel() {
           ? agents.pagination.page - 1
           : agents.pagination.page;
       await loadAgentRegistry({ page });
-      showAgentToast(`${agent.name} 已从 Agent 列表移除。`);
+      showAgentToast(tt("agents.agentRemovedNamed", { name: agent.name }));
       closeAgentDeleteConfirm();
     } catch {
-      showAgentToast("默认 Agent 不能删除，可在编辑中调整职责和系统提示词。", "error");
+      showAgentToast(tt("agents.defaultAgentDeleteBlocked"), "error");
     } finally {
       agentDeleting.value = false;
     }
@@ -1120,7 +1118,7 @@ export function createAgentsPageModel() {
         }),
       );
     } catch {
-      showAgentToast("能力目录或绑定加载失败，请稍后重试。", "error");
+      showAgentToast(tt("agents.capabilityLoadFailed"), "error");
       capabilityAgent.value = null;
     } finally {
       capabilityLoading.value = false;
@@ -1150,8 +1148,8 @@ export function createAgentsPageModel() {
 
   function capabilityVersionPolicyOptions(capability: CapabilityCatalogItem) {
     return [
-      { label: "跟随当前生效版本", value: "FOLLOW_ACTIVE" },
-      { label: "固定指定版本", value: "PINNED", disabled: !capability.activeReleaseId },
+      { label: tt("agents.versionPolicyFollowActive"), value: "FOLLOW_ACTIVE" },
+      { label: tt("agents.versionPolicyPinned"), value: "PINNED", disabled: !capability.activeReleaseId },
     ];
   }
 
@@ -1186,13 +1184,13 @@ export function createAgentsPageModel() {
 
   function canBindCapability(capability: CapabilityCatalogItem): { ok: true } | { ok: false; reason: string } {
     const draft = capabilityDrafts.value[capability.id];
-    if (!draft) return { ok: false, reason: "无草稿" };
+    if (!draft) return { ok: false, reason: tt("agents.bindGateNoDraft") };
     if (draft.versionPolicy === "PINNED" && !capability.activeReleaseId) {
-      return { ok: false, reason: "无固定版本" };
+      return { ok: false, reason: tt("agents.bindGateNoPinnedVersion") };
     }
     // P3.3 FE guard: unpublished WORKFLOW (no active release) cannot form a binding.
     if (capability.kind === "WORKFLOW" && !capability.activeReleaseId) {
-      return { ok: false, reason: "Workflow 未发布" };
+      return { ok: false, reason: tt("agents.bindGateWorkflowUnpublished") };
     }
     return { ok: true };
   }
@@ -1222,9 +1220,9 @@ export function createAgentsPageModel() {
     const gate = canBindCapability(capability);
     if (!gate.ok) {
       if (capability.kind === "WORKFLOW" && !capability.activeReleaseId) {
-        showAgentToast("该 Workflow 尚未发布，无法绑定。请先完成编译 → 试运行 → 发布。", "error");
+        showAgentToast(tt("agents.workflowNotPublishedToast"), "error");
       } else {
-        showAgentToast(`无法绑定：${gate.reason}。`, "error");
+        showAgentToast(tt("agents.bindFailedReason", { reason: gate.reason }), "error");
       }
       return;
     }
@@ -1236,9 +1234,9 @@ export function createAgentsPageModel() {
       });
       capabilityDrafts.value = { ...capabilityDrafts.value, [capability.id]: saved };
       await Promise.all([agents.loadCapabilities(agent.workspaceId), loadAgentRegistry()]);
-      showAgentToast(`${capability.name} 绑定已保存。`);
+      showAgentToast(tt("agents.bindingSavedNamed", { name: capability.name }));
     } catch {
-      showAgentToast(`${capability.name} 绑定保存失败，请检查版本、连接和数据版本。`, "error");
+      showAgentToast(tt("agents.bindingSaveFailedNamed", { name: capability.name }), "error");
     } finally {
       capabilitySavingId.value = "";
     }
@@ -1262,9 +1260,9 @@ export function createAgentsPageModel() {
         },
       };
       await Promise.all([agents.loadCapabilities(agent.workspaceId), loadAgentRegistry()]);
-      showAgentToast(`${capability.name} 已解除绑定。`);
+      showAgentToast(tt("agents.unbindSuccessNamed", { name: capability.name }));
     } catch {
-      showAgentToast(`${capability.name} 解绑失败，请刷新后重试。`, "error");
+      showAgentToast(tt("agents.unbindFailedNamed", { name: capability.name }), "error");
     } finally {
       capabilitySavingId.value = "";
     }
@@ -1290,7 +1288,10 @@ export function createAgentsPageModel() {
           });
 
     if (!targets.length) {
-      showAgentToast(options.mode === "all-unbound" ? "没有可绑定的未绑定能力。" : "请先勾选可绑定的能力。", "error");
+      showAgentToast(
+        options.mode === "all-unbound" ? tt("agents.batchNoUnbound") : tt("agents.batchSelectToBind"),
+        "error",
+      );
       return;
     }
 
@@ -1320,13 +1321,17 @@ export function createAgentsPageModel() {
       }
       await Promise.all([agents.loadCapabilities(agent.workspaceId), loadAgentRegistry()]);
       if (failed === 0) {
-        showAgentToast(`已批量绑定 ${success} 个能力。`);
+        showAgentToast(tt("agents.batchBoundSuccess", { n: success }));
         if (options.mode === "selected") {
           capabilitySelectedIds.value = [];
         }
       } else {
         showAgentToast(
-          `批量绑定完成：成功 ${success}，失败 ${failed}${lastError ? `。${lastError}` : ""}`,
+          tt("agents.batchBoundPartial", {
+            success,
+            failed,
+            detail: lastError ? tt("agents.batchBoundPartialDetail", { error: lastError }) : "",
+          }),
           success > 0 ? "success" : "error",
         );
       }
@@ -1345,7 +1350,7 @@ export function createAgentsPageModel() {
       return Boolean(currentCapabilityBinding(capability.id));
     });
     if (!targets.length) {
-      showAgentToast("请先勾选已绑定的能力。", "error");
+      showAgentToast(tt("agents.batchSelectToUnbind"), "error");
       return;
     }
 
@@ -1379,10 +1384,13 @@ export function createAgentsPageModel() {
         (id) => !targets.some((capability) => capability.id === id) || Boolean(currentCapabilityBinding(id)),
       );
       if (failed === 0) {
-        showAgentToast(`已批量解绑 ${success} 个能力。`);
+        showAgentToast(tt("agents.batchUnboundSuccess", { n: success }));
         capabilitySelectedIds.value = [];
       } else {
-        showAgentToast(`批量解绑完成：成功 ${success}，失败 ${failed}`, success > 0 ? "success" : "error");
+        showAgentToast(
+          tt("agents.batchUnboundPartial", { success, failed }),
+          success > 0 ? "success" : "error",
+        );
       }
     } finally {
       capabilitySavingId.value = "";

@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
+
+const { t } = useI18n();
 
 const props = withDefaults(
   defineProps<{
@@ -211,7 +214,7 @@ function formatPct(rate: number) {
       :height="height"
       preserveAspectRatio="xMidYMid meet"
       role="img"
-      aria-label="流量与运行质量趋势"
+      :aria-label="t('overview.compositeChartAria')"
       @mousemove="moveTooltip"
       @mouseleave="hideTooltip"
     >
@@ -357,13 +360,13 @@ function formatPct(rate: number) {
     >
       <strong>{{ tooltip.label }}</strong>
       <p>
-        <i style="background: #0d9488" /><span>Agent Run</span><b>{{ tooltip.runs }}</b>
+        <i style="background: #0d9488" /><span>{{ t("overview.legendRun") }}</span><b>{{ tooltip.runs }}</b>
       </p>
       <p>
-        <i style="background: #4f46e5" /><span>工具调用</span><b>{{ tooltip.tools }}</b>
+        <i style="background: #4f46e5" /><span>{{ t("overview.legendTool") }}</span><b>{{ tooltip.tools }}</b>
       </p>
       <p>
-        <i style="background: #fb7185" /><span>链路成功率</span><b>{{ formatPct(tooltip.rate) }}</b>
+        <i style="background: #fb7185" /><span>{{ t("overview.legendRate") }}</span><b>{{ formatPct(tooltip.rate) }}</b>
       </p>
     </div>
   </div>

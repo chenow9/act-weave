@@ -8,6 +8,8 @@ import {
   type AuthTokenResponse,
   type AuthUserDTO,
 } from "../services/api";
+import { applyUserLocale } from "../services/locale";
+import { tt } from "../i18n/tt";
 import type { User } from "../types/domain";
 
 interface AuthState {
@@ -52,6 +54,10 @@ export const useAuthStore = defineStore("auth", {
       this.user = userFromDTO(session.user);
       this.mustChangePassword = session.mustChangePassword;
       setAuthToken(session.accessToken);
+      applyUserLocale(session.user.locale);
+    },
+    applyUser(user: AuthUserDTO | User) {
+      this.user = userFromDTO(user as AuthUserDTO);
     },
     clearSession() {
       this.token = "";
@@ -70,7 +76,7 @@ export const useAuthStore = defineStore("auth", {
         this.initialized = true;
       } catch (error) {
         this.clearSession();
-        this.error = apiErrorMessage(error, "登录失败，请检查用户名或密码。");
+        this.error = apiErrorMessage(error, tt("auth.signInFailed"));
         throw error;
       } finally {
         this.loading = false;
@@ -83,6 +89,7 @@ export const useAuthStore = defineStore("auth", {
 
       const response = await apiClient.get<AuthUserDTO>("/users/me");
       this.user = userFromDTO(response.data);
+      applyUserLocale(response.data.locale);
     },
     async restoreSession() {
       this.bindAPIClient();
@@ -132,7 +139,7 @@ export const useAuthStore = defineStore("auth", {
         this.clearSession();
         this.initialized = true;
       } catch (error) {
-        this.error = apiErrorMessage(error, "修改密码失败，请检查当前密码后重试。");
+        this.error = apiErrorMessage(error, tt("auth.changePasswordFailed"));
         throw error;
       } finally {
         this.loading = false;

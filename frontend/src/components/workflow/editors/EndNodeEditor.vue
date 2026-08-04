@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
+
 import WorkflowVariablePicker from "../WorkflowVariablePicker.vue";
 import type { WorkflowGraphNode } from "../../../types/domain";
 
@@ -10,6 +12,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: "update-node-data", payload: { key: string; value: unknown }): void;
 }>();
+
+const { t } = useI18n();
 
 function currentPath() {
   const output = props.node.data.output;
@@ -42,8 +46,8 @@ function updatePath(path: string) {
 
     <section class="workflow-inspector-vars workflow-schema-preview">
       <div class="workflow-section-caption">
-        <strong>输出映射</strong>
-        <small>结构化 ref</small>
+        <strong>{{ t("workflow.outputMapping") }}</strong>
+        <small>{{ t("workflow.structuredRef") }}</small>
       </div>
       <pre>{{ JSON.stringify(node.data.output || { kind: "ref", path: "" }, null, 2) }}</pre>
     </section>

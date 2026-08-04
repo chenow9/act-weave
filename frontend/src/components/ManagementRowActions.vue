@@ -17,6 +17,9 @@ let managementRowActionsInstanceCount = 0;
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
+
+const { t } = useI18n();
 
 const props = withDefaults(
   defineProps<{
@@ -28,9 +31,11 @@ const props = withDefaults(
   {
     primaryActions: () => [],
     menuActions: () => [],
-    menuLabel: "更多操作",
+    menuLabel: "",
   },
 );
+
+const resolvedMenuLabel = computed(() => props.menuLabel || t("common.moreActions"));
 
 const emit = defineEmits<{
   action: [key: string];
@@ -290,15 +295,15 @@ onBeforeUnmount(() => {
       ref="triggerRef"
       class="management-row-action-button management-row-actions-trigger"
       type="button"
-      :title="menuLabel"
-      :aria-label="menuLabel"
+      :title="resolvedMenuLabel"
+      :aria-label="resolvedMenuLabel"
       aria-haspopup="menu"
       :aria-controls="menuId"
       :aria-expanded="menuOpen"
       @click="toggleMenu"
     >
       <i class="fa-solid fa-ellipsis" aria-hidden="true" />
-      <span>更多</span>
+      <span>{{ t("common.more") }}</span>
     </button>
 
     <Teleport to="body">
@@ -308,7 +313,7 @@ onBeforeUnmount(() => {
         ref="menuRef"
         class="management-row-actions-menu"
         role="menu"
-        :aria-label="menuLabel"
+        :aria-label="resolvedMenuLabel"
         :data-placement="menuPlacement"
         :style="menuStyle"
         @click.stop

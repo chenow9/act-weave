@@ -12,8 +12,10 @@ import WorkflowReadinessPanel from "./workflow/WorkflowReadinessPanel.vue";
 import WorkflowRevisionDiff from "./workflow/WorkflowRevisionDiff.vue";
 import WorkflowRevisionPanel from "./workflow/WorkflowRevisionPanel.vue";
 import WorkspaceContextState from "./WorkspaceContextState.vue";
+import { useI18n } from "vue-i18n";
 import { useWorkflowPageContext } from "../composables/useWorkflowPageContext";
 
+const { t } = useI18n();
 const scp = useWorkflowPageContext();
 const {
   workflowStore,
@@ -107,8 +109,8 @@ void WorkspaceContextState;
   <div class="workflow-center-page workflow-orchestration-page management-page-grid" v-loading="workflowStore.loading">
     <ManagementPageHeader
       class="workflow-orchestration-header"
-      title="编排"
-      description="设计、校验、试跑与发布业务流程。"
+      :title="t('workflow.title')"
+      :description="t('workflow.subtitle')"
       icon="fa-solid fa-diagram-project"
     >
       <template #actions>
@@ -116,11 +118,11 @@ void WorkspaceContextState;
           class="primary-button workflow-create-button"
           type="button"
           :disabled="!hasWorkspaceContext"
-          :title="hasWorkspaceContext ? '新建编排' : '请先创建或加入业务空间'"
+          :title="hasWorkspaceContext ? t('workflow.newWorkflow') : t('workspaces.emptyHint')"
           @click="openCreateWorkflow"
         >
           <i class="fa-solid fa-circle-plus" aria-hidden="true" />
-          <span>新建编排</span>
+          <span>{{ t("workflow.newWorkflow") }}</span>
         </button>
       </template>
     </ManagementPageHeader>
@@ -142,8 +144,8 @@ void WorkspaceContextState;
         :error="hasWorkspaceContext ? workflowStore.pageError : undefined"
         :has-loaded="hasWorkspaceContext ? workflowStore.pageHasLoaded : true"
         :search="workflowQuery"
-        search-placeholder="搜索流程名称 / Slug / 状态..."
-        search-aria-label="搜索流程名称、Slug 或状态"
+        :search-placeholder="t('workflow.searchPlaceholder')"
+        :search-aria-label="t('workflow.searchAria')"
         :reset-disabled="!workflowQuery"
         :pagination="workflowStore.pagination"
         :sort-by="workflowStore.listQuery?.sortBy"
@@ -157,8 +159,8 @@ void WorkspaceContextState;
         <template #cell-workflow="{ row: workflow }">
           <div class="workflow-name-cell">
             <strong class="aw-table-title" :title="workflow.name">{{ workflow.name }}</strong>
-            <small class="aw-table-subtitle" :title="workflow.description || '还没有填写用途说明'">{{
-              workflow.description || "还没有填写用途说明"
+            <small class="aw-table-subtitle" :title="workflow.description || t('workflow.noDescription')">{{
+              workflow.description || t("workflow.noDescription")
             }}</small>
           </div>
         </template>
@@ -169,7 +171,7 @@ void WorkspaceContextState;
         >
         <template #cell-nodes="{ row: workflow }"
           ><span class="workflow-mono-cell aw-table-meta"
-            >{{ workflowNodeCount(workflow) }} 步 / {{ workflowEdgeCount(workflow) }} 连接</span
+            >{{ t("workflow.stepsEdges", { steps: workflowNodeCount(workflow), edges: workflowEdgeCount(workflow) }) }}</span
           ></template
         >
         <template #cell-successRate="{ row: workflow }"
@@ -186,7 +188,7 @@ void WorkspaceContextState;
         <template #cell-actions="{ row: workflow }">
           <ManagementRowActions
             :menu-actions="workflowMenuActions(workflow)"
-            menu-label="更多编排操作"
+            :menu-label="t('workflow.moreActions')"
             @action="handleWorkflowRowAction($event, workflow)"
           />
         </template>
@@ -194,7 +196,7 @@ void WorkspaceContextState;
           <WorkspaceContextState
             v-if="!hasWorkspaceContext"
             embedded-in-list
-            feature="流程编排"
+            :feature="t('workflow.featureName')"
             icon="fa-solid fa-diagram-project"
             @retry="loadWorkflowPageAssets"
           />
@@ -202,12 +204,12 @@ void WorkspaceContextState;
             <div class="management-empty-state-icon">
               <i class="fa-solid fa-diagram-project" aria-hidden="true" />
             </div>
-            <h2>{{ workflowStore.workflows.length ? "没有匹配到编排流程" : "暂无编排流程" }}</h2>
+            <h2>{{ workflowStore.workflows.length ? t("workflow.noMatchTitle") : t("workflow.emptyTitle") }}</h2>
             <p>
               {{
                 workflowStore.workflows.length
-                  ? "换个关键词试试，或者清空筛选条件。"
-                  : "新建第一个编排后，可以在这里查看用途、步骤、校验结果和最近执行。"
+                  ? t("workflow.noMatchBody")
+                  : t("workflow.emptyBody")
               }}
             </p>
             <button
@@ -216,9 +218,9 @@ void WorkspaceContextState;
               type="button"
               @click="clearWorkflowSearch"
             >
-              清空筛选
+              {{ t("workflow.clearFilters") }}
             </button>
-            <button v-else class="primary-button" type="button" @click="openCreateWorkflow">新建编排</button>
+            <button v-else class="primary-button" type="button" @click="openCreateWorkflow">{{ t("workflow.newWorkflow") }}</button>
           </div>
         </template>
       </ManagementList>
@@ -232,7 +234,7 @@ void WorkspaceContextState;
           class="modal-card workflow-detail-modal-card"
           role="dialog"
           aria-modal="true"
-          aria-label="流程详情"
+          :aria-label="t('workflow.detailTitle')"
           tabindex="-1"
           @keydown.esc.stop.prevent="closeWorkflowDetail"
           @keydown.tab="trapModalFocus($event, workflowDetailModalRef)"
@@ -240,9 +242,9 @@ void WorkspaceContextState;
           <div class="modal-card-head">
             <div>
               <span>Workflow Lifecycle</span>
-              <h3>流程详情</h3>
+              <h3>{{ t("workflow.detailTitle") }}</h3>
             </div>
-            <button class="icon-action-button" type="button" aria-label="收起流程详情" @click="closeWorkflowDetail">
+            <button class="icon-action-button" type="button" :aria-label="t('workflow.closeDetail')" @click="closeWorkflowDetail">
               <i class="fa-solid fa-xmark" />
             </button>
           </div>
@@ -253,21 +255,21 @@ void WorkspaceContextState;
                   statusLabel(selectedWorkflow.status)
                 }}</span>
                 <h3>{{ selectedWorkflow.name }}</h3>
-                <p>{{ selectedWorkflow.description || "这个流程还没有填写用途说明。" }}</p>
+                <p>{{ selectedWorkflow.description || t("workflow.noDescriptionLong") }}</p>
               </div>
 
               <div class="workflow-detail-metrics">
                 <span>
                   <strong>{{ workflowNodeCount(selectedWorkflow) }}</strong>
-                  <small>步骤</small>
+                  <small>{{ t("workflow.steps") }}</small>
                 </span>
                 <span>
                   <strong>{{ workflowExecutionCount(selectedWorkflow) }}</strong>
-                  <small>执行记录</small>
+                  <small>{{ t("workflow.executions") }}</small>
                 </span>
                 <span>
                   <strong>{{ validationLabel(selectedWorkflow) }}</strong>
-                  <small>校验状态</small>
+                  <small>{{ t("workflow.validation") }}</small>
                 </span>
               </div>
 
@@ -286,17 +288,17 @@ void WorkspaceContextState;
               />
               <WorkflowRevisionDiff :diff="selectedWorkflowRevisionDiff" :empty-text="selectedWorkflowDiffEmptyText" />
               <div class="workflow-readable-section">
-                <h4>这个流程做什么</h4>
-                <p>{{ selectedWorkflow.description || "用于把多个业务动作串起来，减少人工重复处理。" }}</p>
+                <h4>{{ t("workflow.whatItDoes") }}</h4>
+                <p>{{ selectedWorkflow.description || t("workflow.defaultPurpose") }}</p>
               </div>
 
               <div class="workflow-readable-section">
-                <h4>什么时候触发</h4>
+                <h4>{{ t("workflow.whenTriggered") }}</h4>
                 <p>{{ workflowTriggerText() }}</p>
               </div>
 
               <div class="workflow-readable-section">
-                <h4>包含哪些步骤</h4>
+                <h4>{{ t("workflow.whichSteps") }}</h4>
                 <div v-if="selectedWorkflowSteps.length" class="workflow-step-list">
                   <article v-for="step in selectedWorkflowSteps" :key="step.id" class="workflow-step-item">
                     <b>{{ step.order }}</b>
@@ -306,11 +308,11 @@ void WorkspaceContextState;
                     </span>
                   </article>
                 </div>
-                <p v-else>当前还没有可展示的步骤快照。进入流程图编辑器并保存草稿后，这里会显示主路径步骤。</p>
+                <p v-else>{{ t("workflow.noSteps") }}</p>
               </div>
 
               <div class="workflow-readable-section">
-                <h4>最近执行</h4>
+                <h4>{{ t("workflow.recentRuns") }}</h4>
                 <div v-if="selectedWorkflowExecutions.length" class="workflow-execution-list">
                   <article
                     v-for="execution in selectedWorkflowExecutions"
@@ -332,7 +334,7 @@ void WorkspaceContextState;
               </div>
 
               <div v-if="activeTraceExecution?.workflowId === selectedWorkflow.id" class="workflow-readable-section">
-                <h4>试运行轨迹</h4>
+                <h4>{{ t("workflow.trialTrace") }}</h4>
                 <WorkflowExecutionTracePanel
                   :execution="activeTraceExecution"
                   :selected-node-id="selectedNodeId"
@@ -343,14 +345,14 @@ void WorkspaceContextState;
           </div>
 
           <div class="workflow-detail-actions">
-            <button class="ghost-button" type="button" @click="closeWorkflowDetail">关闭</button>
+            <button class="ghost-button" type="button" @click="closeWorkflowDetail">{{ t("workflow.close") }}</button>
             <button
               class="ghost-button"
               type="button"
               :disabled="!selectedWorkflow"
               @click="selectedWorkflow && validateWorkflow(selectedWorkflow)"
             >
-              校验
+              {{ t("workflow.validate") }}
             </button>
             <button
               class="ghost-button"
@@ -358,10 +360,10 @@ void WorkspaceContextState;
               :disabled="!selectedWorkflow"
               @click="selectedWorkflow && openTrialRunDialog(selectedWorkflow)"
             >
-              试运行
+              {{ t("workflow.trialRun") }}
             </button>
             <button class="ghost-button" type="button" :disabled="!selectedWorkflow" @click="openEditWorkflow()">
-              编辑信息
+              {{ t("workflow.editInfo") }}
             </button>
             <button
               class="ghost-button"
@@ -369,7 +371,7 @@ void WorkspaceContextState;
               :disabled="!selectedWorkflow || !selectedWorkflowCanPublish"
               @click="publishWorkflow()"
             >
-              发布
+              {{ t("workflow.publish") }}
             </button>
             <button
               v-if="selectedWorkflow && workspaces.can(selectedWorkflow.workspaceId, auth.user?.id || '', 'EDIT')"
@@ -379,7 +381,7 @@ void WorkspaceContextState;
               :aria-busy="editorDraftLoadState === 'loading' ? 'true' : undefined"
               @click="openWorkflowEditor()"
             >
-              编辑流程图
+              {{ t("workflow.openEditor") }}
             </button>
           </div>
         </section>
@@ -395,7 +397,7 @@ void WorkspaceContextState;
           class="modal-card workflow-metadata-modal-card"
           role="dialog"
           aria-modal="true"
-          :aria-label="workflowMetadataMode === 'create' ? '新建编排' : '编辑编排'"
+          :aria-label="workflowMetadataMode === 'create' ? t('workflow.newWorkflow') : t('workflow.editInfo')"
           tabindex="-1"
           @keydown.esc.stop.prevent="closeWorkflowMetadata"
           @keydown.tab="trapModalFocus($event, workflowMetadataModalRef)"
@@ -403,12 +405,12 @@ void WorkspaceContextState;
           <div class="modal-card-head">
             <div>
               <span>Workflow Metadata</span>
-              <h3>{{ workflowMetadataMode === "create" ? "新建编排" : "编辑编排" }}</h3>
+              <h3>{{ workflowMetadataMode === "create" ? t("workflow.newWorkflow") : t("workflow.editInfo") }}</h3>
             </div>
             <button
               class="icon-action-button"
               type="button"
-              :aria-label="workflowMetadataMode === 'create' ? '收起新建编排' : '收起编辑编排'"
+              :aria-label="workflowMetadataMode === 'create' ? t('workflow.newWorkflow') : t('workflow.editInfo')"
               @click="closeWorkflowMetadata"
             >
               <i class="fa-solid fa-xmark" />
@@ -416,13 +418,13 @@ void WorkspaceContextState;
           </div>
           <div class="workflow-metadata-body">
             <div class="workflow-create-guide">
-              <span><b>1</b> 基本信息</span>
-              <span><b>2</b> 触发方式</span>
-              <span><b>3</b> 步骤确认</span>
-              <span><b>4</b> 保存发布</span>
+              <span><b>1</b> {{ t("workflow.createGuide1") }}</span>
+              <span><b>2</b> {{ t("workflow.createGuide2") }}</span>
+              <span><b>3</b> {{ t("workflow.createGuide3") }}</span>
+              <span><b>4</b> {{ t("workflow.createGuide4") }}</span>
             </div>
             <label class="drawer-field">
-              <span>名称 <b class="field-required-mark">*</b></span>
+              <span>{{ t("common.name") }} <b class="field-required-mark">*</b></span>
               <input
                 v-model="workflowDraft.name"
                 required
@@ -441,7 +443,7 @@ void WorkspaceContextState;
             </label>
             <div class="form-two">
               <label class="drawer-field">
-                <span>业务空间 <b class="field-required-mark">*</b></span>
+                <span>{{ t("workflow.colWorkspace") }} <b class="field-required-mark">*</b></span>
                 <AppSelect
                   class="workflow-workspace-select"
                   v-model="workflowDraft.workspaceId"
@@ -454,38 +456,40 @@ void WorkspaceContextState;
                 }}</small>
               </label>
               <label class="drawer-field">
-                <span>Slug</span>
-                <input v-model="workflowDraft.slug" placeholder="留空时按名称生成" />
+                <span>{{ t("workflow.slug") }}</span>
+                <input v-model="workflowDraft.slug" :placeholder="t('workflow.slugPlaceholder')" />
               </label>
             </div>
             <label class="drawer-field">
-              <span>状态</span>
+              <span>{{ t("workflow.status") }}</span>
               <AppSelect v-model="workflowDraft.status" :options="workflowStatusOptions" />
             </label>
             <label class="drawer-field"
-              ><span>这个流程做什么</span
+              ><span>{{ t("workflow.whatItDoes") }}</span
               ><textarea v-model="workflowDraft.description" class="workflow-description-input" rows="4" />
             </label>
             <div class="drawer-schema-preview">
               <div>
                 <i class="fa-solid fa-diagram-project" />
                 <span>
-                  <strong>{{ editorGraph.nodes.length }} 个步骤 / {{ editorGraph.edges.length }} 条连接</strong>
-                  <small>保存后可在详情中查看，也可以进入编辑流程图调整步骤。</small>
+                  <strong>{{
+                    t("workflow.stepsEdges", { steps: editorGraph.nodes.length, edges: editorGraph.edges.length })
+                  }}</strong>
+                  <small>{{ t("workflow.stepsPreviewHint") }}</small>
                 </span>
               </div>
             </div>
           </div>
 
           <div class="workflow-metadata-actions">
-            <button class="ghost-button" type="button" @click="closeWorkflowMetadata">取消</button>
+            <button class="ghost-button" type="button" @click="closeWorkflowMetadata">{{ t("common.cancel") }}</button>
             <button
               class="primary-button"
               type="button"
               :disabled="!canSaveWorkflowMetadata"
               @click="saveWorkflowMetadata"
             >
-              保存编排
+              {{ t("workflow.saveWorkflow") }}
             </button>
           </div>
         </section>
@@ -494,7 +498,7 @@ void WorkspaceContextState;
 
     <div v-if="workflowActionNote && !workflowMetadataVisible" class="action-toast" role="status" aria-live="polite">
       <span>{{ workflowActionNote }}</span>
-      <button type="button" aria-label="隐藏提示" @click="workflowActionNote = ''">
+      <button type="button" :aria-label="t('common.dismiss')" @click="workflowActionNote = ''">
         <i class="fa-solid fa-xmark" />
       </button>
     </div>

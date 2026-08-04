@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
+import { createTestI18n } from "../test-utils/i18n";
 import AgentDelegationPanel from "./AgentDelegationPanel.vue";
 
 const mocks = vi.hoisted(() => ({
@@ -71,16 +72,27 @@ describe("AgentDelegationPanel", () => {
     mocks.updateA2ARemote.mockResolvedValue({});
   });
 
-  it("loads disabled items and supports optimistic version PATCH save/enable", async () => {
-    const wrapper = mount(AgentDelegationPanel, {
-      props: {
-        workspaceId: "ws1",
-        agentId: "a1",
-        agentOptions: [
-          { id: "a1", name: "Agent A" },
-          { id: "a2", name: "Agent B" },
-        ],
+  function mountPanel(props: {
+    workspaceId: string;
+    agentId: string;
+    agentOptions: { id: string; name: string }[];
+  }) {
+    return mount(AgentDelegationPanel, {
+      props,
+      global: {
+        plugins: [createTestI18n("zh-CN")],
       },
+    });
+  }
+
+  it("loads disabled items and supports optimistic version PATCH save/enable", async () => {
+    const wrapper = mountPanel({
+      workspaceId: "ws1",
+      agentId: "a1",
+      agentOptions: [
+        { id: "a1", name: "Agent A" },
+        { id: "a2", name: "Agent B" },
+      ],
     });
     await flushPromises();
     expect(wrapper.text()).toContain("call_b");
@@ -94,7 +106,7 @@ describe("AgentDelegationPanel", () => {
     // Re-enable exposure (optimistic version) — only disabled items have active 重新启用.
     const enableBtns = wrapper
       .findAll("button")
-      .filter((b) => b.text() === "重新启用" && !(b.element as HTMLButtonElement).disabled);
+      .filter((b) => b.text().trim() === "重新启用" && !(b.element as HTMLButtonElement).disabled);
     expect(enableBtns.length).toBeGreaterThan(0);
     await enableBtns[0].trigger("click");
     await flushPromises();
@@ -136,12 +148,10 @@ describe("AgentDelegationPanel", () => {
       authModes: ["AGENT_ACCESS", "NONE"],
       softDisable: true,
     });
-    const wrapper = mount(AgentDelegationPanel, {
-      props: {
-        workspaceId: "ws1",
-        agentId: "a1",
-        agentOptions: [{ id: "a2", name: "Agent B" }],
-      },
+    const wrapper = mountPanel({
+      workspaceId: "ws1",
+      agentId: "a1",
+      agentOptions: [{ id: "a2", name: "Agent B" }],
     });
     await flushPromises();
     expect(mocks.getA2ACapabilities).toHaveBeenCalledWith("ws1");
@@ -151,15 +161,13 @@ describe("AgentDelegationPanel", () => {
   });
 
   it("saves full binding and remote field edit payloads", async () => {
-    const wrapper = mount(AgentDelegationPanel, {
-      props: {
-        workspaceId: "ws1",
-        agentId: "a1",
-        agentOptions: [
-          { id: "a1", name: "Agent A" },
-          { id: "a2", name: "Agent B" },
-        ],
-      },
+    const wrapper = mountPanel({
+      workspaceId: "ws1",
+      agentId: "a1",
+      agentOptions: [
+        { id: "a1", name: "Agent A" },
+        { id: "a2", name: "Agent B" },
+      ],
     });
     await flushPromises();
     const callable = wrapper.find('[data-testid="edit-binding-callable"]');

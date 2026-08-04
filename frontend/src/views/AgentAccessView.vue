@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import "./agent-access-page.css";
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 
 import AppSelect, { type AppSelectOption } from "../components/AppSelect.vue";
@@ -9,6 +10,7 @@ import ManagementPageHeader from "../components/ManagementPageHeader.vue";
 import ManagementSummaryStrip from "../components/ManagementSummaryStrip.vue";
 import WorkspaceContextState from "../components/WorkspaceContextState.vue";
 import { useModalFocus } from "../composables/useModalFocus";
+import { getI18nLocale } from "../i18n";
 import {
   useAgentAccessStore,
   type AgentAccessClient,
@@ -27,6 +29,7 @@ type DangerTarget =
   | { kind: "grant"; value: AgentAccessGrant }
   | { kind: "client"; value: AgentAccessClient };
 
+const { t } = useI18n();
 const access = useAgentAccessStore();
 const agents = useAgentStore();
 const auth = useAuthStore();
@@ -98,40 +101,48 @@ const activeAgentOptions = computed(() =>
   agents.items.filter((agent) => agent.workspaceId === workspaceId.value && agent.status === "ACTIVE"),
 );
 const summaryItems = computed(() => [
-  { label: "接入 Client", value: access.clients.length, icon: "fa-solid fa-id-card" },
-  { label: "活动凭证", value: access.activeCredentials.length, icon: "fa-solid fa-key", tone: "info" as const },
-  { label: "活动 Agent 授权", value: access.activeGrants.length, icon: "fa-solid fa-link", tone: "default" as const },
+  { label: t("agentAccess.summaryClients"), value: access.clients.length, icon: "fa-solid fa-id-card" },
   {
-    label: "需关注",
+    label: t("agentAccess.summaryActiveCredentials"),
+    value: access.activeCredentials.length,
+    icon: "fa-solid fa-key",
+    tone: "info" as const,
+  },
+  {
+    label: t("agentAccess.summaryActiveGrants"),
+    value: access.activeGrants.length,
+    icon: "fa-solid fa-link",
+    tone: "default" as const,
+  },
+  {
+    label: t("agentAccess.summaryAttention"),
     value: access.clients.filter((client) => client.status === "DISABLED").length,
     icon: "fa-solid fa-shield-halved",
     tone: "warning" as const,
   },
 ]);
 const dangerTitle = computed(() => {
-  if (dangerTarget.value?.kind === "client") return "禁用 Agent Access Client";
-  if (dangerTarget.value?.kind === "grant") return "撤销 Agent 授权";
-  return "撤销接入凭证";
+  if (dangerTarget.value?.kind === "client") return t("agentAccess.dangerDisableClient");
+  if (dangerTarget.value?.kind === "grant") return t("agentAccess.dangerRevokeGrant");
+  return t("agentAccess.dangerRevokeCredential");
 });
 const dangerDescription = computed(() => {
-  if (dangerTarget.value?.kind === "client")
-    return "现有 Token 将在安全版本校验或 SSE 重校验时失效，所有新请求会立即被拒绝。";
-  if (dangerTarget.value?.kind === "grant")
-    return "该业务平台将立即失去此 Agent 的全部已授予 Scope，活动事件流会被重新校验。";
-  return "凭证撤销不可恢复。请先确认已有可用轮换凭证，避免业务平台中断。";
+  if (dangerTarget.value?.kind === "client") return t("agentAccess.dangerDisableClientDesc");
+  if (dangerTarget.value?.kind === "grant") return t("agentAccess.dangerRevokeGrantDesc");
+  return t("agentAccess.dangerRevokeCredentialDesc");
 });
 
-const scopeOptions: Array<{ value: AgentAccessScope; label: string }> = [
-  { value: "agent:read", label: "读取 Agent" },
-  { value: "conversation:create", label: "创建 Conversation" },
-  { value: "conversation:read", label: "读取 Conversation" },
-  { value: "run:create", label: "创建 Run" },
-  { value: "run:read", label: "读取 Run" },
-  { value: "run:cancel", label: "取消 Run" },
-  { value: "event:read", label: "读取事件流" },
-  { value: "interaction:decide", label: "处理审批交互" },
-  { value: "artifact:read", label: "读取 Artifact" },
-];
+const scopeOptions = computed<Array<{ value: AgentAccessScope; label: string }>>(() => [
+  { value: "agent:read", label: t("agentAccess.scopeAgentRead") },
+  { value: "conversation:create", label: t("agentAccess.scopeConversationCreate") },
+  { value: "conversation:read", label: t("agentAccess.scopeConversationRead") },
+  { value: "run:create", label: t("agentAccess.scopeRunCreate") },
+  { value: "run:read", label: t("agentAccess.scopeRunRead") },
+  { value: "run:cancel", label: t("agentAccess.scopeRunCancel") },
+  { value: "event:read", label: t("agentAccess.scopeEventRead") },
+  { value: "interaction:decide", label: t("agentAccess.scopeInteractionDecide") },
+  { value: "artifact:read", label: t("agentAccess.scopeArtifactRead") },
+]);
 
 const authMethodOptions: AppSelectOption[] = [
   { label: "Client Secret Basic", value: "client_secret_basic" },
@@ -164,43 +175,44 @@ const selectedAuthMethodLabel = computed(() =>
 const clientColumns = computed<ManagementListColumn<AgentAccessClient>[]>(() => [
   {
     key: "name",
-    label: "名称",
+    label: t("agentAccess.colName"),
     width: 200,
     getValue: (row) => row.name,
   },
   {
     key: "clientId",
-    label: "Client ID",
+    label: t("agentAccess.colClientId"),
     width: 220,
     getValue: (row) => row.clientId,
   },
   {
     key: "authMethod",
-    label: "认证方式",
+    label: t("agentAccess.colAuthMethod"),
     width: 150,
     getValue: (row) => authMethodShort(row.authMethod),
   },
   {
     key: "status",
-    label: "状态",
+    label: t("agentAccess.colStatus"),
     width: 100,
-    getValue: (row) => (row.status === "ACTIVE" ? "活动" : "已禁用"),
+    getValue: (row) =>
+      row.status === "ACTIVE" ? t("agentAccess.statusActive") : t("agentAccess.statusDisabled"),
   },
   {
     key: "tokenTtlSeconds",
-    label: "Token TTL",
+    label: t("agentAccess.colTokenTtl"),
     width: 110,
     getValue: (row) => `${row.tokenTtlSeconds}s`,
   },
   {
     key: "updatedAt",
-    label: "更新时间",
+    label: t("agentAccess.colUpdated"),
     width: 160,
     getValue: (row) => formatTime(row.updatedAt),
   },
   {
     key: "actions",
-    label: "操作",
+    label: t("agentAccess.colActions"),
     width: 88,
     align: "right",
     headerAlign: "right",
@@ -254,7 +266,7 @@ async function loadPage() {
     }
     focusClientFromQuery();
   } catch (error) {
-    actionError.value = messageFor(error, "Agent Access 配置加载失败，请稍后重试。");
+    actionError.value = messageFor(error, t("agentAccess.loadFailed"));
   }
 }
 
@@ -333,9 +345,9 @@ async function createClient() {
     createOpen.value = false;
     activeTab.value = "credentials";
     viewMode.value = "detail";
-    if (result.secret) showSecret(result.secret, `Client ${result.client.name}`);
-    else actionMessage.value = "Private Key Client 已注册；ActWeave 未生成或保存私钥。";
-  }, "Client 创建失败，请检查认证配置。 ");
+    if (result.secret) showSecret(result.secret, t("agentAccess.secretContextClient", { name: result.client.name }));
+    else actionMessage.value = t("agentAccess.privateKeyClientRegistered");
+  }, t("agentAccess.createClientFailed"));
 }
 
 function openRotate() {
@@ -365,9 +377,10 @@ async function rotateCredential() {
       publicHint: isSecret ? undefined : rotateForm.publicHint.trim(),
     });
     rotateOpen.value = false;
-    if (result.secret) showSecret(result.secret, `Client ${client.name} 的新凭证`);
-    else actionMessage.value = "新 JWK 已登记；旧凭证将在轮换窗口结束时失效。";
-  }, "凭证轮换失败，请刷新后重试。");
+    if (result.secret)
+      showSecret(result.secret, t("agentAccess.secretContextNewCredential", { name: client.name }));
+    else actionMessage.value = t("agentAccess.jwkRotated");
+  }, t("agentAccess.rotateFailed"));
 }
 
 function openGrant() {
@@ -393,16 +406,16 @@ async function createGrant() {
       expiresAt: grantForm.expiresAt ? new Date(grantForm.expiresAt).toISOString() : undefined,
     });
     grantOpen.value = false;
-    actionMessage.value = "Agent 授权已创建并写入审计日志。";
-  }, "Agent 授权创建失败，请检查 Scope 或有效期是否冲突。");
+    actionMessage.value = t("agentAccess.grantCreated");
+  }, t("agentAccess.grantCreateFailed"));
 }
 
 async function enableClient(client: AgentAccessClient) {
   if (!canManage.value) return;
   await runAction(async () => {
     await access.setClientStatus(client, "ACTIVE");
-    actionMessage.value = "Client 已启用。";
-  }, "Client 启用失败；请确认至少存在一个活动凭证。");
+    actionMessage.value = t("agentAccess.clientEnabled");
+  }, t("agentAccess.enableClientFailed"));
 }
 
 function askDanger(target: DangerTarget) {
@@ -421,8 +434,8 @@ async function executeDanger() {
     else if (target.kind === "credential" && client) await access.revokeCredential(client.id, target.value);
     else if (target.kind === "grant" && client) await access.revokeGrant(client.id, target.value);
     closeDanger();
-    actionMessage.value = "高风险变更已执行；安全版本已更新。";
-  }, "撤销失败，请刷新资源版本后重试。");
+    actionMessage.value = t("agentAccess.dangerExecuted");
+  }, t("agentAccess.revokeFailed"));
 }
 
 function showSecret(secret: string, context: string) {
@@ -435,20 +448,21 @@ function showSecret(secret: string, context: string) {
 async function copySecret() {
   if (!oneTimeSecret.value) return;
   await navigator.clipboard?.writeText(oneTimeSecret.value);
-  copyNotice.value = "已复制。请立即保存到受控密码管理器，关闭窗口后无法再次查看。";
+  copyNotice.value = t("agentAccess.secretCopied");
 }
 
 async function copyClientId() {
   const clientId = selectedClient.value?.clientId;
   if (!clientId) return;
+  const copied = t("agentAccess.clientIdCopied");
   try {
     await navigator.clipboard?.writeText(clientId);
-    clientIdCopyNotice.value = "已复制 Client ID";
+    clientIdCopyNotice.value = copied;
     window.setTimeout(() => {
-      if (clientIdCopyNotice.value === "已复制 Client ID") clientIdCopyNotice.value = "";
+      if (clientIdCopyNotice.value === copied) clientIdCopyNotice.value = "";
     }, 2000);
   } catch {
-    clientIdCopyNotice.value = "复制失败";
+    clientIdCopyNotice.value = t("agentAccess.copyFailed");
   }
 }
 
@@ -492,9 +506,9 @@ function agentName(agentId: string) {
 }
 
 function formatTime(value?: string) {
-  if (!value) return "从未";
+  if (!value) return t("agentAccess.never");
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN");
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(getI18nLocale());
 }
 
 function shortID(value: string) {
@@ -510,23 +524,23 @@ function authMethodShort(method: string) {
   <div class="page-grid management-page-grid agent-access-page">
     <ManagementPageHeader
       class="span-12"
-      title="Agent Access"
-      description="为第三方 Web / App 注册 Workspace 级 Client，管理凭证轮换和 Agent 数据面授权。"
+      :title="t('agentAccess.title')"
+      :description="t('agentAccess.description')"
       icon="fa-solid fa-shield-halved"
-      eyebrow="ACTWEAVE ACCESS CONTROL"
+      :eyebrow="t('agentAccess.eyebrow')"
     >
       <template #actions>
         <button class="ghost-button" type="button" :disabled="access.loading" @click="loadPage">
-          <i class="fa-solid fa-rotate-right" />刷新
+          <i class="fa-solid fa-rotate-right" />{{ t("agentAccess.refresh") }}
         </button>
         <button v-if="canManage" data-testid="create-client" class="primary-button" type="button" @click="openCreate">
-          <i class="fa-solid fa-plus" />注册 Client
+          <i class="fa-solid fa-plus" />{{ t("agentAccess.registerClient") }}
         </button>
       </template>
     </ManagementPageHeader>
 
     <p v-if="hasWorkspaceContext && !canManage" data-testid="readonly-notice" class="span-12 readonly-notice">
-      <i class="fa-solid fa-eye" />当前 Workspace 角色仅可查看接入配置；创建、轮换和撤销操作需要 OWNER 或 ADMIN。
+      <i class="fa-solid fa-eye" />{{ t("agentAccess.readonlyNotice") }}
     </p>
     <p v-if="actionMessage" class="span-12 action-feedback success" role="status">{{ actionMessage }}</p>
     <p v-if="actionError || access.error" class="span-12 action-feedback error" role="alert">
@@ -548,10 +562,10 @@ function authMethodShort(method: string) {
           :loading="hasWorkspaceContext && access.loading"
           :has-loaded="hasWorkspaceContext ? access.hasLoaded : true"
           :search="query"
-          search-placeholder="搜索 Client ID 或名称"
-          search-aria-label="搜索 Agent Access Client"
-          reset-label="重置"
-          reset-aria-label="重置搜索"
+          :search-placeholder="t('agentAccess.searchPlaceholder')"
+          :search-aria-label="t('agentAccess.searchAria')"
+          :reset-label="t('agentAccess.reset')"
+          :reset-aria-label="t('agentAccess.resetAria')"
           @select-row="selectClient"
           @update:search="onClientSearchUpdate"
           @reset="onClientSearchReset"
@@ -574,7 +588,7 @@ function authMethodShort(method: string) {
           </template>
           <template #cell-status="{ row }">
             <span class="status-pill aw-table-pill" :class="row.status.toLocaleLowerCase()">{{
-              row.status === "ACTIVE" ? "活动" : "已禁用"
+              row.status === "ACTIVE" ? t("agentAccess.statusActive") : t("agentAccess.statusDisabled")
             }}</span>
           </template>
           <template #cell-tokenTtlSeconds="{ row }">
@@ -584,20 +598,20 @@ function authMethodShort(method: string) {
             <span class="aw-table-meta">{{ formatTime(row.updatedAt) }}</span>
           </template>
           <template #cell-actions>
-            <span class="access-detail-link">详情</span>
+            <span class="access-detail-link">{{ t("agentAccess.detail") }}</span>
           </template>
           <template #empty>
             <WorkspaceContextState
               v-if="!hasWorkspaceContext"
               embedded-in-list
-              feature="Agent Access"
+              :feature="t('agentAccess.title')"
               icon="fa-solid fa-shield-halved"
               @retry="loadPage"
             />
             <div v-else class="empty-state management-registry-empty-state">
               <div class="management-empty-state-icon"><i class="fa-solid fa-shield-halved" /></div>
-              <h2>尚未注册 Client</h2>
-              <p>注册后即可为第三方平台签发独立凭证和 Agent Scope。</p>
+              <h2>{{ t("agentAccess.emptyTitle") }}</h2>
+              <p>{{ t("agentAccess.emptyBody") }}</p>
             </div>
           </template>
         </ManagementList>
@@ -612,20 +626,29 @@ function authMethodShort(method: string) {
         :aria-busy="access.detailLoading"
       >
         <header class="detail-header">
-          <button type="button" class="back-btn" aria-label="返回 Client 列表" @click="backToList">
+          <button type="button" class="back-btn" :aria-label="t('agentAccess.backToListAria')" @click="backToList">
             <i class="fa-solid fa-arrow-left" />
           </button>
           <div class="detail-title-block">
             <div class="detail-title-row">
               <h2>{{ selectedClient.name }}</h2>
               <span class="status-pill" :class="selectedClient.status.toLocaleLowerCase()">
-                {{ selectedClient.status === "ACTIVE" ? "活动" : "已禁用" }}
+                {{
+                  selectedClient.status === "ACTIVE"
+                    ? t("agentAccess.statusActive")
+                    : t("agentAccess.statusDisabled")
+                }}
               </span>
             </div>
             <div class="client-id-row">
               <span class="client-id-label">Client ID</span>
               <code class="client-id-value" :title="selectedClient.clientId">{{ selectedClient.clientId }}</code>
-              <button class="copy-id-button" type="button" aria-label="复制 Client ID" @click="copyClientId">
+              <button
+                class="copy-id-button"
+                type="button"
+                :aria-label="t('agentAccess.copyClientIdAria')"
+                @click="copyClientId"
+              >
                 <i class="fa-regular fa-copy" />
               </button>
               <span v-if="clientIdCopyNotice" class="copy-id-notice" role="status">{{ clientIdCopyNotice }}</span>
@@ -638,7 +661,7 @@ function authMethodShort(method: string) {
               type="button"
               @click="enableClient(selectedClient)"
             >
-              启用
+              {{ t("agentAccess.enable") }}
             </button>
             <button
               v-else
@@ -646,50 +669,50 @@ function authMethodShort(method: string) {
               type="button"
               @click="askDanger({ kind: 'client', value: selectedClient })"
             >
-              禁用 Client
+              {{ t("agentAccess.disableClient") }}
             </button>
           </div>
         </header>
 
-        <div class="identity-chips" aria-label="Client 摘要">
+        <div class="identity-chips" :aria-label="t('agentAccess.clientSummaryAria')">
           <div class="identity-chip">
-            <span>认证方式</span>
+            <span>{{ t("agentAccess.authMethod") }}</span>
             <strong>{{ selectedAuthMethodLabel }}</strong>
           </div>
           <div class="identity-chip">
             <span>Token TTL</span>
-            <strong>{{ selectedClient.tokenTtlSeconds }} 秒</strong>
+            <strong>{{ t("agentAccess.tokenTtlSeconds", { n: selectedClient.tokenTtlSeconds }) }}</strong>
           </div>
           <div class="identity-chip">
             <span>Service Principal</span>
             <strong :title="selectedClient.servicePrincipalId">{{ shortID(selectedClient.servicePrincipalId) }}</strong>
           </div>
           <div class="identity-chip">
-            <span>最近更新</span>
+            <span>{{ t("agentAccess.lastUpdated") }}</span>
             <strong>{{ formatTime(selectedClient.updatedAt) }}</strong>
           </div>
         </div>
 
-        <nav class="detail-tabs" aria-label="Agent Access 详情">
+        <nav class="detail-tabs" :aria-label="t('agentAccess.detailTabsAria')">
           <button type="button" :class="{ active: activeTab === 'credentials' }" @click="activeTab = 'credentials'">
-            凭证 <span>{{ access.credentials.length }}</span>
+            {{ t("agentAccess.tabCredentials") }} <span>{{ access.credentials.length }}</span>
           </button>
           <button type="button" :class="{ active: activeTab === 'grants' }" @click="activeTab = 'grants'">
-            Agent 授权 <span>{{ access.grants.length }}</span>
+            {{ t("agentAccess.tabGrants") }} <span>{{ access.grants.length }}</span>
           </button>
           <button type="button" :class="{ active: activeTab === 'configuration' }" @click="activeTab = 'configuration'">
-            接入配置
+            {{ t("agentAccess.tabConfiguration") }}
           </button>
         </nav>
 
         <section v-if="activeTab === 'credentials'" class="detail-section">
           <div class="section-heading">
             <div>
-              <h3>凭证生命周期</h3>
-              <p>只展示公开 Hint 和使用时间；认证材料不可恢复。在此轮换或撤销凭证。</p>
+              <h3>{{ t("agentAccess.credentialsTitle") }}</h3>
+              <p>{{ t("agentAccess.credentialsBody") }}</p>
             </div>
             <button v-if="canManage" class="primary-button compact" type="button" @click="openRotate">
-              <i class="fa-solid fa-rotate" />轮换凭证
+              <i class="fa-solid fa-rotate" />{{ t("agentAccess.rotateCredential") }}
             </button>
           </div>
           <div v-if="access.credentials.length" class="access-table-shell">
@@ -697,12 +720,12 @@ function authMethodShort(method: string) {
               <table class="data-table access-resource-table">
                 <thead>
                   <tr>
-                    <th>类型 / Hint</th>
-                    <th>创建时间</th>
-                    <th>最后使用</th>
-                    <th>有效期</th>
-                    <th>状态</th>
-                    <th class="is-align-right">操作</th>
+                    <th>{{ t("agentAccess.colTypeHint") }}</th>
+                    <th>{{ t("agentAccess.colCreated") }}</th>
+                    <th>{{ t("agentAccess.colLastUsed") }}</th>
+                    <th>{{ t("agentAccess.colExpires") }}</th>
+                    <th>{{ t("agentAccess.colStatusShort") }}</th>
+                    <th class="is-align-right">{{ t("agentAccess.colActions") }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -725,7 +748,7 @@ function authMethodShort(method: string) {
                     </td>
                     <td>
                       <span class="status-pill aw-table-pill" :class="credential.revokedAt ? 'revoked' : 'active'">{{
-                        credential.revokedAt ? "已撤销" : "活动"
+                        credential.revokedAt ? t("agentAccess.statusRevoked") : t("agentAccess.statusActive")
                       }}</span>
                     </td>
                     <td class="is-align-right">
@@ -735,7 +758,7 @@ function authMethodShort(method: string) {
                         type="button"
                         @click="askDanger({ kind: 'credential', value: credential })"
                       >
-                        撤销
+                        {{ t("agentAccess.revoke") }}
                       </button>
                       <span v-else class="aw-table-meta">—</span>
                     </td>
@@ -745,19 +768,19 @@ function authMethodShort(method: string) {
             </div>
           </div>
           <div v-else class="inline-empty">
-            <strong>暂无凭证</strong>
-            <span>轮换或创建 Client 后会在这里展示公开 Hint。</span>
+            <strong>{{ t("agentAccess.noCredentialsTitle") }}</strong>
+            <span>{{ t("agentAccess.noCredentialsBody") }}</span>
           </div>
         </section>
 
         <section v-else-if="activeTab === 'grants'" class="detail-section">
           <div class="section-heading">
             <div>
-              <h3>Agent 数据面授权</h3>
-              <p>每个 Grant 只包含受控数据面 Scope，不授予 Workspace 管理能力。</p>
+              <h3>{{ t("agentAccess.grantsTitle") }}</h3>
+              <p>{{ t("agentAccess.grantsBody") }}</p>
             </div>
             <button v-if="canManage" class="primary-button compact" type="button" @click="openGrant">
-              <i class="fa-solid fa-link" />授权 Agent
+              <i class="fa-solid fa-link" />{{ t("agentAccess.grantAgent") }}
             </button>
           </div>
           <div v-if="access.grants.length" class="access-table-shell">
@@ -765,11 +788,11 @@ function authMethodShort(method: string) {
               <table class="data-table access-resource-table">
                 <thead>
                   <tr>
-                    <th>Agent</th>
+                    <th>{{ t("agentAccess.agent") }}</th>
                     <th>Scopes</th>
-                    <th>有效期</th>
-                    <th>状态</th>
-                    <th class="is-align-right">操作</th>
+                    <th>{{ t("agentAccess.colValidPeriod") }}</th>
+                    <th>{{ t("agentAccess.colStatusShort") }}</th>
+                    <th class="is-align-right">{{ t("agentAccess.colActions") }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -785,12 +808,12 @@ function authMethodShort(method: string) {
                     <td>
                       <span class="aw-table-meta"
                         >{{ formatTime(grant.validFrom) }} →
-                        {{ grant.expiresAt ? formatTime(grant.expiresAt) : "长期" }}</span
+                        {{ grant.expiresAt ? formatTime(grant.expiresAt) : t("agentAccess.permanent") }}</span
                       >
                     </td>
                     <td>
                       <span class="status-pill aw-table-pill" :class="grant.status.toLocaleLowerCase()">{{
-                        grant.status === "ACTIVE" ? "活动" : "已撤销"
+                        grant.status === "ACTIVE" ? t("agentAccess.statusActive") : t("agentAccess.statusRevoked")
                       }}</span>
                     </td>
                     <td class="is-align-right">
@@ -800,7 +823,7 @@ function authMethodShort(method: string) {
                         type="button"
                         @click="askDanger({ kind: 'grant', value: grant })"
                       >
-                        撤销
+                        {{ t("agentAccess.revoke") }}
                       </button>
                       <span v-else class="aw-table-meta">—</span>
                     </td>
@@ -810,26 +833,26 @@ function authMethodShort(method: string) {
             </div>
           </div>
           <div v-else class="inline-empty">
-            <strong>尚未授权 Agent</strong>
-            <span>为业务平台创建最小权限 Grant，绑定可调用的 Agent 与 Scope。</span>
+            <strong>{{ t("agentAccess.noGrantsTitle") }}</strong>
+            <span>{{ t("agentAccess.noGrantsBody") }}</span>
           </div>
         </section>
 
         <section v-else class="detail-section configuration-section">
           <div class="section-heading">
             <div>
-              <h3>接入与信任配置</h3>
-              <p>这些值参与浏览器接入、JWT 验证和外部 Subject 信任边界。</p>
+              <h3>{{ t("agentAccess.configTitle") }}</h3>
+              <p>{{ t("agentAccess.configBody") }}</p>
             </div>
           </div>
           <dl class="config-list">
             <div>
               <dt>JWKS URI</dt>
-              <dd>{{ selectedClient.jwksUri || "不适用（Secret 认证）" }}</dd>
+              <dd>{{ selectedClient.jwksUri || t("agentAccess.jwksUriNa") }}</dd>
             </div>
             <div>
               <dt>Trusted Subject Issuer</dt>
-              <dd>{{ selectedClient.trustedSubjectIssuer || "未启用 Token Exchange" }}</dd>
+              <dd>{{ selectedClient.trustedSubjectIssuer || t("agentAccess.tokenExchangeDisabled") }}</dd>
             </div>
             <div>
               <dt>Trusted Subject JWKS</dt>
@@ -839,13 +862,13 @@ function authMethodShort(method: string) {
               <dt>CORS Origins</dt>
               <dd>
                 <code v-for="origin in selectedClient.allowedCorsOrigins" :key="origin">{{ origin }}</code>
-                <span v-if="!selectedClient.allowedCorsOrigins.length">仅服务端/BFF 接入</span>
+                <span v-if="!selectedClient.allowedCorsOrigins.length">{{ t("agentAccess.corsServerOnly") }}</span>
               </dd>
             </div>
           </dl>
           <p class="config-note">
             <i class="fa-solid fa-circle-info" />
-            认证方式和信任根是安全边界。v1 通过注册新 Client 变更，不在原 Client 上静默替换。
+            {{ t("agentAccess.configNote") }}
           </p>
         </section>
       </section>
@@ -857,29 +880,41 @@ function authMethodShort(method: string) {
         class="modal-card access-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="注册 Agent Access Client"
+        :aria-label="t('agentAccess.createModalAria')"
         tabindex="-1"
       >
         <div class="modal-card-head">
           <div>
-            <span>注册外部 Client</span>
-            <h3>注册 Agent Access Client</h3>
+            <span>{{ t("agentAccess.createEyebrow") }}</span>
+            <h3>{{ t("agentAccess.createTitle") }}</h3>
           </div>
-          <button class="icon-action-button" type="button" aria-label="关闭" @click="createOpen = false">
+          <button
+            class="icon-action-button"
+            type="button"
+            :aria-label="t('agentAccess.close')"
+            @click="createOpen = false"
+          >
             <i class="fa-solid fa-xmark" />
           </button>
         </div>
         <div class="modal-form access-modal-form form-grid">
           <label class="span-2"
-            ><span>Client 名称</span
-            ><input v-model="createForm.name" data-modal-initial-focus placeholder="例如：会员运营 App"
+            ><span>{{ t("agentAccess.clientName") }}</span
+            ><input
+              v-model="createForm.name"
+              data-modal-initial-focus
+              :placeholder="t('agentAccess.clientNamePh')"
           /></label>
           <label>
-            <span>认证方式</span>
-            <AppSelect v-model="createForm.authMethod" :options="authMethodOptions" aria-label="认证方式" />
+            <span>{{ t("agentAccess.authMethod") }}</span>
+            <AppSelect
+              v-model="createForm.authMethod"
+              :options="authMethodOptions"
+              :aria-label="t('agentAccess.authMethod')"
+            />
           </label>
           <label
-            ><span>Token TTL（秒）</span
+            ><span>{{ t("agentAccess.tokenTtlLabel") }}</span
             ><input v-model.number="createForm.tokenTtlSeconds" type="number" min="60" max="900"
           /></label>
           <template v-if="createForm.authMethod === 'private_key_jwt'">
@@ -887,33 +922,37 @@ function authMethodShort(method: string) {
               ><span>JWKS URI</span
               ><input v-model="createForm.jwksUri" placeholder="https://platform.example/.well-known/jwks.json"
             /></label>
-            <label><span>JWK Thumbprint（Base64URL）</span><input v-model="createForm.jwkThumbprint" /></label>
             <label
-              ><span>公开 Hint / kid</span><input v-model="createForm.publicHint" placeholder="kid-prod-2026-01"
+              ><span>{{ t("agentAccess.jwkThumbprint") }}</span
+              ><input v-model="createForm.jwkThumbprint"
+            /></label>
+            <label
+              ><span>{{ t("agentAccess.publicHint") }}</span
+              ><input v-model="createForm.publicHint" placeholder="kid-prod-2026-01"
             /></label>
           </template>
           <label class="span-2"
-            ><span>CORS Origins（每行一个精确 HTTPS Origin）</span
+            ><span>{{ t("agentAccess.corsOrigins") }}</span
             ><textarea v-model="createForm.corsOrigins" rows="3" placeholder="https://app.example.com" />
           </label>
           <label
-            ><span>Trusted Subject Issuer（可选）</span
+            ><span>{{ t("agentAccess.trustedSubjectIssuer") }}</span
             ><input v-model="createForm.trustedSubjectIssuer" placeholder="https://identity.example.com"
           /></label>
           <label
-            ><span>Subject JWKS URI（可选）</span
+            ><span>{{ t("agentAccess.subjectJwksUri") }}</span
             ><input v-model="createForm.trustedSubjectJwksUri" placeholder="https://identity.example.com/jwks"
           /></label>
         </div>
         <div class="access-modal-footer">
-          <button class="ghost-button" type="button" @click="createOpen = false">取消</button>
+          <button class="ghost-button" type="button" @click="createOpen = false">{{ t("agentAccess.cancel") }}</button>
           <button
             class="primary-button"
             type="button"
             :disabled="access.mutating || !createForm.name.trim()"
             @click="createClient"
           >
-            {{ access.mutating ? "创建中…" : "创建 Client" }}
+            {{ access.mutating ? t("agentAccess.creating") : t("agentAccess.createClient") }}
           </button>
         </div>
       </section>
@@ -925,46 +964,57 @@ function authMethodShort(method: string) {
         class="modal-card access-modal compact-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="轮换 Agent Access 凭证"
+        :aria-label="t('agentAccess.rotateModalAria')"
         tabindex="-1"
       >
         <div class="modal-card-head">
           <div>
-            <span>安全轮换</span>
-            <h3>轮换 Credential</h3>
+            <span>{{ t("agentAccess.rotateEyebrow") }}</span>
+            <h3>{{ t("agentAccess.rotateTitle") }}</h3>
           </div>
-          <button class="icon-action-button" type="button" aria-label="关闭" @click="rotateOpen = false">
+          <button
+            class="icon-action-button"
+            type="button"
+            :aria-label="t('agentAccess.close')"
+            @click="rotateOpen = false"
+          >
             <i class="fa-solid fa-xmark" />
           </button>
         </div>
         <div class="modal-form access-modal-form form-grid">
           <label class="span-2">
-            <span>被替换凭证</span>
+            <span>{{ t("agentAccess.replacesCredential") }}</span>
             <AppSelect
               v-model="rotateForm.replacesCredentialId"
               :options="rotateCredentialSelectOptions"
-              aria-label="被替换凭证"
+              :aria-label="t('agentAccess.replacesCredential')"
             />
           </label>
           <label class="span-2">
-            <span>并存窗口（秒，最多 86400）</span>
+            <span>{{ t("agentAccess.overlapSeconds") }}</span>
             <input v-model.number="rotateForm.overlapSeconds" type="number" min="1" max="86400" />
-            <small>窗口结束前请完成业务平台切换。</small>
+            <small>{{ t("agentAccess.overlapHint") }}</small>
           </label>
           <template v-if="selectedClient?.authMethod === 'private_key_jwt'">
-            <label><span>新 JWK Thumbprint</span><input v-model="rotateForm.jwkThumbprint" /></label>
-            <label><span>新公开 Hint / kid</span><input v-model="rotateForm.publicHint" /></label>
+            <label
+              ><span>{{ t("agentAccess.newJwkThumbprint") }}</span
+              ><input v-model="rotateForm.jwkThumbprint"
+            /></label>
+            <label
+              ><span>{{ t("agentAccess.newPublicHint") }}</span
+              ><input v-model="rotateForm.publicHint"
+            /></label>
           </template>
         </div>
         <div class="access-modal-footer">
-          <button class="ghost-button" type="button" @click="rotateOpen = false">取消</button>
+          <button class="ghost-button" type="button" @click="rotateOpen = false">{{ t("agentAccess.cancel") }}</button>
           <button
             class="primary-button"
             type="button"
             :disabled="access.mutating || !rotateForm.replacesCredentialId"
             @click="rotateCredential"
           >
-            开始安全轮换
+            {{ t("agentAccess.startRotation") }}
           </button>
         </div>
       </section>
@@ -976,25 +1026,35 @@ function authMethodShort(method: string) {
         class="modal-card access-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="授权 Agent"
+        :aria-label="t('agentAccess.grantModalAria')"
         tabindex="-1"
       >
         <div class="modal-card-head">
           <div>
-            <span>最小权限</span>
-            <h3>授权 Agent 数据面能力</h3>
+            <span>{{ t("agentAccess.grantEyebrow") }}</span>
+            <h3>{{ t("agentAccess.grantTitle") }}</h3>
           </div>
-          <button class="icon-action-button" type="button" aria-label="关闭" @click="grantOpen = false">
+          <button
+            class="icon-action-button"
+            type="button"
+            :aria-label="t('agentAccess.close')"
+            @click="grantOpen = false"
+          >
             <i class="fa-solid fa-xmark" />
           </button>
         </div>
         <div class="modal-form access-modal-form">
           <label>
-            <span>Agent</span>
-            <AppSelect v-model="grantForm.agentId" :options="agentSelectOptions" aria-label="授权 Agent" filterable />
+            <span>{{ t("agentAccess.agent") }}</span>
+            <AppSelect
+              v-model="grantForm.agentId"
+              :options="agentSelectOptions"
+              :aria-label="t('agentAccess.grantAgentAria')"
+              filterable
+            />
           </label>
           <fieldset class="scope-grid">
-            <legend>数据面 Scope</legend>
+            <legend>{{ t("agentAccess.dataPlaneScopes") }}</legend>
             <label v-for="scope in scopeOptions" :key="scope.value">
               <input v-model="grantForm.scopes" type="checkbox" :value="scope.value" />
               <span
@@ -1006,25 +1066,32 @@ function authMethodShort(method: string) {
           <label class="decision-toggle">
             <input v-model="grantForm.serviceDecision" type="checkbox" />
             <span>
-              <b>允许纯 Service Principal 处理低风险审批</b>
-              <small>仅适用于 Agent Policy 同时允许的 LOW / MEDIUM 风险。</small>
+              <b>{{ t("agentAccess.serviceDecision") }}</b>
+              <small>{{ t("agentAccess.serviceDecisionHint") }}</small>
             </span>
           </label>
           <label v-if="grantForm.serviceDecision">
-            <span>最高风险</span>
-            <AppSelect v-model="grantForm.maxRisk" :options="maxRiskOptions" aria-label="最高风险" />
+            <span>{{ t("agentAccess.maxRisk") }}</span>
+            <AppSelect
+              v-model="grantForm.maxRisk"
+              :options="maxRiskOptions"
+              :aria-label="t('agentAccess.maxRisk')"
+            />
           </label>
-          <label><span>到期时间（可选）</span><input v-model="grantForm.expiresAt" type="datetime-local" /></label>
+          <label
+            ><span>{{ t("agentAccess.expiresOptional") }}</span
+            ><input v-model="grantForm.expiresAt" type="datetime-local"
+          /></label>
         </div>
         <div class="access-modal-footer">
-          <button class="ghost-button" type="button" @click="grantOpen = false">取消</button>
+          <button class="ghost-button" type="button" @click="grantOpen = false">{{ t("agentAccess.cancel") }}</button>
           <button
             class="primary-button"
             type="button"
             :disabled="access.mutating || !grantForm.agentId || !grantForm.scopes.length"
             @click="createGrant"
           >
-            创建最小权限 Grant
+            {{ t("agentAccess.createLeastGrant") }}
           </button>
         </div>
       </section>
@@ -1036,28 +1103,28 @@ function authMethodShort(method: string) {
         class="modal-card access-modal secret-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="一次性 Client Secret"
+        :aria-label="t('agentAccess.secretModalAria')"
         tabindex="-1"
       >
         <div class="modal-card-head">
           <div>
-            <span>一次性密钥</span>
-            <h3>立即保存接入密钥</h3>
+            <span>{{ t("agentAccess.secretEyebrow") }}</span>
+            <h3>{{ t("agentAccess.secretTitle") }}</h3>
           </div>
         </div>
         <div class="modal-form access-modal-form">
           <p class="secret-warning">
             <i class="fa-solid fa-triangle-exclamation" />
-            这是 {{ oneTimeSecretContext }} 的唯一明文展示。ActWeave 不保存明文，关闭后无法恢复。
+            {{ t("agentAccess.secretWarning", { context: oneTimeSecretContext }) }}
           </p>
           <code data-testid="one-time-secret" class="secret-value">{{ oneTimeSecret }}</code>
           <button class="copy-secret" type="button" data-modal-initial-focus @click="copySecret">
-            <i class="fa-regular fa-copy" />复制到剪贴板
+            <i class="fa-regular fa-copy" />{{ t("agentAccess.copyToClipboard") }}
           </button>
           <p v-if="copyNotice" class="copy-notice" role="status">{{ copyNotice }}</p>
         </div>
         <div class="access-modal-footer">
-          <button class="primary-button" type="button" @click="closeSecret">我已安全保存，关闭</button>
+          <button class="primary-button" type="button" @click="closeSecret">{{ t("agentAccess.secretSavedClose") }}</button>
         </div>
       </section>
     </div>
@@ -1073,22 +1140,22 @@ function authMethodShort(method: string) {
       >
         <div class="modal-card-head">
           <div>
-            <span>高风险变更</span>
+            <span>{{ t("agentAccess.dangerEyebrow") }}</span>
             <h3>{{ dangerTitle }}</h3>
           </div>
-          <button class="icon-action-button" type="button" aria-label="关闭" @click="closeDanger">
+          <button class="icon-action-button" type="button" :aria-label="t('agentAccess.close')" @click="closeDanger">
             <i class="fa-solid fa-xmark" />
           </button>
         </div>
         <div class="modal-form access-modal-form">
           <p class="danger-copy">{{ dangerDescription }}</p>
           <label>
-            <span>输入 <code>REVOKE</code> 进行二次确认</span>
+            <span>{{ t("agentAccess.confirmRevokePhrase") }}</span>
             <input v-model="confirmationPhrase" data-modal-initial-focus autocomplete="off" />
           </label>
         </div>
         <div class="access-modal-footer">
-          <button class="ghost-button" type="button" @click="closeDanger">取消</button>
+          <button class="ghost-button" type="button" @click="closeDanger">{{ t("agentAccess.cancel") }}</button>
           <button
             data-testid="confirm-danger"
             class="danger-button solid"
@@ -1096,7 +1163,7 @@ function authMethodShort(method: string) {
             :disabled="access.mutating || confirmationPhrase !== 'REVOKE'"
             @click="executeDanger"
           >
-            确认执行不可恢复变更
+            {{ t("agentAccess.confirmIrreversible") }}
           </button>
         </div>
       </section>

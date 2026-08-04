@@ -1,5 +1,7 @@
 import axios, { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from "axios";
 
+import { te, tt } from "../i18n/tt";
+
 const apiBaseURL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 
 export interface APIErrorDetail {
@@ -178,9 +180,16 @@ export function toAPIError(error: unknown): APIError {
   });
 }
 
+/**
+ * User-visible error text. Prefer i18n key `errors.<CODE>` when present;
+ * never pass Chinese prose through t() as a key. Fallback is already localized
+ * by the caller (tt / useI18n).
+ */
 export function apiErrorMessage(error: unknown, fallback: string) {
   const value = toAPIError(error);
-  return value.requestId ? `${fallback}（请求 ID：${value.requestId}）` : fallback;
+  const key = `errors.${value.code}`;
+  const message = value.code && te(key) ? tt(key) : fallback;
+  return value.requestId ? `${message}${tt("common.requestIdSuffix", { id: value.requestId })}` : message;
 }
 
 // D5-A: invalidate in-flight GET coalesce table when any write is issued (not after settle only).

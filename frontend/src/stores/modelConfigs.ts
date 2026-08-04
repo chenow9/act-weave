@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 
+import { tt } from "../i18n/tt";
 import { apiClient, toAPIError } from "../services/api";
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, type ListPagination } from "../services/paginated-list";
 import type { ModelApiConfig, ModelApiConfigListQuery } from "../types/domain";
@@ -39,7 +40,7 @@ export const useModelConfigStore = defineStore("modelConfigs", {
     workspaceID() {
       const store = useWorkspaceStore();
       const workspaceID = store.activeWorkspaceId || store.items[0]?.id;
-      if (!workspaceID) throw new Error("当前没有可用的业务空间。请先创建业务空间，或联系管理员加入已有空间。");
+      if (!workspaceID) throw new Error(tt("common.noActiveWorkspace"));
       return workspaceID;
     },
     async fetchCatalog() {

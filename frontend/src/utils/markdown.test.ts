@@ -28,6 +28,12 @@ describe("renderMarkdown", () => {
   });
 
   it("uses fallback html for empty content", () => {
-    expect(renderMarkdown("", "暂无内容")).toBe("<p>暂无内容</p>");
+    expect(renderMarkdown("", "No content")).toBe("<p>No content</p>");
+  });
+
+  it("uses i18n default fallback for empty content when no override is provided", () => {
+    const html = renderMarkdown("");
+    expect(html).toMatch(/^<p>.+<\/p>$/);
+    expect(html).not.toBe("<p></p>");
   });
 });

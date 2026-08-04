@@ -2,6 +2,7 @@
 import { ElOption, ElSelect } from "element-plus";
 import type { Placement } from "element-plus";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 
 type AppSelectValue = string | number | boolean;
 
@@ -10,6 +11,8 @@ export interface AppSelectOption {
   value: AppSelectValue;
   disabled?: boolean;
 }
+
+const { t } = useI18n();
 
 const props = withDefaults(
   defineProps<{
@@ -29,7 +32,7 @@ const props = withDefaults(
     ariaDescribedby?: string;
   }>(),
   {
-    placeholder: "请选择",
+    placeholder: undefined,
     disabled: false,
     compact: false,
     filterable: false,
@@ -41,6 +44,8 @@ const props = withDefaults(
     ariaDescribedby: undefined,
   },
 );
+
+const resolvedPlaceholder = computed(() => props.placeholder ?? t("common.pleaseSelect"));
 
 const emit = defineEmits<{
   "update:modelValue": [value: AppSelectValue];
@@ -137,7 +142,7 @@ watch(
       class="app-select"
       :class="{ 'is-compact': compact }"
       :model-value="normalizedValue"
-      :placeholder="placeholder"
+      :placeholder="resolvedPlaceholder"
       :disabled="disabled"
       :filterable="filterable"
       :fit-input-width="fitInputWidth"

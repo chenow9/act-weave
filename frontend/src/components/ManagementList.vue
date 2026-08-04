@@ -15,8 +15,11 @@ let managementListInstanceCount = 0;
 
 <script setup lang="ts" generic="Row extends object">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from "vue";
+import { useI18n } from "vue-i18n";
 
 import DataTable from "./DataTable.vue";
+
+const { t } = useI18n();
 
 const props = withDefaults(
   defineProps<{
@@ -60,15 +63,29 @@ const props = withDefaults(
     error: null,
     hasLoaded: false,
     search: "",
-    searchPlaceholder: "搜索",
-    searchAriaLabel: "搜索列表",
-    clearSearchAriaLabel: "清除搜索",
-    resetLabel: "清除筛选",
-    resetAriaLabel: "清除筛选条件",
+    searchPlaceholder: "",
+    searchAriaLabel: "",
+    clearSearchAriaLabel: "",
+    resetLabel: "",
+    resetAriaLabel: "",
     resetDisabled: false,
     pagination: undefined,
   },
 );
+
+const resolvedSearchPlaceholder = computed(() => props.searchPlaceholder || t("common.search"));
+const resolvedSearchAriaLabel = computed(() => props.searchAriaLabel || t("common.searchList"));
+const resolvedClearSearchAriaLabel = computed(() => props.clearSearchAriaLabel || t("common.clearSearch"));
+const resolvedResetLabel = computed(() => props.resetLabel || t("common.clearFilters"));
+const resolvedResetAriaLabel = computed(() => props.resetAriaLabel || t("common.clearFiltersAria"));
+const emptyLikePlaceholders = computed(() => [
+  "-",
+  "--",
+  t("common.emptyPlaceholder"),
+  t("common.noData"),
+  t("common.noObservation"),
+  t("common.untested"),
+]);
 
 const emit = defineEmits<{
   "select-row": [row: Row];
@@ -160,11 +177,12 @@ function columnValue(row: Row, column: ManagementListColumn<Row>) {
   return (row as Record<string, unknown>)[column.key];
 }
 
-function isEmptyLike(value: unknown, placeholderValues = ["-", "--", "暂无", "暂无数据", "暂无观测", "未测试"]) {
+function isEmptyLike(value: unknown, placeholderValues?: string[]) {
+  const placeholders = placeholderValues ?? emptyLikePlaceholders.value;
   if (value === null || value === undefined) return true;
   if (typeof value !== "string") return false;
   const normalized = value.trim();
-  return normalized === "" || placeholderValues.includes(normalized);
+  return normalized === "" || placeholders.includes(normalized);
 }
 
 function isColumnEmptyByDefault(column: ManagementListColumn<Row>) {
@@ -382,16 +400,16 @@ onBeforeUnmount(() => {
           <input
             :value="search"
             type="search"
-            :aria-label="searchAriaLabel"
-            :placeholder="searchPlaceholder"
+            :aria-label="resolvedSearchAriaLabel"
+            :placeholder="resolvedSearchPlaceholder"
             :tabindex="checkedRowKeys.length ? -1 : undefined"
             @input="updateSearch"
           />
           <button
             v-if="search"
             type="button"
-            :title="clearSearchAriaLabel"
-            :aria-label="clearSearchAriaLabel"
+            :title="resolvedClearSearchAriaLabel"
+            :aria-label="resolvedClearSearchAriaLabel"
             :tabindex="checkedRowKeys.length ? -1 : undefined"
             @click="emit('update:search', '')"
           >
@@ -399,9 +417,16 @@ onBeforeUnmount(() => {
           </button>
         </label>
         <div v-if="checkedRowKeys.length" class="management-list-batch-bar" role="status" aria-live="polite">
-          <span>已选 {{ checkedRowKeys.length }} 项</span>
+          <span>{{ t("common.selectedCount", { n: checkedRowKeys.length }) }}</span>
           <slot name="batch-actions" :checked-row-keys="checkedRowKeys" />
-          <button type="button" aria-label="取消选择" @click="emit('update:checked-row-keys', [])">取消选择</button>
+          <button
+            type="button"
+            class="management-list-clear-selection"
+            :aria-label="t('common.clearSelection')"
+            @click="emit('update:checked-row-keys', [])"
+          >
+            {{ t("common.clearSelection") }}
+          </button>
         </div>
       </div>
       <div class="management-list-toolbar-actions">
@@ -412,11 +437,11 @@ onBeforeUnmount(() => {
           v-if="!resetDisabled"
           class="management-list-reset"
           type="button"
-          :aria-label="resetAriaLabel"
+          :aria-label="resolvedResetAriaLabel"
           @click="emit('reset')"
         >
           <i class="fa-solid fa-rotate-left" aria-hidden="true" />
-          {{ resetLabel }}
+          {{ resolvedResetLabel }}
         </button>
         <template v-if="showColumnSettings">
           <span class="management-list-toolbar-divider" aria-hidden="true" />
@@ -425,8 +450,8 @@ onBeforeUnmount(() => {
               ref="columnSettingsTriggerRef"
               class="data-table-column-button"
               type="button"
-              aria-label="列设置"
-              title="列设置"
+              :aria-label="t('common.columnSettings')"
+              :title="t('common.columnSettings')"
               aria-haspopup="true"
               :aria-controls="columnSettingsId"
               :aria-expanded="columnSettingsOpen"
@@ -441,10 +466,10 @@ onBeforeUnmount(() => {
                 ref="columnSettingsMenuRef"
                 class="data-table-column-menu"
                 role="group"
-                aria-label="表格列设置"
+                :aria-label="t('common.tableColumnSettings')"
                 :style="columnSettingsMenuStyle"
               >
-                <div class="data-table-column-menu-title">设置显示列</div>
+                <div class="data-table-column-menu-title">{{ t("common.setVisibleColumns") }}</div>
                 <label
                   v-for="column in columns"
                   :key="column.key"
@@ -462,16 +487,16 @@ onBeforeUnmount(() => {
                   <i
                     v-if="!column.hidable"
                     class="fa-solid fa-lock data-table-column-option-lock"
-                    aria-label="固定列"
+                    :aria-label="t('common.pinColumn')"
                   />
                 </label>
                 <button
                   class="data-table-column-reset"
                   type="button"
-                  aria-label="恢复默认列"
+                  :aria-label="t('common.restoreDefaultColumns')"
                   @click="restoreDefaultColumns"
                 >
-                  恢复默认列
+                  {{ t("common.restoreDefaultColumns") }}
                 </button>
               </div>
             </Teleport>
@@ -494,7 +519,7 @@ onBeforeUnmount(() => {
       </slot>
 
       <slot v-else-if="showEmptyState" name="empty">
-        <div class="management-list-state">暂无数据</div>
+        <div class="management-list-state">{{ t("common.noData") }}</div>
       </slot>
 
       <template v-else-if="showList">
@@ -540,8 +565,18 @@ onBeforeUnmount(() => {
       </template>
     </div>
 
-    <nav v-if="pagination && (showList || hasLoaded)" class="management-list-pagination" aria-label="列表分页">
-      <span>共 {{ pagination.total }} 项 · 第 {{ pagination.page }} / {{ pageCount }} 页</span>
+    <nav
+      v-if="pagination && (showList || hasLoaded)"
+      class="management-list-pagination"
+      :aria-label="t('common.paginationAria')"
+    >
+      <span>{{
+        t("common.paginationSummary", {
+          total: pagination.total,
+          page: pagination.page,
+          pages: pageCount,
+        })
+      }}</span>
       <div v-if="showPaginationControls" class="management-list-pagination-controls">
         <div
           v-if="showPageSizeControl"
@@ -553,7 +588,7 @@ onBeforeUnmount(() => {
             ref="pageSizeTriggerRef"
             class="management-list-page-size-trigger"
             type="button"
-            :aria-label="`每页 ${pagination.pageSize} 条`"
+            :aria-label="t('common.pageSizeAria', { n: pagination.pageSize })"
             aria-haspopup="listbox"
             :aria-controls="pageSizeMenuId"
             :aria-expanded="pageSizeMenuOpen"
@@ -562,7 +597,7 @@ onBeforeUnmount(() => {
             @keydown.up.prevent="movePageSizeOption(-1)"
             @keydown.esc.stop="closePageSizeMenu(true)"
           >
-            <span>每页 {{ pagination.pageSize }} 条</span>
+            <span>{{ t("common.pageSizeLabel", { n: pagination.pageSize }) }}</span>
             <i class="fa-solid fa-chevron-down" :class="{ open: pageSizeMenuOpen }" aria-hidden="true" />
           </button>
           <div
@@ -570,7 +605,7 @@ onBeforeUnmount(() => {
             :id="pageSizeMenuId"
             class="management-list-page-size-menu"
             role="listbox"
-            aria-label="选择每页数量"
+            :aria-label="t('common.pageSizeSelectAria')"
             @keydown="handlePageSizeMenuKeydown"
           >
             <button
@@ -584,7 +619,7 @@ onBeforeUnmount(() => {
               :tabindex="index === pageSizeMenuActiveIndex ? 0 : -1"
               @click="selectPageSize(option)"
             >
-              <span>{{ option }} 条</span>
+              <span>{{ t("common.pageSizeOption", { n: option }) }}</span>
               <i v-if="pagination.pageSize === option" class="fa-solid fa-check" aria-hidden="true" />
             </button>
           </div>
@@ -593,7 +628,7 @@ onBeforeUnmount(() => {
           <button
             class="management-list-pagination-button"
             type="button"
-            aria-label="上一页"
+            :aria-label="t('common.prevPage')"
             :disabled="pagination.page <= 1"
             @click="requestPage(pagination.page - 1)"
           >
@@ -606,7 +641,7 @@ onBeforeUnmount(() => {
             class="management-list-pagination-button management-list-page-number"
             :class="{ active: pagination.page === pageNumber }"
             type="button"
-            :aria-label="`第 ${pageNumber} 页`"
+            :aria-label="t('common.gotoPage', { n: pageNumber })"
             :aria-current="pagination.page === pageNumber ? 'page' : undefined"
             @click="requestPage(pageNumber)"
           >
@@ -615,7 +650,7 @@ onBeforeUnmount(() => {
           <button
             class="management-list-pagination-button"
             type="button"
-            aria-label="下一页"
+            :aria-label="t('common.nextPage')"
             :disabled="pagination.page >= pageCount"
             @click="requestPage(pagination.page + 1)"
           >
@@ -714,7 +749,7 @@ onBeforeUnmount(() => {
   font-weight: 700;
 }
 
-.management-list-batch-bar > button[aria-label="取消选择"] {
+.management-list-batch-bar > button.management-list-clear-selection {
   min-height: 28px;
   height: 28px;
   padding: 0 10px;
@@ -729,8 +764,8 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
 }
 
-.management-list-batch-bar > button[aria-label="取消选择"]:hover,
-.management-list-batch-bar > button[aria-label="取消选择"]:focus-visible {
+.management-list-batch-bar > button.management-list-clear-selection:hover,
+.management-list-batch-bar > button.management-list-clear-selection:focus-visible {
   outline: 0;
   background: #f8fafc;
   color: #0f172a;

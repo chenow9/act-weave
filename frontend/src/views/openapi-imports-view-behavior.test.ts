@@ -2,6 +2,7 @@ import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { reactive } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createTestI18n } from "../test-utils/i18n";
 import OpenAPIImportsView from "./OpenAPIImportsView.vue";
 
 const mocks = vi.hoisted(() => ({
@@ -136,6 +137,7 @@ async function mountView() {
   const wrapper = mount(OpenAPIImportsView, {
     attachTo: document.body,
     global: {
+      plugins: [createTestI18n("zh-CN")],
       directives: {
         loading: {},
       },
@@ -308,7 +310,11 @@ describe("OpenAPIImportsView management list behavior", () => {
     );
     wrapper = mount(OpenAPIImportsView, {
       attachTo: document.body,
-      global: { directives: { loading: {} }, stubs: { Teleport: true, ToolSchemaTreeView: true } },
+      global: {
+        plugins: [createTestI18n("zh-CN")],
+        directives: { loading: {} },
+        stubs: { Teleport: true, ToolSchemaTreeView: true },
+      },
     });
     await flushPromises();
     expect(wrapper.find(".management-list-loading").exists()).toBe(true);

@@ -12,8 +12,13 @@ import WorkflowTrialRunDialog from "./WorkflowTrialRunDialog.vue";
 import { apiClient } from "../../services/api";
 import { useWorkspaceStore } from "../../stores/workspaces";
 import { useWorkflowStore } from "../../stores/workflow";
+import { createTestI18n } from "../../test-utils/i18n";
 import WorkflowView from "../../views/WorkflowView.vue";
 import type { Workspace } from "../../types/domain";
+
+function testI18nPlugins() {
+  return [createTestI18n("zh-CN")];
+}
 
 vi.mock("../../services/api", () => ({
   apiClient: {
@@ -699,6 +704,9 @@ describe("workflow inspector typed editors", () => {
       props: {
         variableRefs: ["{{input.orderId}}", "{{nodeOutputs.lookup-1.status}}"],
       },
+      global: {
+        plugins: testI18nPlugins(),
+      },
     });
 
     expect(wrapper.text()).toContain("子流程");
@@ -725,6 +733,7 @@ describe("workflow inspector typed editors", () => {
         variableRefs: [],
       },
       global: {
+        plugins: testI18nPlugins(),
         stubs: {
           AppSelect: AppSelectStub,
         },
@@ -778,6 +787,7 @@ describe("workflow inspector typed editors", () => {
         variableRefs: ["{{input.orderId}}", "{{nodeOutputs.lookup-1.status}}"],
       },
       global: {
+        plugins: testI18nPlugins(),
         stubs: {
           AppSelect: AppSelectStub,
         },
@@ -820,6 +830,7 @@ describe("workflow inspector typed editors", () => {
         variableRefs: ["{{input.orderId}}", "{{nodeOutputs.lookup-1.status}}"],
       },
       global: {
+        plugins: testI18nPlugins(),
         stubs: {
           AppSelect: AppSelectStub,
         },
@@ -876,6 +887,7 @@ describe("workflow inspector typed editors", () => {
         variableRefs: ["{{input.orderId}}", "{{nodeOutputs.lookup-1.status}}"],
       },
       global: {
+        plugins: testI18nPlugins(),
         stubs: {
           AppSelect: AppSelectStub,
         },
@@ -907,6 +919,9 @@ describe("workflow inspector typed editors", () => {
           ui: {},
         },
         variableRefs: ["{{input.orderId}}"],
+      },
+      global: {
+        plugins: testI18nPlugins(),
       },
     });
 
@@ -952,6 +967,7 @@ describe("workflow inspector typed editors", () => {
         variableRefs: ["{{input.orders}}", "{{nodeOutputs.lookup-1.items}}", "{{foreach.item.id}}"],
       },
       global: {
+        plugins: testI18nPlugins(),
         stubs: {
           AppSelect: AppSelectStub,
         },
@@ -1192,6 +1208,8 @@ describe("workflow graph editor", () => {
     }
   });
 
+  // Prefer plugins: testI18nPlugins() on mounts that render WorkflowView / inspector chrome.
+
   it("renders the workbench and updates node labels from the inspector", async () => {
     mockWorkflowAssets([workflowFixture()])
       .mockResolvedValueOnce({ data: { draft: draftFixture(), latestCompilation: compilationFixture() } })
@@ -1199,6 +1217,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -1276,6 +1295,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -1365,6 +1385,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -1417,6 +1438,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -1491,6 +1513,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -1533,6 +1556,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -1579,6 +1603,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -1617,6 +1642,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: { loading: () => undefined },
         stubs: {
           AppSelect: { template: "<div class='app-select-stub' />" },
@@ -1655,6 +1681,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -1717,6 +1744,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -1800,6 +1828,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -1876,6 +1905,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -1918,6 +1948,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -1996,6 +2027,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -2168,6 +2200,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -2264,6 +2297,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -2339,6 +2373,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -2406,6 +2441,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -2473,6 +2509,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -2544,6 +2581,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -2586,6 +2624,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -2624,6 +2663,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -2682,6 +2722,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -2751,6 +2792,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -2799,6 +2841,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -2883,6 +2926,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -2938,6 +2982,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -3028,7 +3073,7 @@ describe("workflow graph editor", () => {
         directives: {
           loading: () => undefined,
         },
-        plugins: [createPinia()],
+        plugins: [createPinia(), ...testI18nPlugins()],
         stubs: {
           AppSelect: appSelectStub,
           ElDrawer: {
@@ -3117,6 +3162,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -3148,6 +3194,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -3195,6 +3242,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -3248,6 +3296,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -3288,6 +3337,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -3339,6 +3389,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },
@@ -3384,6 +3435,7 @@ describe("workflow graph editor", () => {
 
     const wrapper = mount(WorkflowView, {
       global: {
+        plugins: testI18nPlugins(),
         directives: {
           loading: () => undefined,
         },

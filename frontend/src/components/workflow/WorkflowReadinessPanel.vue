@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 
 import type { WorkflowReadiness } from "../../types/domain";
+
+const { t } = useI18n();
 
 const props = withDefaults(
   defineProps<{
@@ -13,67 +16,75 @@ const props = withDefaults(
   },
 );
 
-const stageLabels: Record<string, string> = {
-  DraftMissing: "缺少草稿",
-  CompileRequired: "需要编译",
-  CompileFailed: "编译失败",
-  TrialRequired: "需要试运行",
-  PublishReady: "可发布",
-  Published: "已发布",
-  Disabled: "已停用",
-};
+const stageLabels = computed<Record<string, string>>(() => ({
+  DraftMissing: t("workflow.stageDraftMissing"),
+  CompileRequired: t("workflow.stageCompileRequired"),
+  CompileFailed: t("workflow.stageCompileFailed"),
+  TrialRequired: t("workflow.stageTrialRequired"),
+  PublishReady: t("workflow.stagePublishReady"),
+  Published: t("workflow.statusPublished"),
+  Disabled: t("workflow.statusDisabled"),
+}));
 
-const fallbackActions: Record<string, string> = {
-  DraftMissing: "先创建或保存流程草稿，再继续校验。",
-  CompileRequired: "保存或检查当前草稿，生成最新编译结果。",
-  CompileFailed: "先修复编译问题，再继续试运行或发布。",
-  TrialRequired: "运行当前已编译草稿的试运行。",
-  PublishReady: "当前草稿已通过试运行，可以发布给 Agent 调用。",
-  Published: "已发布版本可供 Agent 调用。",
-  Disabled: "启用流程后才能继续校验、试运行或发布。",
-};
+const fallbackActions = computed<Record<string, string>>(() => ({
+  DraftMissing: t("workflow.actionDraftMissing"),
+  CompileRequired: t("workflow.actionCompileRequired"),
+  CompileFailed: t("workflow.actionCompileFailed"),
+  TrialRequired: t("workflow.actionTrialRequired"),
+  PublishReady: t("workflow.actionPublishReady"),
+  Published: t("workflow.actionPublished"),
+  Disabled: t("workflow.actionDisabled"),
+}));
 
-const blockerActionLabels: Record<string, string> = {
-  draft_missing: fallbackActions.DraftMissing,
-  compile_required: fallbackActions.CompileRequired,
-  compile_failed: fallbackActions.CompileFailed,
-  trial_required: fallbackActions.TrialRequired,
-  workflow_disabled: fallbackActions.Disabled,
-};
+const blockerActionLabels = computed<Record<string, string>>(() => ({
+  draft_missing: fallbackActions.value.DraftMissing,
+  compile_required: fallbackActions.value.CompileRequired,
+  compile_failed: fallbackActions.value.CompileFailed,
+  trial_required: fallbackActions.value.TrialRequired,
+  workflow_disabled: fallbackActions.value.Disabled,
+}));
 
-const blockerMessageLabels: Record<string, string> = {
-  draft_missing: "缺少流程草稿。",
-  compile_required: "当前草稿需要重新编译。",
-  compile_failed: "流程草稿编译失败。",
-  trial_required: "当前已编译草稿需要先通过试运行。",
-  workflow_disabled: "流程已停用。",
-};
+const blockerMessageLabels = computed<Record<string, string>>(() => ({
+  draft_missing: t("workflow.blockerDraftMissing"),
+  compile_required: t("workflow.blockerCompileRequired"),
+  compile_failed: t("workflow.blockerCompileFailed"),
+  trial_required: t("workflow.blockerTrialRequired"),
+  workflow_disabled: t("workflow.blockerDisabled"),
+}));
 
 const nextAction = computed(() => {
   const blocker = props.readiness?.blockers?.find((candidate) => candidate.action.trim());
   if (blocker) {
-    return blockerActionLabels[blocker.code] || blocker.action;
+    return blockerActionLabels.value[blocker.code] || blocker.action;
   }
 
-  return fallbackActions[props.readiness?.stage || ""] || "等待后端返回就绪状态。";
+  return fallbackActions.value[props.readiness?.stage || ""] || t("workflow.waitReadiness");
 });
 
 const checklist = computed(() => [
-  { key: "draft", label: "草稿", ready: Boolean(props.readiness?.hasDraft) },
+  { key: "draft", label: t("workflow.summaryDraft"), ready: Boolean(props.readiness?.hasDraft) },
   {
     key: "compile",
-    label: "编译",
+    label: t("workflow.readinessCompile"),
     ready: Boolean(props.readiness?.compilationCurrent && props.readiness?.compilationValid),
   },
-  { key: "trial", label: "试运行", ready: Boolean(props.readiness?.trialCurrent && props.readiness?.trialSuccessful) },
-  { key: "publish", label: "发布", ready: Boolean(props.readiness?.published || props.readiness?.canPublish) },
+  {
+    key: "trial",
+    label: t("workflow.trialRun"),
+    ready: Boolean(props.readiness?.trialCurrent && props.readiness?.trialSuccessful),
+  },
+  {
+    key: "publish",
+    label: t("workflow.readinessPublish"),
+    ready: Boolean(props.readiness?.published || props.readiness?.canPublish),
+  },
 ]);
 </script>
 
 <template>
   <section class="workflow-readiness-panel" :class="{ compact }">
     <div class="workflow-readiness-head">
-      <span class="workflow-readiness-stage">{{ stageLabels[readiness?.stage || ""] || "状态未知" }}</span>
+      <span class="workflow-readiness-stage">{{ stageLabels[readiness?.stage || ""] || t("workflow.stageUnknown") }}</span>
       <strong>{{ nextAction }}</strong>
     </div>
 

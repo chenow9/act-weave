@@ -9,11 +9,14 @@ export interface ManagementSummaryItem {
 </script>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
+
 defineProps<{ items: ManagementSummaryItem[] }>();
+const { t } = useI18n();
 </script>
 
 <template>
-  <section class="management-summary-strip" aria-label="页面摘要">
+  <section class="management-summary-strip" :aria-label="t('common.pageSummaryAria')">
     <article v-for="item in items" :key="item.label" :class="`tone-${item.tone || 'default'}`">
       <span><i :class="item.icon" aria-hidden="true" />{{ item.label }}</span>
       <strong

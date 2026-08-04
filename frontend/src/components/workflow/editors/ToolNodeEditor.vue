@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 
 import AppSelect from "../../AppSelect.vue";
 import type { Tool, ToolRequestParam, ToolResponseField, WorkflowGraphNode } from "../../../types/domain";
+
+const { t } = useI18n();
 
 type MappingValue = { kind: "ref"; path: string } | { kind: "literal"; value: unknown };
 
@@ -181,34 +184,34 @@ function paramSummary(param: ToolRequestParam) {
 <template>
   <section class="workflow-tool-node-editor">
     <label class="drawer-field">
-      <span>工具</span>
+      <span>{{ t("workflow.tool") }}</span>
       <AppSelect
         class="workflow-tool-select"
         :model-value="selectedToolId"
         :options="toolSelectOptions"
-        placeholder="选择已发布工具"
+        :placeholder="t('workflow.selectPublishedTool')"
         filterable
         :fit-input-width="true"
         placement="bottom-start"
-        aria-label="选择已发布工具"
+        :aria-label="t('workflow.selectPublishedTool')"
         @update:model-value="updateTool(String($event || ''))"
       />
     </label>
 
     <div v-if="!hasPublishedTools" class="workflow-inspector-empty compact">
-      <strong>还没有可绑定的已发布工具</strong>
-      <small>当前 Agent 还没有 Published Tool。先去工具管理发布一个可调用工具，再回到这里完成绑定。</small>
+      <strong>{{ t("workflow.noPublishedTools") }}</strong>
+      <small>{{ t("workflow.noPublishedToolsHint") }}</small>
     </div>
 
     <div v-if="props.toolCatalogError" class="workflow-tool-catalog-error" role="status">
-      <strong>工具目录加载失败</strong>
+      <strong>{{ t("workflow.toolCatalogLoadFailedTitle") }}</strong>
       <small>{{ props.toolCatalogError }}</small>
     </div>
 
     <section class="workflow-inspector-vars workflow-tool-required-params">
       <div class="workflow-section-caption">
-        <strong>必填参数</strong>
-        <small>{{ requiredUserParams.length }} 个用户输入</small>
+        <strong>{{ t("workflow.requiredParams") }}</strong>
+        <small>{{ t("workflow.userInputCount", { n: requiredUserParams.length }) }}</small>
       </div>
 
       <div v-if="requiredUserParams.length" class="workflow-tool-param-list">
@@ -223,14 +226,14 @@ function paramSummary(param: ToolRequestParam) {
             <small>{{ paramSummary(param) }}</small>
           </div>
           <p v-if="param.description">{{ param.description }}</p>
-          <div class="workflow-tool-mapping-mode" role="group" aria-label="参数映射方式">
+          <div class="workflow-tool-mapping-mode" role="group" :aria-label="t('workflow.paramMappingModeAria')">
             <button
               type="button"
               data-action="mapping-kind-ref"
               :class="{ active: mappingKind(param.name) === 'ref' }"
               @click="setMappingKind(param.name, 'ref')"
             >
-              变量
+              {{ t("workflow.mapVariable") }}
             </button>
             <button
               type="button"
@@ -238,7 +241,7 @@ function paramSummary(param: ToolRequestParam) {
               :class="{ active: mappingKind(param.name) === 'literal' }"
               @click="setMappingKind(param.name, 'literal')"
             >
-              固定值
+              {{ t("workflow.mapLiteral") }}
             </button>
           </div>
           <AppSelect
@@ -246,27 +249,27 @@ function paramSummary(param: ToolRequestParam) {
             class="workflow-tool-variable-select"
             :model-value="mappingRefPath(param.name)"
             :options="variableOptions"
-            placeholder="选择变量"
+            :placeholder="t('workflow.selectVariable')"
             @update:model-value="setRefMapping(param.name, String($event))"
           />
           <input
             v-else
             :name="`tool-param-${param.name}-literal`"
             :value="mappingLiteralValue(param.name)"
-            placeholder="输入固定值"
+            :placeholder="t('workflow.enterLiteral')"
             @input="setLiteralMapping(param.name, ($event.target as HTMLInputElement).value)"
           />
         </article>
       </div>
       <div v-else class="workflow-inspector-empty compact">
-        <small>当前工具没有需要用户提供的必填参数。</small>
+        <small>{{ t("workflow.noRequiredParams") }}</small>
       </div>
     </section>
 
     <section class="workflow-inspector-vars workflow-tool-output-preview">
       <div class="workflow-section-caption">
-        <strong>输出 Schema</strong>
-        <small>{{ selectedTool?.responseFields.length || 0 }} 个字段</small>
+        <strong>{{ t("workflow.outputSchema") }}</strong>
+        <small>{{ t("workflow.fieldCount", { n: selectedTool?.responseFields.length || 0 }) }}</small>
       </div>
       <div v-if="selectedTool?.responseFields.length" class="workflow-tool-schema-list">
         <span v-for="field in selectedTool.responseFields" :key="field.name" class="workflow-token">

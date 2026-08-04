@@ -1,9 +1,11 @@
 <script setup lang="ts">
 // @ts-nocheck — inject surface under page split (ZKL-64 item 17)
 /** OpenAPI imports modals (ZKL-64 item 17). */
+import { useI18n } from "vue-i18n";
 import ToolSchemaTreeView from "./ToolSchemaTreeView.vue";
 import { useOpenAPIImportsPageContext } from "../composables/useOpenAPIImportsPageContext";
 
+const { t } = useI18n();
 const scp = useOpenAPIImportsPageContext();
 /* prettier-ignore */
 const {
@@ -24,7 +26,7 @@ void ToolSchemaTreeView;
       class="openapi-modal-card"
       role="dialog"
       aria-modal="true"
-      aria-label="导入 OpenAPI"
+      :aria-label="t('openapi.importModalAria')"
       tabindex="-1"
       @click.stop
       @keydown.esc.stop.prevent="closeImportModal"
@@ -34,33 +36,38 @@ void ToolSchemaTreeView;
         <div>
           <span><i class="fa-solid fa-file-import" /></span>
           <div>
-            <h3>导入 OpenAPI</h3>
-            <p>确认当前业务空间并选择 Provider、服务连接，解析接口清单</p>
+            <h3>{{ t("openapi.importModalTitle") }}</h3>
+            <p>{{ t("openapi.importModalSubtitle") }}</p>
           </div>
         </div>
-        <button type="button" title="关闭" aria-label="关闭导入弹框" @click="closeImportModal">
+        <button
+          type="button"
+          :title="t('openapi.close')"
+          :aria-label="t('openapi.closeImportAria')"
+          @click="closeImportModal"
+        >
           <i class="fa-solid fa-xmark" />
         </button>
       </header>
 
       <div class="openapi-modal-body">
         <div class="openapi-field">
-          <label>当前业务空间</label>
+          <label>{{ t("openapi.currentWorkspace") }}</label>
           <div class="openapi-reference-select is-readonly" data-testid="openapi-current-workspace">
             <span
               ><i class="fa-solid fa-layer-group" />{{
                 selectedWorkspaceOption
                   ? `${selectedWorkspaceOption.name} · ${selectedWorkspaceOption.displayName}`
-                  : "未选择业务空间"
+                  : t("openapi.noWorkspaceSelected")
               }}</span
             >
-            <small>在页面顶部切换</small>
+            <small>{{ t("openapi.switchAtTop") }}</small>
           </div>
         </div>
 
         <div class="openapi-field">
-          <label>导入方式</label>
-          <div class="openapi-import-mode-tabs" role="tablist" aria-label="OpenAPI 导入方式">
+          <label>{{ t("openapi.importMode") }}</label>
+          <div class="openapi-import-mode-tabs" role="tablist" :aria-label="t('openapi.importModeAria')">
             <button
               type="button"
               role="tab"
@@ -68,7 +75,7 @@ void ToolSchemaTreeView;
               :class="{ active: importMode === 'FILE' }"
               @click="importMode = 'FILE'"
             >
-              <i class="fa-solid fa-file-arrow-up" /> 本地文件
+              <i class="fa-solid fa-file-arrow-up" /> {{ t("openapi.localFile") }}
             </button>
             <button
               type="button"
@@ -77,13 +84,13 @@ void ToolSchemaTreeView;
               :class="{ active: importMode === 'ONLINE' }"
               @click="importMode = 'ONLINE'"
             >
-              <i class="fa-solid fa-cloud-arrow-down" /> Provider 在线文档
+              <i class="fa-solid fa-cloud-arrow-down" /> {{ t("openapi.providerOnlineDocs") }}
             </button>
           </div>
         </div>
 
         <div class="openapi-field dropdown" @click.stop>
-          <label>选择 Provider <b class="field-required-mark">*</b></label>
+          <label>{{ t("openapi.selectProvider") }} <b class="field-required-mark">*</b></label>
           <button
             class="openapi-reference-select"
             type="button"
@@ -98,9 +105,9 @@ void ToolSchemaTreeView;
                 selectedProviderOption?.name ||
                 (importForm.workspaceId
                   ? importProviders.length
-                    ? "请选择 Provider"
-                    : "当前空间暂无 Provider"
-                  : "先选择业务空间")
+                    ? t("openapi.pleaseSelectProvider")
+                    : t("openapi.noProviderInWorkspace")
+                  : t("openapi.selectWorkspaceFirst"))
               }}</span
             >
             <i class="fa-solid fa-chevron-down" :class="{ open: openapiDropdowns.provider }" />
@@ -118,7 +125,11 @@ void ToolSchemaTreeView;
             >
               <span class="openapi-option-copy">
                 <strong>{{ provider.name }}</strong>
-                <small>{{ canProviderImportOnline(provider) ? "可在线导入" : "未配置在线 OpenAPI 文档" }}</small>
+                <small>{{
+                  canProviderImportOnline(provider)
+                    ? t("openapi.canImportOnline")
+                    : t("openapi.onlineDocsNotConfigured")
+                }}</small>
               </span>
               <i v-if="importForm.providerId === provider.id" class="fa-solid fa-circle-check" />
             </button>
@@ -126,7 +137,7 @@ void ToolSchemaTreeView;
         </div>
 
         <div class="openapi-field dropdown" @click.stop>
-          <label>选择服务连接</label>
+          <label>{{ t("openapi.selectConnection") }}</label>
           <button
             class="openapi-reference-select"
             type="button"
@@ -138,7 +149,8 @@ void ToolSchemaTreeView;
           >
             <span
               ><i class="fa-solid fa-plug" />{{
-                selectedConnectionOption?.name || (importForm.providerId ? "使用 Provider 默认连接" : "先选择 Provider")
+                selectedConnectionOption?.name ||
+                (importForm.providerId ? t("openapi.useProviderDefault") : t("openapi.selectProviderFirst"))
               }}</span
             >
             <i class="fa-solid fa-chevron-down" :class="{ open: openapiDropdowns.connection }" />
@@ -151,7 +163,7 @@ void ToolSchemaTreeView;
               :aria-selected="!importForm.connectionId"
               @click="selectImportConnection('')"
             >
-              <span>使用 Provider 默认连接</span>
+              <span>{{ t("openapi.useProviderDefault") }}</span>
               <i v-if="!importForm.connectionId" class="fa-solid fa-circle-check" />
             </button>
             <button
@@ -173,11 +185,15 @@ void ToolSchemaTreeView;
         </div>
 
         <div v-if="importMode === 'FILE'" class="openapi-field">
-          <label>OpenAPI 文件 <b class="field-required-mark">*</b></label>
+          <label>{{ t("openapi.openapiFile") }} <b class="field-required-mark">*</b></label>
           <label class="openapi-file-picker">
-            <span class="openapi-file-picker-button"><i class="fa-solid fa-folder-open" />选择文件</span>
-            <span class="openapi-file-picker-name">{{ selectedOpenAPIFile?.name || "请选择 JSON 或 YAML 文件" }}</span>
-            <span class="openapi-file-picker-meta">最大 4 MB</span>
+            <span class="openapi-file-picker-button"
+              ><i class="fa-solid fa-folder-open" />{{ t("openapi.chooseFile") }}</span
+            >
+            <span class="openapi-file-picker-name">{{
+              selectedOpenAPIFile?.name || t("openapi.chooseJsonOrYaml")
+            }}</span>
+            <span class="openapi-file-picker-meta">{{ t("openapi.maxFileSize") }}</span>
             <input
               class="openapi-file-input"
               data-testid="openapi-file-input"
@@ -195,12 +211,19 @@ void ToolSchemaTreeView;
           <div>
             <i class="fa-solid fa-list-check" />
             <span>
-              <strong>识别到 {{ selectedOpenAPIFilePreview.endpointCount }} 个接口</strong>
-              <small>{{ selectedOpenAPIFilePreview.readyCount }} 个接口可生成 Tool 草稿，导入后可逐项确认。</small>
+              <strong>{{
+                t("openapi.detectedEndpoints", { n: selectedOpenAPIFilePreview.endpointCount })
+              }}</strong>
+              <small>{{ t("openapi.readyEndpointsHint", { n: selectedOpenAPIFilePreview.readyCount }) }}</small>
             </span>
           </div>
           <div class="openapi-preview-table">
-            <div><strong>方法</strong><strong>路径</strong><strong>建议 Tool</strong><strong>状态</strong></div>
+            <div>
+              <strong>{{ t("openapi.previewMethod") }}</strong
+              ><strong>{{ t("openapi.previewPath") }}</strong
+              ><strong>{{ t("openapi.previewSuggestedTool") }}</strong
+              ><strong>{{ t("openapi.previewStatus") }}</strong>
+            </div>
             <div v-for="row in selectedOpenAPIFilePreview.rows.slice(0, 6)" :key="`${row.method}:${row.path}`">
               <span>{{ row.method }}</span
               ><span>{{ row.path }}</span
@@ -214,11 +237,11 @@ void ToolSchemaTreeView;
           <div>
             <i class="fa-solid fa-cloud-arrow-down" />
             <span>
-              <strong>Provider OpenAPI 来源</strong>
-              <small>后端将从所选 Provider 的受管来源拉取并解析 OpenAPI 文档。</small>
+              <strong>{{ t("openapi.providerOpenapiSource") }}</strong>
+              <small>{{ t("openapi.providerOpenapiSourceHint") }}</small>
             </span>
           </div>
-          <div class="import-preview-empty">请求仅提交 Provider 和可选 Connection，不上传文件，也不绑定 Agent。</div>
+          <div class="import-preview-empty">{{ t("openapi.onlineImportNote") }}</div>
         </div>
         <div
           v-else-if="importMode === 'ONLINE' && selectedProviderOption"
@@ -229,13 +252,11 @@ void ToolSchemaTreeView;
           <div>
             <i class="fa-solid fa-circle-info" />
             <span>
-              <strong>Provider 和 Connection 已加载</strong>
-              <small>当前 Provider 未配置可在线读取的 OpenAPI 文档，暂时不能发起在线导入。</small>
+              <strong>{{ t("openapi.providerConnectionLoaded") }}</strong>
+              <small>{{ t("openapi.onlineUnavailable") }}</small>
             </span>
           </div>
-          <div class="import-preview-empty">
-            数据不会再从下拉框中隐藏。需要在线导入时，请到 Provider 管理补充文档地址并启用按需发现。
-          </div>
+          <div class="import-preview-empty">{{ t("openapi.onlineUnavailableHint") }}</div>
         </div>
         <div
           v-else-if="importMode === 'ONLINE'"
@@ -246,20 +267,20 @@ void ToolSchemaTreeView;
           <div>
             <i class="fa-solid fa-circle-info" />
             <span>
-              <strong>当前空间暂无 Provider</strong>
-              <small>请先在 Provider 管理中登记服务，再返回导入 OpenAPI。</small>
+              <strong>{{ t("openapi.noProviderTitle") }}</strong>
+              <small>{{ t("openapi.noProviderHint") }}</small>
             </span>
           </div>
         </div>
       </div>
 
       <footer class="openapi-modal-actions">
-        <span>导入后生成 Tool 草稿</span>
+        <span>{{ t("openapi.importThenDrafts") }}</span>
         <div>
-          <button type="button" :disabled="importingOpenAPI" @click="closeImportModal">取消</button>
+          <button type="button" :disabled="importingOpenAPI" @click="closeImportModal">{{ t("openapi.cancel") }}</button>
           <button type="button" :disabled="!canImportOpenAPI || importingOpenAPI" @click="importOpenAPI">
             <i v-if="importingOpenAPI" class="fa-solid fa-spinner fa-spin" />
-            {{ importingOpenAPI ? "解析中" : "开始导入" }}
+            {{ importingOpenAPI ? t("openapi.parsing") : t("openapi.startImport") }}
           </button>
         </div>
       </footer>
@@ -273,7 +294,7 @@ void ToolSchemaTreeView;
       class="openapi-modal-card openapi-detail-modal-card"
       role="dialog"
       aria-modal="true"
-      aria-label="导入详情"
+      :aria-label="t('openapi.detailModalAria')"
       tabindex="-1"
       @keydown.esc.stop.prevent="closeImportDetail"
       @keydown.tab="handleModalTab($event, detailDialogRef)"
@@ -282,11 +303,16 @@ void ToolSchemaTreeView;
         <div>
           <span><i class="fa-solid fa-file-code" /></span>
           <div>
-            <h3>导入详情</h3>
-            <p>查看导入归属、连接与结构化契约</p>
+            <h3>{{ t("openapi.detailTitle") }}</h3>
+            <p>{{ t("openapi.detailSubtitle") }}</p>
           </div>
         </div>
-        <button type="button" title="关闭" aria-label="关闭详情弹框" @click="closeImportDetail">
+        <button
+          type="button"
+          :title="t('openapi.close')"
+          :aria-label="t('openapi.closeDetailAria')"
+          @click="closeImportDetail"
+        >
           <i class="fa-solid fa-xmark" />
         </button>
       </header>
@@ -299,8 +325,8 @@ void ToolSchemaTreeView;
           aria-live="polite"
         >
           <i class="fa-solid fa-spinner fa-spin" aria-hidden="true" />
-          <strong>正在加载导入详情…</strong>
-          <p>请稍候，不会触发 Tool 草稿生成。</p>
+          <strong>{{ t("openapi.detailLoading") }}</strong>
+          <p>{{ t("openapi.detailLoadingHint") }}</p>
         </div>
         <div
           v-else-if="detailError"
@@ -309,11 +335,15 @@ void ToolSchemaTreeView;
           role="alert"
         >
           <i class="fa-solid fa-circle-exclamation" aria-hidden="true" />
-          <strong>导入详情加载失败</strong>
+          <strong>{{ t("openapi.detailLoadFailedTitle") }}</strong>
           <p>{{ detailError }}</p>
           <div class="openapi-detail-state-actions">
-            <button type="button" data-testid="openapi-detail-retry" @click="retryImportDetail">重试</button>
-            <button type="button" data-testid="openapi-detail-error-close" @click="closeImportDetail">关闭</button>
+            <button type="button" data-testid="openapi-detail-retry" @click="retryImportDetail">
+              {{ t("openapi.retry") }}
+            </button>
+            <button type="button" data-testid="openapi-detail-error-close" @click="closeImportDetail">
+              {{ t("openapi.close") }}
+            </button>
           </div>
         </div>
         <template v-else>
@@ -335,39 +365,39 @@ void ToolSchemaTreeView;
           <div class="openapi-detail-grid import-detail-grid">
             <div class="config-summary-item">
               <i class="fa-solid fa-layer-group" />
-              <span>归属空间</span>
+              <span>{{ t("openapi.workspaceOwned") }}</span>
               <strong :title="selectedWorkspace?.name || selectedImport.workspaceId">{{
                 selectedWorkspace?.name || selectedImport.workspaceId
               }}</strong>
             </div>
             <div class="config-summary-item">
               <i class="fa-solid fa-cubes" />
-              <span>来源 Provider</span>
+              <span>{{ t("openapi.sourceProvider") }}</span>
               <strong :title="providerLabel(selectedImport.providerId)">{{
                 providerLabel(selectedImport.providerId)
               }}</strong>
             </div>
             <div class="config-summary-item">
               <i class="fa-solid fa-plug-circle-bolt" />
-              <span>服务连接</span>
+              <span>{{ t("openapi.colConnection") }}</span>
               <strong :title="selectedConnection?.name || ''">{{ selectedConnection?.name }}</strong>
             </div>
             <div class="config-summary-item">
               <i class="fa-solid fa-server" />
-              <span>服务地址</span>
+              <span>{{ t("openapi.serviceAddress") }}</span>
               <strong :title="connectionAddress(selectedConnection)">{{
                 connectionAddress(selectedConnection)
               }}</strong>
             </div>
             <div class="config-summary-item">
               <i class="fa-solid fa-list-check" />
-              <span>接口数量</span>
+              <span>{{ t("openapi.endpointCount") }}</span>
               <strong>{{ selectedImport.totalEndpoints }}</strong>
             </div>
             <div class="config-summary-item">
               <i class="fa-solid fa-wand-magic-sparkles" />
-              <span>生成状态</span>
-              <strong>{{ selectedImport.readyEndpoints }} 个可生成</strong>
+              <span>{{ t("openapi.generationStatus") }}</span>
+              <strong>{{ t("openapi.readyCount", { n: selectedImport.readyEndpoints }) }}</strong>
             </div>
           </div>
           <!-- Aggregate trees only when there is no per-endpoint list (avoids double cost). -->
@@ -382,41 +412,41 @@ void ToolSchemaTreeView;
           >
             <ToolSchemaTreeView
               :nodes="selectedImportDetail?.requestTransport || []"
-              title="请求参数"
-              empty-text="当前导入记录未返回传输参数。"
+              :title="t('openapi.requestParams')"
+              :empty-text="t('openapi.requestParamsEmpty')"
             />
             <ToolSchemaTreeView
               :nodes="selectedImportDetail?.requestBodyNodes || []"
-              title="请求体 Body"
-              empty-text="当前导入记录未返回请求体结构。"
+              :title="t('openapi.requestBody')"
+              :empty-text="t('openapi.requestBodyEmpty')"
             />
             <ToolSchemaTreeView
               :nodes="selectedImportDetail?.responseNodes || []"
-              title="响应结果"
-              empty-text="当前导入记录未返回响应结构。"
+              :title="t('openapi.responseResult')"
+              :empty-text="t('openapi.responseEmpty')"
             />
           </div>
           <div v-if="selectedImportDetail?.endpoints?.length" class="tool-schema-endpoint-list">
             <div class="editable-schema-head openapi-endpoint-list-head">
               <div>
-                <strong>接口明细</strong>
-                <span
-                  >共
-                  {{ selectedImportDetail.endpoints.length }}
-                  个接口；默认折叠，点击展开查看契约（避免一次渲染过多表格导致卡顿）。</span
-                >
+                <strong>{{ t("openapi.endpointDetails") }}</strong>
+                <span>{{
+                  t("openapi.endpointDetailsHint", { n: selectedImportDetail.endpoints.length })
+                }}</span>
               </div>
               <label class="openapi-endpoint-search">
                 <i class="fa-solid fa-magnifying-glass" aria-hidden="true" />
                 <input
                   v-model="endpointDetailQuery"
                   type="search"
-                  placeholder="搜索 method / path / 摘要"
-                  aria-label="搜索接口明细"
+                  :placeholder="t('openapi.searchEndpointsPlaceholder')"
+                  :aria-label="t('openapi.searchEndpointsAria')"
                 />
               </label>
             </div>
-            <p v-if="!filteredImportEndpoints.length" class="openapi-endpoint-empty">没有匹配的接口</p>
+            <p v-if="!filteredImportEndpoints.length" class="openapi-endpoint-empty">
+              {{ t("openapi.noMatchingEndpoints") }}
+            </p>
             <div
               v-for="endpoint in visibleImportEndpoints"
               :key="`${endpoint.method}-${endpoint.path}`"
@@ -440,13 +470,13 @@ void ToolSchemaTreeView;
               <div v-if="isEndpointDetailExpanded(endpoint)" class="tool-schema-endpoint-body">
                 <ToolSchemaTreeView
                   :nodes="endpoint.requestContract ? ([endpoint.requestContract].flat() as ToolSchemaNode[]) : []"
-                  title="请求体 Body"
-                  empty-text="无请求结构"
+                  :title="t('openapi.requestBody')"
+                  :empty-text="t('openapi.noRequestStructure')"
                 />
                 <ToolSchemaTreeView
                   :nodes="endpoint.responseContract ? ([endpoint.responseContract].flat() as ToolSchemaNode[]) : []"
-                  title="响应结果"
-                  empty-text="无响应结构"
+                  :title="t('openapi.responseResult')"
+                  :empty-text="t('openapi.noResponseStructure')"
                 />
               </div>
             </div>
@@ -456,20 +486,29 @@ void ToolSchemaTreeView;
               class="openapi-endpoint-more"
               @click="showMoreImportEndpoints"
             >
-              显示更多（已显示 {{ visibleImportEndpoints.length }} / {{ filteredImportEndpoints.length }}）
+              {{
+                t("openapi.showMore", {
+                  shown: visibleImportEndpoints.length,
+                  total: filteredImportEndpoints.length,
+                })
+              }}
             </button>
           </div>
         </template>
       </div>
       <div class="drawer-footer-actions openapi-detail-actions">
-        <button type="button" @click="closeImportDetail">关闭</button>
+        <button type="button" @click="closeImportDetail">{{ t("openapi.close") }}</button>
         <button
           type="button"
           :disabled="detailLoading || Boolean(detailError) || Boolean(generatingDraftsByImportId[selectedImport.id])"
           @click="generateDrafts(selectedImport)"
         >
           <i v-if="generatingDraftsByImportId[selectedImport.id]" class="fa-solid fa-spinner fa-spin" />
-          {{ generatingDraftsByImportId[selectedImport.id] ? "生成中" : "生成 Tool 草稿" }}
+          {{
+            generatingDraftsByImportId[selectedImport.id]
+              ? t("openapi.generating")
+              : t("openapi.generateToolDrafts")
+          }}
         </button>
       </div>
     </section>
@@ -481,7 +520,7 @@ void ToolSchemaTreeView;
       class="openapi-modal-card openapi-confirm-modal-card"
       role="dialog"
       aria-modal="true"
-      aria-label="删除导入记录"
+      :aria-label="t('openapi.deleteModalAria')"
       tabindex="-1"
       @keydown.esc.stop.prevent="closeDeleteConfirm"
       @keydown.tab="handleModalTab($event, deleteDialogRef)"
@@ -490,14 +529,14 @@ void ToolSchemaTreeView;
         <div>
           <span><i class="fa-solid fa-triangle-exclamation" /></span>
           <div>
-            <h3>删除导入记录</h3>
-            <p>删除后需要重新导入才能再次生成草稿</p>
+            <h3>{{ t("openapi.deleteTitle") }}</h3>
+            <p>{{ t("openapi.deleteSubtitle") }}</p>
           </div>
         </div>
         <button
           type="button"
-          title="关闭"
-          aria-label="关闭删除确认弹框"
+          :title="t('openapi.close')"
+          :aria-label="t('openapi.closeDeleteAria')"
           :disabled="Boolean(deletingImportId)"
           @click="closeDeleteConfirm"
         >
@@ -506,15 +545,17 @@ void ToolSchemaTreeView;
       </header>
       <div class="openapi-confirm-body">
         <strong>{{ pendingDeleteImport.fileName }}</strong>
-        <p>确认删除这条 OpenAPI 导入记录？已生成的 Tool 草稿不会被自动删除。</p>
+        <p>{{ t("openapi.deleteConfirmBody") }}</p>
       </div>
       <footer class="openapi-modal-actions">
-        <span>此操作会立即同步到后端</span>
+        <span>{{ t("openapi.deleteSyncNote") }}</span>
         <div>
-          <button type="button" :disabled="Boolean(deletingImportId)" @click="closeDeleteConfirm">取消</button>
+          <button type="button" :disabled="Boolean(deletingImportId)" @click="closeDeleteConfirm">
+            {{ t("openapi.cancel") }}
+          </button>
           <button class="danger" type="button" :disabled="Boolean(deletingImportId)" @click="confirmRemoveImport">
             <i v-if="deletingImportId" class="fa-solid fa-spinner fa-spin" />
-            {{ deletingImportId ? "删除中" : "确认删除" }}
+            {{ deletingImportId ? t("openapi.deleting") : t("openapi.confirmDelete") }}
           </button>
         </div>
       </footer>
@@ -528,7 +569,7 @@ void ToolSchemaTreeView;
     aria-live="polite"
   >
     <span>{{ actionNote }}</span>
-    <button type="button" aria-label="关闭提示" @click="dismissActionNote">
+    <button type="button" :aria-label="t('openapi.dismissNoteAria')" @click="dismissActionNote">
       <i class="fa-solid fa-xmark" />
     </button>
   </div>

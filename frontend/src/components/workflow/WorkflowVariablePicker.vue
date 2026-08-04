@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 
 import { unwrapWorkflowVariableRef } from "../../utils/workflow-graph";
 
@@ -11,6 +12,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: "update:modelValue", value: string): void;
 }>();
+
+const { t } = useI18n();
 
 const options = computed(() =>
   props.variableRefs
@@ -27,8 +30,8 @@ const options = computed(() =>
 <template>
   <section class="workflow-variable-picker">
     <div class="workflow-section-caption">
-      <strong>变量选择器</strong>
-      <small>{{ options.length }} 个可用变量</small>
+      <strong>{{ t("workflow.variablePicker") }}</strong>
+      <small>{{ t("workflow.availableVarCount", { n: options.length }) }}</small>
     </div>
     <div class="workflow-variable-picker-list">
       <button
@@ -42,7 +45,7 @@ const options = computed(() =>
       >
         {{ option.label }}
       </button>
-      <span v-if="!options.length" class="workflow-token muted">暂无可用变量</span>
+      <span v-if="!options.length" class="workflow-token muted">{{ t("workflow.noAvailableVars") }}</span>
     </div>
   </section>
 </template>

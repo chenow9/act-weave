@@ -3,8 +3,10 @@
 /** Agents dialogs (ZKL-64 item 16). */
 
 import { ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { useAgentsPageContext } from "../composables/useAgentsPageContext";
 
+const { t } = useI18n();
 const scp = useAgentsPageContext();
 /* prettier-ignore */
 const {
@@ -31,10 +33,10 @@ async function copyPromptRaw() {
   if (!text) return;
   try {
     await navigator.clipboard.writeText(text);
-    copyFeedback.value = "已复制原文";
+    copyFeedback.value = t("agents.copiedRaw");
   } catch {
     promptTab.value = "raw";
-    copyFeedback.value = "请手动复制原文";
+    copyFeedback.value = t("agents.copyRawManual");
   }
   window.setTimeout(() => {
     copyFeedback.value = "";
@@ -56,36 +58,42 @@ async function copyPromptRaw() {
         class="modal-card agent-prompt-detail-dialog"
         role="dialog"
         aria-modal="true"
-        :aria-label="promptDetailAgent ? `${promptDetailAgent.name} · 系统提示词` : '系统提示词'"
+        :aria-label="
+          promptDetailAgent
+            ? t('agents.promptDetailAriaNamed', { name: promptDetailAgent.name })
+            : t('agents.systemPrompt')
+        "
       >
         <header class="agent-prompt-detail-head">
           <div>
             <i class="fa-solid fa-rectangle-list" aria-hidden="true" />
             <span>
-              <strong>系统提示词</strong>
+              <strong>{{ t("agents.systemPrompt") }}</strong>
               <small>{{ promptDetailAgent?.name }} · {{ promptDetailAgent?.id }}</small>
             </span>
           </div>
           <button
             class="icon-action-button"
             type="button"
-            title="关闭"
-            aria-label="关闭系统提示词"
+            :title="t('common.close')"
+            :aria-label="t('agents.closePromptDetail')"
             @click="closePromptDetail"
           >
             <i class="fa-solid fa-xmark" aria-hidden="true" />
           </button>
         </header>
         <div class="agent-prompt-revision-readonly">
-          <div v-if="currentPromptLoading" class="agent-prompt-state" aria-live="polite">正在加载系统提示词…</div>
+          <div v-if="currentPromptLoading" class="agent-prompt-state" aria-live="polite">
+            {{ t("agents.loadingPrompt") }}
+          </div>
           <div v-else-if="currentPromptError" class="agent-prompt-state agent-prompt-state-error" aria-live="polite">
             {{ currentPromptError }}
           </div>
           <template v-else-if="currentPromptBody">
             <div class="agent-prompt-meta">
-              <span>版本 #{{ currentPromptMeta?.revisionNo || "—" }}</span>
-              <span>来源：{{ currentPromptMeta?.source || "—" }}</span>
-              <span>更新时间：{{ currentPromptMeta?.createdAt || "—" }}</span>
+              <span>{{ t("agents.promptVersion", { n: currentPromptMeta?.revisionNo || "—" }) }}</span>
+              <span>{{ t("agents.promptSource", { source: currentPromptMeta?.source || "—" }) }}</span>
+              <span>{{ t("agents.promptUpdatedAt", { at: currentPromptMeta?.createdAt || "—" }) }}</span>
             </div>
             <div class="agent-prompt-tabs" role="tablist">
               <button
@@ -95,7 +103,7 @@ async function copyPromptRaw() {
                 :class="{ active: promptTab === 'render' }"
                 @click="promptTab = 'render'"
               >
-                渲染预览
+                {{ t("agents.renderPreview") }}
               </button>
               <button
                 type="button"
@@ -104,19 +112,19 @@ async function copyPromptRaw() {
                 :class="{ active: promptTab === 'raw' }"
                 @click="promptTab = 'raw'"
               >
-                查看原文
+                {{ t("agents.viewRaw") }}
               </button>
-              <button type="button" class="text-button" @click="copyPromptRaw">复制原文</button>
+              <button type="button" class="text-button" @click="copyPromptRaw">{{ t("agents.copyRaw") }}</button>
               <span v-if="copyFeedback" class="agent-prompt-copy-feedback" aria-live="polite">{{ copyFeedback }}</span>
             </div>
             <div v-if="promptTab === 'render'" class="agent-prompt-markdown" v-html="promptDetailHTML" />
             <pre v-else class="agent-prompt-raw"><code>{{ currentPromptBody }}</code></pre>
           </template>
-          <div v-else class="agent-prompt-state">当前没有可显示的系统提示词。</div>
+          <div v-else class="agent-prompt-state">{{ t("agents.noPromptDisplayable") }}</div>
         </div>
         <footer class="agent-prompt-detail-footer">
-          <span>锁版本：{{ promptDetailAgent?.lockVersion || 0 }}</span>
-          <button class="primary-button" type="button" @click="closePromptDetail">关闭</button>
+          <span>{{ t("agents.lockVersionLabel", { n: promptDetailAgent?.lockVersion || 0 }) }}</span>
+          <button class="primary-button" type="button" @click="closePromptDetail">{{ t("common.close") }}</button>
         </footer>
       </section>
     </div>
@@ -134,19 +142,20 @@ async function copyPromptRaw() {
         class="modal-card agent-capability-dialog"
         role="dialog"
         aria-modal="true"
-        :aria-label="`${capabilityAgent.name} 能力绑定`"
+        :aria-label="t('agents.capabilityBindingsAria', { name: capabilityAgent.name })"
       >
         <header class="agent-prompt-detail-head">
           <div>
             <i class="fa-solid fa-link" aria-hidden="true" />
             <span
-              ><strong>能力绑定</strong><small>AGENT: {{ capabilityAgent.id }}</small></span
+              ><strong>{{ t("agents.capabilities") }}</strong
+              ><small>AGENT: {{ capabilityAgent.id }}</small></span
             >
           </div>
           <button
             class="icon-action-button"
             type="button"
-            aria-label="关闭能力绑定"
+            :aria-label="t('agents.closeCapabilityBindings')"
             :disabled="capabilityActionsBusy"
             @click="closeCapabilityBindings"
           >
@@ -155,14 +164,18 @@ async function copyPromptRaw() {
         </header>
         <div class="agent-capability-body">
           <p>
-            Tool 与 Workflow 是 Workspace 级能力；此处只管理 Agent
-            的跟随/固定版本、连接选择和启用状态。支持勾选后批量绑定或解绑。
+            {{ t("agents.capabilityDialogIntro") }}
           </p>
 
           <div v-if="!capabilityLoading && capabilityCatalog.length" class="agent-capability-batch-bar">
             <div class="agent-capability-batch-meta">
-              <span>未绑定 {{ capabilityUnboundCount }} · 可绑定 {{ capabilityBindableUnboundCount }}</span>
-              <span v-if="capabilitySelectedCount">已选 {{ capabilitySelectedCount }}</span>
+              <span>{{
+                t("agents.unboundBindableMeta", {
+                  unbound: capabilityUnboundCount,
+                  bindable: capabilityBindableUnboundCount,
+                })
+              }}</span>
+              <span v-if="capabilitySelectedCount">{{ t("agents.selectedMeta", { n: capabilitySelectedCount }) }}</span>
             </div>
             <div class="agent-capability-batch-actions">
               <button
@@ -172,7 +185,7 @@ async function copyPromptRaw() {
                 :disabled="capabilityActionsBusy || capabilityBindableUnboundCount === 0"
                 @click="selectUnboundCapabilities"
               >
-                全选未绑定
+                {{ t("agents.selectAllUnbound") }}
               </button>
               <button
                 class="ghost-button"
@@ -181,7 +194,7 @@ async function copyPromptRaw() {
                 :disabled="capabilityActionsBusy || !capabilityCatalog.length"
                 @click="selectAllCapabilities"
               >
-                全选
+                {{ t("agents.selectAll") }}
               </button>
               <button
                 class="ghost-button"
@@ -190,7 +203,7 @@ async function copyPromptRaw() {
                 :disabled="capabilityActionsBusy || capabilitySelectedCount === 0"
                 @click="clearCapabilitySelection"
               >
-                清空
+                {{ t("common.clearSelection") }}
               </button>
               <button
                 class="ghost-button"
@@ -199,7 +212,8 @@ async function copyPromptRaw() {
                 :disabled="capabilityActionsBusy || capabilitySelectedBoundCount === 0"
                 @click="batchUnbindCapabilities"
               >
-                批量解绑{{ capabilitySelectedBoundCount ? ` (${capabilitySelectedBoundCount})` : "" }}
+                {{ t("agents.batchUnbind")
+                }}{{ capabilitySelectedBoundCount ? ` (${capabilitySelectedBoundCount})` : "" }}
               </button>
               <button
                 class="primary-button"
@@ -209,25 +223,27 @@ async function copyPromptRaw() {
                 @click="batchBindCapabilities({ mode: 'selected' })"
               >
                 <i v-if="capabilityBatchBusy" class="fa-solid fa-spinner fa-spin" />
-                批量绑定选中{{ capabilitySelectedCount ? ` (${capabilitySelectedCount})` : "" }}
+                {{ t("agents.batchBindSelected")
+                }}{{ capabilitySelectedCount ? ` (${capabilitySelectedCount})` : "" }}
               </button>
               <button
                 class="primary-button agent-capability-batch-bind-all"
                 type="button"
                 data-action="batch-bind-all-unbound"
                 :disabled="capabilityActionsBusy || capabilityBindableUnboundCount === 0"
-                title="将所有可绑定且尚未绑定的能力一次性绑定到此 Agent"
+                :title="t('agents.batchBindAllTitle')"
                 @click="batchBindCapabilities({ mode: 'all-unbound' })"
               >
                 <i v-if="capabilityBatchBusy" class="fa-solid fa-spinner fa-spin" />
-                绑定全部未绑定{{ capabilityBindableUnboundCount ? ` (${capabilityBindableUnboundCount})` : "" }}
+                {{ t("agents.batchBindAllUnbound")
+                }}{{ capabilityBindableUnboundCount ? ` (${capabilityBindableUnboundCount})` : "" }}
               </button>
             </div>
           </div>
 
-          <div v-if="capabilityLoading" class="agent-capability-empty">正在加载能力目录…</div>
+          <div v-if="capabilityLoading" class="agent-capability-empty">{{ t("agents.loadingCatalog") }}</div>
           <div v-else-if="!capabilityCatalog.length" class="agent-capability-empty">
-            当前 Workspace 尚无已发布能力。
+            {{ t("agents.noPublishedCapabilities") }}
           </div>
           <article
             v-for="capability in capabilityCatalog"
@@ -245,7 +261,7 @@ async function copyPromptRaw() {
                   type="checkbox"
                   :checked="isCapabilitySelected(capability.id)"
                   :disabled="capabilityActionsBusy"
-                  :aria-label="`选择 ${capability.name}`"
+                  :aria-label="t('agents.selectCapabilityNamed', { name: capability.name })"
                   @change="toggleCapabilitySelection(capability.id, ($event.target as HTMLInputElement).checked)"
                 />
                 <div>
@@ -254,21 +270,23 @@ async function copyPromptRaw() {
                   ><small>{{ capability.description }}</small>
                 </div>
               </label>
-              <em>{{ currentCapabilityBinding(capability.id) ? "已绑定" : "未绑定" }}</em>
+              <em>{{ currentCapabilityBinding(capability.id) ? t("agents.bound") : t("agents.unbound") }}</em>
             </header>
             <div v-if="capabilityDrafts[capability.id]" class="agent-capability-fields">
               <label class="modal-field select-field">
-                <span>版本策略</span>
+                <span>{{ t("agents.versionPolicy") }}</span>
                 <AppSelect
                   :model-value="capabilityDrafts[capability.id].versionPolicy"
                   :options="capabilityVersionPolicyOptions(capability)"
-                  :aria-label="`${capability.name} 版本策略`"
+                  :aria-label="t('agents.versionPolicyAria', { name: capability.name })"
                   @update:model-value="setCapabilityVersionPolicy(capability, String($event))"
                 />
               </label>
               <label class="modal-field">
                 <span>{{
-                  capabilityDrafts[capability.id].versionPolicy === "PINNED" ? "固定版本 ID" : "当前生效版本"
+                  capabilityDrafts[capability.id].versionPolicy === "PINNED"
+                    ? t("agents.pinnedReleaseId")
+                    : t("agents.activeReleaseId")
                 }}</span>
                 <input
                   :value="
@@ -282,17 +300,17 @@ async function copyPromptRaw() {
                 />
               </label>
               <label class="modal-field">
-                <span>连接 ID（可选）</span>
+                <span>{{ t("agents.connectionIdOptional") }}</span>
                 <input
                   v-model.trim="capabilityDrafts[capability.id].connectionId"
                   class="mono"
-                  placeholder="同 Workspace 且与能力提供方兼容"
+                  :placeholder="t('agents.connectionIdPlaceholder')"
                 />
               </label>
               <label class="agent-capability-enabled"
-                ><input v-model="capabilityDrafts[capability.id].enabled" type="checkbox" /><span
-                  >启用该绑定</span
-                ></label
+                ><input v-model="capabilityDrafts[capability.id].enabled" type="checkbox" /><span>{{
+                  t("agents.enableBinding")
+                }}</span></label
               >
             </div>
             <footer>
@@ -303,7 +321,7 @@ async function copyPromptRaw() {
                 :disabled="capabilityActionsBusy"
                 @click="removeCapabilityBinding(capability)"
               >
-                解绑
+                {{ t("agents.unbind") }}
               </button>
               <button
                 class="primary-button"
@@ -312,7 +330,7 @@ async function copyPromptRaw() {
                 @click="saveCapabilityBinding(capability)"
               >
                 <i v-if="capabilitySavingId === capability.id" class="fa-solid fa-spinner fa-spin" />{{
-                  currentCapabilityBinding(capability.id) ? "更新绑定" : "绑定能力"
+                  currentCapabilityBinding(capability.id) ? t("agents.updateBinding") : t("agents.bindCapability")
                 }}
               </button>
             </footer>
@@ -320,7 +338,7 @@ async function copyPromptRaw() {
         </div>
         <footer class="agent-prompt-detail-footer">
           <button class="ghost-button" type="button" :disabled="capabilityActionsBusy" @click="closeCapabilityBindings">
-            关闭
+            {{ t("common.close") }}
           </button>
         </footer>
       </section>
@@ -339,21 +357,21 @@ async function copyPromptRaw() {
         class="modal-card agent-delete-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="删除 Agent 确认"
+        :aria-label="t('agents.deleteConfirmAria')"
       >
         <header class="agent-prompt-detail-head">
           <div>
             <i class="fa-solid fa-triangle-exclamation" aria-hidden="true" />
             <span>
-              <strong>删除 Agent</strong>
+              <strong>{{ t("agents.deleteAgent") }}</strong>
               <small>AGENT: {{ agentDeleteTarget.id }}</small>
             </span>
           </div>
           <button
             class="icon-action-button"
             type="button"
-            title="关闭"
-            aria-label="关闭删除确认"
+            :title="t('common.close')"
+            :aria-label="t('agents.closeDeleteConfirm')"
             @click="closeAgentDeleteConfirm"
           >
             <i class="fa-solid fa-xmark" aria-hidden="true" />
@@ -361,10 +379,11 @@ async function copyPromptRaw() {
         </header>
         <div class="agent-delete-body">
           <strong>{{ agentDeleteTarget.name }}</strong>
-          <p>删除后会移除该 Agent，并影响其默认绑定、可用 Tool 和 Workflow 调度入口。此操作当前不可在页面内撤销。</p>
+          <p>{{ t("agents.deleteAgentBody") }}</p>
           <div class="agent-delete-impact">
             <span
-              ><b>{{ agentDeleteTarget.isDefault ? "是" : "否" }}</b> 默认 Agent</span
+              ><b>{{ agentDeleteTarget.isDefault ? t("agents.yes") : t("agents.no") }}</b>
+              {{ t("agents.defaultAgentLabel") }}</span
             >
             <span
               ><b>{{ agentDeleteTarget.toolsCount }}</b> Tool</span
@@ -376,7 +395,7 @@ async function copyPromptRaw() {
         </div>
         <label class="modal-field agent-delete-confirm-input">
           <span
-            >请输入 Agent 名称 <em>{{ agentDeleteTarget.name }}</em> 以确认删除</span
+            >{{ t("agents.typeNameToConfirm", { name: agentDeleteTarget.name }) }}</span
           >
           <input
             ref="agentDeleteInputRef"
@@ -385,14 +404,14 @@ async function copyPromptRaw() {
             :aria-invalid="agentDeleteConfirmName.length > 0 && !canConfirmAgentDelete"
             aria-describedby="agent-delete-name-helper agent-delete-name-error"
           />
-          <small id="agent-delete-name-helper">需精确匹配 Agent 名称；首尾空格会被自动忽略，大小写必须一致。</small>
+          <small id="agent-delete-name-helper">{{ t("agents.deleteNameHelper") }}</small>
           <small v-if="agentDeleteNameError" id="agent-delete-name-error" class="field-error">{{
             agentDeleteNameError
           }}</small>
         </label>
         <footer class="agent-prompt-detail-footer">
           <button class="ghost-button" type="button" :disabled="agentDeleting" @click="closeAgentDeleteConfirm">
-            取消
+            {{ t("common.cancel") }}
           </button>
           <button
             class="primary-button danger"
@@ -401,7 +420,7 @@ async function copyPromptRaw() {
             @click="confirmDeleteAgent"
           >
             <i :class="['fa-solid', agentDeleting ? 'fa-spinner fa-spin' : 'fa-trash']" aria-hidden="true" />
-            <span>{{ agentDeleting ? "删除中..." : "删除 Agent" }}</span>
+            <span>{{ agentDeleting ? t("agents.deleting") : t("agents.deleteAgent") }}</span>
           </button>
         </footer>
       </section>
@@ -419,7 +438,7 @@ async function copyPromptRaw() {
       aria-hidden="true"
     />
     <span>{{ agentActionNote }}</span>
-    <button type="button" aria-label="关闭反馈提示" @click="clearAgentToast">
+    <button type="button" :aria-label="t('agents.closeToastAria')" @click="clearAgentToast">
       <i class="fa-solid fa-xmark" aria-hidden="true" />
     </button>
   </div>

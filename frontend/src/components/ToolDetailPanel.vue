@@ -1,11 +1,13 @@
 <script setup lang="ts">
 // @ts-nocheck — inject surface under page split (ZKL-64 item 12)
 /** Tool detail panel (ZKL-64 item 12). */
+import { useI18n } from "vue-i18n";
 import ToolSchemaTreeView from "./ToolSchemaTreeView.vue";
 import { useToolsPageContext } from "../composables/useToolsPageContext";
 import { buildToolPublishChecklist } from "../utils/tool-governance";
 
 /* eslint-disable @typescript-eslint/no-unused-vars -- inject surface for template */
+const { t } = useI18n();
 const scp = useToolsPageContext();
 const {
   toolsStore,
@@ -68,17 +70,17 @@ void buildToolPublishChecklist;
       class="modal-card tool-detail-modal-card"
       role="dialog"
       aria-modal="true"
-      aria-label="工具详情"
+      :aria-label="t('tools.detailAria')"
     >
       <div class="modal-card-head">
         <div>
           <span>Tool Runtime</span>
-          <h3>工具详情</h3>
+          <h3>{{ t("tools.detailTitle") }}</h3>
         </div>
         <button
           class="icon-action-button"
           type="button"
-          aria-label="关闭工具详情"
+          :aria-label="t('tools.closeDetailAria')"
           data-modal-initial-focus
           @click="closeToolDetail"
         >
@@ -92,7 +94,7 @@ void buildToolPublishChecklist;
             <strong>{{ detailTool.name }}</strong>
             <small class="mono">{{ pathOf(detailTool) }}</small>
           </div>
-          <div class="tool-detail-status-stack" aria-label="工具状态层级">
+          <div class="tool-detail-status-stack" :aria-label="t('tools.statusLayersAria')">
             <span
               class="tool-status-pill"
               data-status-layer="lifecycle"
@@ -117,14 +119,14 @@ void buildToolPublishChecklist;
           </div>
         </div>
         <div class="tool-detail-governance-strip">
-          <span><b>版本</b>{{ toolVersionLabel(detailTool) }}</span>
-          <span><b>最近测试</b>{{ toolLastTestSummary(detailTool) }}</span>
+          <span><b>{{ t("tools.version") }}</b>{{ toolVersionLabel(detailTool) }}</span>
+          <span><b>{{ t("tools.lastTest") }}</b>{{ toolLastTestSummary(detailTool) }}</span>
           <span><b>Capability Binding</b>{{ agentImpactLabel(detailTool) }}</span>
-          <span><b>影响面</b>由独立 Capability Binding 管理</span>
+          <span><b>{{ t("tools.impactSurface") }}</b>{{ t("tools.impactByBinding") }}</span>
         </div>
         <p class="form-helper">{{ detailTool.description }}</p>
 
-        <div class="tool-detail-tabs" role="tablist" aria-label="工具详情分区">
+        <div class="tool-detail-tabs" role="tablist" :aria-label="t('tools.detailTabsAria')">
           <button
             v-for="tab in detailTabs"
             :id="`tool-detail-tab-${tab.id}`"
@@ -153,18 +155,19 @@ void buildToolPublishChecklist;
         >
           <div class="tool-config-grid">
             <div class="config-summary-item">
-              <i class="fa-solid fa-user-gear" /><span>最近维护</span
+              <i class="fa-solid fa-user-gear" /><span>{{ t("tools.lastMaintained") }}</span
               ><strong>{{ detailTool.updatedBy || detailTool.createdBy || "-" }}</strong>
             </div>
             <div class="config-summary-item">
-              <i class="fa-solid fa-code-branch" /><span>版本</span><strong>{{ toolVersionLabel(detailTool) }}</strong>
+              <i class="fa-solid fa-code-branch" /><span>{{ t("tools.version") }}</span
+              ><strong>{{ toolVersionLabel(detailTool) }}</strong>
             </div>
             <div class="config-summary-item">
-              <i class="fa-solid fa-layer-group" /><span>业务空间</span
+              <i class="fa-solid fa-layer-group" /><span>{{ t("tools.workspace") }}</span
               ><strong>{{ workspaceDisplayLabel(detailTool.workspaceId) }}</strong>
             </div>
             <div class="config-summary-item">
-              <i class="fa-solid fa-cubes" /><span>来源 Provider</span
+              <i class="fa-solid fa-cubes" /><span>{{ t("tools.sourceProvider") }}</span
               ><strong>{{ providerForTool(detailTool)?.name || detailTool.providerId }}</strong>
             </div>
           </div>
@@ -179,24 +182,26 @@ void buildToolPublishChecklist;
         >
           <div class="tool-config-grid">
             <div class="config-summary-item">
-              <i class="fa-solid fa-server" /><span>服务连接</span
-              ><strong>{{ detailConnection?.name || "服务连接未找到" }}</strong>
+              <i class="fa-solid fa-server" /><span>{{ t("tools.serviceConnection") }}</span
+              ><strong>{{ detailConnection?.name || t("tools.connectionNotFound") }}</strong>
             </div>
             <div class="config-summary-item">
-              <i class="fa-solid fa-circle-check" /><span>连接状态</span
+              <i class="fa-solid fa-circle-check" /><span>{{ t("tools.connectionStatus") }}</span
               ><strong>{{ serviceConnectionStatusLabel() }}</strong>
             </div>
             <div class="config-summary-item">
-              <i class="fa-solid fa-globe" /><span>服务域名</span><strong>{{ connectionDomainLabel() }}</strong>
+              <i class="fa-solid fa-globe" /><span>{{ t("tools.serviceDomain") }}</span
+              ><strong>{{ connectionDomainLabel() }}</strong>
             </div>
             <div class="config-summary-item">
               <i class="fa-solid fa-route" /><span>Base Path</span><strong>{{ connectionBasePathLabel() }}</strong>
             </div>
             <div class="config-summary-item">
-              <i class="fa-solid fa-key" /><span>认证方式</span><strong>{{ authModeLabel() }}</strong>
+              <i class="fa-solid fa-key" /><span>{{ t("tools.authMode") }}</span
+              ><strong>{{ authModeLabel() }}</strong>
             </div>
             <div class="config-summary-item">
-              <i class="fa-solid fa-layer-group" /><span>环境</span
+              <i class="fa-solid fa-layer-group" /><span>{{ t("tools.environment") }}</span
               ><strong>{{ environmentLabel(detailConnection?.environment || "") }}</strong>
             </div>
             <button
@@ -205,7 +210,7 @@ void buildToolPublishChecklist;
               @click="router.push('/connections')"
             >
               <i class="fa-solid fa-screwdriver-wrench" />
-              <span>去服务连接维护</span>
+              <span>{{ t("tools.goMaintainConnection") }}</span>
             </button>
           </div>
         </div>
@@ -230,13 +235,13 @@ void buildToolPublishChecklist;
                 }),
               )
             "
-            title="请求参数"
-            empty-text="暂无请求参数"
+            :title="t('tools.requestParamsTitle')"
+            :empty-text="t('tools.noRequestParams')"
           />
           <ToolSchemaTreeView
             :nodes="detailRequestContract.bodyNodes"
-            title="请求体 Body"
-            empty-text="暂无请求体结构"
+            :title="t('tools.requestBodyStructure')"
+            :empty-text="t('tools.noRequestBody')"
           />
         </div>
         <div
@@ -247,7 +252,11 @@ void buildToolPublishChecklist;
           v-show="detailTab === 'response'"
           :hidden="detailTab !== 'response'"
         >
-          <ToolSchemaTreeView :nodes="detailResponseNodes" title="响应结果" empty-text="暂无响应结构" />
+          <ToolSchemaTreeView
+            :nodes="detailResponseNodes"
+            :title="t('tools.responseResult')"
+            :empty-text="t('tools.noResponseStructure')"
+          />
         </div>
         <div
           id="tool-detail-panel-runtime"
@@ -259,17 +268,19 @@ void buildToolPublishChecklist;
         >
           <div class="tool-config-grid">
             <div class="config-summary-item">
-              <i class="fa-solid fa-clock" /><span>超时时间</span><strong>{{ timeoutLabel(detailTool) }}</strong>
+              <i class="fa-solid fa-clock" /><span>{{ t("tools.timeout") }}</span
+              ><strong>{{ timeoutLabel(detailTool) }}</strong>
             </div>
             <div class="config-summary-item">
-              <i class="fa-solid fa-rotate" /><span>重试次数</span><strong>{{ retryLabel(detailTool) }}</strong>
+              <i class="fa-solid fa-rotate" /><span>{{ t("tools.retryCount") }}</span
+              ><strong>{{ retryLabel(detailTool) }}</strong>
             </div>
             <div class="config-summary-item">
-              <i class="fa-solid fa-arrow-trend-up" /><span>退避策略</span
+              <i class="fa-solid fa-arrow-trend-up" /><span>{{ t("tools.backoffPolicy") }}</span
               ><strong>{{ backoffPolicyMeta(detailTool.runtimePolicy.backoffPolicy).label }}</strong>
             </div>
             <div class="config-summary-item">
-              <i class="fa-solid fa-gauge-high" /><span>限流策略</span
+              <i class="fa-solid fa-gauge-high" /><span>{{ t("tools.rateLimitPolicy") }}</span
               ><strong>{{ rateLimitPolicyMeta(detailTool.runtimePolicy.rateLimitPolicy).label }}</strong>
             </div>
           </div>
@@ -284,19 +295,20 @@ void buildToolPublishChecklist;
         >
           <div class="tool-test-card">
             <div class="tool-test-request">
-              <strong>测试方式</strong><span>打开测试弹窗，填写默认入参并执行真实调用。</span>
+              <strong>{{ t("tools.testMethod") }}</strong><span>{{ t("tools.testMethodHelp") }}</span>
             </div>
             <div class="tool-test-result">
-              <strong>当前状态</strong><span>{{ toolStatusLabel(detailTool.status) }}</span>
+              <strong>{{ t("tools.currentStatus") }}</strong><span>{{ toolStatusLabel(detailTool.status) }}</span>
             </div>
             <div class="tool-test-result">
-              <strong>最近结果</strong><span>{{ toolLastTestSummary(detailTool) }}</span>
+              <strong>{{ t("tools.lastResult") }}</strong><span>{{ toolLastTestSummary(detailTool) }}</span>
             </div>
             <div class="tool-test-result">
-              <strong>测试详情</strong><span>{{ toolLastTestDetail(detailTool) }}</span>
+              <strong>{{ t("tools.testDetail") }}</strong><span>{{ toolLastTestDetail(detailTool) }}</span>
             </div>
             <div id="tool-publish-readiness" class="tool-test-result">
-              <strong>发布条件</strong><span>{{ toolPublishReadinessLabel(detailTool) }}</span>
+              <strong>{{ t("tools.publishCondition") }}</strong
+              ><span>{{ toolPublishReadinessLabel(detailTool) }}</span>
             </div>
             <div class="tool-publish-checklist compact">
               <div
@@ -322,7 +334,9 @@ void buildToolPublishChecklist;
               </div>
             </div>
             <div class="tool-test-action-group">
-              <button class="primary-button" type="button" @click="openToolTestDialog(detailTool)">执行测试</button>
+              <button class="primary-button" type="button" @click="openToolTestDialog(detailTool)">
+                {{ t("tools.runTest") }}
+              </button>
               <button
                 class="ghost-button"
                 type="button"

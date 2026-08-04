@@ -1,6 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { describe, expect, it, vi } from "vitest";
 
+import { createTestI18n } from "../test-utils/i18n";
 import DebugOutboundCredentialPanel from "./DebugOutboundCredentialPanel.vue";
 
 function mountPanel(
@@ -24,6 +25,9 @@ function mountPanel(
         connectionId: "conn-1",
         requiresPassthrough: options.requiresPassthrough ?? true,
         attach: attach as never,
+      },
+      global: {
+        plugins: [createTestI18n("zh-CN")],
       },
     }),
   };

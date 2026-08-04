@@ -1,5 +1,9 @@
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
+
 import type { WorkflowCompilationIssue } from "../../types/domain";
+
+const { t } = useI18n();
 
 const props = defineProps<{
   issues: WorkflowCompilationIssue[];
@@ -16,8 +20,8 @@ const emit = defineEmits<{
 }>();
 
 function severityLabel(severity: string) {
-  if (severity === "error") return "错误";
-  if (severity === "warning") return "警告";
+  if (severity === "error") return t("workflow.severityError");
+  if (severity === "warning") return t("workflow.severityWarning");
   return severity;
 }
 
@@ -35,8 +39,8 @@ function focusIssue(issue: WorkflowCompilationIssue) {
 <template>
   <section class="workflow-issues-panel">
     <div class="workflow-section-caption">
-      <strong>编译问题</strong>
-      <small>{{ props.issues.length }} 条</small>
+      <strong>{{ t("workflow.compileIssues") }}</strong>
+      <small>{{ t("workflow.issueCount", { n: props.issues.length }) }}</small>
     </div>
 
     <button
@@ -44,10 +48,10 @@ function focusIssue(issue: WorkflowCompilationIssue) {
       data-action="revise-from-compile-failure"
       class="workflow-revise-cta"
       type="button"
-      title="回到智能编排，按问题修订出新 Draft（不自动发布）"
+      :title="t('workflow.reviseDraftTitle')"
       @click="emit('revise-from-failure')"
     >
-      按问题修订草稿
+      {{ t("workflow.reviseDraft") }}
     </button>
 
     <div v-if="props.issues.length" class="workflow-issue-list">
@@ -71,7 +75,7 @@ function focusIssue(issue: WorkflowCompilationIssue) {
 
     <div v-else class="workflow-issues-empty">
       <i class="fa-solid fa-circle-check" />
-      <span>当前草稿还没有返回编译问题。</span>
+      <span>{{ t("workflow.noCompileIssues") }}</span>
     </div>
   </section>
 </template>

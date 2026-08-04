@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 
 import WorkflowSchemaBuilder from "../WorkflowSchemaBuilder.vue";
 import {
@@ -8,6 +9,8 @@ import {
   type WorkflowSchemaFieldDraft,
 } from "../../../utils/workflow-graph";
 import type { WorkflowGraphNode } from "../../../types/domain";
+
+const { t } = useI18n();
 
 const props = defineProps<{
   node: WorkflowGraphNode;
@@ -60,7 +63,7 @@ function updateRawJson(value: string) {
     const parsed = JSON.parse(value);
     fields.value = parseWorkflowObjectSchema(parsed);
   } catch {
-    rawJsonError.value = "JSON 格式不正确";
+    rawJsonError.value = t("workflow.invalidJson");
   }
 }
 </script>
@@ -68,7 +71,9 @@ function updateRawJson(value: string) {
 <template>
   <section class="workflow-start-node-editor">
     <div class="workflow-schema-mode-switch">
-      <button type="button" :class="{ active: mode === 'builder' }" @click="mode = 'builder'">可视化</button>
+      <button type="button" :class="{ active: mode === 'builder' }" @click="mode = 'builder'">
+        {{ t("workflow.visualBuilder") }}
+      </button>
       <button type="button" :class="{ active: mode === 'raw' }" data-mode="raw-schema" @click="mode = 'raw'">
         JSON
       </button>
@@ -90,8 +95,8 @@ function updateRawJson(value: string) {
 
     <section class="workflow-inspector-vars workflow-schema-preview">
       <div class="workflow-section-caption">
-        <strong>Schema 预览</strong>
-        <small>{{ fields.length }} 个字段</small>
+        <strong>{{ t("workflow.schemaPreview") }}</strong>
+        <small>{{ t("workflow.fieldCount", { n: fields.length }) }}</small>
       </div>
       <pre>{{ JSON.stringify(schemaPreview, null, 2) }}</pre>
     </section>

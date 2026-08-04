@@ -1,0 +1,11 @@
+{
+  "NETWORK_ERROR": "Network error. Check your connection and try again.",
+  "UNAUTHORIZED": "Your session has expired. Please sign in again.",
+  "FORBIDDEN": "You do not have permission to perform this action.",
+  "NOT_FOUND": "The requested resource was not found.",
+  "CONFLICT": "The data has changed. Refresh and try again.",
+  "VALIDATION_FAILED": "Invalid request parameters.",
+  "INVALID_ARGUMENT": "Invalid request parameters.",
+  "INTERNAL": "The service is temporarily unavailable. Please try again later.",
+  "RATE_LIMITED": "Too many requests. Please try again later."
+}

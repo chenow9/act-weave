@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 
 import AppSelect from "./AppSelect.vue";
 import { serializeContractNodesToJson } from "../utils/tool-schema-json";
 import type { ToolSchemaNode, ToolSchemaNodeType } from "../types/domain";
+
+const { t } = useI18n();
 
 interface TreeRow {
   node: ToolSchemaNode;
@@ -247,15 +250,15 @@ function rowHasChildren(node: ToolSchemaNode) {
 
     <div class="tool-hybrid-tree-toolbar">
       <div class="tool-hybrid-tree-actions">
-        <button type="button" @click="addField"><i class="fa-solid fa-plus" /> 添加字段</button>
+        <button type="button" @click="addField"><i class="fa-solid fa-plus" /> {{ t("tools.addField") }}</button>
         <button type="button" :disabled="!selectedNode" @click="duplicateSelectedNode">
-          <i class="fa-regular fa-copy" /> 复制
+          <i class="fa-regular fa-copy" /> {{ t("common.copy") }}
         </button>
         <button type="button" :disabled="!selectedNode" @click="deleteSelectedNode">
-          <i class="fa-solid fa-trash" /> 删除
+          <i class="fa-solid fa-trash" /> {{ t("common.delete") }}
         </button>
       </div>
-      <div class="tool-contract-mode-tabs" role="tablist" aria-label="契约编辑模式">
+      <div class="tool-contract-mode-tabs" role="tablist" :aria-label="t('tools.contractEditModeAria')">
         <button
           type="button"
           role="tab"
@@ -263,7 +266,7 @@ function rowHasChildren(node: ToolSchemaNode) {
           :class="{ active: editorMode === 'structured' }"
           @click="editorMode = 'structured'"
         >
-          结构化
+          {{ t("tools.modeStructured") }}
         </button>
         <button
           type="button"
@@ -281,9 +284,9 @@ function rowHasChildren(node: ToolSchemaNode) {
       v-if="editorMode === 'structured'"
       class="tool-hybrid-structured-workspace"
       role="tabpanel"
-      aria-label="结构化契约编辑"
+      :aria-label="t('tools.structuredEditAria')"
     >
-      <div class="tool-hybrid-contract-tree" role="tree" aria-label="字段树">
+      <div class="tool-hybrid-contract-tree" role="tree" :aria-label="t('tools.fieldTreeAria')">
         <div class="tool-hybrid-root-row">
           <span class="tool-hybrid-tree-toggle"><i class="fa-solid fa-chevron-down" /></span><b class="obj">obj</b
           ><strong>{{ rootLabel.includes("Response") ? "Response" : "Body" }}</strong
@@ -306,33 +309,33 @@ function rowHasChildren(node: ToolSchemaNode) {
               :class="expandedNodeIds.has(row.node.id) ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'"
           /></span>
           <b :class="typeShortLabel(row.node.type)">{{ typeShortLabel(row.node.type) }}</b>
-          <strong>{{ row.node.name || "未命名字段" }}</strong>
+          <strong>{{ row.node.name || t("tools.unnamedField") }}</strong>
           <small>{{ row.node.type }}{{ row.node.format ? `(${row.node.format})` : "" }}</small>
           <em v-if="row.node.required">✓</em>
         </button>
-        <div v-if="!treeRows.length" class="tool-hybrid-tree-empty">还没有字段，点击“添加字段”开始配置。</div>
+        <div v-if="!treeRows.length" class="tool-hybrid-tree-empty">{{ t("tools.hybridEmpty") }}</div>
       </div>
 
-      <aside class="tool-hybrid-contract-inspector" aria-label="字段属性">
+      <aside class="tool-hybrid-contract-inspector" :aria-label="t('tools.fieldPropsAria')">
         <template v-if="selectedNode">
-          <h4>字段属性</h4>
+          <h4>{{ t("tools.fieldProps") }}</h4>
           <label
-            ><span>字段名称</span
+            ><span>{{ t("tools.fieldName") }}</span
             ><input
               :value="selectedNode.name"
               @input="updateSelectedField('name', ($event.target as HTMLInputElement).value)"
           /></label>
           <label>
-            <span>数据类型</span>
+            <span>{{ t("tools.dataType") }}</span>
             <AppSelect
               :model-value="selectedNode.type"
               :options="fieldTypeOptions"
-              aria-label="字段数据类型"
+              :aria-label="t('tools.fieldDataTypeAria')"
               @update:model-value="updateSelectedField('type', String($event) as ToolSchemaNodeType)"
             />
           </label>
           <div class="tool-hybrid-required-row">
-            <span>必填</span
+            <span>{{ t("common.required") }}</span
             ><button
               type="button"
               role="switch"
@@ -344,7 +347,7 @@ function rowHasChildren(node: ToolSchemaNode) {
             </button>
           </div>
           <label
-            ><span>字段说明</span
+            ><span>{{ t("tools.fieldDescription") }}</span
             ><textarea
               :value="selectedNode.description"
               rows="3"
@@ -352,15 +355,16 @@ function rowHasChildren(node: ToolSchemaNode) {
             />
           </label>
           <label v-if="selectedNode.example"
-            ><span>示例值</span><code class="tool-hybrid-example-box">{{ selectedNode.example }}</code></label
+            ><span>{{ t("tools.exampleValue") }}</span
+            ><code class="tool-hybrid-example-box">{{ selectedNode.example }}</code></label
           >
         </template>
-        <div v-else class="tool-hybrid-inspector-empty">从左侧选择一个字段查看属性。</div>
+        <div v-else class="tool-hybrid-inspector-empty">{{ t("tools.selectFieldHint") }}</div>
       </aside>
     </div>
 
-    <div v-else class="tool-contract-json-preview" role="tabpanel" aria-label="JSON 契约预览">
-      <div class="tool-contract-json-caption">只读预览 · 由字段树自动生成，编辑请切回“结构化”</div>
+    <div v-else class="tool-contract-json-preview" role="tabpanel" :aria-label="t('tools.jsonPreviewAria')">
+      <div class="tool-contract-json-caption">{{ t("tools.jsonPreviewCaption") }}</div>
       <pre><code>{{ jsonPreview }}</code></pre>
     </div>
   </section>

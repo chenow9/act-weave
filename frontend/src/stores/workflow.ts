@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 
+import { tt } from "../i18n/tt";
 import { apiClient, toAPIError } from "../services/api";
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, type ListPagination } from "../services/paginated-list";
 import type {
@@ -51,7 +52,7 @@ export class WorkflowDraftConflictError extends Error {
   readonly latest: WorkflowDraftRecord;
 
   constructor(latest: WorkflowDraftRecord) {
-    super("Workflow Draft 已被其他会话更新，已重新加载最新版本。");
+    super(tt("workflow.draftConflict"));
     this.name = "WorkflowDraftConflictError";
     this.latest = latest;
   }
@@ -413,7 +414,7 @@ export const useWorkflowStore = defineStore("workflow", {
           : readiness.compilationId || workflow.latestCompilationId;
       if (!compilationID) throw new Error("Compile the current Workflow Draft before force-publishing.");
       const trimmed = reason.trim();
-      if (trimmed.length < 8) throw new Error("强制发布原因至少 8 个字符。");
+      if (trimmed.length < 8) throw new Error(tt("workflow.forcePublishReasonMin"));
       const response = await apiClient.post<WorkflowPublishDTO & { force?: boolean }>(
         `/workspaces/${workflow.workspaceId}/workflows/${workflowId}/compilations/${compilationID}:force-publish`,
         {
@@ -701,7 +702,7 @@ async function accessibleWorkspaceIDs() {
   // ZKL-64: never fan out over a page of workspaces — only active context.
   const activeId = store.activeWorkspaceId || store.items[0]?.id || "";
   if (!activeId) {
-    throw new Error("当前没有可用的业务空间。请先创建业务空间，或联系管理员加入已有空间。");
+    throw new Error(tt("workflow.noWorkspaceAvailable"));
   }
   return [activeId];
 }

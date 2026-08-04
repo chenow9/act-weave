@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 
 import ManagementRowActions, { type ManagementRowAction } from "./ManagementRowActions.vue";
+import { createTestI18n } from "../test-utils/i18n";
 
 const primaryActions: ManagementRowAction[] = [
   { key: "test", label: "测试连接", icon: "fa-solid fa-plug-circle-bolt", tone: "primary" },
@@ -37,6 +38,7 @@ function mountAttached(actions = menuActions) {
     mount(ManagementRowActions, {
       attachTo: host,
       props: { primaryActions, menuActions: actions },
+      global: { plugins: [createTestI18n("zh-CN")] },
     }),
   );
   return { host, wrapper };
@@ -57,6 +59,7 @@ describe("ManagementRowActions", () => {
   it("blocks disabled and loading actions while keeping useful status tooltips", async () => {
     const wrapper = trackWrapper(
       mount(ManagementRowActions, {
+        global: { plugins: [createTestI18n("zh-CN")] },
         props: {
           primaryActions: [
             { ...primaryActions[0], disabled: true, disabledReason: "已有配置正在测试" },
@@ -82,6 +85,7 @@ describe("ManagementRowActions", () => {
   it("shortens visible action labels to four characters while preserving the full accessible label", () => {
     const wrapper = trackWrapper(
       mount(ManagementRowActions, {
+        global: { plugins: [createTestI18n("zh-CN")] },
         props: {
           primaryActions: [
             { key: "workspace", label: "进入业务空间控制台", shortLabel: "进入空间", icon: "fa-solid fa-arrow-right" },
@@ -99,6 +103,7 @@ describe("ManagementRowActions", () => {
   it("promotes one low-frequency action into the third direct slot when primary actions are present", () => {
     const wrapper = trackWrapper(
       mount(ManagementRowActions, {
+        global: { plugins: [createTestI18n("zh-CN")] },
         props: {
           primaryActions: primaryActions.slice(0, 2),
           menuActions: [menuActions[1]],
@@ -117,6 +122,7 @@ describe("ManagementRowActions", () => {
   it("keeps a sole menu action inside the overflow menu when primaryActions is empty", async () => {
     const wrapper = trackWrapper(
       mount(ManagementRowActions, {
+        global: { plugins: [createTestI18n("zh-CN")] },
         props: {
           primaryActions: [],
           menuActions: [menuActions[1]],
@@ -138,7 +144,7 @@ describe("ManagementRowActions", () => {
   });
 
   it("reserves the third slot for an accessible overflow trigger", async () => {
-    const wrapper = trackWrapper(mount(ManagementRowActions, { props: { primaryActions, menuActions } }));
+    const wrapper = trackWrapper(mount(ManagementRowActions, { global: { plugins: [createTestI18n("zh-CN")] }, props: { primaryActions, menuActions } }));
     const trigger = wrapper.get<HTMLButtonElement>('button[aria-label="更多操作"]');
 
     expect(wrapper.findAll('button[data-action-kind="primary"]')).toHaveLength(2);
@@ -318,7 +324,7 @@ describe("ManagementRowActions", () => {
   it("removes document and viewport listeners when unmounted", () => {
     const removeDocumentListener = vi.spyOn(document, "removeEventListener");
     const removeWindowListener = vi.spyOn(window, "removeEventListener");
-    const wrapper = mount(ManagementRowActions, { props: { primaryActions, menuActions } });
+    const wrapper = mount(ManagementRowActions, { global: { plugins: [createTestI18n("zh-CN")] }, props: { primaryActions, menuActions } });
 
     wrapper.unmount();
 
@@ -366,6 +372,7 @@ describe("ManagementRowActions", () => {
   it("keeps primary button compact 4-grapheme shortLabel truncation", () => {
     const wrapper = trackWrapper(
       mount(ManagementRowActions, {
+        global: { plugins: [createTestI18n("zh-CN")] },
         props: {
           primaryActions: [
             {

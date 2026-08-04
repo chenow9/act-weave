@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
+const { t } = useI18n();
 // @ts-nocheck — inject surface under page split (ZKL-64 item 13)
 /** Workflow editor panel (ZKL-64 item 13). */
 import WorkflowEdgeInspector from "./workflow/WorkflowEdgeInspector.vue";
@@ -98,17 +100,17 @@ void WorkflowTrialRunDialog;
       v-if="editorDraftLoadState === 'loading' && !workflowEditorVisible"
       class="workflow-editor-overlay workflow-editor-overlay-full-bleed"
     >
-      <section class="workflow-editor-shell" aria-label="流程图编辑器">
+      <section class="workflow-editor-shell" :aria-label="t('workflow.editorAria')">
         <header class="workflow-editor-topbar">
           <div>
-            <span>流程画布编辑</span>
-            <h3>{{ selectedWorkflow?.name || "流程图" }}</h3>
+            <span>{{ t("workflow.canvasEdit") }}</span>
+            <h3>{{ selectedWorkflow?.name || t('workflow.graphTitle') }}</h3>
             <p>{{ workflowEditorFeedbackMessage }}</p>
           </div>
         </header>
         <div class="workflow-editor-banner loading" role="status">
-          <strong>正在加载</strong>
-          <small>正在加载最新草稿和编译结果，请稍候。</small>
+          <strong>{{ t("workflow.loadingTitle") }}</strong>
+          <small>{{ t("workflow.loadingBody") }}</small>
         </div>
       </section>
     </div>
@@ -121,27 +123,27 @@ void WorkflowTrialRunDialog;
       <section
         ref="workflowEditorShellRef"
         class="workflow-editor-shell"
-        aria-label="流程图编辑器"
+        :aria-label="t('workflow.editorAria')"
         :data-editor-dirty-state="editorDirtyState"
         tabindex="-1"
       >
         <header class="workflow-editor-topbar">
           <div class="workflow-editor-header-row">
             <div class="workflow-editor-meta">
-              <span>流程画布编辑</span>
+              <span>{{ t("workflow.canvasEdit") }}</span>
               <div class="workflow-editor-title-row">
-                <h3>{{ selectedWorkflow?.name || "流程图" }}</h3>
+                <h3>{{ selectedWorkflow?.name || t('workflow.graphTitle') }}</h3>
                 <button
                   class="workflow-editor-help-button"
                   type="button"
-                  aria-label="画布操作说明"
+                  :aria-label="t('workflow.canvasHelpAria')"
                   :title="workflowEditorHelpText"
                 >
                   <i class="fa-solid fa-circle-info" />
                 </button>
               </div>
             </div>
-            <div class="workflow-editor-readiness-strip" aria-label="流程发布状态">
+            <div class="workflow-editor-readiness-strip" :aria-label="t('workflow.publishStatusAria')">
               <span
                 v-for="step in workflowEditorReadinessSteps"
                 :key="step.key"
@@ -155,18 +157,18 @@ void WorkflowTrialRunDialog;
           </div>
           <div class="workflow-editor-action-row">
             <div class="workflow-editor-secondary-actions workflow-editor-actions">
-              <div class="workflow-editor-action-group" role="group" aria-label="辅助操作">
+              <div class="workflow-editor-action-group" role="group" :aria-label="t('workflow.auxActions')">
                 <button
                   class="ghost-button"
                   type="button"
                   :disabled="!selectedWorkflow || workflowEditorBusy"
                   @click="openEditWorkflow()"
                 >
-                  基础信息
+                  {{ t("workflow.basicInfo") }}
                 </button>
               </div>
               <span class="workflow-editor-action-divider" aria-hidden="true" />
-              <div class="workflow-editor-action-group" role="group" aria-label="画布整理">
+              <div class="workflow-editor-action-group" role="group" :aria-label="t('workflow.canvasLayout')">
                 <button
                   data-action="duplicate-selected-node"
                   class="ghost-button"
@@ -174,21 +176,21 @@ void WorkflowTrialRunDialog;
                   :disabled="!selectedGraphNode || workflowEditorBusy"
                   @click="duplicateSelectedNode"
                 >
-                  复制节点
+                  {{ t("workflow.duplicateNode") }}
                 </button>
                 <button
                   data-action="auto-layout-editor-graph"
                   class="ghost-button"
                   type="button"
-                  title="按拓扑分层展开节点，消除堆叠与交叉"
+                  :title="t('workflow.formatCanvasTitle')"
                   :disabled="!selectedWorkflow || workflowEditorBusy"
                   @click="applyAutoLayout"
                 >
-                  格式化画布
+                  {{ t("workflow.formatCanvas") }}
                 </button>
               </div>
               <span class="workflow-editor-action-divider" aria-hidden="true" />
-              <div class="workflow-editor-action-group" role="group" aria-label="校验运行">
+              <div class="workflow-editor-action-group" role="group" :aria-label="t('workflow.validateRun')">
                 <button
                   data-action="validate-editor-workflow"
                   class="ghost-button"
@@ -196,7 +198,7 @@ void WorkflowTrialRunDialog;
                   :disabled="!selectedWorkflow || workflowEditorBusy"
                   @click="validateEditorWorkflow"
                 >
-                  {{ pendingEditorAction === "validate" ? "正在检查…" : "检查问题" }}
+                  {{ pendingEditorAction === "validate" ? t("workflow.checking") : t("workflow.checkIssues") }}
                 </button>
                 <button
                   data-action="open-trial-run-dialog"
@@ -205,23 +207,23 @@ void WorkflowTrialRunDialog;
                   :disabled="!selectedWorkflow || workflowEditorBusy"
                   @click="trialRunEditorWorkflow"
                 >
-                  {{ pendingEditorAction === "trial-run" ? "正在准备…" : "模拟运行" }}
+                  {{ pendingEditorAction === "trial-run" ? t("workflow.preparing") : t("workflow.simulateRun") }}
                 </button>
                 <button
                   v-if="canReviseFromFailure"
                   data-action="revise-draft-from-failure"
                   class="ghost-button"
                   type="button"
-                  title="按编译/试运行问题回到智能编排修订草稿（只出新 Draft，不自动发布）"
+                  :title="t('workflow.reviseDraftTitle')"
                   :disabled="!selectedWorkflow || workflowEditorBusy"
                   @click="reviseDraftFromFailure"
                 >
-                  按问题修订草稿
+                  {{ t("workflow.reviseDraft") }}
                 </button>
               </div>
             </div>
           </div>
-          <div class="workflow-editor-primary-actions workflow-editor-actions" aria-label="关键操作">
+          <div class="workflow-editor-primary-actions workflow-editor-actions" :aria-label="t('workflow.primaryActions')">
             <button
               data-action="save-editor-draft"
               class="primary-button"
@@ -229,7 +231,7 @@ void WorkflowTrialRunDialog;
               :disabled="!selectedWorkflow || workflowEditorBusy"
               @click="saveEditorDraft"
             >
-              {{ pendingEditorAction === "save" ? "正在保存…" : "保存画布" }}
+              {{ pendingEditorAction === "save" ? t("workflow.saving") : t("workflow.saveCanvas") }}
             </button>
             <button
               data-action="publish-editor-workflow"
@@ -239,7 +241,7 @@ void WorkflowTrialRunDialog;
               :disabled="!selectedWorkflow || workflowEditorBusy || !selectedWorkflowCanPublish"
               @click="publishEditorWorkflow"
             >
-              {{ pendingEditorAction === "publish" ? "正在发布…" : "发布上线" }}
+              {{ pendingEditorAction === "publish" ? t("workflow.publishing") : t("workflow.publish") }}
             </button>
             <button
               v-if="canForcePublishWorkflow"
@@ -250,13 +252,13 @@ void WorkflowTrialRunDialog;
               :disabled="!selectedWorkflow || workflowEditorBusy || !selectedWorkflowCanForcePublish"
               @click="forcePublishEditorWorkflow"
             >
-              {{ pendingEditorAction === "force-publish" ? "强制发布中…" : "强制发布" }}
+              {{ pendingEditorAction === "force-publish" ? t("workflow.forcePublishing") : t("workflow.forcePublish") }}
             </button>
             <button
               class="workflow-editor-close-button"
               type="button"
-              aria-label="退出编辑"
-              title="退出编辑"
+              :aria-label="t('workflow.exitEdit')"
+              :title="t('workflow.exitEdit')"
               :disabled="workflowEditorBusy"
               @click="closeWorkflowEditor()"
             >
@@ -347,10 +349,10 @@ void WorkflowTrialRunDialog;
         >
           {{
             isContextTargetDeleteDisabled()
-              ? "起止节点不可删除"
+              ? t("workflow.cannotDeleteTerminal")
               : contextMenu.targetType === "node"
-                ? "删除节点"
-                : "删除连线"
+                ? t("workflow.deleteNode")
+                : t("workflow.deleteEdge")
           }}
         </button>
       </div>

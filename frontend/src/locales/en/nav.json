@@ -1,0 +1,35 @@
+{
+  "section": {
+    "space": "Space",
+    "build": "Build",
+    "connect": "Connect",
+    "run": "Run",
+    "govern": "Govern"
+  },
+  "item": {
+    "overview": "Overview",
+    "workspaces": "Workspaces",
+    "agents": "Agents",
+    "tools": "Tools",
+    "workflow": "Workflow",
+    "smartDag": "Smart Orchestration",
+    "providers": "Providers",
+    "connections": "Connections",
+    "openapiImports": "OpenAPI Imports",
+    "modelApis": "Model APIs",
+    "agentAccess": "Agent Access",
+    "chat": "Run Console",
+    "logs": "Audit",
+    "users": "Users & Access"
+  },
+  "pinned": "Pinned",
+  "allModules": "All modules",
+  "searchPlaceholder": "Search modules or areas…",
+  "searchAria": "Search modules",
+  "closeNav": "Close navigation",
+  "noMatch": "No matching modules",
+  "currentWorkspace": "Workspace: {name}",
+  "mainNav": "Main navigation",
+  "backToOverview": "Back to overview",
+  "accessibleSpaces": "{count} accessible workspaces"
+}

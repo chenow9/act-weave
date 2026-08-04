@@ -1,0 +1,18 @@
+{
+  "selectWorkspace": "Select workspace",
+  "switchWorkspaceAria": "Switch workspace: {name}",
+  "searchWorkspaces": "Search workspaces",
+  "accessibleWorkspaces": "Accessible workspaces",
+  "noMatchingWorkspaces": "No matching workspaces",
+  "manageWorkspaces": "Manage workspaces",
+  "modeProduction": "Production",
+  "modeSandbox": "Sandbox",
+  "openUserMenu": "Open user menu",
+  "userMenu": "User menu",
+  "runtimeStatus": "Runtime status",
+  "notificationsAudit": "Notifications & audit",
+  "signOut": "Sign out",
+  "allWorkspaces": "All workspaces",
+  "platformAdmin": "Platform admin",
+  "user": "User"
+}

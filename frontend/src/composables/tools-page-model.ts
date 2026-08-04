@@ -11,6 +11,7 @@ import { useToolsStore } from "../stores/tools";
 import { useProvidersStore } from "../stores/providers";
 import { useConnectionsStore } from "../stores/connections";
 import { useAuthStore } from "../stores/auth";
+import { tt } from "../i18n/tt";
 import { apiErrorMessage } from "../services/api";
 import {
   buildBodyContractFromRequestParams,
@@ -159,11 +160,11 @@ export function createToolsPageModel() {
     return [...ids];
   });
 
-  const toolEditorSteps = [
-    ["基础与接口", "归属、连接与 Endpoint"],
-    ["契约配置", "请求、响应与错误"],
-    ["确认保存", "检查后保存草稿"],
-  ];
+  const toolEditorSteps = computed(() => [
+    [tt("tools.stepBasicsTitle"), tt("tools.stepBasicsDesc")],
+    [tt("tools.stepContractTitle"), tt("tools.stepContractDesc")],
+    [tt("tools.stepConfirmTitle"), tt("tools.stepConfirmDesc")],
+  ]);
 
   const contractEditorTabs: Array<{ value: ContractEditorTab; label: string }> = [
     { value: "Path", label: "Path" },
@@ -174,14 +175,15 @@ export function createToolsPageModel() {
     { value: "Errors", label: "Errors" },
   ];
 
-  const detailTabs: Array<{ id: DetailTabId; label: string; icon: string }> = [
-    { id: "base", label: "基础信息", icon: "fa-solid fa-circle-info" },
-    { id: "connection", label: "连接配置", icon: "fa-solid fa-server" },
-    { id: "request", label: "入参配置", icon: "fa-solid fa-list-check" },
-    { id: "response", label: "出参配置", icon: "fa-solid fa-code" },
-    { id: "runtime", label: "运行策略", icon: "fa-solid fa-sliders" },
-    { id: "test", label: "测试发布", icon: "fa-solid fa-vial" },
-  ];
+  // Labels via tt so language switch updates (computed-friendly accessors use these ids).
+  const detailTabs = computed(() => [
+    { id: "base" as DetailTabId, label: tt("tools.baseInfo"), icon: "fa-solid fa-circle-info" },
+    { id: "connection" as DetailTabId, label: tt("tools.connection"), icon: "fa-solid fa-server" },
+    { id: "request" as DetailTabId, label: tt("tools.request"), icon: "fa-solid fa-list-check" },
+    { id: "response" as DetailTabId, label: tt("tools.response"), icon: "fa-solid fa-code" },
+    { id: "runtime" as DetailTabId, label: tt("tools.runtime"), icon: "fa-solid fa-sliders" },
+    { id: "test" as DetailTabId, label: tt("tools.testPublish"), icon: "fa-solid fa-vial" },
+  ]);
 
   const methodOptions = ["GET", "POST", "PATCH", "DELETE"].map((method) => ({ label: method, value: method }));
   const contentTypeOptions = ["application/json", "application/x-www-form-urlencoded", "multipart/form-data"].map(
@@ -190,38 +192,42 @@ export function createToolsPageModel() {
       value: contentType,
     }),
   );
-  const backoffPolicyOptions = [
-    { label: "固定间隔", value: "fixed", description: "每次重试之间等待固定时长，适合稳定接口。" },
-    { label: "指数退避", value: "exponential", description: "每次失败后逐步拉长等待时间，适合限流或拥塞场景。" },
-    { label: "线性退避", value: "linear", description: "按固定增量拉长每次等待时间，策略温和。" },
-  ];
-  const rateLimitPolicyOptions = [
-    { label: "标准频率", value: "60 rpm", description: "每分钟最多 60 次，适合大多数普通业务接口。" },
-    { label: "保守频率", value: "30 rpm", description: "每分钟最多 30 次，适合成本高或下游较脆弱的接口。" },
-    { label: "高频率", value: "120 rpm", description: "每分钟最多 120 次，适合读多写少且稳定的接口。" },
-  ];
-  const toolStatusOptions: Array<{ label: string; value: ToolStatus }> = [
-    { label: "草稿", value: "Draft" },
-    { label: "待评审", value: "Review" },
-    { label: "已测试", value: "Tested" },
-    { label: "已发布", value: "Published" },
-    { label: "已停用", value: "Disabled" },
-  ];
-  const toolStatusHelperText = "状态由测试、发布与停用动作驱动；修改运行配置后，系统会按后端规则自动回退。";
-  const statusTabs: Array<{ label: string; value: ToolStatusFilter }> = [
-    { label: "全部状态", value: "all" },
-    { label: "连接异常", value: "attention" },
-    { label: "已发布", value: "Published" },
-    { label: "已测试", value: "Tested" },
-    { label: "待评审", value: "Review" },
-    { label: "草稿", value: "Draft" },
-    { label: "已停用", value: "Disabled" },
-  ];
-  const toolTypeTabs: Array<{ label: string; value: ToolTypeFilter }> = [
-    { label: "全部类型", value: "all" },
+  const backoffPolicyOptions = computed(() => [
+    { label: tt("tools.backoffFixed"), value: "fixed", description: tt("tools.backoffFixedDesc") },
+    {
+      label: tt("tools.backoffExponential"),
+      value: "exponential",
+      description: tt("tools.backoffExponentialDesc"),
+    },
+    { label: tt("tools.backoffLinear"), value: "linear", description: tt("tools.backoffLinearDesc") },
+  ]);
+  const rateLimitPolicyOptions = computed(() => [
+    { label: tt("tools.rateStandard"), value: "60 rpm", description: tt("tools.rateStandardDesc") },
+    { label: tt("tools.rateConservative"), value: "30 rpm", description: tt("tools.rateConservativeDesc") },
+    { label: tt("tools.rateHigh"), value: "120 rpm", description: tt("tools.rateHighDesc") },
+  ]);
+  const toolStatusOptions = computed((): Array<{ label: string; value: ToolStatus }> => [
+    { label: tt("tools.draft"), value: "Draft" },
+    { label: tt("tools.review"), value: "Review" },
+    { label: tt("tools.tested"), value: "Tested" },
+    { label: tt("tools.published"), value: "Published" },
+    { label: tt("tools.disabled"), value: "Disabled" },
+  ]);
+  const toolStatusHelperText = computed(() => tt("tools.statusHelper"));
+  const statusTabs = computed((): Array<{ label: string; value: ToolStatusFilter }> => [
+    { label: tt("tools.statusAll"), value: "all" },
+    { label: tt("tools.attention"), value: "attention" },
+    { label: tt("tools.published"), value: "Published" },
+    { label: tt("tools.tested"), value: "Tested" },
+    { label: tt("tools.review"), value: "Review" },
+    { label: tt("tools.draft"), value: "Draft" },
+    { label: tt("tools.disabled"), value: "Disabled" },
+  ]);
+  const toolTypeTabs = computed((): Array<{ label: string; value: ToolTypeFilter }> => [
+    { label: tt("tools.typeAll"), value: "all" },
     { label: "HTTP", value: "HTTP Tool" },
     { label: "Workflow", value: "Workflow Tool" },
-  ];
+  ]);
 
   const draftTool = ref<ToolDraft>(defaultToolDraft());
 
@@ -231,7 +237,7 @@ export function createToolsPageModel() {
       (toolsStore.toolPagination?.total ?? 0) > 0 ||
       toolsStore.toolPageItems.length > 0,
   );
-  /** Tools on the current page whose bound connection needs attention (KPI for 需处理 is page-aware). */
+  /** Tools on the current page whose bound connection needs attention (KPI for attention is page-aware). */
   const connectionIssueTools = computed(() =>
     toolsStore.toolPageItems.filter((tool) => toolHasConnectionAttention(tool, connectionForTool(tool))),
   );
@@ -253,26 +259,26 @@ export function createToolsPageModel() {
     const connectionIssueCount = connectionIssueTools.value.length;
     const publishedIssues = publishedWithConnectionIssueCount.value;
     return [
-      { label: "工具总数", value: summary.total, icon: "fa-solid fa-screwdriver-wrench" },
+      { label: tt("tools.summaryTotal"), value: summary.total, icon: "fa-solid fa-screwdriver-wrench" },
       {
-        label: "已发布",
+        label: tt("tools.summaryPublished"),
         value: publishedCount,
         icon: "fa-solid fa-circle-check",
-        note: publishedIssues > 0 ? `${publishedIssues} 连接异常(本页)` : undefined,
+        note: publishedIssues > 0 ? tt("tools.publishedIssues", { n: publishedIssues }) : undefined,
         tone: publishedIssues > 0 ? "warning" : "default",
       },
       {
-        label: "待发布",
+        label: tt("tools.summaryPending"),
         value: pendingPublishCount,
         icon: "fa-solid fa-vial",
         tone: "info",
       },
       {
         // Connection attention: page-scoped until a server-side connection-health filter exists.
-        label: "需处理",
+        label: tt("tools.summaryAttention"),
         value: connectionIssueCount,
         icon: "fa-solid fa-triangle-exclamation",
-        note: connectionIssueCount > 0 ? "本页连接异常" : undefined,
+        note: connectionIssueCount > 0 ? tt("tools.pageConnectionIssue") : undefined,
         tone: connectionIssueCount > 0 ? "danger" : "warning",
       },
     ];
@@ -300,11 +306,13 @@ export function createToolsPageModel() {
     buildBodyContractFromRequestParams(detailTool.value?.requestParams || []),
   );
   const detailResponseNodes = computed(() => buildResponseContractFromFields(detailTool.value?.responseFields || []));
-  const toolEditorTitle = computed(() => (toolEditorMode.value === "edit" ? "编辑 Tool" : "注册 Tool"));
+  const toolEditorTitle = computed(() =>
+    toolEditorMode.value === "edit" ? tt("tools.editToolTitle") : tt("tools.registerToolTitle"),
+  );
   const toolColumns = computed<ManagementListColumn<Tool>[]>(() => [
     {
       key: "tool",
-      label: "工具名称",
+      label: tt("tools.colName"),
       width: 200,
       sortable: true,
       sortKey: "name",
@@ -312,26 +320,26 @@ export function createToolsPageModel() {
     },
     {
       key: "type",
-      label: "工具类型",
+      label: tt("tools.colType"),
       width: 95,
       hidable: true,
       sortable: true,
       sortKey: "protocol",
       getValue: getToolTypeLabel,
     },
-    { key: "protocol", label: "协议类型", width: 95, hidable: true, getValue: toolProtocolLabel },
+    { key: "protocol", label: tt("tools.colProtocol"), width: 95, hidable: true, getValue: toolProtocolLabel },
     { key: "method", label: "Method", width: 70, hidable: true, align: "center", sortable: true, getValue: methodOf },
     { key: "path", label: "Path", width: 170, hidable: true, getValue: pathOf },
     {
       key: "connection",
-      label: "Provider / 服务连接",
+      label: tt("tools.colProvider"),
       width: 140,
       hidable: true,
       getValue: toolProviderConnectionLabel,
     },
     {
       key: "status",
-      label: "状态",
+      label: tt("tools.colStatus"),
       width: 140,
       hidable: true,
       align: "center",
@@ -339,27 +347,27 @@ export function createToolsPageModel() {
       sortKey: "status",
       getValue: (tool) => toolUnifiedStatus(tool).label,
     },
-    { key: "version", label: "版本", width: 80, hidable: true, getValue: toolVersionLabel },
+    { key: "version", label: tt("tools.colVersion"), width: 80, hidable: true, getValue: toolVersionLabel },
     {
       key: "updatedAt",
-      label: "更新时间",
+      label: tt("tools.colUpdated"),
       width: 125,
       hidable: true,
       sortable: true,
       sortKey: "updatedAt",
       getValue: formatToolTableUpdatedAt,
     },
-    { key: "actions", label: "操作", width: 68, align: "right", headerAlign: "center" },
+    { key: "actions", label: tt("tools.colActions"), width: 68, align: "right", headerAlign: "center" },
   ]);
   const hasUnsavedToolChanges = computed(
     () => toolEditorVisible.value && draftSnapshot.value !== serializeDraftForSnapshot(),
   );
   const saveStateLabel = computed(() => {
-    if (saveState.value === "saving") return "保存中";
-    if (saveState.value === "saved") return "已保存";
-    if (saveState.value === "failed") return "保存失败";
-    if (hasUnsavedToolChanges.value) return "有未保存修改";
-    return "草稿未保存";
+    if (saveState.value === "saving") return tt("tools.saving");
+    if (saveState.value === "saved") return tt("tools.saved");
+    if (saveState.value === "failed") return tt("tools.saveFailed");
+    if (hasUnsavedToolChanges.value) return tt("tools.unsavedChanges");
+    return tt("tools.draftUnsaved");
   });
   const draftPublishChecklist = computed(() =>
     buildToolPublishChecklist(buildDraftTool(), draftConnection.value, {
@@ -372,7 +380,7 @@ export function createToolsPageModel() {
   const serviceConnectionOptions = computed(() => {
     const connections = connectionsForWorkspace(draftTool.value.workspaceId);
     if (!connections.length) {
-      return [{ label: "暂无服务连接", value: "", disabled: true }];
+      return [{ label: tt("tools.noServiceConnections"), value: "", disabled: true }];
     }
     return connections.map((connection) => ({
       label: `${connection.name} · ${connection.protocolConfig.domain}`,
@@ -497,13 +505,13 @@ export function createToolsPageModel() {
     const workspaceId = workspaces.activeWorkspaceId || workspaces.items[0]?.id || "default";
     return {
       id: "",
-      name: "拦截发货",
+      name: tt("tools.sampleToolName"),
       workspaceId,
       connectionId: connectionsStore.serviceConnections[0]?.id || "",
       method: "POST",
       path: "/api/shipments/{shipmentId}/intercept",
       contentType: "application/json",
-      description: "对未出库发货单执行拦截动作",
+      description: tt("tools.sampleToolDescription"),
       status: "Draft",
       requestContract: [],
       responseContract: [],
@@ -591,7 +599,7 @@ export function createToolsPageModel() {
 
   function toolProviderConnectionLabel(tool: Tool) {
     const provider = providerForTool(tool)?.name || tool.providerId || "-";
-    const connection = connectionForTool(tool)?.name || "连接缺失";
+    const connection = connectionForTool(tool)?.name || tt("tools.connectionMissing");
     return `${provider} · ${connection}`;
   }
 
@@ -625,7 +633,7 @@ export function createToolsPageModel() {
   }
 
   function toolStatusLabel(status: ToolStatus) {
-    return toolStatusOptions.find((option) => option.value === status)?.label || status;
+    return toolStatusOptions.value.find((option) => option.value === status)?.label || status;
   }
 
   function lifecycleStatus(tool: Tool) {
@@ -666,21 +674,21 @@ export function createToolsPageModel() {
   }
 
   function toolPublishActionLabel(tool?: Tool | null) {
-    if (!tool) return "发布工具";
-    return tool.status === "Disabled" ? "重新发布" : "发布工具";
+    if (!tool) return tt("tools.publishTool");
+    return tool.status === "Disabled" ? tt("tools.republish") : tt("tools.publishTool");
   }
 
   function toolPublishButtonLabel(tool?: Tool | null) {
-    if (!tool) return "发布上线";
-    return tool.status === "Disabled" ? "重新发布" : "发布上线";
+    if (!tool) return tt("tools.publishOnline");
+    return tool.status === "Disabled" ? tt("tools.republish") : tt("tools.publishOnline");
   }
 
   function toolAvailabilityActionLabel(tool?: Tool | null) {
-    return tool?.status === "Disabled" ? "启用工具" : "停用工具";
+    return tool?.status === "Disabled" ? tt("tools.enableTool") : tt("tools.disableTool");
   }
 
   function toolAvailabilityButtonLabel(tool?: Tool | null) {
-    return tool?.status === "Disabled" ? "启用" : "停用";
+    return tool?.status === "Disabled" ? tt("common.enable") : tt("common.disable");
   }
 
   function toolAvailabilityActionIcon(tool?: Tool | null) {
@@ -688,41 +696,43 @@ export function createToolsPageModel() {
   }
 
   function toolLastTestSummary(tool?: Tool | null) {
-    if (!tool?.lastTestResult) return "等待测试";
+    if (!tool?.lastTestResult) return tt("tools.govWaitTest");
     const latency = tool.lastTestResult.latencyMs ? ` · ${tool.lastTestResult.latencyMs}ms` : "";
-    return hasPassingTest(tool) ? `已通过${latency}` : `未通过${latency}`;
+    return hasPassingTest(tool)
+      ? tt("tools.testPassedWithLatency", { latency })
+      : tt("tools.testFailedWithLatency", { latency });
   }
 
   function toolLastTestDetail(tool?: Tool | null) {
     const result = tool?.lastTestResult;
-    if (!result) return "暂无测试记录，请先执行测试。";
-    if (hasPassingTest(tool)) return "连通性、响应 Schema、错误映射与运行策略均已通过。";
+    if (!result) return tt("tools.noTestRecordDetail");
+    if (hasPassingTest(tool)) return tt("tools.allChecksPassedDetail");
 
     const failedChecks = [
-      result.connectivityPassed === false ? "连通性未通过" : "",
-      result.responseSchemaPassed === false ? "响应 Schema 未通过" : "",
-      result.errorMappingPassed === false ? "错误映射未通过" : "",
-      result.runtimePolicyPassed === false ? "运行策略未通过" : "",
+      result.connectivityPassed === false ? tt("tools.connectivityFailed") : "",
+      result.responseSchemaPassed === false ? tt("tools.responseSchemaFailed") : "",
+      result.errorMappingPassed === false ? tt("tools.errorMappingFailed") : "",
+      result.runtimePolicyPassed === false ? tt("tools.runtimePolicyFailed") : "",
     ].filter(Boolean);
 
     if (failedChecks.length) {
-      return `失败项：${failedChecks.join("、")}。请打开测试弹窗查看下游响应并修复后重试。`;
+      return tt("tools.failedChecksDetail", { checks: failedChecks.join("、") });
     }
-    return "测试未通过，请打开测试弹窗查看下游响应与错误详情。";
+    return tt("tools.testNotPassedDetail");
   }
 
   function toolPublishReadinessLabel(tool?: Tool | null) {
-    if (!tool) return "发布前需先执行通过测试。";
+    if (!tool) return tt("tools.publishNeedsTest");
     if (canPublishTool(tool)) {
-      return tool.status === "Disabled" ? "当前已停用，但仍可直接重新发布。" : "最近一次测试已通过，可直接发布。";
+      return tool.status === "Disabled" ? tt("tools.disabledCanRepublish") : tt("tools.testPassedCanPublish");
     }
     if (tool.status === "Published") {
-      return "当前已发布，可被 Agent 调用。";
+      return tt("tools.alreadyPublished");
     }
     if (tool.status === "Disabled") {
-      return "当前已停用，启用后恢复为待评审；若需对 Agent 开放，请先重新测试并发布。";
+      return tt("tools.disabledNeedRetest");
     }
-    return "发布前需先执行通过测试。";
+    return tt("tools.publishNeedsTest");
   }
 
   function authModeLabel(connection = detailConnection.value) {
@@ -758,11 +768,11 @@ export function createToolsPageModel() {
   }
 
   function serviceConnectionStatusLabel(connection = detailConnection.value) {
-    if (!connection) return "未配置";
-    if (connection.status === "Available" || connection.status === "VERIFIED") return "可用";
-    if (connection.status === "Expiring soon") return "即将过期";
-    if (["Needs attention", "UNVERIFIED", "ERROR"].includes(connection.status)) return "需处理";
-    if (connection.status === "DISABLED") return "已停用";
+    if (!connection) return tt("tools.connNotConfigured");
+    if (connection.status === "Available" || connection.status === "VERIFIED") return tt("tools.connAvailable");
+    if (connection.status === "Expiring soon") return tt("tools.connExpiring");
+    if (["Needs attention", "UNVERIFIED", "ERROR"].includes(connection.status)) return tt("tools.connNeedsAttention");
+    if (connection.status === "DISABLED") return tt("tools.connDisabled");
     return connection.status;
   }
 
@@ -771,12 +781,20 @@ export function createToolsPageModel() {
   }
 
   function backoffPolicyMeta(policy: string) {
-    return backoffPolicyOptions.find((option) => option.value === policy) || { label: policy || "-", description: "" };
+    return (
+      backoffPolicyOptions.value.find((option) => option.value === policy) || {
+        label: policy || "-",
+        description: "",
+      }
+    );
   }
 
   function rateLimitPolicyMeta(policy: string) {
     return (
-      rateLimitPolicyOptions.find((option) => option.value === policy) || { label: policy || "-", description: "" }
+      rateLimitPolicyOptions.value.find((option) => option.value === policy) || {
+        label: policy || "-",
+        description: "",
+      }
     );
   }
 
@@ -789,7 +807,7 @@ export function createToolsPageModel() {
   }
 
   function retryLabel(tool: Tool) {
-    return `${tool.runtimePolicy.retryCount} 次重试`;
+    return tt("tools.retryCountLabel", { n: tool.runtimePolicy.retryCount });
   }
 
   function toolSummaryMeta(tool: Tool) {
@@ -800,7 +818,7 @@ export function createToolsPageModel() {
 
   function toolVersionLabel(tool: Tool) {
     const version = tool.draftVersion || [...tool.versions].sort((left, right) => right.versionNo - left.versionNo)[0];
-    return version ? `v${version.versionNo}` : "未创建版本";
+    return version ? `v${version.versionNo}` : tt("tools.noVersion");
   }
 
   function toolEndpointSummary(tool: Tool) {
@@ -808,7 +826,7 @@ export function createToolsPageModel() {
   }
 
   function agentImpactLabel(tool: Tool) {
-    return tool.activeReleaseId ? "可通过 Agent 绑定使用" : "尚未发布，暂无 Agent 绑定入口";
+    return tool.activeReleaseId ? tt("tools.agentBindAvailable") : tt("tools.agentBindUnavailable");
   }
 
   function riskActionTools(): Tool[] {
@@ -819,41 +837,37 @@ export function createToolsPageModel() {
 
   function riskConfirmationEyebrow() {
     const tools = riskActionTools();
-    if (!tools.length) return "操作确认";
-    if (pendingRiskAction.value.type === "batch-force-publish") return "平台管理员 · 强制发布";
-    if (tools.some((tool) => tool.activeReleaseId)) return "高风险操作";
-    return "操作确认";
+    if (!tools.length) return tt("tools.riskEyebrowConfirm");
+    if (pendingRiskAction.value.type === "batch-force-publish") return tt("tools.riskEyebrowForce");
+    if (tools.some((tool) => tool.activeReleaseId)) return tt("tools.riskEyebrowHigh");
+    return tt("tools.riskEyebrowConfirm");
   }
 
   function riskConfirmationDescription() {
     const { type } = pendingRiskAction.value;
     const tools = riskActionTools();
-    if (!tools.length) return "请确认后再继续。";
+    if (!tools.length) return tt("tools.riskDescContinue");
     const publishedCount = tools.filter((tool) => tool.activeReleaseId).length;
     if (type === "batch-force-publish") {
-      return `将跳过实调测试，强制发布 ${tools.length} 个未发布 Tool（创建正式 release 并激活）。不会调用上游 DELETE/改写接口，但契约错误会直接进入可被 Agent 调用的状态。请填写原因并确认影响面。`;
+      return tt("tools.riskDescForceBatch", { count: tools.length });
     }
     if (type === "batch-delete") {
       return publishedCount > 0
-        ? `将删除已选 ${tools.length} 个 Tool（含 ${publishedCount} 个已发布），删除后不可恢复；已发布项可能影响 Agent 绑定与工作流调用。`
-        : `将删除已选 ${tools.length} 个 Tool。当前均未发布正式版本，影响主要限于草稿与配置记录。`;
+        ? tt("tools.riskDescBatchDeletePublished", { count: tools.length, published: publishedCount })
+        : tt("tools.riskDescBatchDeleteDraft", { count: tools.length });
     }
     const tool = tools[0];
     const published = Boolean(tool.activeReleaseId);
     if (type === "delete") {
-      return published
-        ? "删除后不可恢复。若已有 Agent 绑定或工作流引用该 Tool 的已发布版本，相关调用可能失败，请确认影响后再删除。"
-        : "当前 Tool 尚未发布正式版本，删除主要影响本条草稿与版本记录，一般不会波及线上 Agent 绑定。";
+      return published ? tt("tools.riskDescDeletePublished") : tt("tools.riskDescDeleteDraft");
     }
     if (type === "disable") {
-      return published
-        ? "停用后，依赖该 Tool 已发布版本的 Agent 绑定与工作流将无法继续调用，请确认影响面。"
-        : "停用后该 Tool 将不可被选用；当前尚未发布，影响范围主要限于配置侧。";
+      return published ? tt("tools.riskDescDisablePublished") : tt("tools.riskDescDisableDraft");
     }
     if (type === "enable") {
-      return "启用后，该 Tool 可重新参与绑定与调用（仍以发布状态与绑定配置为准）。";
+      return tt("tools.riskDescEnable");
     }
-    return "请确认后再继续。";
+    return tt("tools.riskDescContinue");
   }
 
   function riskImpactItems() {
@@ -866,43 +880,43 @@ export function createToolsPageModel() {
       return [
         {
           key: "count",
-          label: type === "batch-force-publish" ? "将强制发布" : "已选数量",
+          label: type === "batch-force-publish" ? tt("tools.riskLabelForceCount") : tt("tools.riskLabelSelectedCount"),
           value:
             type === "batch-force-publish"
-              ? `${forceTargets.length} 个未发布 Tool（已选 ${tools.length}）`
-              : `${tools.length} 个 Tool`,
+              ? tt("tools.riskValueForceCount", { force: forceTargets.length, selected: tools.length })
+              : tt("tools.riskValueToolCount", { count: tools.length }),
           tone: "neutral",
         },
         {
           key: "binding",
-          label: "Agent 绑定",
+          label: tt("tools.riskLabelAgentBinding"),
           value:
             type === "batch-force-publish"
-              ? "发布后可被 Agent / Workflow 调用"
+              ? tt("tools.riskValueForceBinding")
               : publishedCount > 0
-                ? `${publishedCount} 个已发布，可能存在绑定`
-                : "均未发布，通常无生效绑定",
+                ? tt("tools.riskValuePublishedMayBind", { count: publishedCount })
+                : tt("tools.riskValueNonePublished"),
           tone: type === "batch-force-publish" || publishedCount > 0 ? "warn" : "ok",
         },
         {
           key: "workflow",
-          label: type === "batch-force-publish" ? "测试门禁" : "工作流引用",
+          label: type === "batch-force-publish" ? tt("tools.riskLabelTestGate") : tt("tools.riskLabelWorkflowRef"),
           value:
             type === "batch-force-publish"
-              ? "跳过实调测试，写入强制通过 attest 记录"
+              ? tt("tools.riskValueSkipTest")
               : publishedCount > 0
-                ? "可能被已发布工作流引用，请抽查核对"
-                : "均未发布，通常无生产引用",
+                ? tt("tools.riskValueWorkflowMayRef")
+                : tt("tools.riskValueNoWorkflow"),
           tone: "warn",
         },
         {
           key: "names",
-          label: "示例名称",
+          label: tt("tools.riskLabelSampleNames"),
           value:
             tools
               .slice(0, 3)
               .map((tool) => tool.name)
-              .join("、") + (tools.length > 3 ? ` 等 ${tools.length} 个` : ""),
+              .join("、") + (tools.length > 3 ? tt("tools.riskValueNamesMore", { count: tools.length }) : ""),
           tone: "neutral",
         },
       ];
@@ -912,25 +926,25 @@ export function createToolsPageModel() {
     return [
       {
         key: "binding",
-        label: "Agent 绑定",
-        value: published ? "可能存在绑定，请到 Agent 能力绑定中核对" : "尚未发布，通常无生效绑定",
+        label: tt("tools.riskLabelAgentBinding"),
+        value: published ? tt("tools.riskValueMayBindCheck") : tt("tools.riskValueNotPublishedBind"),
         tone: published ? "warn" : "ok",
       },
       {
         key: "workflow",
-        label: "工作流引用",
-        value: published ? "可能被已发布工作流引用，请在工作流中核对" : "尚未发布，通常无生产引用",
+        label: tt("tools.riskLabelWorkflowRef"),
+        value: published ? tt("tools.riskValueWorkflowCheck") : tt("tools.riskValueNotPublishedWorkflow"),
         tone: published ? "warn" : "ok",
       },
       {
         key: "version",
-        label: "当前版本",
+        label: tt("tools.riskLabelVersion"),
         value: toolVersionLabel(tool),
         tone: "neutral",
       },
       {
         key: "endpoint",
-        label: "调用接口",
+        label: tt("tools.riskLabelEndpoint"),
         value: toolEndpointSummary(tool),
         tone: "neutral",
       },
@@ -945,31 +959,31 @@ export function createToolsPageModel() {
   function riskConfirmationTargetName() {
     const { type, tool, tools } = pendingRiskAction.value;
     if (type === "batch-delete" || type === "batch-force-publish") {
-      if (!tools.length) return "未选择 Tool";
+      if (!tools.length) return tt("tools.riskNoToolSelected");
       if (tools.length === 1) return tools[0].name;
-      return `${tools[0].name} 等 ${tools.length} 个 Tool`;
+      return tt("tools.riskTargetMultiple", { name: tools[0].name, count: tools.length });
     }
-    return tool?.name || "未命名 Tool";
+    return tool?.name || tt("tools.unnamedTool");
   }
 
   function riskConfirmationTargetMeta() {
     const { type, tool, tools } = pendingRiskAction.value;
     if (type === "batch-force-publish") {
-      return `跳过实调 · 强制发布 ${tools.length} 个 Tool`;
+      return tt("tools.riskMetaForce", { count: tools.length });
     }
     if (type === "batch-delete") {
       const publishedCount = tools.filter((item) => item.activeReleaseId).length;
       return publishedCount > 0
-        ? `已选 ${tools.length} 个 · 其中 ${publishedCount} 个已发布`
-        : `已选 ${tools.length} 个 · 均未发布`;
+        ? tt("tools.riskMetaBatchPublished", { count: tools.length, published: publishedCount })
+        : tt("tools.riskMetaBatchNonePublished", { count: tools.length });
     }
     return tool ? toolEndpointSummary(tool) : "";
   }
 
   function formatToolTableUpdatedAt(tool: Tool) {
-    if (!tool.updatedAt) return "暂无数据";
+    if (!tool.updatedAt) return tt("common.noData");
     const date = new Date(tool.updatedAt);
-    if (Number.isNaN(date.getTime())) return "暂无数据";
+    if (Number.isNaN(date.getTime())) return tt("common.noData");
     return date.toLocaleString("sv-SE", {
       year: "numeric",
       month: "2-digit",
@@ -1008,10 +1022,11 @@ export function createToolsPageModel() {
   }
 
   function handleDetailTabKeydown(event: KeyboardEvent, currentTabId: DetailTabId) {
-    const currentIndex = detailTabs.findIndex((tab) => tab.id === currentTabId);
+    const tabs = detailTabs.value;
+    const currentIndex = tabs.findIndex((tab) => tab.id === currentTabId);
     if (currentIndex < 0) return;
 
-    const lastIndex = detailTabs.length - 1;
+    const lastIndex = tabs.length - 1;
     const nextIndexByKey: Record<string, number> = {
       ArrowLeft: currentIndex === 0 ? lastIndex : currentIndex - 1,
       ArrowRight: currentIndex === lastIndex ? 0 : currentIndex + 1,
@@ -1022,7 +1037,7 @@ export function createToolsPageModel() {
     if (nextIndex === undefined) return;
 
     event.preventDefault();
-    const nextTabId = detailTabs[nextIndex].id;
+    const nextTabId = tabs[nextIndex].id;
     selectDetailTab(nextTabId);
     void nextTick(() => document.getElementById(`tool-detail-tab-${nextTabId}`)?.focus());
   }
@@ -1032,19 +1047,19 @@ export function createToolsPageModel() {
   function toolMenuActions(tool: Tool): ManagementRowAction[] {
     const publishable = canPublishTool(tool);
     return [
-      { key: "detail", label: "查看工具详情", icon: "fa-solid fa-eye", tone: "primary" },
-      { key: "test", label: "测试工具", icon: "fa-solid fa-vial" },
-      { key: "edit", label: "编辑工具", icon: "fa-solid fa-pen" },
+      { key: "detail", label: tt("tools.viewDetail"), icon: "fa-solid fa-eye", tone: "primary" },
+      { key: "test", label: tt("tools.testTool"), icon: "fa-solid fa-vial" },
+      { key: "edit", label: tt("tools.editTool"), icon: "fa-solid fa-pen" },
       {
         key: "publish",
         label: toolPublishActionLabel(tool),
         icon: "fa-solid fa-cloud-arrow-up",
         tone: "primary",
         disabled: !publishable,
-        disabledReason: publishable ? undefined : "需先通过测试才能发布",
+        disabledReason: publishable ? undefined : tt("tools.publishNeedsPassingTest"),
       },
       { key: "availability", label: toolAvailabilityActionLabel(tool), icon: toolAvailabilityActionIcon(tool) },
-      { key: "delete", label: "删除工具", icon: "fa-solid fa-trash", tone: "danger" },
+      { key: "delete", label: tt("tools.deleteTool"), icon: "fa-solid fa-trash", tone: "danger" },
     ];
   }
 
@@ -1155,7 +1170,7 @@ export function createToolsPageModel() {
     if (detailToolId.value === tool.id) {
       closeToolDetail();
     }
-    setActionFeedback(`${tool.name} 已从 Tool Runtime 删除。`);
+    setActionFeedback(tt("tools.deletedFromRuntime", { name: tool.name }));
   }
 
   function openRiskConfirmation(type: RiskActionType, tool: Tool) {
@@ -1201,34 +1216,38 @@ export function createToolsPageModel() {
     const action = pendingRiskAction.value.type;
     if (action === "batch-force-publish") {
       const count = pendingRiskAction.value.tools.length;
-      return count > 1 ? `强制发布 ${count} 个 Tool` : "强制发布 Tool";
+      return count > 1 ? tt("tools.forcePublishMany", { count }) : tt("tools.forcePublishOne");
     }
     if (action === "batch-delete") {
       const count = pendingRiskAction.value.tools.length;
-      return count > 1 ? `确认删除 ${count} 个 Tool` : "确认删除 Tool";
+      return count > 1 ? tt("tools.confirmDeleteMany", { count }) : tt("tools.confirmDeleteOne");
     }
-    if (action === "delete") return "确认删除 Tool";
-    if (action === "disable") return "确认停用 Tool";
-    if (action === "enable") return "确认启用 Tool";
-    return "确认操作";
+    if (action === "delete") return tt("tools.confirmDeleteTool");
+    if (action === "disable") return tt("tools.confirmDisableTool");
+    if (action === "enable") return tt("tools.confirmEnableTool");
+    return tt("tools.confirmAction");
   }
 
   function riskConfirmationPrimaryLabel() {
     const action = pendingRiskAction.value.type;
     if (action === "batch-force-publish") {
       return batchForcePublishing.value
-        ? "发布中…"
-        : `确认强制发布${pendingRiskAction.value.tools.length > 1 ? ` ${pendingRiskAction.value.tools.length} 项` : ""}`;
+        ? tt("tools.publishing")
+        : pendingRiskAction.value.tools.length > 1
+          ? tt("tools.confirmForcePublishMany", { count: pendingRiskAction.value.tools.length })
+          : tt("tools.confirmForcePublish");
     }
     if (action === "batch-delete") {
       return batchDeleting.value
-        ? "删除中…"
-        : `确认删除${pendingRiskAction.value.tools.length > 1 ? ` ${pendingRiskAction.value.tools.length} 项` : ""}`;
+        ? tt("tools.deleting")
+        : pendingRiskAction.value.tools.length > 1
+          ? tt("tools.confirmDeleteManyItems", { count: pendingRiskAction.value.tools.length })
+          : tt("tools.confirmDelete");
     }
-    if (action === "delete") return "确认删除";
-    if (action === "disable") return "确认停用";
-    if (action === "enable") return "确认启用";
-    return "确认";
+    if (action === "delete") return tt("tools.confirmDelete");
+    if (action === "disable") return tt("tools.confirmDisable");
+    if (action === "enable") return tt("tools.confirmEnable");
+    return tt("common.confirm");
   }
 
   const forcePublishReasonValid = computed(() => forcePublishReason.value.trim().length >= 8);
@@ -1250,16 +1269,20 @@ export function createToolsPageModel() {
             success += 1;
           } catch (error) {
             failed += 1;
-            lastError = apiErrorMessage(error, "强制发布失败");
+            lastError = apiErrorMessage(error, tt("tools.forcePublishFailed"));
           }
         }
         selectedToolRowKeys.value = [];
         await loadToolRegistry();
         if (failed === 0) {
-          setActionFeedback(`已强制发布 ${success} 个 Tool（跳过实调测试）。`);
+          setActionFeedback(tt("tools.forcePublishSuccess", { count: success }));
         } else {
           setActionFeedback(
-            `强制发布完成：成功 ${success} 个，失败 ${failed} 个。${lastError ? ` ${lastError}` : ""}`,
+            tt("tools.forcePublishPartial", {
+              success,
+              failed,
+              error: lastError ? ` ${lastError}` : "",
+            }),
             "error",
           );
         }
@@ -1292,9 +1315,9 @@ export function createToolsPageModel() {
           closeToolDetail();
         }
         if (failed === 0) {
-          setActionFeedback(`已批量删除 ${success} 个 Tool。`);
+          setActionFeedback(tt("tools.batchDeleteSuccess", { count: success }));
         } else {
-          setActionFeedback(`批量删除完成：成功 ${success} 个，失败 ${failed} 个。`, "error");
+          setActionFeedback(tt("tools.batchDeletePartial", { success, failed }), "error");
         }
       } finally {
         batchDeleting.value = false;
@@ -1373,14 +1396,14 @@ export function createToolsPageModel() {
     if (batchTestNeedsPassthrough.value) {
       const token = normalizePassthroughToken(batchPassthroughToken.value);
       if (!token) {
-        setActionFeedback("所选工具含透传连接，请先填写一次性业务 Token。", "error");
+        setActionFeedback(tt("tools.batchNeedPassthroughToken"), "error");
         return;
       }
       const expiresDate = batchPassthroughExpiresAt.value
         ? new Date(batchPassthroughExpiresAt.value)
         : new Date(Date.now() + 60 * 60 * 1000);
       if (Number.isNaN(expiresDate.getTime()) || expiresDate.getTime() <= Date.now() + 2 * 60 * 1000) {
-        setActionFeedback("过期时间必须晚于当前时间至少 2 分钟。", "error");
+        setActionFeedback(tt("tools.batchExpiresTooSoon"), "error");
         return;
       }
     }
@@ -1402,7 +1425,7 @@ export function createToolsPageModel() {
             target = await toolsStore.loadToolVersions(tool.id, tool.workspaceId);
           } catch {
             failed += 1;
-            failureHints.push(`${tool.name}: 加载版本失败`);
+            failureHints.push(`${tool.name}: ${tt("tools.batchLoadVersionFailed")}`);
             continue;
           }
         }
@@ -1423,7 +1446,7 @@ export function createToolsPageModel() {
               : undefined;
           if (connection?.outboundMode === "REQUEST_PASSTHROUGH" && !envelope) {
             failed += 1;
-            failureHints.push(`${tool.name}: 缺少透传 Token`);
+            failureHints.push(`${tool.name}: ${tt("tools.batchMissingPassthroughToken")}`);
             continue;
           }
           const result = await toolsStore.testTool(target.id, buildDefaultToolTestInput(target), envelope);
@@ -1431,25 +1454,36 @@ export function createToolsPageModel() {
           else {
             failed += 1;
             if (failureHints.length < 5) {
-              failureHints.push(`${tool.name}: ${result.errorMessage || `HTTP ${result.responseStatus}` || "失败"}`);
+              failureHints.push(
+                `${tool.name}: ${result.errorMessage || `HTTP ${result.responseStatus}` || tt("tools.batchFailed")}`,
+              );
             }
           }
         } catch (error) {
           failed += 1;
           if (failureHints.length < 5) {
-            const message = error instanceof Error ? error.message : "异常";
+            const message = error instanceof Error ? error.message : tt("tools.batchException");
             failureHints.push(`${tool.name}: ${message}`);
           }
         }
       }
       await loadToolRegistry();
-      const parts = [`通过 ${passed}`, `失败 ${failed}`];
-      if (skipped) parts.push(`跳过 ${skipped}`);
-      const hint = failureHints.length > 0 ? ` 示例：${failureHints.slice(0, 3).join("；")}` : "";
+      const parts = [
+        tt("tools.batchPassedCount", { n: passed }),
+        tt("tools.batchFailedCount", { n: failed }),
+      ];
+      if (skipped) parts.push(tt("tools.batchSkippedCount", { n: skipped }));
+      const hint =
+        failureHints.length > 0
+          ? tt("tools.batchExamplePrefix", { hints: failureHints.slice(0, 3).join("；") })
+          : "";
       setActionFeedback(
-        `批量测试完成（${tools.length} 个）：${parts.join("，")}。` +
-          (skipped ? " 跳过项多为仅有已发布版本或缺少连接。" : "") +
-          hint,
+        tt("tools.batchTestDone", {
+          count: tools.length,
+          parts: parts.join("，"),
+          skipHint: skipped ? tt("tools.batchSkipHint") : "",
+          examples: hint,
+        }),
         failed > 0 ? "error" : "success",
       );
       batchTestDialogVisible.value = false;
@@ -1520,7 +1554,7 @@ export function createToolsPageModel() {
         editable = await toolsStore.loadToolVersions(tool.id, tool.workspaceId);
       }
       if (editable.status === "Published") {
-        setActionFeedback("已发布 Tool 的编辑会从该版本创建新的 Draft Version，原 Release 保持不变。", "success");
+        setActionFeedback(tt("tools.editCreatesDraft"), "success");
       }
       toolEditorMode.value = "edit";
       editingToolId.value = editable.id;
@@ -1537,15 +1571,15 @@ export function createToolsPageModel() {
       publishImpactConfirmed.value = false;
       toolEditorVisible.value = true;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "未知错误";
-      setActionFeedback(`无法打开编辑：${message}`, "error");
-      draftError.value = `无法打开编辑：${message}`;
+      const message = error instanceof Error ? error.message : tt("tools.unknownError");
+      setActionFeedback(tt("tools.cannotOpenEdit", { message }), "error");
+      draftError.value = tt("tools.cannotOpenEdit", { message });
       toolEditorVisible.value = false;
     }
   }
 
   function closeToolEditor() {
-    if (hasUnsavedToolChanges.value && !window.confirm("当前 Tool 有未保存修改，确认离开？")) {
+    if (hasUnsavedToolChanges.value && !window.confirm(tt("tools.unsavedLeaveConfirm"))) {
       return;
     }
     toolEditorVisible.value = false;
@@ -1555,9 +1589,9 @@ export function createToolsPageModel() {
   }
 
   function goToDraftStep(step: number) {
-    const nextStep = Math.min(Math.max(step, 1), toolEditorSteps.length);
+    const nextStep = Math.min(Math.max(step, 1), toolEditorSteps.value.length);
     if (nextStep > draftStep.value && !isDraftStepComplete(draftStep.value)) {
-      draftError.value = "请先补齐当前步骤的必填项。";
+      draftError.value = tt("tools.completeRequiredStep");
       return;
     }
     draftError.value = "";
@@ -1626,9 +1660,12 @@ export function createToolsPageModel() {
 
   function contractSummary(nodes: ToolSchemaNode[]) {
     if (!nodes.length) {
-      return "尚未定义";
+      return tt("tools.contractUndefined");
     }
-    return `${countSchemaNodes(nodes)} 个节点 · ${maxSchemaDepth(nodes)} 层嵌套`;
+    return tt("tools.contractSummary", {
+      nodes: countSchemaNodes(nodes),
+      depth: maxSchemaDepth(nodes),
+    });
   }
 
   function requestLocationCount(location: "Path" | "Query" | "Header" | "Body") {
@@ -1644,9 +1681,9 @@ export function createToolsPageModel() {
   }
 
   function contractEditorHint(tab: ContractEditorTab) {
-    if (tab === "Body" || tab === "Response") return `${tab} 结构常含嵌套对象，使用字段树展开配置，右侧编辑详细属性。`;
-    if (tab === "Errors") return "将协议状态与错误码转换为 Agent 可以理解和执行的处理建议。";
-    return "Path / Query / Header 通常是扁平键值对，用表格快速填写更高效。";
+    if (tab === "Body" || tab === "Response") return tt("tools.hintNestedContract", { tab });
+    if (tab === "Errors") return tt("tools.hintErrorMapping");
+    return tt("tools.hintFlatContract");
   }
 
   function addErrorMapping() {
@@ -1662,7 +1699,7 @@ export function createToolsPageModel() {
       ? toolsStore.tools.find((tool) => tool.id === editingToolId.value) ||
         toolsStore.toolPageItems.find((tool) => tool.id === editingToolId.value)
       : undefined;
-    const toolName = draftTool.value.name.trim() || "未命名 Tool";
+    const toolName = draftTool.value.name.trim() || tt("tools.unnamedTool");
     const providerId =
       existing?.providerId || draftConnection.value?.providerId || providersStore.providers[0]?.id || "";
     return {
@@ -1743,21 +1780,21 @@ export function createToolsPageModel() {
   function toolSaveErrorMessage(error: unknown) {
     const responseError = (error as { response?: { data?: { error?: string } } }).response?.data?.error || "";
     if (responseError.includes("already exists")) {
-      return "Tool 已存在，请检查名称或编辑已有 Tool。";
+      return tt("tools.saveExists");
     }
     if (responseError.includes("service connection not found")) {
-      return "服务连接不存在，请先选择可用的服务连接。";
+      return tt("tools.saveConnectionMissing");
     }
     if (responseError.includes("workspace not found")) {
-      return "业务空间不存在，请从下拉列表中重新选择。";
+      return tt("tools.saveWorkspaceMissing");
     }
-    return responseError || "保存 Tool 失败，请检查字段后重试。";
+    return responseError || tt("tools.saveFailedRetry");
   }
 
   function toolActionErrorMessage(error: unknown, fallback: string) {
     const responseError = (error as { response?: { data?: { error?: string } } }).response?.data?.error || "";
     if (responseError.includes("tool must pass test before publish")) {
-      return "发布前需要先执行通过测试。";
+      return tt("tools.publishNeedTestFeedback");
     }
     return responseError || fallback;
   }
@@ -1765,16 +1802,18 @@ export function createToolsPageModel() {
   async function publishTool(tool: Tool) {
     const current = latestTool(tool);
     if (!canPublishTool(current)) {
-      setActionFeedback("发布前需要先执行通过测试。", "error");
+      setActionFeedback(tt("tools.publishNeedTestFeedback"), "error");
       return;
     }
     try {
       const published = await toolsStore.publishTool(current.id);
       setActionFeedback(
-        current.status === "Disabled" ? `${published.name} 已重新发布。` : `${published.name} 已发布。`,
+        current.status === "Disabled"
+          ? tt("tools.republishedFeedback", { name: published.name })
+          : tt("tools.publishedFeedback", { name: published.name }),
       );
     } catch (error) {
-      setActionFeedback(toolActionErrorMessage(error, "发布失败，请稍后重试。"), "error");
+      setActionFeedback(toolActionErrorMessage(error, tt("tools.publishFailed")), "error");
     }
   }
 
@@ -1784,11 +1823,11 @@ export function createToolsPageModel() {
       const enabled = await toolsStore.updateTool(current.id, { ...current, status: "Review" });
       setActionFeedback(
         hasPassingTest(enabled)
-          ? `${enabled.name} 已启用，保留通过测试结果；需要对 Agent 开放时请重新发布。`
-          : `${enabled.name} 已启用，当前恢复为待评审。`,
+          ? tt("tools.enabledKeepTest", { name: enabled.name })
+          : tt("tools.enabledToReview", { name: enabled.name }),
       );
     } catch (error) {
-      setActionFeedback(toolActionErrorMessage(error, "启用失败，请稍后重试。"), "error");
+      setActionFeedback(toolActionErrorMessage(error, tt("tools.enableFailed")), "error");
     }
   }
 
@@ -1796,9 +1835,9 @@ export function createToolsPageModel() {
     const current = latestTool(tool);
     try {
       const disabled = await toolsStore.updateTool(current.id, { ...current, status: "Disabled" });
-      setActionFeedback(`${disabled.name} 已停用。`);
+      setActionFeedback(tt("tools.disabledFeedback", { name: disabled.name }));
     } catch (error) {
-      setActionFeedback(toolActionErrorMessage(error, "停用失败，请稍后重试。"), "error");
+      setActionFeedback(toolActionErrorMessage(error, tt("tools.disableFailed")), "error");
     }
   }
 
@@ -1813,7 +1852,7 @@ export function createToolsPageModel() {
   async function persistDraftTool(closeAfterSave = false) {
     draftError.value = "";
     if (!draftTool.value.connectionId) {
-      draftError.value = "请先选择服务连接。";
+      draftError.value = tt("tools.selectConnectionFirst");
       draftStep.value = 1;
       return;
     }
@@ -1832,7 +1871,11 @@ export function createToolsPageModel() {
       draftSnapshot.value = JSON.stringify(draftTool.value);
       saveState.value = "saved";
       await loadToolRegistry({ page: 1 });
-      setActionFeedback(wasEdit ? `${saved.name} 已更新。` : `${saved.name} 已保存为 Tool Draft，等待测试后发布。`);
+      setActionFeedback(
+        wasEdit
+          ? tt("tools.updatedFeedback", { name: saved.name })
+          : tt("tools.savedAsDraftFeedback", { name: saved.name }),
+      );
       if (closeAfterSave) {
         closeToolEditor();
       }
@@ -1852,7 +1895,7 @@ export function createToolsPageModel() {
 
   function goNextStep() {
     if (!draftStepCanProceed()) {
-      draftError.value = "请先补齐当前步骤的必填项。";
+      draftError.value = tt("tools.completeRequiredStep");
       return;
     }
     draftError.value = "";
@@ -1863,14 +1906,14 @@ export function createToolsPageModel() {
     await persistDraftTool(false);
     const tool = toolsStore.tools.find((item) => item.id === editingToolId.value);
     if (!tool) {
-      draftError.value = "请先保存草稿后再发布。";
+      draftError.value = tt("tools.saveDraftBeforePublish");
       return;
     }
     if (draftChecklistHasBlockingErrors.value) {
-      draftError.value = "发布前检查存在阻断项，请修复后再发布。";
+      draftError.value = tt("tools.publishBlocked");
       return;
     }
-    if (draftChecklistHasWarnings.value && !window.confirm("发布前检查仍有警告项，确认继续发布？")) {
+    if (draftChecklistHasWarnings.value && !window.confirm(tt("tools.publishWarningsConfirm"))) {
       return;
     }
     await publishTool(tool);

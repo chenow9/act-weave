@@ -1,3 +1,4 @@
+import { tt } from "../i18n/tt";
 import type {
   CapabilityProvider,
   ProviderAuthContract,
@@ -8,6 +9,7 @@ import type {
 
 export const PROVIDER_AUTH_VERSION = "service-auth.v1" as const;
 
+/** Stable English defaults for contracts persisted to the backend (become UGC once saved). */
 export function defaultOAuthContract(tokenUrlTemplate = ""): ProviderAuthContract {
   return {
     version: PROVIDER_AUTH_VERSION,
@@ -17,17 +19,17 @@ export function defaultOAuthContract(tokenUrlTemplate = ""): ProviderAuthContrac
         key: "oauth2-client",
         type: "OAUTH2_CLIENT",
         displayName: "OAuth2 Client Credentials",
-        description: "Provider 负责 Token 协议，Connection 只填写当前环境的账号和 Secret。",
+        description: "Provider owns the token protocol; Connection only supplies environment account and Secret.",
         fields: [
-          { key: "clientId", label: "Client ID", kind: "TEXT", required: true, placeholder: "客户端标识" },
+          { key: "clientId", label: "Client ID", kind: "TEXT", required: true, placeholder: "Client identifier" },
           {
             key: "clientSecret",
             label: "Client Secret",
             kind: "SECRET",
             required: true,
-            help: "明文只用于创建或替换 Secret。",
+            help: "Plaintext is only used when creating or replacing a Secret.",
           },
-          { key: "scope", label: "Scope", kind: "TEXT", placeholder: "例如：read write" },
+          { key: "scope", label: "Scope", kind: "TEXT", placeholder: "e.g. read write" },
         ],
         oauth2: {
           tokenUrlTemplate,
@@ -48,11 +50,12 @@ export function defaultOAuthContract(tokenUrlTemplate = ""): ProviderAuthContrac
   };
 }
 
+/** Stable English default for no-auth contracts persisted to the backend. */
 export function noAuthenticationContract(): ProviderAuthContract {
   return {
     version: PROVIDER_AUTH_VERSION,
     defaultSchemeKey: "none",
-    schemes: [{ key: "none", type: "NONE", displayName: "无需认证", fields: [] }],
+    schemes: [{ key: "none", type: "NONE", displayName: "No authentication", fields: [] }],
   };
 }
 
@@ -96,6 +99,7 @@ export function connectionProviderAuthScheme(
 }
 
 export function authSchemeSummary(provider: CapabilityProvider) {
+  const join = tt("providers.authSummaryJoin");
   const identity = (provider.driverConfig as Record<string, unknown> | undefined)?.outboundIdentity;
   if (identity && typeof identity === "object") {
     const modes = Array.isArray((identity as { supportedModes?: unknown }).supportedModes)
@@ -103,16 +107,17 @@ export function authSchemeSummary(provider: CapabilityProvider) {
       : [];
     const labels = modes
       .map((mode) => {
-        if (mode === "BROKER_OBO") return "Broker / OBO";
-        if (mode === "REQUEST_PASSTHROUGH") return "请求透传";
+        if (mode === "BROKER_OBO") return tt("providers.modeBrokerTitle");
+        if (mode === "REQUEST_PASSTHROUGH") return tt("providers.authModeRequestPassthrough");
         return "";
       })
       .filter(Boolean);
-    if (labels.length) return labels.join("、");
+    if (labels.length) return labels.join(join);
   }
   const contract = providerAuthContract(provider);
-  if (!contract) return "未配置认证契约";
-  return contract.schemes.map((scheme) => scheme.displayName).join("、");
+  if (!contract) return tt("providers.authContractNotConfigured");
+  // scheme.displayName is UGC once saved — do not translate.
+  return contract.schemes.map((scheme) => scheme.displayName).join(join);
 }
 
 export function connectionAuthValues(authConfig: ServiceConnection["authConfig"]): Record<string, string> {

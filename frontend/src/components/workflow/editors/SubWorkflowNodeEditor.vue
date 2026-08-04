@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 
 import AppSelect from "../../AppSelect.vue";
 import type { WorkflowGraphNode } from "../../../types/domain";
@@ -13,10 +14,8 @@ const emit = defineEmits<{
   (event: "update-node-data", payload: { key: string; value: unknown }): void;
 }>();
 
-const _inputModeOptions = [
-  { label: "变量映射", value: "mapping" },
-  { label: "JSON 输入", value: "json" },
-];
+const { t } = useI18n();
+
 const variableOptions = props.variableRefs
   .map((value) => value.replace(/^\{\{/, "").replace(/\}\}$/, ""))
   .filter(Boolean)
@@ -159,26 +158,26 @@ function normalizeMappingDraft(rawMapping: unknown) {
 <template>
   <section class="workflow-subworkflow-node-editor">
     <label class="drawer-field">
-      <span>目标 Workflow ID</span>
+      <span>{{ t("workflow.targetWorkflowId") }}</span>
       <input
         name="node-subworkflow-id"
         :value="workflowId()"
-        placeholder="输入已发布 Workflow ID"
+        :placeholder="t('workflow.enterPublishedWorkflowId')"
         @input="emit('update-node-data', { key: 'workflowId', value: ($event.target as HTMLInputElement).value })"
       />
     </label>
 
     <section class="workflow-inspector-vars">
       <div class="workflow-section-caption">
-        <strong>输入绑定</strong>
-        <small>支持 `input` 或 `inputMapping`</small>
+        <strong>{{ t("workflow.inputBinding") }}</strong>
+        <small>{{ t("workflow.inputBindingHint") }}</small>
       </div>
-      <div class="workflow-tool-mapping-mode" role="group" aria-label="SubWorkflow 输入模式">
+      <div class="workflow-tool-mapping-mode" role="group" :aria-label="t('workflow.subWorkflowInputModeAria')">
         <button type="button" :class="{ active: inputMode === 'mapping' }" @click="updateInputMode('mapping')">
-          变量映射
+          {{ t("workflow.variableMapping") }}
         </button>
         <button type="button" :class="{ active: inputMode === 'json' }" @click="updateInputMode('json')">
-          JSON 输入
+          {{ t("workflow.jsonInput") }}
         </button>
       </div>
 
@@ -190,11 +189,11 @@ function normalizeMappingDraft(rawMapping: unknown) {
           :data-entry-key="entry.key"
         >
           <label class="drawer-field">
-            <span>输入字段</span>
+            <span>{{ t("workflow.inputField") }}</span>
             <input
               :name="`subworkflow-input-key-${index}`"
               :value="entry.key"
-              placeholder="例如 orderId"
+              :placeholder="t('workflow.fieldKeyPh')"
               @input="renameMappingKey(index, ($event.target as HTMLInputElement).value)"
             />
           </label>
@@ -202,16 +201,18 @@ function normalizeMappingDraft(rawMapping: unknown) {
             class="workflow-advanced-input-select"
             :model-value="mappingRefValue(entry.key)"
             :options="variableOptions"
-            placeholder="选择变量"
+            :placeholder="t('workflow.selectVariable')"
             @update:model-value="setRefMapping(entry.key, String($event))"
           />
-          <button type="button" class="ghost-button" @click="removeMappingRow(entry.key)">删除字段</button>
+          <button type="button" class="ghost-button" @click="removeMappingRow(entry.key)">
+            {{ t("workflow.deleteFieldSimple") }}
+          </button>
         </article>
-        <button type="button" class="ghost-button" @click="addMappingRow">添加字段</button>
+        <button type="button" class="ghost-button" @click="addMappingRow">{{ t("workflow.addFieldSimple") }}</button>
       </div>
 
       <label v-else class="drawer-field">
-        <span>JSON 输入</span>
+        <span>{{ t("workflow.jsonInput") }}</span>
         <textarea
           name="node-subworkflow-input-json"
           rows="6"
@@ -224,10 +225,10 @@ function normalizeMappingDraft(rawMapping: unknown) {
 
     <section class="workflow-inspector-vars workflow-schema-preview">
       <div class="workflow-section-caption">
-        <strong>运行语义</strong>
+        <strong>{{ t("workflow.runtimeSemantics") }}</strong>
         <small>published workflow</small>
       </div>
-      <p>当前运行时会执行已发布 workflow revision，记录 workflowId、解析后的输入和 completed 状态摘要。</p>
+      <p>{{ t("workflow.subWorkflowRuntimeHint") }}</p>
     </section>
   </section>
 </template>

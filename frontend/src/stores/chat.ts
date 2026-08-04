@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 
+import { tt } from "../i18n/tt";
 import { apiClient, authRefreshClient, getAuthToken, setAuthToken } from "../services/api";
 import {
   applyStreamFrame as projectStreamFrame,
@@ -112,7 +113,7 @@ export const useChatStore = defineStore("chat", {
       }
       return this.sessions;
     },
-    async createSession(workspaceId: string, agentId: string, title = "新对话") {
+    async createSession(workspaceId: string, agentId: string, title = tt("chat.defaultSessionTitle")) {
       const response = await apiClient.post<ChatSession>(`/workspaces/${workspaceId}/chat/sessions`, {
         agentId,
         title,
@@ -127,7 +128,7 @@ export const useChatStore = defineStore("chat", {
     },
     async loadSession(sessionId: string, workspaceId?: string) {
       const scope = workspaceId || this.sessions.find((session) => session.id === sessionId)?.workspaceId;
-      if (!scope) throw new Error("无法确定会话所属业务空间。");
+      if (!scope) throw new Error(tt("chat.errSessionWorkspaceUnknown"));
       const response = await apiClient.get<{ session: ChatSession; messages: ChatMessage[] }>(
         `/workspaces/${scope}/chat/sessions/${sessionId}`,
       );
@@ -154,7 +155,7 @@ export const useChatStore = defineStore("chat", {
     async archiveSession(sessionId?: string) {
       const targetSessionId = sessionId || this.activeSessionId;
       const session = this.sessions.find((item) => item.id === targetSessionId);
-      if (!session) throw new Error("找不到要归档的会话。");
+      if (!session) throw new Error(tt("chat.errSessionNotFoundForArchive"));
       const response = await apiClient.post<ChatSession>(
         `/workspaces/${session.workspaceId}/chat/sessions/${session.id}:archive`,
         { lockVersion: session.lockVersion },
@@ -166,8 +167,8 @@ export const useChatStore = defineStore("chat", {
     },
     async sendMessage(content: string, options: { outboundCredentialAttachmentId?: string } = {}) {
       const session = this.activeSession;
-      if (!session) throw new Error("请先选择业务空间和 Agent");
-      if (session.status === "ARCHIVED") throw new Error("已归档会话不能继续发送消息。");
+      if (!session) throw new Error(tt("chat.errSelectWorkspaceAndAgent"));
+      if (session.status === "ARCHIVED") throw new Error(tt("chat.errArchivedCannotSend"));
       const localMessage = localUserMessage(content);
       this.messages = [...this.messages, localMessage];
       try {
@@ -200,7 +201,7 @@ export const useChatStore = defineStore("chat", {
     },
     async loadRun(runId: string, workspaceId?: string) {
       const scope = workspaceId || this.activeSession?.workspaceId;
-      if (!scope) throw new Error("无法确定 Run 所属业务空间。");
+      if (!scope) throw new Error(tt("chat.errRunWorkspaceUnknown"));
       const response = await apiClient.get<{ run: AgentRun; steps: AgentRunStep[] }>(
         `/workspaces/${scope}/agent-runs/${runId}`,
       );
@@ -250,9 +251,9 @@ export const useChatStore = defineStore("chat", {
     async confirmPending() {
       const session = this.activeSession;
       const confirmation = this.pendingConfirmation;
-      if (!session || !confirmation) throw new Error("没有待确认操作。");
+      if (!session || !confirmation) throw new Error(tt("chat.errNoPendingConfirmation"));
       if (!this.pendingResumeToken || confirmation.lockVersion < 1) {
-        throw new Error("确认凭据已失效，请刷新运行状态或重新发起操作。");
+        throw new Error(tt("chat.errConfirmationCredentialExpired"));
       }
       const response = await apiClient.post<ChatConfirmation>(
         `/workspaces/${session.workspaceId}/confirmations/${confirmation.id}:confirm`,
@@ -266,7 +267,8 @@ export const useChatStore = defineStore("chat", {
     async cancelPending() {
       const session = this.activeSession;
       const confirmation = this.pendingConfirmation;
-      if (!session || !confirmation || confirmation.lockVersion < 1) throw new Error("没有可取消的待确认操作。");
+      if (!session || !confirmation || confirmation.lockVersion < 1)
+        throw new Error(tt("chat.errNoCancellableConfirmation"));
       const response = await apiClient.post<ChatConfirmation>(
         `/workspaces/${session.workspaceId}/confirmations/${confirmation.id}:cancel`,
         { lockVersion: confirmation.lockVersion },
@@ -667,7 +669,7 @@ function pendingConfirmationProjection(session: WorkspaceChatSession): ChatConfi
     targetType: "WORKFLOW",
     targetReleaseId: "",
     riskLevel: "HIGH",
-    riskReasons: ["此运行正在等待原发起人完成二次确认。"],
+    riskReasons: [tt("chat.riskWaitingOriginalRequester")],
     inputSummary: {},
     status: "PENDING",
     requestedBy: "",

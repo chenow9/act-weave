@@ -5,6 +5,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRouter } from "vue-router";
 import type { ManagementListColumn } from "../components/ManagementList.vue";
 import type { ManagementRowAction } from "../components/ManagementRowActions.vue";
+import { getI18nLocale } from "../i18n";
+import { tt } from "../i18n/tt";
 import { useOpenAPIImportsStore } from "../stores/openapiImports";
 import { useProvidersStore } from "../stores/providers";
 import { useConnectionsStore } from "../stores/connections";
@@ -28,10 +30,10 @@ export function createOpenAPIImportsPageModel() {
   type OpenAPIImportMode = "FILE" | "ONLINE";
   type OpenAPIDropdownKey = "provider" | "connection";
 
-  const openAPIQuickFilterOptions = [
-    { label: "待确认", value: "Issues" },
-    { label: "全部", value: "ALL" },
-  ];
+  const openAPIQuickFilterOptions = computed(() => [
+    { label: tt("openapi.filterNeedsReview"), value: "Issues" },
+    { label: tt("openapi.filterAll"), value: "ALL" },
+  ]);
 
   const openapiImports = useOpenAPIImportsStore();
   const providersStore = useProvidersStore();
@@ -91,7 +93,7 @@ export function createOpenAPIImportsPageModel() {
   const openAPIImportColumns = computed<ManagementListColumn<OpenAPIImport>[]>(() => [
     {
       key: "file",
-      label: "导入文件",
+      label: tt("openapi.colFile"),
       width: 310,
       sortable: true,
       sortKey: "fileName",
@@ -99,17 +101,19 @@ export function createOpenAPIImportsPageModel() {
     },
     {
       key: "connection",
-      label: "服务连接",
+      label: tt("openapi.colConnection"),
       width: 180,
       hidable: true,
       sortable: true,
       sortKey: "connection",
       getValue: (record) =>
-        connectionById(record.connectionId || "")?.name || record.connectionId || "Provider 默认连接",
+        connectionById(record.connectionId || "")?.name ||
+        record.connectionId ||
+        tt("openapi.defaultConnection"),
     },
     {
       key: "totalEndpoints",
-      label: "接口数",
+      label: tt("openapi.colEndpoints"),
       width: 96,
       align: "center",
       headerAlign: "center",
@@ -120,7 +124,7 @@ export function createOpenAPIImportsPageModel() {
     },
     {
       key: "readyEndpoints",
-      label: "可生成",
+      label: tt("openapi.colReady"),
       width: 96,
       align: "center",
       headerAlign: "center",
@@ -131,7 +135,7 @@ export function createOpenAPIImportsPageModel() {
     },
     {
       key: "issues",
-      label: "待处理",
+      label: tt("openapi.colIssues"),
       width: 140,
       hidable: true,
       sortable: true,
@@ -140,7 +144,7 @@ export function createOpenAPIImportsPageModel() {
     },
     {
       key: "importTime",
-      label: "导入时间",
+      label: tt("openapi.colImportTime"),
       width: 132,
       hidable: true,
       sortable: true,
@@ -149,7 +153,7 @@ export function createOpenAPIImportsPageModel() {
     },
     {
       key: "status",
-      label: "状态",
+      label: tt("openapi.colStatus"),
       width: 112,
       align: "center",
       headerAlign: "center",
@@ -158,7 +162,7 @@ export function createOpenAPIImportsPageModel() {
       sortKey: "status",
       getValue: (record) => record.status,
     },
-    { key: "actions", label: "操作", width: 68, align: "right", headerAlign: "center" },
+    { key: "actions", label: tt("openapi.colActions"), width: 68, align: "right", headerAlign: "center" },
   ]);
   const hasImportRecords = computed(() => openapiImports.openAPIImportRegistryTotal > 0);
   const importProviders = computed(() => providersStore.providers || []);
@@ -372,16 +376,21 @@ export function createOpenAPIImportsPageModel() {
   }
 
   function issueText(record: OpenAPIImport) {
-    if (!record.issues.length) return "无阻塞项";
-    return `${record.issues.length} 个阻塞项`;
+    if (!record.issues.length) return tt("openapi.noBlockingIssues");
+    return tt("openapi.blockingIssues", { n: record.issues.length });
   }
 
   function importTime(record: OpenAPIImport) {
     const timestamp = record.updatedAt || record.createdAt;
-    if (!timestamp) return "暂无数据";
+    if (!timestamp) return tt("openapi.noData");
     const date = new Date(timestamp);
-    if (Number.isNaN(date.getTime())) return "暂无数据";
-    return date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    if (Number.isNaN(date.getTime())) return tt("openapi.noData");
+    return date.toLocaleString(getI18nLocale(), {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   }
 
   function connectionAddress(connection?: ServiceConnection) {
@@ -396,7 +405,7 @@ export function createOpenAPIImportsPageModel() {
     if (normalized) return normalized;
     // Illegal / incomplete config — do not invent a second port.
     const domain = (connection.protocolConfig.domain || "").trim();
-    return domain || "未配置地址";
+    return domain || tt("openapi.addressNotConfigured");
   }
 
   function selectedOpenAPIStatus() {
@@ -603,7 +612,8 @@ export function createOpenAPIImportsPageModel() {
       if (requestId !== detailRequestSeq || selectedImportId.value !== targetId) return;
     } catch (error) {
       if (requestId !== detailRequestSeq || selectedImportId.value !== targetId) return;
-      detailError.value = error instanceof Error ? error.message : String(error) || "加载导入详情失败，请重试。";
+      detailError.value =
+        error instanceof Error ? error.message : String(error) || tt("openapi.detailLoadFailed");
     } finally {
       if (requestId === detailRequestSeq) detailLoading.value = false;
     }
@@ -619,16 +629,16 @@ export function createOpenAPIImportsPageModel() {
   function openAPIImportMenuActions(record: OpenAPIImport): ManagementRowAction[] {
     const generating = Boolean(generatingDraftsByImportId.value[record.id]);
     return [
-      { key: "detail", label: "查看详情", icon: "fa-solid fa-eye", tone: "primary" },
+      { key: "detail", label: tt("openapi.viewDetail"), icon: "fa-solid fa-eye", tone: "primary" },
       {
         key: "generate",
-        label: "生成 Tool 草稿",
+        label: tt("openapi.generateToolDrafts"),
         icon: "fa-solid fa-wand-magic-sparkles",
         loading: generating,
         disabled: generating,
-        disabledReason: generating ? "生成中" : undefined,
+        disabledReason: generating ? tt("openapi.generating") : undefined,
       },
-      { key: "delete", label: "删除记录", icon: "fa-solid fa-trash", tone: "danger" },
+      { key: "delete", label: tt("openapi.deleteRecord"), icon: "fa-solid fa-trash", tone: "danger" },
     ];
   }
 
@@ -749,7 +759,9 @@ export function createOpenAPIImportsPageModel() {
       }
       await loadOpenAPIPage({ page: 1 });
       showActionNote(
-        `${selectedOpenAPIFile.value?.name || selectedProviderOption.value?.name || "Provider"} 已完成解析，可继续生成 Tool Draft。`,
+        tt("openapi.importParsed", {
+          name: selectedOpenAPIFile.value?.name || selectedProviderOption.value?.name || "Provider",
+        }),
       );
       finishImportModal();
     } finally {
@@ -765,8 +777,8 @@ export function createOpenAPIImportsPageModel() {
       await loadOpenAPIPage();
       showActionNote(
         drafts.length
-          ? `${record.source} 已生成 ${drafts.length} 个 Tool Draft，可到工具管理中补齐参数契约并发布。`
-          : `${record.source} 没有生成新 Tool Draft，可能是 Tool ID 已存在。`,
+          ? tt("openapi.draftsGenerated", { source: record.source, n: drafts.length })
+          : tt("openapi.draftsNone", { source: record.source }),
       );
     } finally {
       const { [record.id]: _removed, ...rest } = generatingDraftsByImportId.value;
@@ -787,7 +799,7 @@ export function createOpenAPIImportsPageModel() {
       if (selectedImportId.value === record.id) {
         selectedImportId.value = "";
       }
-      showActionNote(`${record.fileName} 已从导入记录中删除。`);
+      showActionNote(tt("openapi.recordDeleted", { fileName: record.fileName }));
     } finally {
       deletingImportId.value = "";
     }

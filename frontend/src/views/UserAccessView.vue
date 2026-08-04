@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import "./user-access-page.css";
 import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 
 import AppSelect, { type AppSelectOption } from "../components/AppSelect.vue";
@@ -8,22 +9,24 @@ import ManagementList, { type ManagementListColumn } from "../components/Managem
 import ManagementPageHeader from "../components/ManagementPageHeader.vue";
 import ManagementRowActions, { type ManagementRowAction } from "../components/ManagementRowActions.vue";
 import ManagementSummaryStrip, { type ManagementSummaryItem } from "../components/ManagementSummaryStrip.vue";
+import { getI18nLocale } from "../i18n";
 import { useUserStore, type CreateUserInput, type UpdateUserProfileInput } from "../stores/users";
 import type { PlatformRole, User, UserStatus } from "../types/domain";
 
+const { t } = useI18n();
 const users = useUserStore();
 const route = useRoute();
 const filters = reactive({ query: "", status: "" as UserStatus | "", platformRole: "" as PlatformRole | "" });
 const userSummaryItems = computed<ManagementSummaryItem[]>(() => [
-  { label: "用户总数", value: users.pagination.total, icon: "fa-solid fa-users" },
-  { label: "当前页有效用户", value: users.activeUsers.length, icon: "fa-solid fa-user-check" },
+  { label: t("users.summaryTotal"), value: users.pagination.total, icon: "fa-solid fa-users" },
+  { label: t("users.summaryActivePage"), value: users.activeUsers.length, icon: "fa-solid fa-user-check" },
   {
-    label: "当前页平台管理员",
+    label: t("users.summaryAdminsPage"),
     value: users.items.filter((user) => user.platformRole === "PLATFORM_ADMIN").length,
     icon: "fa-solid fa-user-shield",
     tone: "info",
   },
-  { label: "当前页用户", value: users.items.length, icon: "fa-solid fa-list" },
+  { label: t("users.summaryPageUsers"), value: users.items.length, icon: "fa-solid fa-list" },
 ]);
 const createVisible = ref(false);
 const profileUser = ref<User | null>(null);
@@ -49,66 +52,71 @@ const profileDraft = reactive<UpdateUserProfileInput>({
   timezone: "Asia/Singapore",
 });
 
-const userColumns: ManagementListColumn<User>[] = [
+const userColumns = computed<ManagementListColumn<User>[]>(() => [
   {
     key: "identity",
-    label: "用户",
+    label: t("users.colUser"),
     width: 250,
     getValue: (user) => `${user.displayName} ${user.username} ${user.email || ""}`,
   },
-  { key: "status", label: "状态", width: 116, getValue: (user) => user.status },
-  { key: "platformRole", label: "平台角色", width: 150, getValue: (user) => user.platformRole },
-  { key: "locale", label: "语言 / 时区", width: 170, getValue: (user) => `${user.locale} ${user.timezone}` },
-  { key: "lastLoginAt", label: "最近登录", width: 190, getValue: (user) => user.lastLoginAt || "" },
-  { key: "actions", label: "操作", width: 68, align: "right", headerAlign: "center" },
-];
-const statusFilterOptions: AppSelectOption[] = [
-  { label: "全部状态", value: "" },
-  { label: "正常", value: "ACTIVE" },
-  { label: "已锁定", value: "LOCKED" },
-  { label: "已停用", value: "DISABLED" },
-];
-const platformRoleFilterOptions: AppSelectOption[] = [
-  { label: "全部角色", value: "" },
-  { label: "平台管理员", value: "PLATFORM_ADMIN" },
-  { label: "普通用户", value: "USER" },
-];
-const platformRoleOptions: AppSelectOption[] = platformRoleFilterOptions.slice(1);
-const localeOptions: AppSelectOption[] = [
-  { label: "简体中文（zh-CN）", value: "zh-CN" },
-  { label: "繁體中文（zh-TW）", value: "zh-TW" },
-  { label: "English (Singapore)（en-SG）", value: "en-SG" },
-  { label: "English (US)（en-US）", value: "en-US" },
-  { label: "English (UK)（en-GB）", value: "en-GB" },
-  { label: "日本語（ja-JP）", value: "ja-JP" },
-  { label: "한국어（ko-KR）", value: "ko-KR" },
-];
+  { key: "status", label: t("users.colStatus"), width: 116, getValue: (user) => user.status },
+  { key: "platformRole", label: t("users.colPlatformRole"), width: 150, getValue: (user) => user.platformRole },
+  {
+    key: "locale",
+    label: t("users.colLocaleTimezone"),
+    width: 170,
+    getValue: (user) => `${user.locale} ${user.timezone}`,
+  },
+  { key: "lastLoginAt", label: t("users.colLastLogin"), width: 190, getValue: (user) => user.lastLoginAt || "" },
+  { key: "actions", label: t("users.colActions"), width: 68, align: "right", headerAlign: "center" },
+]);
+const statusFilterOptions = computed<AppSelectOption[]>(() => [
+  { label: t("users.statusAll"), value: "" },
+  { label: t("users.statusActive"), value: "ACTIVE" },
+  { label: t("users.statusLocked"), value: "LOCKED" },
+  { label: t("users.statusDisabled"), value: "DISABLED" },
+]);
+const platformRoleFilterOptions = computed<AppSelectOption[]>(() => [
+  { label: t("users.roleAll"), value: "" },
+  { label: t("users.rolePlatformAdmin"), value: "PLATFORM_ADMIN" },
+  { label: t("users.roleUser"), value: "USER" },
+]);
+const platformRoleOptions = computed(() => platformRoleFilterOptions.value.slice(1));
+const localeOptions = computed<AppSelectOption[]>(() => [
+  { label: t("users.localeZhCN"), value: "zh-CN" },
+  { label: t("users.localeZhTW"), value: "zh-TW" },
+  { label: t("users.localeEnSG"), value: "en-SG" },
+  { label: t("users.localeEnUS"), value: "en-US" },
+  { label: t("users.localeEnGB"), value: "en-GB" },
+  { label: t("users.localeJaJP"), value: "ja-JP" },
+  { label: t("users.localeKoKR"), value: "ko-KR" },
+]);
 const timezoneOptions: AppSelectOption[] = supportedTimezoneValues().map((timezone) => ({
   label: timezone,
   value: timezone,
 }));
-const createLocaleOptions = computed(() => optionsWithCurrent(localeOptions, createDraft.locale));
+const createLocaleOptions = computed(() => optionsWithCurrent(localeOptions.value, createDraft.locale));
 const createTimezoneOptions = computed(() => optionsWithCurrent(timezoneOptions, createDraft.timezone));
-const profileLocaleOptions = computed(() => optionsWithCurrent(localeOptions, profileDraft.locale));
+const profileLocaleOptions = computed(() => optionsWithCurrent(localeOptions.value, profileDraft.locale));
 const profileTimezoneOptions = computed(() => optionsWithCurrent(timezoneOptions, profileDraft.timezone));
 const createValidationIssues = computed(() => {
   const missingFields: string[] = [];
-  if (!createDraft.username.trim()) missingFields.push("用户名");
-  if (!createDraft.displayName.trim()) missingFields.push("显示名称");
-  if (!createDraft.password) missingFields.push("临时密码");
-  if (!createDraft.platformRole) missingFields.push("平台角色");
-  if (!createDraft.locale.trim()) missingFields.push("语言");
-  if (!createDraft.timezone.trim()) missingFields.push("时区");
+  if (!createDraft.username.trim()) missingFields.push(t("users.fieldUsername"));
+  if (!createDraft.displayName.trim()) missingFields.push(t("users.fieldDisplayName"));
+  if (!createDraft.password) missingFields.push(t("users.fieldTempPassword"));
+  if (!createDraft.platformRole) missingFields.push(t("users.fieldPlatformRole"));
+  if (!createDraft.locale.trim()) missingFields.push(t("users.fieldLocale"));
+  if (!createDraft.timezone.trim()) missingFields.push(t("users.fieldTimezone"));
 
-  if (missingFields.length) return [`请填写必填项：${formatChineseList(missingFields)}。`];
+  if (missingFields.length) return [t("users.fillRequired", { fields: formatFieldList(missingFields) })];
   if (createDraft.password.length < 12) {
-    return [`临时密码至少需要 12 位（当前 ${createDraft.password.length} 位）。`];
+    return [t("users.passwordMinLength", { n: createDraft.password.length })];
   }
   return [];
 });
 const canCreate = computed(() => createValidationIssues.value.length === 0);
 const createDisabledReason = computed(() => {
-  if (users.actionLoading) return "正在创建用户，请稍候。";
+  if (users.actionLoading) return t("users.creatingWait");
   return createValidationIssues.value[0] || "";
 });
 const canSaveProfile = computed(() =>
@@ -147,29 +155,38 @@ function optionsWithCurrent(options: AppSelectOption[], current: string | undefi
   return [{ label: value, value }, ...options];
 }
 
-function formatChineseList(items: string[]) {
+function formatFieldList(items: string[]) {
   if (items.length <= 1) return items[0] || "";
-  return `${items.slice(0, -1).join("、")}和${items.at(-1)}`;
+  try {
+    return new Intl.ListFormat(getI18nLocale() === "zh-CN" ? "zh-CN" : "en", {
+      style: "long",
+      type: "conjunction",
+    }).format(items);
+  } catch {
+    return items.join(", ");
+  }
 }
 const pendingActionTitle = computed(() => {
   const action = pendingAction.value;
-  if (!action) return "确认用户操作";
-  if (action.kind === "role") return action.value === "PLATFORM_ADMIN" ? "授予平台管理员" : "移除平台管理员";
-  if (action.kind === "unlock") return "解锁用户";
-  return action.value === "ACTIVE" ? "启用用户" : "停用用户";
+  if (!action) return t("users.confirmAction");
+  if (action.kind === "role")
+    return action.value === "PLATFORM_ADMIN" ? t("users.grantAdmin") : t("users.removeAdmin");
+  if (action.kind === "unlock") return t("users.unlockUser");
+  return action.value === "ACTIVE" ? t("users.enableUser") : t("users.disableUser");
 });
 const pendingActionDescription = computed(() => {
   const action = pendingAction.value;
   if (!action) return "";
+  const username = action.user.username;
   if (action.kind === "role") {
     return action.value === "PLATFORM_ADMIN"
-      ? `将 ${action.user.username} 提升为平台管理员，并撤销其现有登录会话。`
-      : `将 ${action.user.username} 降为普通用户。最后一个有效平台管理员不能被降级。`;
+      ? t("users.promoteAdminDesc", { username })
+      : t("users.demoteUserDesc", { username });
   }
-  if (action.kind === "unlock") return `清除 ${action.user.username} 的账号锁定和登录失败计数。`;
+  if (action.kind === "unlock") return t("users.unlockDesc", { username });
   return action.value === "ACTIVE"
-    ? `重新允许 ${action.user.username} 登录平台。`
-    : `禁止 ${action.user.username} 登录并撤销其现有登录会话。`;
+    ? t("users.enableDesc", { username })
+    : t("users.disableDesc", { username });
 });
 
 function applyRouteSearch() {
@@ -203,7 +220,7 @@ async function loadUsers(page = users.pagination.page, pageSize = users.paginati
       pageSize,
     });
   } catch {
-    showStoreError("加载用户失败");
+    showStoreError(t("users.loadFailed"));
   }
 }
 
@@ -252,10 +269,10 @@ async function submitCreate() {
   try {
     const created = await users.createUser({ ...createDraft, email: createDraft.email?.trim() || undefined });
     createVisible.value = false;
-    showFeedback(`${created.username} 已创建，首次登录必须修改密码。`);
+    showFeedback(t("users.created", { username: created.username }));
     await loadUsers(1);
   } catch {
-    showStoreError("创建用户失败");
+    showStoreError(t("users.createFailed"));
   }
 }
 
@@ -278,9 +295,9 @@ async function saveProfile() {
       email: profileDraft.email?.trim() || undefined,
     });
     profileUser.value = null;
-    showFeedback(`${updated.username} 的资料已更新。`);
+    showFeedback(t("users.profileUpdated", { username: updated.username }));
   } catch {
-    showStoreError("更新用户资料失败");
+    showStoreError(t("users.profileUpdateFailed"));
   }
 }
 
@@ -314,9 +331,9 @@ async function confirmSecurityAction() {
       updated = await users.setStatus(action.user, action.value as UserStatus);
     }
     pendingAction.value = null;
-    showFeedback(`${updated.username} 的权限状态已更新。`);
+    showFeedback(t("users.permissionUpdated", { username: updated.username }));
   } catch {
-    showStoreError("权限操作失败");
+    showStoreError(t("users.permissionFailed"));
   }
 }
 
@@ -333,9 +350,9 @@ async function submitResetPassword() {
     await users.resetPassword(resetUser.value.id, temporaryPassword.value);
     resetUser.value = null;
     temporaryPassword.value = "";
-    showFeedback(`${username} 的临时密码已重置，现有会话已撤销。`);
+    showFeedback(t("users.passwordReset", { username }));
   } catch {
-    showStoreError("重置密码失败");
+    showStoreError(t("users.passwordResetFailed"));
   }
 }
 
@@ -345,14 +362,14 @@ async function openWorkspaces(user: User) {
   try {
     await users.loadUserWorkspaces(user.id, true);
   } catch {
-    showStoreError("加载用户的业务空间失败");
+    showStoreError(t("users.workspacesLoadFailed"));
   }
 }
 
 function showStoreError(fallback: string) {
   const error = users.error;
   feedback.value = error
-    ? `${error.message || fallback}${error.requestId ? `（请求 ID：${error.requestId}）` : ""}`
+    ? `${error.message || fallback}${error.requestId ? t("users.requestIdSuffix", { id: error.requestId }) : ""}`
     : fallback;
   feedbackTone.value = "error";
 }
@@ -367,41 +384,64 @@ function clearFeedback() {
 }
 
 function statusLabel(status: UserStatus) {
-  return ({ ACTIVE: "正常", LOCKED: "已锁定", DISABLED: "已停用" } as const)[status];
+  return (
+    (
+      {
+        ACTIVE: t("users.statusActive"),
+        LOCKED: t("users.statusLocked"),
+        DISABLED: t("users.statusDisabled"),
+      } as const
+    )[status]
+  );
 }
 
 function roleLabel(role: PlatformRole) {
-  return role === "PLATFORM_ADMIN" ? "平台管理员" : "普通用户";
+  return role === "PLATFORM_ADMIN" ? t("users.rolePlatformAdmin") : t("users.roleUser");
 }
 
 function workspaceRoleLabel(role: string) {
-  return (
-    (
-      { OWNER: "所有者", ADMIN: "管理员", EDITOR: "编辑者", OPERATOR: "操作员", VIEWER: "查看者" } as Record<
-        string,
-        string
-      >
-    )[role] || role
-  );
+  const map: Record<string, string> = {
+    OWNER: t("users.roleOwner"),
+    ADMIN: t("users.roleAdmin"),
+    EDITOR: t("users.roleEditor"),
+    OPERATOR: t("users.roleOperator"),
+    VIEWER: t("users.roleViewer"),
+  };
+  return map[role] || role;
 }
 
 function userMenuActions(user: User): ManagementRowAction[] {
   return [
-    { key: "profile", label: "编辑用户资料", shortLabel: "编辑资料", icon: "fa-solid fa-user-pen" },
-    { key: "workspaces", label: "查看业务空间", shortLabel: "业务空间", icon: "fa-solid fa-layer-group" },
+    {
+      key: "profile",
+      label: t("users.editProfile"),
+      shortLabel: t("users.editProfileShort"),
+      icon: "fa-solid fa-user-pen",
+    },
+    {
+      key: "workspaces",
+      label: t("users.viewWorkspaces"),
+      shortLabel: t("users.viewWorkspacesShort"),
+      icon: "fa-solid fa-layer-group",
+    },
     {
       key: "role",
-      label: user.platformRole === "PLATFORM_ADMIN" ? "降为普通用户" : "设为平台管理员",
+      label: user.platformRole === "PLATFORM_ADMIN" ? t("users.demoteToUser") : t("users.promoteToAdmin"),
       icon: "fa-solid fa-user-shield",
       tone: user.platformRole === "PLATFORM_ADMIN" ? "danger" : "primary",
     },
     {
       key: "status",
-      label: user.status === "LOCKED" ? "解锁用户" : user.status === "ACTIVE" ? "停用用户" : "启用用户",
+      label:
+        user.status === "LOCKED"
+          ? t("users.unlockUser")
+          : user.status === "ACTIVE"
+            ? t("users.disableUser")
+            : t("users.enableUser"),
       icon: user.status === "LOCKED" ? "fa-solid fa-unlock-keyhole" : "fa-solid fa-power-off",
       tone: user.status === "ACTIVE" ? "danger" : "default",
     },
-    { key: "reset", label: "重置密码", icon: "fa-solid fa-key", tone: "danger" },
+    { key: "reset", label: t("users.resetPassword"), icon: "fa-solid fa-key", tone: "danger" },
   ];
 }
 
@@ -414,8 +454,8 @@ function handleUserRowAction(action: string, user: User) {
 }
 
 function formatDate(value?: string) {
-  if (!value) return "从未登录";
-  return new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+  if (!value) return t("users.neverLoggedIn");
+  return new Intl.DateTimeFormat(getI18nLocale(), { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 </script>
 
@@ -423,14 +463,14 @@ function formatDate(value?: string) {
   <div class="page-grid user-access-grid management-page-grid" v-loading="users.loading">
     <ManagementPageHeader
       class="span-12"
-      title="用户与权限"
-      description="管理平台用户、平台角色、账号状态与业务空间成员关系。"
+      :title="t('users.title')"
+      :description="t('users.description')"
       icon="fa-solid fa-users"
-      eyebrow="Identity & Access Management"
+      :eyebrow="t('users.eyebrow')"
     >
       <template #actions>
         <button class="primary-button" type="button" @click="openCreate">
-          <i class="fa-solid fa-user-plus" aria-hidden="true" />新建用户
+          <i class="fa-solid fa-user-plus" aria-hidden="true" />{{ t("users.newUser") }}
         </button>
       </template>
     </ManagementPageHeader>
@@ -459,10 +499,10 @@ function formatDate(value?: string) {
         :error="users.error?.message || null"
         :has-loaded="users.hasLoaded"
         :search="filters.query"
-        search-placeholder="搜索用户名、显示名或邮箱..."
-        search-aria-label="搜索用户"
-        reset-label="清除筛选"
-        reset-aria-label="清除用户筛选条件"
+        :search-placeholder="t('users.searchPlaceholder')"
+        :search-aria-label="t('users.searchAria')"
+        :reset-label="t('users.clearFilters')"
+        :reset-aria-label="t('users.clearFiltersAria')"
         :reset-disabled="!filters.query && !filters.status && !filters.platformRole"
         :pagination="users.pagination"
         @update:search="setUserSearch"
@@ -474,16 +514,16 @@ function formatDate(value?: string) {
             class="user-management-filter"
             :model-value="filters.status"
             :options="statusFilterOptions"
-            placeholder="全部状态"
-            aria-label="账号状态筛选"
+            :placeholder="t('users.statusAll')"
+            :aria-label="t('users.statusFilterAria')"
             @update:model-value="setStatusFilter"
           />
           <AppSelect
             class="user-management-filter"
             :model-value="filters.platformRole"
             :options="platformRoleFilterOptions"
-            placeholder="全部角色"
-            aria-label="平台角色筛选"
+            :placeholder="t('users.roleAll')"
+            :aria-label="t('users.roleFilterAria')"
             @update:model-value="setPlatformRoleFilter"
           />
         </template>
@@ -494,7 +534,9 @@ function formatDate(value?: string) {
             }}</span>
             <span>
               <strong class="aw-table-title">{{ user.displayName }}</strong>
-              <small class="aw-table-subtitle">@{{ user.username }} · {{ user.email || "未设置邮箱" }}</small>
+              <small class="aw-table-subtitle"
+                >@{{ user.username }} · {{ user.email || t("users.emailNotSet") }}</small
+              >
             </span>
           </div>
         </template>
@@ -521,19 +563,25 @@ function formatDate(value?: string) {
           <ManagementRowActions
             class="user-row-actions"
             :menu-actions="userMenuActions(user)"
-            menu-label="用户安全操作"
+            :menu-label="t('users.menuLabel')"
             @action="handleUserRowAction($event, user)"
           />
         </template>
         <template #empty>
           <div class="empty-state registry-empty-state management-registry-empty-state">
             <div class="management-empty-state-icon"><i class="fa-solid fa-users" aria-hidden="true" /></div>
-            <h2>{{ filters.query || filters.status || filters.platformRole ? "没有匹配的用户" : "暂无平台用户" }}</h2>
+            <h2>
+              {{
+                filters.query || filters.status || filters.platformRole
+                  ? t("users.noMatchTitle")
+                  : t("users.emptyTitle")
+              }}
+            </h2>
             <p>
               {{
                 filters.query || filters.status || filters.platformRole
-                  ? "调整搜索词、账号状态或平台角色后再试。"
-                  : "创建用户后可在此维护平台权限与业务空间关系。"
+                  ? t("users.noMatchBody")
+                  : t("users.emptyBody")
               }}
             </p>
             <button
@@ -542,68 +590,85 @@ function formatDate(value?: string) {
               type="button"
               @click="resetFilters"
             >
-              清除筛选
+              {{ t("users.clearFilters") }}
             </button>
-            <button v-else class="primary-button" type="button" @click="openCreate">新建用户</button>
+            <button v-else class="primary-button" type="button" @click="openCreate">{{ t("users.newUser") }}</button>
           </div>
         </template>
       </ManagementList>
     </section>
 
     <div v-if="createVisible" class="modal-backdrop" @click.self="createVisible = false">
-      <section class="modal-card user-access-modal" role="dialog" aria-modal="true" aria-label="新建平台用户">
+      <section
+        class="modal-card user-access-modal"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="t('users.createModalAria')"
+      >
         <header>
           <div>
             <span>CREATE USER</span>
-            <h3>新建平台用户</h3>
+            <h3>{{ t("users.createTitle") }}</h3>
           </div>
-          <button class="icon-action-button" type="button" aria-label="关闭" @click="createVisible = false">
+          <button
+            class="icon-action-button"
+            type="button"
+            :aria-label="t('users.close')"
+            @click="createVisible = false"
+          >
             <i class="fa-solid fa-xmark" aria-hidden="true" />
           </button>
         </header>
         <form class="user-access-form" @submit.prevent="submitCreate">
           <label
-            ><span>用户名 <span class="user-field-required" aria-hidden="true">*</span></span
+            ><span
+              >{{ t("users.fieldUsername") }} <span class="user-field-required" aria-hidden="true">*</span></span
             ><input v-model.trim="createDraft.username" required autocomplete="off"
           /></label>
           <label
-            ><span>显示名称 <span class="user-field-required" aria-hidden="true">*</span></span
+            ><span
+              >{{ t("users.fieldDisplayName") }} <span class="user-field-required" aria-hidden="true">*</span></span
             ><input v-model.trim="createDraft.displayName" required
           /></label>
-          <label><span>邮箱</span><input v-model.trim="createDraft.email" type="email" /></label>
           <label
-            ><span>临时密码 <span class="user-field-required" aria-hidden="true">*</span></span
+            ><span>{{ t("users.fieldEmail") }}</span
+            ><input v-model.trim="createDraft.email" type="email"
+          /></label>
+          <label
+            ><span
+              >{{ t("users.fieldTempPassword") }} <span class="user-field-required" aria-hidden="true">*</span></span
             ><input
               v-model="createDraft.password"
               type="password"
               minlength="12"
               required
               autocomplete="new-password"
-            /><small>至少 12 位；首次登录必须修改。</small></label
+            /><small>{{ t("users.passwordHint") }}</small></label
           >
           <label
-            ><span>平台角色 <span class="user-field-required" aria-hidden="true">*</span></span
+            ><span
+              >{{ t("users.fieldPlatformRole") }} <span class="user-field-required" aria-hidden="true">*</span></span
             ><AppSelect
               v-model="createDraft.platformRole"
               :options="platformRoleOptions"
-              aria-label="新用户平台角色"
+              :aria-label="t('users.newUserRoleAria')"
               :aria-required="true"
           /></label>
           <label
-            ><span>语言 <span class="user-field-required" aria-hidden="true">*</span></span
+            ><span>{{ t("users.fieldLocale") }} <span class="user-field-required" aria-hidden="true">*</span></span
             ><AppSelect
               v-model="createDraft.locale"
               :options="createLocaleOptions"
-              aria-label="新用户语言"
+              :aria-label="t('users.newUserLocaleAria')"
               :aria-required="true"
               filterable
           /></label>
           <label
-            ><span>时区 <span class="user-field-required" aria-hidden="true">*</span></span
+            ><span>{{ t("users.fieldTimezone") }} <span class="user-field-required" aria-hidden="true">*</span></span
             ><AppSelect
               v-model="createDraft.timezone"
               :options="createTimezoneOptions"
-              aria-label="新用户时区"
+              :aria-label="t('users.newUserTimezoneAria')"
               :aria-required="true"
               filterable
           /></label>
@@ -618,7 +683,7 @@ function formatDate(value?: string) {
             >
               <i class="fa-solid fa-circle-info" aria-hidden="true" />{{ createDisabledReason }}
             </p>
-            <button class="ghost-button" type="button" @click="createVisible = false">取消</button>
+            <button class="ghost-button" type="button" @click="createVisible = false">{{ t("users.cancel") }}</button>
             <button
               class="primary-button"
               type="submit"
@@ -626,7 +691,7 @@ function formatDate(value?: string) {
               :aria-describedby="createDisabledReason ? 'create-user-disabled-reason' : undefined"
               :aria-busy="users.actionLoading"
             >
-              {{ users.actionLoading ? "创建中…" : "创建用户" }}
+              {{ users.actionLoading ? t("users.creating") : t("users.createUser") }}
             </button>
           </footer>
         </form>
@@ -634,46 +699,55 @@ function formatDate(value?: string) {
     </div>
 
     <div v-if="profileUser" class="modal-backdrop" @click.self="profileUser = null">
-      <section class="modal-card user-access-modal" role="dialog" aria-modal="true" aria-label="编辑用户资料">
+      <section
+        class="modal-card user-access-modal"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="t('users.editProfileModalAria')"
+      >
         <header>
           <div>
             <span>PROFILE</span>
-            <h3>编辑 {{ profileUser.username }}</h3>
+            <h3>{{ t("users.editProfileTitle", { username: profileUser.username }) }}</h3>
           </div>
-          <button class="icon-action-button" type="button" aria-label="关闭" @click="profileUser = null">
+          <button class="icon-action-button" type="button" :aria-label="t('users.close')" @click="profileUser = null">
             <i class="fa-solid fa-xmark" aria-hidden="true" />
           </button>
         </header>
         <form class="user-access-form" @submit.prevent="saveProfile">
           <label
-            ><span>显示名称 <span class="user-field-required" aria-hidden="true">*</span></span
+            ><span
+              >{{ t("users.fieldDisplayName") }} <span class="user-field-required" aria-hidden="true">*</span></span
             ><input v-model.trim="profileDraft.displayName" required
           /></label>
-          <label><span>邮箱</span><input v-model.trim="profileDraft.email" type="email" /></label>
           <label
-            ><span>语言 <span class="user-field-required" aria-hidden="true">*</span></span
+            ><span>{{ t("users.fieldEmail") }}</span
+            ><input v-model.trim="profileDraft.email" type="email"
+          /></label>
+          <label
+            ><span>{{ t("users.fieldLocale") }} <span class="user-field-required" aria-hidden="true">*</span></span
             ><AppSelect
               :model-value="profileDraft.locale || ''"
               :options="profileLocaleOptions"
-              aria-label="用户语言"
+              :aria-label="t('users.userLocaleAria')"
               :aria-required="true"
               filterable
               @update:model-value="profileDraft.locale = String($event)"
           /></label>
           <label
-            ><span>时区 <span class="user-field-required" aria-hidden="true">*</span></span
+            ><span>{{ t("users.fieldTimezone") }} <span class="user-field-required" aria-hidden="true">*</span></span
             ><AppSelect
               :model-value="profileDraft.timezone || ''"
               :options="profileTimezoneOptions"
-              aria-label="用户时区"
+              :aria-label="t('users.userTimezoneAria')"
               :aria-required="true"
               filterable
               @update:model-value="profileDraft.timezone = String($event)"
           /></label>
           <footer>
-            <button class="ghost-button" type="button" @click="profileUser = null">取消</button
+            <button class="ghost-button" type="button" @click="profileUser = null">{{ t("users.cancel") }}</button
             ><button class="primary-button" type="submit" :disabled="!canSaveProfile || users.actionLoading">
-              保存资料
+              {{ t("users.saveProfile") }}
             </button>
           </footer>
         </form>
@@ -689,7 +763,7 @@ function formatDate(value?: string) {
           {{ feedback }}
         </div>
         <footer>
-          <button class="ghost-button" type="button" @click="pendingAction = null">取消</button
+          <button class="ghost-button" type="button" @click="pendingAction = null">{{ t("users.cancel") }}</button
           ><button
             class="primary-button"
             :class="{ danger: pendingActionUsesDangerTone }"
@@ -697,43 +771,59 @@ function formatDate(value?: string) {
             :disabled="users.actionLoading"
             @click="confirmSecurityAction"
           >
-            确认执行
+            {{ t("users.confirmExecute") }}
           </button>
         </footer>
       </section>
     </div>
 
     <div v-if="resetUser" class="modal-backdrop" @click.self="resetUser = null">
-      <section class="modal-card user-access-confirm" role="dialog" aria-modal="true" aria-label="重置用户密码">
+      <section
+        class="modal-card user-access-confirm"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="t('users.resetModalAria')"
+      >
         <span>CREDENTIAL RESET</span>
-        <h3>重置 {{ resetUser.username }} 的密码</h3>
-        <p>提交后会撤销该用户全部登录会话，并要求下次登录修改密码。</p>
+        <h3>{{ t("users.resetTitle", { username: resetUser.username }) }}</h3>
+        <p>{{ t("users.resetBody") }}</p>
         <label
-          ><span>临时密码 <span class="user-field-required" aria-hidden="true">*</span></span
+          ><span
+            >{{ t("users.fieldTempPassword") }} <span class="user-field-required" aria-hidden="true">*</span></span
           ><input v-model="temporaryPassword" type="password" minlength="12" required autocomplete="new-password"
         /></label>
         <footer>
-          <button class="ghost-button" type="button" @click="resetUser = null">取消</button
+          <button class="ghost-button" type="button" @click="resetUser = null">{{ t("users.cancel") }}</button
           ><button
             class="primary-button danger"
             type="button"
             :disabled="temporaryPassword.length < 12 || users.actionLoading"
             @click="submitResetPassword"
           >
-            重置密码
+            {{ t("users.resetPassword") }}
           </button>
         </footer>
       </section>
     </div>
 
     <div v-if="workspaceUser" class="modal-backdrop" @click.self="workspaceUser = null">
-      <section class="modal-card user-access-modal" role="dialog" aria-modal="true" aria-label="用户业务空间">
+      <section
+        class="modal-card user-access-modal"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="t('users.workspacesModalAria')"
+      >
         <header>
           <div>
             <span>WORKSPACE MEMBERSHIP</span>
-            <h3>{{ workspaceUser.username }} 的业务空间</h3>
+            <h3>{{ t("users.workspacesTitle", { username: workspaceUser.username }) }}</h3>
           </div>
-          <button class="icon-action-button" type="button" aria-label="关闭" @click="workspaceUser = null">
+          <button
+            class="icon-action-button"
+            type="button"
+            :aria-label="t('users.close')"
+            @click="workspaceUser = null"
+          >
             <i class="fa-solid fa-xmark" aria-hidden="true" />
           </button>
         </header>
@@ -750,11 +840,15 @@ function formatDate(value?: string) {
                 { disabled: membership.disabledAt || membership.workspaceStatus !== 'ACTIVE' },
               ]"
               >{{
-                membership.disabledAt ? "成员已停用" : membership.workspaceStatus === "ACTIVE" ? "空间正常" : "空间停用"
+                membership.disabledAt
+                  ? t("users.memberDisabled")
+                  : membership.workspaceStatus === "ACTIVE"
+                    ? t("users.workspaceActive")
+                    : t("users.workspaceDisabled")
               }}</em
             >
           </article>
-          <p v-if="!(users.membershipsByUser[workspaceUser.id] || []).length">该用户尚未加入业务空间。</p>
+          <p v-if="!(users.membershipsByUser[workspaceUser.id] || []).length">{{ t("users.noWorkspaces") }}</p>
         </div>
       </section>
     </div>

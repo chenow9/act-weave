@@ -2,6 +2,8 @@
  * Chat execution page model (ZKL-64 item 15).
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { getI18nLocale } from "../i18n";
+import { tt } from "../i18n/tt";
 import { toAPIError } from "../services/api";
 import { useAgentStore } from "../stores/agents";
 import { useAuthStore } from "../stores/auth";
@@ -71,14 +73,18 @@ export function createChatExecutionPageModel() {
     workspaces.items.find((workspace) => workspace.id === chat.activeSession?.workspaceId),
   );
   const activeWorkspaceLabel = computed(
-    () => selectedWorkspace.value?.displayName || selectedWorkspace.value?.name || "全部业务空间",
+    () => selectedWorkspace.value?.displayName || selectedWorkspace.value?.name || tt("chat.allWorkspaces"),
   );
   const activeAgentLabel = computed(
-    () => selectedAgent.value?.name || (contextLoading.value ? "载入 Agent" : "请选择 Agent"),
+    () =>
+      selectedAgent.value?.name ||
+      (contextLoading.value ? tt("chat.loadingAgent") : tt("chat.selectAgent")),
   );
-  const activeUserLabel = computed(() => auth.user?.username || auth.user?.displayName || "当前用户");
+  const activeUserLabel = computed(
+    () => auth.user?.username || auth.user?.displayName || tt("chat.currentUser"),
+  );
   const activeUserInitials = computed(() => {
-    const source = (auth.user?.displayName || auth.user?.username || "我").trim();
+    const source = (auth.user?.displayName || auth.user?.username || tt("chat.me")).trim();
     const words = source.split(/[\s._-]+/).filter(Boolean);
     return (words.length > 1 ? words.map((word) => word[0]).join("") : source.slice(0, 2)).toUpperCase();
   });
@@ -92,10 +98,12 @@ export function createChatExecutionPageModel() {
     () => Boolean(chat.activeSession) && (chat.activeSession?.status === "ARCHIVED" || !activeSessionAgent.value),
   );
   const activeSessionAgentStatusLabel = computed(() =>
-    chat.activeSession?.status === "ARCHIVED" ? "已归档" : "不可用",
+    chat.activeSession?.status === "ARCHIVED" ? tt("chat.archived") : tt("chat.unavailable"),
   );
   const composerPlaceholder = computed(() =>
-    activeSessionReadOnly.value ? "关联 Agent 已不可用，请使用可用 Agent 新建会话" : "输入业务指令或目标任务...",
+    activeSessionReadOnly.value
+      ? tt("chat.composerReadonlyPlaceholder")
+      : tt("chat.composerPlaceholder"),
   );
   const filteredSessions = computed(() => {
     const keyword = sessionKeyword.value.trim().toLowerCase();
@@ -120,40 +128,43 @@ export function createChatExecutionPageModel() {
   );
 
   const runtimeSummary = computed(() => {
-    if (chat.runStatus === "WAITING_CONFIRMATION") return "运行时已完成意图识别，当前停在确认门禁。";
+    if (chat.runStatus === "WAITING_CONFIRMATION") return tt("chat.runtimeWaitingConfirm");
     if (chat.runStatus === "FAILED") {
       const code = chat.latestRun?.errorCode || "";
       // ZKL-74: stable context-window error projections (no raw provider body).
       switch (code) {
         case "CONTEXT_SNAPSHOT_UNSUPPORTED":
-          return "运行上下文版本不受支持，请联系管理员。";
+          return tt("chat.errContextSnapshotUnsupported");
         case "CONTEXT_MODEL_LIMIT_UNKNOWN":
-          return "模型未配置上下文容量，请联系管理员。";
+          return tt("chat.errContextModelLimitUnknown");
         case "CONTEXT_REQUIRED_INPUT_TOO_LARGE":
-          return "当前输入过长；请缩短输入、减少附件/工具或新建会话。";
+          return tt("chat.errContextInputTooLarge");
         case "CONTEXT_ASSEMBLY_FAILED":
-          return "无法准备本次上下文，请稍后重试。";
+          return tt("chat.errContextAssemblyFailed");
         case "CONTEXT_WINDOW_EXCEEDED_UPSTREAM":
-          return "模型上下文容量校验失败，请联系管理员。";
+          return tt("chat.errContextWindowExceeded");
         default:
-          return code || "运行时执行失败。";
+          // errorCode is a stable machine code when present — do not translate.
+          return code || tt("chat.errRuntimeFailed");
       }
     }
-    if (chat.runStatus === "SUCCEEDED") return "运行时已完成，步骤时间线如下。";
-    if (chat.runStatus === "RUNNING") return "运行时正在执行，步骤会持续刷新。";
-    if (chat.runStatus === "PENDING") return "请求已进入队列，等待运行时处理。";
-    return "提交消息后会展示 run 状态、步骤时间线和能力快照。";
+    if (chat.runStatus === "SUCCEEDED") return tt("chat.runtimeSucceeded");
+    if (chat.runStatus === "RUNNING") return tt("chat.runtimeRunning");
+    if (chat.runStatus === "PENDING") return tt("chat.runtimePending");
+    return tt("chat.runtimeIdle");
   });
   const runStatusLabel = computed(() => statusLabel(chat.runStatus));
   const runtimeIntentLabel = computed(() => {
-    if (chat.runStatus === "PENDING" || chat.runStatus === "RUNNING") return "识别中";
-    if (chat.runStatus === "WAITING_CONFIRMATION") return "待确认";
-    if (chat.runStatus === "SUCCEEDED") return "已完成";
-    if (chat.runStatus === "FAILED" || chat.runStatus === "CANCELLED") return "未完成";
-    return "—";
+    if (chat.runStatus === "PENDING" || chat.runStatus === "RUNNING") return tt("chat.intentIdentifying");
+    if (chat.runStatus === "WAITING_CONFIRMATION") return tt("chat.intentAwaitingConfirm");
+    if (chat.runStatus === "SUCCEEDED") return tt("chat.intentCompleted");
+    if (chat.runStatus === "FAILED" || chat.runStatus === "CANCELLED") return tt("chat.intentIncomplete");
+    return tt("chat.emDash");
   });
   const capabilityCount = computed(() => capabilitySnapshotCount(chat.latestRun?.capabilitySnapshot));
-  const capabilityCountLabel = computed(() => (chat.latestRun ? `${capabilityCount.value} 项` : "—"));
+  const capabilityCountLabel = computed(() =>
+    chat.latestRun ? tt("chat.capabilityCount", { n: capabilityCount.value }) : tt("chat.emDash"),
+  );
   const runtimeTargetReleaseId = computed(
     () => [...chat.latestRunSteps].reverse().find((step) => step.capabilityReleaseId)?.capabilityReleaseId,
   );
@@ -162,7 +173,7 @@ export function createChatExecutionPageModel() {
   );
   const currentSubjectLabel = computed(() => {
     const user = auth.user;
-    if (!user) return "未登录";
+    if (!user) return tt("chat.notSignedIn");
     return `${user.displayName || user.username} · USER`;
   });
   /** Connections fixed to REQUEST_PASSTHROUGH in this workspace (need one-shot Token attach). */
@@ -192,7 +203,7 @@ export function createChatExecutionPageModel() {
           /* non-blocking for debug panel connection list */
         }
       }
-    }, "会话初始化失败，请稍后重试。");
+    }, tt("chat.initFailed"));
     await scrollToLatestTurn();
   });
 
@@ -212,12 +223,12 @@ export function createChatExecutionPageModel() {
     contextLoading.value = true;
     try {
       await runChatAction(async () => {
-        // Local selector is draft "新会话配置" only. Do not write the global
+        // Local selector is draft "new session setup" only. Do not write the global
         // workspace store here — AppShell keys router-view on activeWorkspaceId,
         // so a store write remounts this page and drops the draft selection.
         await agents.loadAgents({ workspaceId });
         syncSelectionFromWorkspace(workspaceId);
-      }, "切换业务空间失败，请稍后重试。");
+      }, tt("chat.switchWorkspaceFailed"));
     } finally {
       contextLoading.value = false;
     }
@@ -240,7 +251,7 @@ export function createChatExecutionPageModel() {
 
   async function newSession() {
     if (contextLoading.value || !selectedWorkspaceId.value || !selectedAgentId.value) return;
-    await runChatAction(createSessionWithSelection, "创建会话失败，请稍后重试。");
+    await runChatAction(createSessionWithSelection, tt("chat.createSessionFailed"));
     await scrollToLatestTurn();
     closeSidePanel();
   }
@@ -249,7 +260,7 @@ export function createChatExecutionPageModel() {
     await runChatAction(async () => {
       await chat.loadSession(sessionId);
       await syncSelectionFromSession(chat.activeSession);
-    }, "加载会话失败，请稍后重试。");
+    }, tt("chat.loadSessionFailed"));
     await scrollToLatestTurn();
     closeSidePanel();
   }
@@ -347,7 +358,7 @@ export function createChatExecutionPageModel() {
 
   async function attachDebugOutboundCredentials(body: OutboundCredentialsEnvelope) {
     const session = chat.activeSession;
-    if (!session) throw new Error("请先选择会话");
+    if (!session) throw new Error(tt("chat.selectSessionFirst"));
     return toolsStore.attachChatOutboundCredentials(session.id, body);
   }
 
@@ -371,7 +382,7 @@ export function createChatExecutionPageModel() {
       debugOutboundPanel.value?.clearSecrets?.();
     } catch (error) {
       forceFollowNextMessage.value = false;
-      actionError.value = readableChatError(error, "消息发送失败，请稍后重试。");
+      actionError.value = readableChatError(error, tt("chat.sendFailed"));
       if (!composer.value.trim()) {
         composer.value = value;
       }
@@ -391,7 +402,7 @@ export function createChatExecutionPageModel() {
     try {
       await chat.confirmPending();
     } catch (error) {
-      actionError.value = readableChatError(error, "授权确认失败，请稍后重试。");
+      actionError.value = readableChatError(error, tt("chat.confirmFailed"));
     } finally {
       confirming.value = false;
     }
@@ -404,7 +415,7 @@ export function createChatExecutionPageModel() {
     try {
       await chat.cancelPending();
     } catch (error) {
-      actionError.value = readableChatError(error, "取消确认失败，请稍后重试。");
+      actionError.value = readableChatError(error, tt("chat.cancelConfirmFailed"));
     } finally {
       confirming.value = false;
     }
@@ -415,7 +426,7 @@ export function createChatExecutionPageModel() {
     if (archivingSession.value) return;
     archivingSession.value = true;
     try {
-      await runChatAction(() => chat.archiveSession(), "归档会话失败，请稍后重试。");
+      await runChatAction(() => chat.archiveSession(), tt("chat.archiveFailed"));
     } finally {
       archivingSession.value = false;
     }
@@ -430,7 +441,7 @@ export function createChatExecutionPageModel() {
     const session = await chat.createSession(
       selectedWorkspaceId.value,
       selectedAgentId.value,
-      `${activeAgentLabel.value} 对话`,
+      tt("chat.sessionTitleWithAgent", { name: activeAgentLabel.value }),
     );
     await syncSelectionFromSession(session, false);
   }
@@ -598,19 +609,19 @@ export function createChatExecutionPageModel() {
   function statusLabel(status?: string) {
     switch (status) {
       case "WAITING_CONFIRMATION":
-        return "等待授权确认";
+        return tt("chat.statusWaitingConfirm");
       case "RUNNING":
-        return "执行中";
+        return tt("chat.statusRunning");
       case "PENDING":
-        return "队列中";
+        return tt("chat.statusPending");
       case "SUCCEEDED":
-        return "已完成";
+        return tt("chat.statusSucceeded");
       case "FAILED":
-        return "失败";
+        return tt("chat.statusFailed");
       case "CANCELLED":
-        return "已取消";
+        return tt("chat.statusCancelled");
       default:
-        return "待运行";
+        return tt("chat.statusIdle");
     }
   }
 
@@ -656,26 +667,30 @@ export function createChatExecutionPageModel() {
   function runStepLabel(type: string) {
     switch (type) {
       case "MODEL":
-        return "意图分析";
+        return tt("chat.stepModel");
       case "TOOL":
-        return "工具调用";
+        return tt("chat.stepTool");
       case "WORKFLOW":
-        return "流程调用";
+        return tt("chat.stepWorkflow");
       case "CONFIRMATION":
-        return "人工确认";
+        return tt("chat.stepConfirmation");
       case "ASSISTANT_MESSAGE":
-        return "回复会话";
+        return tt("chat.stepAssistantMessage");
       case "CHECKPOINT":
-        return "状态检查点";
+        return tt("chat.stepCheckpoint");
       default:
         return type;
     }
   }
 
   function runStepSummary(step: AgentRunStep) {
-    if (step.errorCode) return `错误代码：${step.errorCode}`;
-    if (step.capabilityReleaseId) return `Capability Release：${step.capabilityReleaseId}`;
-    return summarizeRuntimeValue(step.outputSummary) || summarizeRuntimeValue(step.inputSummary) || "运行步骤已持久化";
+    if (step.errorCode) return tt("chat.errorCode", { code: step.errorCode });
+    if (step.capabilityReleaseId) return tt("chat.capabilityRelease", { id: step.capabilityReleaseId });
+    return (
+      summarizeRuntimeValue(step.outputSummary) ||
+      summarizeRuntimeValue(step.inputSummary) ||
+      tt("chat.stepPersisted")
+    );
   }
 
   function summarizeRuntimeValue(value: unknown) {
@@ -697,27 +712,27 @@ export function createChatExecutionPageModel() {
   function runStepStatusLabel(status: string) {
     switch (timelineStatus(status)) {
       case "completed":
-        return "完成";
+        return tt("chat.stepStatusCompleted");
       case "running":
-        return "进行中";
+        return tt("chat.stepStatusRunning");
       case "failed":
-        return "失败";
+        return tt("chat.stepStatusFailed");
       default:
-        return "等待";
+        return tt("chat.stepStatusPending");
     }
   }
 
   function messageTime(createdAt?: string) {
-    if (!createdAt) return "刚刚";
+    if (!createdAt) return tt("chat.justNow");
     const date = new Date(createdAt);
     if (Number.isNaN(date.getTime())) return createdAt;
-    return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+    return date.toLocaleTimeString(getI18nLocale(), { hour: "2-digit", minute: "2-digit" });
   }
 
   function messageDateTimeTitle(createdAt?: string) {
     const date = parseMessageDate(createdAt);
-    if (!date) return createdAt || "刚刚";
-    return date.toLocaleString("zh-CN", {
+    if (!date) return createdAt || tt("chat.justNow");
+    return date.toLocaleString(getI18nLocale(), {
       year: "numeric",
       month: "long",
       day: "numeric",
@@ -733,9 +748,9 @@ export function createChatExecutionPageModel() {
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(today.getDate() - 1);
-    if (localDateKey(date) === localDateKey(today)) return "今天";
-    if (localDateKey(date) === localDateKey(yesterday)) return "昨天";
-    return date.toLocaleDateString("zh-CN", {
+    if (localDateKey(date) === localDateKey(today)) return tt("chat.today");
+    if (localDateKey(date) === localDateKey(yesterday)) return tt("chat.yesterday");
+    return date.toLocaleDateString(getI18nLocale(), {
       year: date.getFullYear() === today.getFullYear() ? undefined : "numeric",
       month: "long",
       day: "numeric",

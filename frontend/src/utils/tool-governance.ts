@@ -1,3 +1,4 @@
+import { tt } from "../i18n/tt";
 import type { ServiceConnection, Tool, ToolRequestParam } from "../types/domain";
 
 export type GovernanceTone = "neutral" | "success" | "warning" | "danger" | "info";
@@ -22,28 +23,28 @@ export interface PublishChecklistOptions {
 
 export function getToolLifecycleStatus(tool: Tool): GovernanceStatusMeta {
   const map: Record<Tool["status"], GovernanceStatusMeta> = {
-    Draft: { label: "草稿", tone: "warning", description: "尚未完成测试和发布" },
-    Review: { label: "待配置", tone: "warning", description: "配置已保存，等待补齐测试或发布条件" },
-    Tested: { label: "待发布", tone: "info", description: "最近一次测试通过，尚未发布给 Agent" },
-    Published: { label: "已发布", tone: "success", description: "可被 Agent 或 Workflow 调用" },
-    Disabled: { label: "已停用", tone: "neutral", description: "当前不会开放给 Agent 调用" },
+    Draft: { label: tt("tools.govDraft"), tone: "warning", description: tt("tools.govDraftDesc") },
+    Review: { label: tt("tools.govReview"), tone: "warning", description: tt("tools.govReviewDesc") },
+    Tested: { label: tt("tools.govTested"), tone: "info", description: tt("tools.govTestedDesc") },
+    Published: { label: tt("tools.govPublished"), tone: "success", description: tt("tools.govPublishedDesc") },
+    Disabled: { label: tt("tools.govDisabled"), tone: "neutral", description: tt("tools.govDisabledDesc") },
   };
-  return map[tool.status] || { label: tool.status, tone: "neutral", description: "未知生命周期状态" };
+  return map[tool.status] || { label: tool.status, tone: "neutral", description: tt("tools.govUnknown") };
 }
 
 export function getToolTestStatus(tool: Tool): GovernanceStatusMeta {
   if (hasPassingToolTest(tool)) {
-    return { label: "测试通过", tone: "success", description: "最近一次测试通过" };
+    return { label: tt("tools.govTestPass"), tone: "success", description: tt("tools.govTestPassDesc") };
   }
   // Prefer additive latestTest; null/missing → never infer pass from lifecycle.
   if (tool.latestTest) {
     if (tool.latestTest.status === "FAILED") {
       return {
-        label: "测试失败",
+        label: tt("tools.govTestFail"),
         tone: "danger",
         description: tool.latestTest.errorCode
-          ? `最近一次测试失败（${tool.latestTest.errorCode}）`
-          : "最近一次测试失败，需要修复后重试",
+          ? tt("tools.govTestFailCode", { code: tool.latestTest.errorCode })
+          : tt("tools.govTestFailDesc"),
       };
     }
   }
@@ -51,17 +52,17 @@ export function getToolTestStatus(tool: Tool): GovernanceStatusMeta {
     // Draft / Review: still waiting for first test. Published / Tested / Disabled
     // without retained history: historical result is unknown (do not treat as pass).
     if (tool.status === "Draft" || tool.status === "Review") {
-      return { label: "等待测试", tone: "warning", description: "尚未执行测试，发布前需通过测试" };
+      return { label: tt("tools.govWaitTest"), tone: "warning", description: tt("tools.govWaitTestDesc") };
     }
-    return { label: "历史测试未知", tone: "neutral", description: "暂无测试记录，不得从已发布状态推断通过" };
+    return { label: tt("tools.govTestUnknown"), tone: "neutral", description: tt("tools.govTestUnknownDesc") };
   }
   if (!tool.lastTestResult) {
     if (tool.status === "Draft" || tool.status === "Review") {
-      return { label: "等待测试", tone: "warning", description: "尚未执行测试，发布前需通过测试" };
+      return { label: tt("tools.govWaitTest"), tone: "warning", description: tt("tools.govWaitTestDesc") };
     }
-    return { label: "历史测试未知", tone: "neutral", description: "暂无测试记录" };
+    return { label: tt("tools.govTestUnknown"), tone: "neutral", description: tt("tools.govTestUnknownShort") };
   }
-  return { label: "测试失败", tone: "danger", description: "最近一次测试失败，需要修复后重试" };
+  return { label: tt("tools.govTestFail"), tone: "danger", description: tt("tools.govTestFailDesc") };
 }
 
 export function hasPassingToolTest(tool: Tool): boolean {
@@ -96,36 +97,36 @@ export function getToolRunStatus(
   const catalogStatus = options.catalogStatus;
 
   if (tool.status === "Disabled") {
-    return { label: "已停用", tone: "neutral", description: "Tool 已停用，运行状态不再更新" };
+    return { label: tt("tools.govRunDisabled"), tone: "neutral", description: tt("tools.govRunDisabledDesc") };
   }
   if (catalogStatus === "IDLE" || catalogStatus === "LOADING") {
-    return { label: "连接加载中", tone: "info", description: "正在加载服务连接目录" };
+    return { label: tt("tools.govConnLoading"), tone: "info", description: tt("tools.govConnLoadingDesc") };
   }
   if (catalogStatus === "ERROR") {
-    return { label: "连接状态未知", tone: "warning", description: "服务连接目录加载失败，请重试" };
+    return { label: tt("tools.govConnUnknown"), tone: "warning", description: tt("tools.govConnUnknownDesc") };
   }
   if (!connection) {
     // Only true missing after LOADED (or when catalog status unknown and caller passed no connection).
-    return { label: "连接缺失", tone: "danger", description: "找不到绑定的服务连接" };
+    return { label: tt("tools.govConnMissing"), tone: "danger", description: tt("tools.govConnMissingDesc") };
   }
   if ((connection as ServiceConnection & { migrationState?: string }).migrationState === "MIGRATION_REQUIRED") {
-    return { label: "连接待迁移", tone: "warning", description: "服务连接需要迁移后才能调用" };
+    return { label: tt("tools.govConnMigrate"), tone: "warning", description: tt("tools.govConnMigrateDesc") };
   }
   if (CONNECTION_DANGER_STATUSES.has(connection.status)) {
     const reason = connectionStatusReason(connection.status);
     return {
-      label: "连接需处理",
+      label: tt("tools.govConnAttention"),
       tone: "danger",
       description: reason,
     };
   }
   if (connection.status === "Expiring soon") {
-    return { label: "凭证将过期", tone: "warning", description: "服务连接凭证即将过期" };
+    return { label: tt("tools.govCredExpiring"), tone: "warning", description: tt("tools.govCredExpiringDesc") };
   }
   if (connection.status === "Available" || connection.status === "VERIFIED") {
-    return { label: "当前可调用", tone: "success", description: "服务连接可用" };
+    return { label: tt("tools.govCallable"), tone: "success", description: tt("tools.govCallableDesc") };
   }
-  return { label: "暂无观测", tone: "neutral", description: "后端尚未提供运行健康、调用量和失败率" };
+  return { label: tt("tools.govNoObs"), tone: "neutral", description: tt("tools.govNoObsDesc") };
 }
 
 /** True when the Tool's bound connection blocks or degrades safe invocation. */
@@ -136,7 +137,7 @@ export function toolHasConnectionAttention(tool: Tool, connection?: ServiceConne
 }
 
 export interface ToolUnifiedStatusMeta extends GovernanceStatusMeta {
-  /** Lifecycle label alone (e.g. 已发布). */
+  /** Lifecycle label alone (e.g. Published). */
   lifecycleLabel: string;
   /** Connection/run label when it overrides or composes the pill. */
   runLabel?: string;
@@ -157,11 +158,11 @@ export function getToolUnifiedStatus(tool: Tool, connection?: ServiceConnection)
 
   if (run.tone === "danger" || run.tone === "warning") {
     const publishedHint =
-      tool.status === "Published" ? "已发布但当前不可安全调用，请先处理服务连接" : lifecycle.description;
+      tool.status === "Published" ? tt("tools.govPublishedUnsafe") : lifecycle.description;
     return {
       label: `${lifecycle.label} · ${run.label}`,
       tone: run.tone,
-      description: `${run.description}。${publishedHint}`,
+      description: tt("tools.govStatusCompose", { run: run.description, hint: publishedHint }),
       lifecycleLabel: lifecycle.label,
       runLabel: run.label,
       connectionAttention: true,
@@ -191,15 +192,15 @@ export function getToolUnifiedStatus(tool: Tool, connection?: ServiceConnection)
 function connectionStatusReason(status: string): string {
   switch (status) {
     case "UNVERIFIED":
-      return "服务连接尚未验证通过";
+      return tt("tools.govReasonUnverified");
     case "ERROR":
-      return "服务连接验证失败或运行异常";
+      return tt("tools.govReasonError");
     case "DISABLED":
-      return "服务连接已停用";
+      return tt("tools.govReasonDisabled");
     case "Needs attention":
-      return "服务连接需要处理（认证、迁移或配置问题）";
+      return tt("tools.govReasonAttention");
     default:
-      return "服务连接不可用或认证需要处理";
+      return tt("tools.govReasonDefault");
   }
 }
 
@@ -220,73 +221,77 @@ export function buildToolPublishChecklist(
   return [
     {
       id: "base-info-complete",
-      label: "基础信息完整",
+      label: tt("tools.checkBaseInfo"),
       passed: Boolean(tool.name.trim() && tool.description.trim() && (tool.updatedBy || tool.createdBy || "").trim()),
       severity: "error",
-      detail: "Tool 名称、说明和维护人必须完整。",
+      detail: tt("tools.checkBaseInfoDetail"),
     },
     {
       id: "connection-available",
-      label: "服务连接可用",
+      label: tt("tools.checkConnection"),
       passed: Boolean(connection && ["Available", "VERIFIED"].includes(connection.status)),
       severity: "error",
-      detail: connection ? `当前连接状态：${connection.status}` : "未找到绑定的服务连接。",
+      detail: connection
+        ? tt("tools.checkConnectionDetailStatus", { status: connection.status })
+        : tt("tools.checkConnectionDetailMissing"),
     },
     {
       id: "method-endpoint-configured",
-      label: "Method 与 Endpoint 已配置",
+      label: tt("tools.checkMethodEndpoint"),
       passed: Boolean(method && path.startsWith("/")),
       severity: "error",
-      detail: "Endpoint Path 需要以 / 开头。",
+      detail: tt("tools.checkMethodEndpointDetail"),
     },
     {
       id: "path-params-match",
-      label: "Path 参数与 URL 匹配",
+      label: tt("tools.checkPathParams"),
       passed: missingPathParams.length === 0,
       severity: "error",
-      detail: missingPathParams.length ? `缺少 Path 参数：${missingPathParams.join("、")}` : "Path 参数已匹配。",
+      detail: missingPathParams.length
+        ? tt("tools.checkPathParamsMissing", { names: missingPathParams.join("、") })
+        : tt("tools.checkPathParamsOk"),
     },
     {
       id: "request-contract-valid",
-      label: "入参契约合法",
+      label: tt("tools.checkRequestContract"),
       passed: hasNamedFields(tool.requestParams),
       severity: "error",
-      detail: "至少需要一个命名入参或明确无入参。",
+      detail: tt("tools.checkRequestContractDetail"),
     },
     {
       id: "response-contract-valid",
-      label: "出参契约合法",
+      label: tt("tools.checkResponseContract"),
       passed: tool.responseFields.every((field) => Boolean(field.name.trim() && field.type.trim())),
       severity: "error",
-      detail: "所有出参字段都需要字段名和类型。",
+      detail: tt("tools.checkResponseContractDetail"),
     },
     {
       id: "latest-test-passed",
-      label: "最近一次测试通过",
+      label: tt("tools.checkLatestTest"),
       passed: testPassed,
       severity: "error",
-      detail: testPassed ? "最近一次测试通过。" : "发布前必须执行并通过测试。",
+      detail: testPassed ? tt("tools.checkLatestTestOk") : tt("tools.checkLatestTestNeed"),
     },
     {
       id: "timeout-policy-configured",
-      label: "已配置超时策略",
+      label: tt("tools.checkTimeout"),
       passed: tool.runtimePolicy.timeoutMs > 0,
       severity: "error",
-      detail: "超时时间必须大于 0。",
+      detail: tt("tools.checkTimeoutDetail"),
     },
     {
       id: "retry-policy-configured",
-      label: "已配置重试策略",
+      label: tt("tools.checkRetry"),
       passed: tool.runtimePolicy.retryCount >= 0 && Boolean(tool.runtimePolicy.backoffPolicy),
       severity: "error",
-      detail: "重试次数和退避策略必须明确。",
+      detail: tt("tools.checkRetryDetail"),
     },
     {
       id: "agent-impact-confirmed",
-      label: "已确认 Agent 引用影响面",
+      label: tt("tools.checkAgentImpact"),
       passed: options.agentImpactConfirmed === true,
       severity: "warning",
-      detail: "后端暂未提供 Agent / Workflow 引用明细，发布前需要人工确认影响面。",
+      detail: tt("tools.checkAgentImpactDetail"),
     },
   ];
 }

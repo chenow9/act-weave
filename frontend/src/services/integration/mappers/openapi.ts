@@ -1,4 +1,5 @@
 /** OpenAPI import pure mappers (ZKL-64 item 10). */
+import { tt } from "../../../i18n/tt";
 import type { OpenAPIImport } from "../../../types/domain";
 import { normalizeSchemaNode } from "./schema-tools";
 
@@ -35,7 +36,7 @@ export function importFromDTO(
     totalEndpoints: record.totalEndpoints,
     readyEndpoints: record.readyEndpoints,
     issueCount: record.issueCount,
-    issues: record.issueCount ? [`${record.issueCount} 个端点需要处理`] : [],
+    issues: record.issueCount ? [tt("openapi.endpointsNeedAttention", { n: record.issueCount })] : [],
     status: record.issueCount ? "Issues" : "Ready",
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,

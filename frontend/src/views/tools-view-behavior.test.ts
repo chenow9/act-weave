@@ -1,7 +1,9 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { setI18nLocale } from "../i18n";
 import type { ServiceConnection, Tool } from "../types/domain";
+import { createTestI18n } from "../test-utils/i18n";
 import ToolsView from "./ToolsView.vue";
 
 const routerPushMock = vi.fn();
@@ -208,6 +210,7 @@ function mountToolsView() {
   return mount(ToolsView, {
     attachTo: document.body,
     global: {
+      plugins: [createTestI18n("zh-CN")],
       directives: {
         loading: () => undefined,
       },
@@ -238,6 +241,7 @@ async function triggerToolMenuAction(wrapper: ReturnType<typeof mountToolsView>,
 
 describe("tools view detail behavior", () => {
   beforeEach(() => {
+    setI18nLocale("zh-CN");
     document.body.innerHTML = "";
     vi.clearAllMocks();
     workspaceState.items = [

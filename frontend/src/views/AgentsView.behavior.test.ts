@@ -2,6 +2,8 @@ import { createPinia, setActivePinia } from "pinia";
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { setI18nLocale } from "../i18n";
+import { createTestI18n } from "../test-utils/i18n";
 import AgentsView from "./AgentsView.vue";
 
 const loadAgentsMock = vi.fn();
@@ -168,7 +170,7 @@ function mountAgentsView() {
       directives: {
         loading: () => undefined,
       },
-      plugins: [createPinia()],
+      plugins: [createPinia(), createTestI18n("zh-CN")],
       stubs: {
         AppSelect: {
           props: ["modelValue", "options", "ariaLabel", "ariaRequired"],
@@ -220,6 +222,7 @@ describe("agents view behavior", () => {
 
   beforeEach(() => {
     document.body.innerHTML = "";
+    setI18nLocale("zh-CN");
     setActivePinia(createPinia());
     vi.clearAllMocks();
     seedStores(1);

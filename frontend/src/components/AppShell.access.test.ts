@@ -1,19 +1,24 @@
 import { mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createTestI18n } from "../test-utils/i18n";
 import AppShell from "./AppShell.vue";
 
 const fixtures = vi.hoisted(() => ({
   auth: {
-    user: { username: "access.user", role: "User", platformRole: "USER" },
+    user: { username: "access.user", role: "User", platformRole: "USER", lockVersion: 1 },
     logout: vi.fn(),
+    applyUser: vi.fn(),
   },
   workspaces: {
     activeWorkspace: null as any,
     activeWorkspaceId: "",
     items: [] as any[],
+    summary: { total: 0 },
     load: vi.fn(async () => []),
     selectWorkspace: vi.fn(),
+    fetchWorkspacePage: vi.fn(async () => ({ items: [] })),
+    upsertInList: vi.fn(),
   },
   overview: { load: vi.fn(async () => undefined) },
   router: { push: vi.fn() },
@@ -36,6 +41,7 @@ describe("AppShell platform-administrator navigation", () => {
     fixtures.workspaces.activeWorkspace = null;
     fixtures.workspaces.activeWorkspaceId = "";
     fixtures.workspaces.items = [];
+    fixtures.workspaces.summary = { total: 0 };
   });
 
   it("hides user management from ordinary users", () => {
@@ -108,11 +114,21 @@ describe("AppShell platform-administrator navigation", () => {
     expect(document.activeElement).toBe(trigger.element);
     wrapper.unmount();
   });
+
+  it("renders English glossary labels when locale is en", async () => {
+    const wrapper = mountShell("en");
+    await wrapper.get(".fluid-trigger").trigger("click");
+    expect(wrapper.text()).toContain("Smart Orchestration");
+    expect(wrapper.text()).toContain("Run Console");
+    expect(wrapper.text()).toContain("ActWeave");
+    expect(wrapper.text()).not.toContain("织行");
+  });
 });
 
-function mountShell() {
+function mountShell(locale: "zh-CN" | "en" = "zh-CN") {
   return mount(AppShell, {
     global: {
+      plugins: [createTestI18n(locale)],
       stubs: {
         RouterLink: { props: ["to"], template: '<a :href="to"><slot /></a>' },
         RouterView: { template: "<div />" },

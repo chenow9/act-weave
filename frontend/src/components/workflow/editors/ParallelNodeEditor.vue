@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
+
 import type { WorkflowGraphNode } from "../../../types/domain";
 
 const props = defineProps<{
@@ -8,6 +10,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: "update-node-data", payload: { key: string; value: unknown }): void;
 }>();
+
+const { t } = useI18n();
 
 function branchesValue() {
   const branches = props.node.data.branches;
@@ -29,19 +33,21 @@ function updateBranches(value: string) {
 <template>
   <section class="workflow-parallel-node-editor">
     <label class="drawer-field">
-      <span>分支列表</span>
+      <span>{{ t("workflow.branchList") }}</span>
       <input
         name="node-parallel-branches"
         :value="branchesValue()"
-        placeholder="例如 risk-check, inventory-sync"
+        :placeholder="t('workflow.branchListPh')"
         @input="updateBranches(($event.target as HTMLInputElement).value)"
       />
     </label>
 
     <section class="workflow-inspector-vars">
       <div class="workflow-section-caption">
-        <strong>当前分支</strong>
-        <small>{{ Array.isArray(node.data.branches) ? node.data.branches.length : 0 }} 个</small>
+        <strong>{{ t("workflow.currentBranches") }}</strong>
+        <small>{{
+          t("workflow.branchCount", { n: Array.isArray(node.data.branches) ? node.data.branches.length : 0 })
+        }}</small>
       </div>
       <div class="workflow-token-list">
         <span
@@ -56,10 +62,10 @@ function updateBranches(value: string) {
 
     <section class="workflow-inspector-vars workflow-schema-preview">
       <div class="workflow-section-caption">
-        <strong>运行语义</strong>
+        <strong>{{ t("workflow.runtimeSemantics") }}</strong>
         <small>parallel branch summary</small>
       </div>
-      <p>当前运行时会记录 branches 数组，并按分支顺序写入 trace 与节点输出摘要，不会静默返回占位成功。</p>
+      <p>{{ t("workflow.parallelRuntimeHint") }}</p>
     </section>
   </section>
 </template>

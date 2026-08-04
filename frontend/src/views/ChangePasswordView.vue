@@ -2,11 +2,13 @@
 import "./change-password-page.css";
 import "./login-page.css";
 import { computed, reactive, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 
 import LoginWeaveMotif from "../components/LoginWeaveMotif.vue";
 import { useAuthStore } from "../stores/auth";
 
+const { t } = useI18n();
 const auth = useAuthStore();
 const router = useRouter();
 const showCurrent = ref(false);
@@ -24,13 +26,13 @@ const errorMessage = computed(() => localError.value || auth.error);
 
 function validate(): string {
   if (form.newPassword.length < 12) {
-    return "新密码至少需要 12 位。";
+    return t("auth.passwordMinLength");
   }
   if (form.newPassword !== form.confirmPassword) {
-    return "两次输入的新密码不一致。";
+    return t("auth.passwordMismatch");
   }
   if (form.currentPassword === form.newPassword) {
-    return "新密码不能与当前密码相同。";
+    return t("auth.passwordSameAsCurrent");
   }
   return "";
 }
@@ -67,12 +69,12 @@ async function submit() {
     <div class="login-card">
       <div class="login-logo-area">
         <span class="app-brand-mark" aria-hidden="true"><i class="fa-solid fa-circle-nodes" /></span>
-        <span>ACTWEAVE 织行</span>
+        <span>{{ t("common.appTitle") }}</span>
       </div>
 
       <div class="login-form-header">
-        <h2>修改密码</h2>
-        <p>新密码至少 12 位。修改成功后需要使用新密码重新登录。</p>
+        <h2>{{ t("auth.changePassword") }}</h2>
+        <p>{{ t("auth.changePasswordSubtitle") }}</p>
       </div>
 
       <div v-if="errorMessage" class="login-feedback-panel error" role="alert">
@@ -82,7 +84,7 @@ async function submit() {
 
       <form class="login-form" @submit.prevent="submit">
         <label>
-          <span>当前密码</span>
+          <span>{{ t("auth.currentPassword") }}</span>
           <div class="login-field-shell">
             <i class="login-field-icon fa-solid fa-lock" aria-hidden="true" />
             <input
@@ -95,7 +97,7 @@ async function submit() {
             <button
               class="login-password-toggle"
               type="button"
-              :aria-label="showCurrent ? '隐藏密码' : '显示密码'"
+              :aria-label="showCurrent ? t('auth.hidePassword') : t('auth.showPassword')"
               @click="showCurrent = !showCurrent"
             >
               <i :class="showCurrent ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye'" aria-hidden="true" />
@@ -104,7 +106,7 @@ async function submit() {
         </label>
 
         <label>
-          <span>新密码</span>
+          <span>{{ t("auth.newPassword") }}</span>
           <div class="login-field-shell">
             <i class="login-field-icon fa-solid fa-key" aria-hidden="true" />
             <input
@@ -118,7 +120,7 @@ async function submit() {
             <button
               class="login-password-toggle"
               type="button"
-              :aria-label="showNew ? '隐藏密码' : '显示密码'"
+              :aria-label="showNew ? t('auth.hidePassword') : t('auth.showPassword')"
               @click="showNew = !showNew"
             >
               <i :class="showNew ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye'" aria-hidden="true" />
@@ -127,7 +129,7 @@ async function submit() {
         </label>
 
         <label>
-          <span>确认新密码</span>
+          <span>{{ t("auth.confirmNewPassword") }}</span>
           <div class="login-field-shell">
             <i class="login-field-icon fa-solid fa-key" aria-hidden="true" />
             <input
@@ -141,7 +143,7 @@ async function submit() {
             <button
               class="login-password-toggle"
               type="button"
-              :aria-label="showConfirm ? '隐藏密码' : '显示密码'"
+              :aria-label="showConfirm ? t('auth.hidePassword') : t('auth.showPassword')"
               @click="showConfirm = !showConfirm"
             >
               <i :class="showConfirm ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye'" aria-hidden="true" />
@@ -150,7 +152,7 @@ async function submit() {
         </label>
 
         <button class="login-primary-button" type="submit" :disabled="submitting || auth.loading">
-          {{ submitting || auth.loading ? "提交中..." : "修改密码并重新登录" }}
+          {{ submitting || auth.loading ? t("auth.changingPassword") : t("auth.submitChangePassword") }}
         </button>
       </form>
     </div>

@@ -1,6 +1,8 @@
 import DOMPurify from "dompurify";
 import MarkdownIt from "markdown-it";
 
+import { tt } from "../i18n/tt";
+
 const markdown = new MarkdownIt({
   html: false,
   linkify: false,
@@ -76,7 +78,7 @@ function isSafeUrl(value: string) {
  * Safe Markdown render for Agents prompt viewing (TD3-A):
  * markdown-it html=false + no images + URL allowlist, then DOMPurify tag/attr allowlist.
  */
-export function renderMarkdown(source: string, emptyFallback = "暂无内容。") {
+export function renderMarkdown(source: string, emptyFallback = tt("common.noContent")) {
   const normalized = (source || "").trim();
   if (!normalized) {
     return `<p>${escapeHTML(emptyFallback)}</p>`;

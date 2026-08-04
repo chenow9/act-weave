@@ -10,6 +10,9 @@ let managementFilterInstanceCount = 0;
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
+
+const { t } = useI18n();
 
 const props = defineProps<{
   modelValue: string;
@@ -176,7 +179,7 @@ onBeforeUnmount(() => {
       @click="toggleMenu"
       @keydown="handleTriggerKeydown"
     >
-      <span>{{ selectedOption?.label || "请选择" }}</span>
+      <span>{{ selectedOption?.label || t("common.pleaseSelect") }}</span>
       <i class="fa-solid fa-chevron-down" aria-hidden="true" />
     </button>
 

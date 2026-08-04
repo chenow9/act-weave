@@ -25,8 +25,17 @@ let dataTableInstanceCount = 0;
 <script setup lang="ts" generic="Row extends object">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { StyleValue } from "vue";
+import { useI18n } from "vue-i18n";
 
-const DEFAULT_PLACEHOLDERS = ["-", "--", "暂无", "暂无数据", "暂无观测", "未测试"];
+const { t } = useI18n();
+const DEFAULT_PLACEHOLDERS = computed(() => [
+  "-",
+  "--",
+  t("common.emptyPlaceholder"),
+  t("common.noData"),
+  t("common.noObservation"),
+  t("common.untested"),
+]);
 
 const props = withDefaults(
   defineProps<{
@@ -166,11 +175,12 @@ function isColumnEmptyByDefault(column: DataTableColumn<Row>) {
   return props.rows.every((row) => isEmptyLike(columnValue(row, column), column.placeholderValues));
 }
 
-function isEmptyLike(value: unknown, placeholderValues: string[] = DEFAULT_PLACEHOLDERS) {
+function isEmptyLike(value: unknown, placeholderValues?: string[]) {
+  const placeholders = placeholderValues ?? DEFAULT_PLACEHOLDERS.value;
   if (value === null || value === undefined) return true;
   if (typeof value === "string") {
     const normalized = value.trim();
-    return normalized === "" || placeholderValues.includes(normalized);
+    return normalized === "" || placeholders.includes(normalized);
   }
   return false;
 }
@@ -266,7 +276,7 @@ function toggleCurrentRows(checked: boolean) {
 }
 
 function selectionLabel(row: Row) {
-  return props.rowSelectionLabel?.(row) || `选择 ${rowIdentity(row)}`;
+  return props.rowSelectionLabel?.(row) || t("common.selectRow", { id: rowIdentity(row) });
 }
 
 function columnSortKey(column: DataTableColumn<Row>) {
@@ -287,9 +297,9 @@ function ariaSort(column: DataTableColumn<Row>) {
 
 function sortButtonLabel(column: DataTableColumn<Row>) {
   const sortOrder = columnSortOrder(column);
-  if (sortOrder === "asc") return `按${column.label}降序排序`;
-  if (sortOrder === "desc") return `取消按${column.label}排序`;
-  return `按${column.label}升序排序`;
+  if (sortOrder === "asc") return t("common.sortDesc", { label: column.label });
+  if (sortOrder === "desc") return t("common.sortClear", { label: column.label });
+  return t("common.sortAsc", { label: column.label });
 }
 
 function nextSort(column: DataTableColumn<Row>) {
@@ -447,8 +457,8 @@ onBeforeUnmount(() => {
         ref="settingsTriggerRef"
         class="data-table-column-button"
         type="button"
-        aria-label="列设置"
-        title="列设置"
+        :aria-label="t('common.columnSettings')"
+        :title="t('common.columnSettings')"
         aria-haspopup="true"
         :aria-controls="columnSettingsId"
         :aria-expanded="settingsOpen"
@@ -461,9 +471,9 @@ onBeforeUnmount(() => {
         :id="columnSettingsId"
         class="data-table-column-menu"
         role="group"
-        aria-label="表格列设置"
+        :aria-label="t('common.tableColumnSettings')"
       >
-        <div class="data-table-column-menu-title">设置显示列</div>
+        <div class="data-table-column-menu-title">{{ t("common.setVisibleColumns") }}</div>
         <label
           v-for="column in columns"
           :key="column.key"
@@ -478,10 +488,19 @@ onBeforeUnmount(() => {
             @change="setColumnVisible(column.key, ($event.target as HTMLInputElement).checked)"
           />
           <span>{{ column.label }}</span>
-          <i v-if="!column.hidable" class="fa-solid fa-lock data-table-column-option-lock" aria-label="固定列" />
+          <i
+            v-if="!column.hidable"
+            class="fa-solid fa-lock data-table-column-option-lock"
+            :aria-label="t('common.pinColumn')"
+          />
         </label>
-        <button class="data-table-column-reset" type="button" aria-label="恢复默认列" @click="restoreDefaultColumns">
-          恢复默认列
+        <button
+          class="data-table-column-reset"
+          type="button"
+          :aria-label="t('common.restoreDefaultColumns')"
+          @click="restoreDefaultColumns"
+        >
+          {{ t("common.restoreDefaultColumns") }}
         </button>
       </div>
     </div>
@@ -515,7 +534,7 @@ onBeforeUnmount(() => {
               <input
                 class="data-table-checkbox"
                 type="checkbox"
-                aria-label="选择当前页全部"
+                :aria-label="t('common.selectAllPage')"
                 :checked="allCurrentRowsChecked"
                 :indeterminate="someCurrentRowsChecked"
                 @change="toggleCurrentRows(($event.target as HTMLInputElement).checked)"

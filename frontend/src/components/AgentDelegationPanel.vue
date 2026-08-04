@@ -4,6 +4,7 @@
  * Styles reuse existing agent-studio section patterns.
  */
 import { computed, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import type { AgentA2AExposure, AgentA2ARemoteBinding, AgentDelegationBinding } from "../types/domain";
 import {
   createA2AExposure,
@@ -31,6 +32,8 @@ const props = defineProps<{
   /** Other agents in workspace for target select. */
   agentOptions: { id: string; name: string }[];
 }>();
+
+const { t } = useI18n();
 
 const bindings = ref<AgentDelegationBinding[]>([]);
 const remotes = ref<AgentA2ARemoteBinding[]>([]);
@@ -73,10 +76,10 @@ const targetAgentSelectOptions = computed<AppSelectOption[]>(() =>
 );
 
 /** User-facing labels; API still uses INLINE / TASK / AGENT_ACCESS / NONE. */
-const modeSelectOptions: AppSelectOption[] = [
-  { label: "同一次对话内完成（推荐）", value: "INLINE" },
-  { label: "单独开一个任务执行", value: "TASK" },
-];
+const modeSelectOptions = computed<AppSelectOption[]>(() => [
+  { label: t("agents.adpModeInline"), value: "INLINE" },
+  { label: t("agents.adpModeTask"), value: "TASK" },
+]);
 
 const authModeSelectOptions = computed<AppSelectOption[]>(() =>
   capabilities.value.authModes.map((mode) => ({
@@ -94,16 +97,16 @@ function asAuthMode(value: string | number | boolean): "AGENT_ACCESS" | "NONE" {
 }
 
 function modeLabel(mode?: string) {
-  return mode === "TASK" ? "独立任务" : "同次对话";
+  return mode === "TASK" ? t("agents.adpModeTaskShort") : t("agents.adpModeInlineShort");
 }
 
 function authModeLabel(mode?: string) {
-  if (mode === "NONE") return "无需鉴权（仅可信环境）";
-  return "需要访问令牌（推荐）";
+  if (mode === "NONE") return t("agents.adpAuthNone");
+  return t("agents.adpAuthToken");
 }
 
 function authModeShort(mode?: string) {
-  return mode === "NONE" ? "无需鉴权" : "访问令牌";
+  return mode === "NONE" ? t("agents.adpAuthNoneShort") : t("agents.adpAuthTokenShort");
 }
 
 /** Collapsible blocks — all closed by default so the studio stays compact. */
@@ -137,7 +140,7 @@ async function reload() {
     const all = await listA2AExposures(props.workspaceId);
     exposures.value = all.filter((e) => e.agentId === props.agentId);
   } catch (e) {
-    error.value = e instanceof Error ? e.message : "加载委派配置失败";
+    error.value = e instanceof Error ? e.message : t("agents.adpLoadFailed");
   } finally {
     loading.value = false;
   }
@@ -146,11 +149,11 @@ async function reload() {
 async function onCreate() {
   error.value = "";
   if (!form.value.targetAgentId || !form.value.callableName.trim()) {
-    error.value = "请填写目标 Agent 与调用名称";
+    error.value = t("agents.adpNeedTargetAndName");
     return;
   }
   if (!/^[a-z][a-z0-9_]*$/.test(form.value.callableName.trim())) {
-    error.value = "callableName 需为小写字母开头的标识符";
+    error.value = t("agents.adpCallableNameInvalid");
     return;
   }
   try {
@@ -165,7 +168,7 @@ async function onCreate() {
     form.value = { targetAgentId: "", callableName: "", description: "", mode: "INLINE" };
     await reload();
   } catch (e) {
-    error.value = e instanceof Error ? e.message : "创建绑定失败";
+    error.value = e instanceof Error ? e.message : t("agents.adpCreateBindingFailed");
   }
 }
 
@@ -175,7 +178,7 @@ async function onDisable(b: AgentDelegationBinding) {
     await disableDelegationBinding(props.workspaceId, b.id, b.version);
     await reload();
   } catch (e) {
-    error.value = e instanceof Error ? e.message : "禁用失败";
+    error.value = e instanceof Error ? e.message : t("agents.adpDisableFailed");
   }
 }
 
@@ -188,7 +191,7 @@ async function onEnableBinding(b: AgentDelegationBinding) {
     });
     await reload();
   } catch (e) {
-    error.value = e instanceof Error ? e.message : "启用失败";
+    error.value = e instanceof Error ? e.message : t("agents.adpEnableFailed");
   }
 }
 
@@ -206,7 +209,7 @@ async function onSaveBinding(b: AgentDelegationBinding) {
     });
     await reload();
   } catch (e) {
-    error.value = e instanceof Error ? e.message : "保存绑定失败";
+    error.value = e instanceof Error ? e.message : t("agents.adpSaveBindingFailed");
   }
 }
 
@@ -219,7 +222,7 @@ async function onEnableExposure(exp: AgentA2AExposure) {
     });
     await reload();
   } catch (e) {
-    error.value = e instanceof Error ? e.message : "启用暴露失败";
+    error.value = e instanceof Error ? e.message : t("agents.adpEnableExposureFailed");
   }
 }
 
@@ -235,7 +238,7 @@ async function onSaveExposure(exp: AgentA2AExposure) {
     });
     await reload();
   } catch (e) {
-    error.value = e instanceof Error ? e.message : "保存暴露失败";
+    error.value = e instanceof Error ? e.message : t("agents.adpSaveExposureFailed");
   }
 }
 
@@ -248,7 +251,7 @@ async function onEnableRemote(r: AgentA2ARemoteBinding) {
     });
     await reload();
   } catch (e) {
-    error.value = e instanceof Error ? e.message : "启用远端失败";
+    error.value = e instanceof Error ? e.message : t("agents.adpEnableRemoteFailed");
   }
 }
 
@@ -268,7 +271,7 @@ async function onSaveRemote(r: AgentA2ARemoteBinding) {
     });
     await reload();
   } catch (e) {
-    error.value = e instanceof Error ? e.message : "保存远端失败";
+    error.value = e instanceof Error ? e.message : t("agents.adpSaveRemoteFailed");
   }
 }
 
@@ -276,7 +279,7 @@ async function onCreateExposure() {
   error.value = "";
   cardPreview.value = "";
   if (!exposureForm.value.publicName.trim()) {
-    error.value = "请填写公开名称";
+    error.value = t("agents.adpNeedPublicName");
     return;
   }
   try {
@@ -290,7 +293,7 @@ async function onCreateExposure() {
     exposureForm.value = { publicName: "", publicDescription: "", authMode: "AGENT_ACCESS" };
     await reload();
   } catch (e) {
-    error.value = e instanceof Error ? e.message : "创建 A2A 暴露失败";
+    error.value = e instanceof Error ? e.message : t("agents.adpCreateExposureFailed");
   }
 }
 
@@ -300,7 +303,7 @@ async function onDisableExposure(exp: AgentA2AExposure) {
     await disableA2AExposure(props.workspaceId, exp.id, exp.version);
     await reload();
   } catch (e) {
-    error.value = e instanceof Error ? e.message : "禁用暴露失败";
+    error.value = e instanceof Error ? e.message : t("agents.adpDisableExposureFailed");
   }
 }
 
@@ -310,7 +313,7 @@ async function onPreviewCard(exp: AgentA2AExposure) {
     const card = await previewA2AAgentCard(props.workspaceId, exp.id);
     cardPreview.value = JSON.stringify(card, null, 2);
   } catch (e) {
-    error.value = e instanceof Error ? e.message : "预览 Agent Card 失败";
+    error.value = e instanceof Error ? e.message : t("agents.adpPreviewCardFailed");
   }
 }
 
@@ -320,7 +323,7 @@ async function onDisableRemote(r: AgentA2ARemoteBinding) {
     await disableA2ARemote(props.workspaceId, r.id, r.version);
     await reload();
   } catch (e) {
-    error.value = e instanceof Error ? e.message : "禁用远端失败";
+    error.value = e instanceof Error ? e.message : t("agents.adpDisableRemoteFailed");
   }
 }
 
@@ -331,7 +334,7 @@ async function onCreateRemote() {
     .map((s) => s.trim())
     .filter(Boolean);
   if (!remoteForm.value.callableName || !remoteForm.value.endpointUrl || hosts.length === 0) {
-    error.value = "远端绑定需填写名称、endpoint 与 allowedHosts";
+    error.value = t("agents.adpRemoteFieldsRequired");
     return;
   }
   try {
@@ -356,7 +359,7 @@ async function onCreateRemote() {
     };
     await reload();
   } catch (e) {
-    error.value = e instanceof Error ? e.message : "创建远端绑定失败";
+    error.value = e instanceof Error ? e.message : t("agents.adpCreateRemoteFailed");
   }
 }
 
@@ -379,13 +382,12 @@ onMounted(() => {
 <template>
   <section class="agent-studio-section agent-delegation-panel">
     <header>
-      <span><i class="fa-solid fa-sitemap" aria-hidden="true" /> 协作与对外能力</span>
+      <span><i class="fa-solid fa-sitemap" aria-hidden="true" /> {{ t("agents.collabExternal") }}</span>
     </header>
 
     <div class="adp-body">
       <p class="adp-intro">
-        配置本 Agent 如何<strong>请同事帮忙</strong>、如何<strong>被外部系统调用</strong>、以及如何<strong>呼叫外部
-        Agent</strong>。默认只传递任务内容，不会把系统提示词泄露给对方。
+        {{ t("agents.adpIntro") }}
       </p>
 
       <p v-if="error" class="agent-studio-inline-warning" role="alert">
@@ -395,10 +397,10 @@ onMounted(() => {
 
       <div v-if="loading" class="adp-loading" role="status">
         <i class="fa-solid fa-spinner fa-spin" aria-hidden="true" />
-        <span>加载协作配置…</span>
+        <span>{{ t("agents.adpLoading") }}</span>
       </div>
 
-      <!-- ── Internal delegation ── -->
+      <!-- Internal delegation -->
       <section class="adp-block" :class="{ open: isBlockOpen('internal') }" aria-labelledby="adp-internal-title">
         <button
           type="button"
@@ -412,8 +414,8 @@ onMounted(() => {
               <i class="fa-solid fa-link" />
             </span>
             <div>
-              <strong id="adp-internal-title">请其他 Agent 帮忙</strong>
-              <small>同一业务空间内，把子任务交给另一个 Agent</small>
+              <strong id="adp-internal-title">{{ t("agents.adpInternalTitle") }}</strong>
+              <small>{{ t("agents.adpInternalSubtitle") }}</small>
             </div>
           </div>
           <div class="adp-block-meta">
@@ -428,7 +430,7 @@ onMounted(() => {
 
         <div v-show="isBlockOpen('internal')" id="adp-internal-body" class="adp-block-body">
         <p class="adp-hint">
-          例如：主 Agent 负责接待，需要查订单时自动请「订单助手」处理。调用名写在提示词里，模型会像使用工具一样调用它。
+          {{ t("agents.adpInternalHint") }}
         </p>
 
         <ul v-if="bindings.length" class="adp-list">
@@ -439,14 +441,16 @@ onMounted(() => {
                 <i class="fa-solid fa-arrow-right adp-arrow" aria-hidden="true" />
                 <span class="adp-target">{{ agentName(b.targetAgentId) }}</span>
                 <span class="adp-pill" :title="b.mode">{{ modeLabel(b.mode) }}</span>
-                <span class="adp-pill muted" title="仅传递任务内容，不共享系统提示词">仅任务上下文</span>
+                <span class="adp-pill muted" :title="t('agents.adpTaskContextOnlyTitle')">{{
+                  t("agents.adpTaskContextOnly")
+                }}</span>
                 <span class="adp-pill" :class="b.enabled ? 'on' : 'off'">
-                  {{ b.enabled ? "启用" : "已停用" }}
+                  {{ b.enabled ? t("agents.adpEnabled") : t("agents.adpDisabled") }}
                 </span>
               </div>
               <div class="adp-card-actions">
                 <button type="button" class="ghost-button small" :disabled="!b.enabled" @click="onDisable(b)">
-                  停用
+                  {{ t("agents.adpDisable") }}
                 </button>
                 <button
                   type="button"
@@ -454,7 +458,7 @@ onMounted(() => {
                   :disabled="b.enabled"
                   @click="onEnableBinding(b)"
                 >
-                  重新启用
+                  {{ t("agents.adpReenable") }}
                 </button>
                 <button
                   type="button"
@@ -463,48 +467,52 @@ onMounted(() => {
                   @click="onSaveBinding(b)"
                 >
                   <i class="fa-solid fa-check" aria-hidden="true" />
-                  保存
+                  {{ t("common.save") }}
                 </button>
               </div>
             </div>
             <div class="adp-card-fields">
               <label class="modal-field">
-                <span>调用名</span>
+                <span>{{ t("agents.adpCallableName") }}</span>
                 <input v-model="b.callableName" data-testid="edit-binding-callable" />
-                <small class="adp-help">提示词里使用的工具名，小写字母开头，如 order_lookup</small>
+                <small class="adp-help">{{ t("agents.adpCallableNameHelp") }}</small>
               </label>
               <label class="modal-field" data-testid="edit-binding-target">
-                <span>帮我处理的 Agent</span>
+                <span>{{ t("agents.adpHelpAgent") }}</span>
                 <AppSelect
                   class="adp-select"
                   :model-value="b.targetAgentId"
                   :options="targetAgentSelectOptions"
-                  placeholder="选择 Agent"
-                  aria-label="帮我处理的 Agent"
+                  :placeholder="t('agents.adpSelectAgent')"
+                  :aria-label="t('agents.adpHelpAgent')"
                   @update:model-value="b.targetAgentId = String($event)"
                 />
               </label>
               <label class="modal-field" data-testid="edit-binding-mode">
-                <span>执行方式</span>
+                <span>{{ t("agents.adpExecMode") }}</span>
                 <AppSelect
                   class="adp-select"
                   :model-value="b.mode"
                   :options="modeSelectOptions"
-                  placeholder="选择执行方式"
-                  aria-label="执行方式"
+                  :placeholder="t('agents.adpSelectExecMode')"
+                  :aria-label="t('agents.adpExecMode')"
                   @update:model-value="b.mode = asMode($event)"
                 />
-                <small class="adp-help">「同次对话」更快；「独立任务」隔离更强、可单独追踪</small>
+                <small class="adp-help">{{ t("agents.adpModeHelp") }}</small>
               </label>
               <label class="modal-field">
-                <span>上下文范围</span>
-                <input value="仅任务内容（不共享系统提示词）" disabled title="当前固定为仅任务上下文" />
+                <span>{{ t("agents.adpContextScope") }}</span>
+                <input
+                  :value="t('agents.adpTaskContextOnlyValue')"
+                  disabled
+                  :title="t('agents.adpTaskContextOnlyFixedTitle')"
+                />
               </label>
               <label class="modal-field wide">
-                <span>使用说明</span>
+                <span>{{ t("agents.adpUsageNotes") }}</span>
                 <input
                   v-model="b.description"
-                  placeholder="例如：查订单、改地址时调用"
+                  :placeholder="t('agents.adpUsageNotesPh')"
                   data-testid="edit-binding-desc"
                 />
               </label>
@@ -513,61 +521,61 @@ onMounted(() => {
         </ul>
         <div v-else class="adp-empty">
           <i class="fa-regular fa-folder-open" aria-hidden="true" />
-          <span>还没有可协作的 Agent，添加后即可在对话中自动请对方帮忙</span>
+          <span>{{ t("agents.adpEmptyInternal") }}</span>
         </div>
 
         <div class="adp-form">
           <div class="adp-form-label">
             <i class="fa-solid fa-plus" aria-hidden="true" />
-            <span>添加协作关系</span>
+            <span>{{ t("agents.adpAddCollabRelation") }}</span>
           </div>
           <div class="adp-form-grid">
             <label class="modal-field">
-              <span>帮我处理的 Agent</span>
+              <span>{{ t("agents.adpHelpAgent") }}</span>
               <AppSelect
                 class="adp-select"
                 :model-value="form.targetAgentId"
                 :options="targetAgentSelectOptions"
-                placeholder="选择 Agent…"
-                aria-label="帮我处理的 Agent"
+                :placeholder="t('agents.adpSelectAgentPh')"
+                :aria-label="t('agents.adpHelpAgent')"
                 @update:model-value="form.targetAgentId = String($event)"
               />
             </label>
             <label class="modal-field">
-              <span>调用名</span>
-              <input v-model="form.callableName" placeholder="例如 order_lookup" />
-              <small class="adp-help">写进提示词的名称；稳定后尽量不要改</small>
+              <span>{{ t("agents.adpCallableName") }}</span>
+              <input v-model="form.callableName" placeholder="e.g. order_lookup" />
+              <small class="adp-help">{{ t("agents.adpCallableNameHelpStable") }}</small>
             </label>
             <label class="modal-field">
-              <span>执行方式</span>
+              <span>{{ t("agents.adpExecMode") }}</span>
               <AppSelect
                 class="adp-select"
                 :model-value="form.mode"
                 :options="modeSelectOptions"
-                placeholder="选择执行方式"
-                aria-label="执行方式"
+                :placeholder="t('agents.adpSelectExecMode')"
+                :aria-label="t('agents.adpExecMode')"
                 @update:model-value="form.mode = asMode($event)"
               />
               <small class="adp-help">
-                同次对话：在当前会话里直接完成；独立任务：另起任务，互不影响
+                {{ t("agents.adpModeHelpDetail") }}
               </small>
             </label>
             <label class="modal-field wide">
-              <span>使用说明</span>
-              <input v-model="form.description" placeholder="什么情况下请对方帮忙？例如：需要查订单详情时" />
+              <span>{{ t("agents.adpUsageNotes") }}</span>
+              <input v-model="form.description" :placeholder="t('agents.adpUsageNotesFormPh')" />
             </label>
           </div>
           <div class="adp-form-actions">
             <button type="button" class="primary-button small" @click="onCreate">
               <i class="fa-solid fa-plus" aria-hidden="true" />
-              添加协作
+              {{ t("agents.adpAddCollab") }}
             </button>
           </div>
         </div>
         </div>
       </section>
 
-      <!-- ── A2A Inbound ── -->
+      <!-- A2A Inbound -->
       <section class="adp-block" :class="{ open: isBlockOpen('inbound') }" aria-labelledby="adp-inbound-title">
         <button
           type="button"
@@ -581,8 +589,8 @@ onMounted(() => {
               <i class="fa-solid fa-download" />
             </span>
             <div>
-              <strong id="adp-inbound-title">允许外部系统调用我</strong>
-              <small>把本 Agent 开放给第三方 / 其他平台（入站）</small>
+              <strong id="adp-inbound-title">{{ t("agents.adpInboundTitle") }}</strong>
+              <small>{{ t("agents.adpInboundSubtitle") }}</small>
             </div>
           </div>
           <div class="adp-block-meta">
@@ -597,7 +605,7 @@ onMounted(() => {
 
         <div v-show="isBlockOpen('inbound')" id="adp-inbound-body" class="adp-block-body">
         <p class="adp-hint">
-          开启后，外部系统可以通过标准接口呼叫本 Agent。对外展示名是别人看到的名片名称；访问控制建议使用访问令牌，避免被任意调用。
+          {{ t("agents.adpInboundHint") }}
         </p>
 
         <ul v-if="exposures.length" class="adp-list">
@@ -607,13 +615,13 @@ onMounted(() => {
                 <strong class="adp-public-name">{{ e.publicName }}</strong>
                 <span class="adp-pill" :title="e.authMode">{{ authModeShort(e.authMode) }}</span>
                 <span class="adp-pill" :class="e.enabled ? 'on' : 'off'">
-                  {{ e.enabled ? "启用" : "已停用" }}
+                  {{ e.enabled ? t("agents.adpEnabled") : t("agents.adpDisabled") }}
                 </span>
               </div>
               <div class="adp-card-actions">
                 <button type="button" class="ghost-button small" @click="onPreviewCard(e)">
                   <i class="fa-solid fa-id-card" aria-hidden="true" />
-                  查看名片
+                  {{ t("agents.adpViewCard") }}
                 </button>
                 <button
                   type="button"
@@ -621,7 +629,7 @@ onMounted(() => {
                   :disabled="!e.enabled"
                   @click="onDisableExposure(e)"
                 >
-                  停用
+                  {{ t("agents.adpDisable") }}
                 </button>
                 <button
                   type="button"
@@ -629,7 +637,7 @@ onMounted(() => {
                   :disabled="e.enabled"
                   @click="onEnableExposure(e)"
                 >
-                  重新启用
+                  {{ t("agents.adpReenable") }}
                 </button>
                 <button
                   type="button"
@@ -638,74 +646,74 @@ onMounted(() => {
                   @click="onSaveExposure(e)"
                 >
                   <i class="fa-solid fa-check" aria-hidden="true" />
-                  保存
+                  {{ t("common.save") }}
                 </button>
               </div>
             </div>
             <div class="adp-card-fields">
               <label class="modal-field">
-                <span>对外展示名</span>
+                <span>{{ t("agents.adpPublicName") }}</span>
                 <input v-model="e.publicName" />
-                <small class="adp-help">外部系统看到的名称，可用中文</small>
+                <small class="adp-help">{{ t("agents.adpPublicNameHelp") }}</small>
               </label>
               <label class="modal-field" data-testid="exposure-auth-mode">
-                <span>谁可以调用</span>
+                <span>{{ t("agents.adpWhoCanCall") }}</span>
                 <AppSelect
                   class="adp-select"
                   :model-value="e.authMode"
                   :options="authModeSelectOptions"
-                  placeholder="选择访问控制"
-                  aria-label="谁可以调用"
+                  :placeholder="t('agents.adpSelectAccessControl')"
+                  :aria-label="t('agents.adpWhoCanCall')"
                   @update:model-value="e.authMode = asAuthMode($event)"
                 />
               </label>
               <label class="modal-field wide">
-                <span>能力简介</span>
-                <input v-model="e.publicDescription" placeholder="一句话说明我能做什么" />
+                <span>{{ t("agents.adpCapabilityBlurb") }}</span>
+                <input v-model="e.publicDescription" :placeholder="t('agents.adpCapabilityBlurbPh')" />
               </label>
             </div>
           </li>
         </ul>
         <div v-else class="adp-empty">
           <i class="fa-solid fa-shield-halved" aria-hidden="true" />
-          <span>当前未对外开放；仅平台内部对话可使用本 Agent</span>
+          <span>{{ t("agents.adpEmptyInbound") }}</span>
         </div>
 
         <div class="adp-form">
           <div class="adp-form-label">
             <i class="fa-solid fa-globe" aria-hidden="true" />
-            <span>对外开放本 Agent</span>
+            <span>{{ t("agents.adpOpenExternal") }}</span>
           </div>
           <div class="adp-form-grid">
             <label class="modal-field">
-              <span>对外展示名</span>
-              <input v-model="exposureForm.publicName" placeholder="例如：订单助手" />
-              <small class="adp-help">别人识别你的名字，不是技术 ID</small>
+              <span>{{ t("agents.adpPublicName") }}</span>
+              <input v-model="exposureForm.publicName" :placeholder="t('agents.adpPublicNamePh')" />
+              <small class="adp-help">{{ t("agents.adpPublicNameHelpShort") }}</small>
             </label>
             <label class="modal-field" data-testid="new-exposure-auth-mode">
-              <span>谁可以调用</span>
+              <span>{{ t("agents.adpWhoCanCall") }}</span>
               <AppSelect
                 class="adp-select"
                 :model-value="exposureForm.authMode"
                 :options="authModeSelectOptions"
-                placeholder="选择访问控制"
-                aria-label="谁可以调用"
+                :placeholder="t('agents.adpSelectAccessControl')"
+                :aria-label="t('agents.adpWhoCanCall')"
                 @update:model-value="exposureForm.authMode = asAuthMode($event)"
               />
-              <small class="adp-help">生产环境请选「需要访问令牌」</small>
+              <small class="adp-help">{{ t("agents.adpAuthHelpProd") }}</small>
             </label>
             <label class="modal-field wide">
-              <span>能力简介</span>
+              <span>{{ t("agents.adpCapabilityBlurb") }}</span>
               <input
                 v-model="exposureForm.publicDescription"
-                placeholder="例如：查询与变更订单状态"
+                :placeholder="t('agents.adpCapabilityBlurbFormPh')"
               />
             </label>
           </div>
           <div class="adp-form-actions">
             <button type="button" class="primary-button small" @click="onCreateExposure">
               <i class="fa-solid fa-globe" aria-hidden="true" />
-              对外开放
+              {{ t("agents.adpOpenExternalBtn") }}
             </button>
           </div>
         </div>
@@ -714,7 +722,7 @@ onMounted(() => {
         </div>
       </section>
 
-      <!-- ── A2A Outbound ── -->
+      <!-- A2A Outbound -->
       <section class="adp-block" :class="{ open: isBlockOpen('outbound') }" aria-labelledby="adp-outbound-title">
         <button
           type="button"
@@ -728,8 +736,8 @@ onMounted(() => {
               <i class="fa-solid fa-share-from-square" />
             </span>
             <div>
-              <strong id="adp-outbound-title">呼叫外部 Agent</strong>
-              <small>连接本空间之外的 Agent 服务（出站）</small>
+              <strong id="adp-outbound-title">{{ t("agents.adpOutboundTitle") }}</strong>
+              <small>{{ t("agents.adpOutboundSubtitle") }}</small>
             </div>
           </div>
           <div class="adp-block-meta">
@@ -744,7 +752,7 @@ onMounted(() => {
 
         <div v-show="isBlockOpen('outbound')" id="adp-outbound-body" class="adp-block-body">
         <p class="adp-hint">
-          当能力在别的系统里时使用：填写对方服务地址，并限制允许访问的主机名。本 Agent 会像调用工具一样呼叫对方。
+          {{ t("agents.adpOutboundHint") }}
         </p>
 
         <ul v-if="remotes.length" class="adp-list">
@@ -754,12 +762,14 @@ onMounted(() => {
                 <code class="adp-callable">{{ r.callableName }}</code>
                 <i class="fa-solid fa-arrow-right adp-arrow" aria-hidden="true" />
                 <span class="adp-endpoint" :title="r.endpointUrl">{{ r.endpointUrl }}</span>
-                <span class="adp-pill muted">外部</span>
-                <span v-if="r.agentCardUrl" class="adp-pill muted">已配置名片</span>
-                <span v-if="r.authSecretRef" class="adp-pill muted">已配置密钥</span>
-                <span class="adp-pill muted">{{ Math.round((r.timeoutMs || 0) / 1000) }}s 超时</span>
+                <span class="adp-pill muted">{{ t("agents.adpExternal") }}</span>
+                <span v-if="r.agentCardUrl" class="adp-pill muted">{{ t("agents.adpCardConfigured") }}</span>
+                <span v-if="r.authSecretRef" class="adp-pill muted">{{ t("agents.adpSecretConfigured") }}</span>
+                <span class="adp-pill muted">{{
+                  t("agents.adpTimeoutSeconds", { n: Math.round((r.timeoutMs || 0) / 1000) })
+                }}</span>
                 <span class="adp-pill" :class="r.enabled ? 'on' : 'off'">
-                  {{ r.enabled ? "启用" : "已停用" }}
+                  {{ r.enabled ? t("agents.adpEnabled") : t("agents.adpDisabled") }}
                 </span>
               </div>
               <div class="adp-card-actions">
@@ -769,7 +779,7 @@ onMounted(() => {
                   :disabled="!r.enabled"
                   @click="onDisableRemote(r)"
                 >
-                  停用
+                  {{ t("agents.adpDisable") }}
                 </button>
                 <button
                   type="button"
@@ -777,7 +787,7 @@ onMounted(() => {
                   :disabled="r.enabled"
                   @click="onEnableRemote(r)"
                 >
-                  重新启用
+                  {{ t("agents.adpReenable") }}
                 </button>
                 <button
                   type="button"
@@ -786,28 +796,28 @@ onMounted(() => {
                   @click="onSaveRemote(r)"
                 >
                   <i class="fa-solid fa-check" aria-hidden="true" />
-                  保存
+                  {{ t("common.save") }}
                 </button>
               </div>
             </div>
             <div class="adp-card-fields">
               <label class="modal-field">
-                <span>调用名</span>
+                <span>{{ t("agents.adpCallableName") }}</span>
                 <input v-model="r.callableName" data-testid="edit-remote-callable" />
-                <small class="adp-help">提示词里使用的名称</small>
+                <small class="adp-help">{{ t("agents.adpCallableNameHelpShort") }}</small>
               </label>
               <label class="modal-field wide">
-                <span>服务地址</span>
+                <span>{{ t("agents.adpServiceUrl") }}</span>
                 <input v-model="r.endpointUrl" data-testid="edit-remote-endpoint" />
-                <small class="adp-help">对方 Agent 的 HTTPS 接口地址</small>
+                <small class="adp-help">{{ t("agents.adpServiceUrlHelp") }}</small>
               </label>
               <label class="modal-field wide">
-                <span>名片地址（可选）</span>
+                <span>{{ t("agents.adpCardUrlOptional") }}</span>
                 <input v-model="r.agentCardUrl" data-testid="edit-remote-card" />
-                <small class="adp-help">填写后会校验对方能力说明；校验失败则拒绝调用</small>
+                <small class="adp-help">{{ t("agents.adpCardUrlHelp") }}</small>
               </label>
               <label class="modal-field wide">
-                <span>允许的主机名</span>
+                <span>{{ t("agents.adpAllowedHosts") }}</span>
                 <input
                   data-testid="edit-remote-hosts"
                   :value="(r.allowedHosts || []).join(', ')"
@@ -818,19 +828,19 @@ onMounted(() => {
                       .filter(Boolean)
                   "
                 />
-                <small class="adp-help">安全白名单，多个用逗号分隔，如 agent.example.com</small>
+                <small class="adp-help">{{ t("agents.adpAllowedHostsHelp") }}</small>
               </label>
               <label class="modal-field">
-                <span>密钥引用</span>
+                <span>{{ t("agents.adpSecretRef") }}</span>
                 <input
                   v-model="r.authSecretRef"
                   autocomplete="off"
                   data-testid="edit-remote-secret"
                 />
-                <small class="adp-help">只存引用 ID，不会回显明文密码</small>
+                <small class="adp-help">{{ t("agents.adpSecretRefHelp") }}</small>
               </label>
               <label class="modal-field">
-                <span>超时（毫秒）</span>
+                <span>{{ t("agents.adpTimeoutMs") }}</span>
                 <input
                   v-model.number="r.timeoutMs"
                   type="number"
@@ -839,7 +849,7 @@ onMounted(() => {
                 />
               </label>
               <label class="modal-field wide">
-                <span>使用说明</span>
+                <span>{{ t("agents.adpUsageNotes") }}</span>
                 <input v-model="r.description" data-testid="edit-remote-desc" />
               </label>
             </div>
@@ -847,61 +857,61 @@ onMounted(() => {
         </ul>
         <div v-else class="adp-empty">
           <i class="fa-solid fa-satellite-dish" aria-hidden="true" />
-          <span>还没有外部协作对象；需要对接站外 Agent 时再配置</span>
+          <span>{{ t("agents.adpEmptyOutbound") }}</span>
         </div>
 
         <div class="adp-form">
           <div class="adp-form-label">
             <i class="fa-solid fa-plus" aria-hidden="true" />
-            <span>添加外部协作</span>
+            <span>{{ t("agents.adpAddExternal") }}</span>
           </div>
           <div class="adp-form-grid">
             <label class="modal-field">
-              <span>调用名</span>
-              <input v-model="remoteForm.callableName" placeholder="例如 external_analyst" />
-              <small class="adp-help">提示词中引用的名称</small>
+              <span>{{ t("agents.adpCallableName") }}</span>
+              <input v-model="remoteForm.callableName" placeholder="e.g. external_analyst" />
+              <small class="adp-help">{{ t("agents.adpCallableNameHelpShort") }}</small>
             </label>
             <label class="modal-field">
-              <span>超时（毫秒）</span>
+              <span>{{ t("agents.adpTimeoutMs") }}</span>
               <input
                 v-model.number="remoteForm.timeoutMs"
                 type="number"
                 min="1000"
                 max="600000"
               />
-              <small class="adp-help">默认 60000 = 60 秒</small>
+              <small class="adp-help">{{ t("agents.adpTimeoutDefaultHelp") }}</small>
             </label>
             <label class="modal-field wide">
-              <span>服务地址（HTTPS）</span>
+              <span>{{ t("agents.adpServiceUrlHttps") }}</span>
               <input v-model="remoteForm.endpointUrl" placeholder="https://agent.example.com/a2a" />
             </label>
             <label class="modal-field wide">
-              <span>名片地址（可选）</span>
+              <span>{{ t("agents.adpCardUrlOptional") }}</span>
               <input
                 v-model="remoteForm.agentCardUrl"
                 placeholder="https://agent.example.com/.well-known/agent-card.json"
               />
-              <small class="adp-help">对方能力说明文档地址；填写后发现失败会拒绝调用</small>
+              <small class="adp-help">{{ t("agents.adpCardUrlDiscoverHelp") }}</small>
             </label>
             <label class="modal-field wide">
-              <span>允许的主机名</span>
+              <span>{{ t("agents.adpAllowedHosts") }}</span>
               <input v-model="remoteForm.allowedHosts" placeholder="agent.example.com" />
-              <small class="adp-help">必须与服务地址域名一致，防止被重定向到未授权主机</small>
+              <small class="adp-help">{{ t("agents.adpAllowedHostsStrictHelp") }}</small>
             </label>
             <label class="modal-field wide">
-              <span>密钥引用（可选）</span>
+              <span>{{ t("agents.adpSecretRefOptional") }}</span>
               <input
                 v-model="remoteForm.authSecretRef"
-                placeholder="secret:工作空间ID:密钥ID"
+                :placeholder="t('agents.adpSecretRefPh')"
                 autocomplete="off"
               />
-              <small class="adp-help">只保存引用，不在此填写明文 Token</small>
+              <small class="adp-help">{{ t("agents.adpSecretRefHelpNoPlaintext") }}</small>
             </label>
           </div>
           <div class="adp-form-actions">
             <button type="button" class="primary-button small" @click="onCreateRemote">
               <i class="fa-solid fa-plus" aria-hidden="true" />
-              添加外部协作
+              {{ t("agents.adpAddExternal") }}
             </button>
           </div>
         </div>

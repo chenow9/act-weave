@@ -1,3 +1,4 @@
+import { tt } from "../i18n/tt";
 /**
  * Workflow page model (ZKL-64 item 13).
  */
@@ -126,13 +127,13 @@ export function createWorkflowPageModel() {
   const workflowFocusRestoreTarget = ref<HTMLElement>();
 
   const workflowStatusOptions = [
-    { label: "草稿", value: "Draft" },
-    { label: "待审核", value: "Review" },
-    { label: "已发布", value: "Published" },
-    { label: "已停用", value: "Disabled" },
+    { label: tt("workflow.statusDraft"), value: "Draft" },
+    { label: tt("workflow.statusReview"), value: "Review" },
+    { label: tt("workflow.statusPublished"), value: "Published" },
+    { label: tt("workflow.statusDisabled"), value: "Disabled" },
   ];
   const workflowEditorHelpText =
-    "保存画布会更新节点和连线；检查问题会重新编译；模拟运行只做测试；发布上线后 Agent 才能调用。";
+    tt("workflow.saveHint");
 
   const workspaceOptions = computed(() =>
     (workspaces.items || []).map((workspace) => ({
@@ -140,27 +141,27 @@ export function createWorkflowPageModel() {
       value: workspace.id,
     })),
   );
-  const workflowNameError = computed(() => (workflowDraft.value.name.trim() ? "" : "Workflow 名称必填"));
-  const workflowWorkspaceError = computed(() => (workflowDraft.value.workspaceId.trim() ? "" : "业务空间必填"));
+  const workflowNameError = computed(() => (workflowDraft.value.name.trim() ? "" : tt("workflow.nameRequired")));
+  const workflowWorkspaceError = computed(() => (workflowDraft.value.workspaceId.trim() ? "" : tt("workflow.workspaceRequired")));
   const canSaveWorkflowMetadata = computed(() => !workflowNameError.value && !workflowWorkspaceError.value);
   const statusLabels: Record<WorkflowStatus, string> = {
-    Draft: "草稿",
-    Review: "待审核",
-    Published: "已发布",
-    Disabled: "已停用",
+    Draft: tt("workflow.statusDraft"),
+    Review: tt("workflow.statusReview"),
+    Published: tt("workflow.statusPublished"),
+    Disabled: tt("workflow.statusDisabled"),
   };
 
   const executionStatusLabels: Record<string, string> = {
-    Running: "运行中",
-    Approval: "待确认",
-    Success: "成功",
-    Failed: "失败",
+    Running: tt("workflow.execRunning"),
+    Approval: tt("workflow.execApproval"),
+    Success: tt("workflow.execSuccess"),
+    Failed: tt("workflow.execFailed"),
   };
 
   const workflowColumns = computed<ManagementListColumn<WorkflowSummary>[]>(() => [
     {
       key: "workflow",
-      label: "业务流程名",
+      label: tt("workflow.colName"),
       width: 300,
       sortable: true,
       sortKey: "name",
@@ -168,7 +169,7 @@ export function createWorkflowPageModel() {
     },
     {
       key: "workspace",
-      label: "业务空间",
+      label: tt("workflow.colWorkspace"),
       width: 170,
       hidable: true,
       sortable: true,
@@ -177,7 +178,7 @@ export function createWorkflowPageModel() {
     },
     {
       key: "nodes",
-      label: "当前节点数",
+      label: tt("workflow.colNodes"),
       width: 160,
       align: "right",
       hidable: true,
@@ -187,7 +188,7 @@ export function createWorkflowPageModel() {
     },
     {
       key: "successRate",
-      label: "运行成功率",
+      label: tt("workflow.colSuccess"),
       width: 160,
       align: "right",
       hidable: true,
@@ -195,7 +196,7 @@ export function createWorkflowPageModel() {
     },
     {
       key: "status",
-      label: "当前状态",
+      label: tt("workflow.colStatus"),
       width: 140,
       hidable: true,
       sortable: true,
@@ -204,32 +205,32 @@ export function createWorkflowPageModel() {
     },
     {
       key: "updatedAt",
-      label: "最近修改",
+      label: tt("workflow.colUpdated"),
       width: 130,
       hidable: true,
       sortable: true,
       sortKey: "updatedAt",
       getValue: formatWorkflowUpdatedAt,
     },
-    { key: "actions", label: "操作", width: 68, align: "right", headerAlign: "center" },
+    { key: "actions", label: tt("workflow.colActions"), width: 68, align: "right", headerAlign: "center" },
   ]);
   const workflowSummaryItems = computed<ManagementSummaryItem[]>(() => {
     const workflows = workflowStore.workflows;
     return [
-      { label: "流程总数", value: workflows.length, icon: "fa-solid fa-diagram-project" },
+      { label: tt("workflow.summaryTotal"), value: workflows.length, icon: "fa-solid fa-diagram-project" },
       {
-        label: "已发布",
+        label: tt("workflow.summaryPublished"),
         value: workflows.filter((workflow) => workflow.status === "Published").length,
         icon: "fa-solid fa-circle-check",
       },
       {
-        label: "草稿",
+        label: tt("workflow.summaryDraft"),
         value: workflows.filter((workflow) => workflow.status === "Draft").length,
         icon: "fa-solid fa-pen",
         tone: "warning",
       },
       {
-        label: "待审核",
+        label: tt("workflow.summaryReview"),
         value: workflows.filter((workflow) => workflow.status === "Review").length,
         icon: "fa-solid fa-list-check",
         tone: "info",
@@ -276,18 +277,18 @@ export function createWorkflowPageModel() {
   );
   const workflowEditorPublishTitle = computed(() => {
     if (selectedWorkflowCanPublish.value) {
-      return "发布上线";
+      return tt("workflow.publish");
     }
     return workflowPublishBlockedTitle(selectedWorkflowReadiness.value?.stage);
   });
   const workflowEditorForcePublishTitle = computed(() => {
     if (!canForcePublishWorkflow.value) {
-      return "仅平台管理员可强制发布";
+      return tt("workflow.forcePublishAdminOnly");
     }
     if (selectedWorkflowCanForcePublish.value) {
-      return "跳过试运行，强制发布当前有效编译（需填写原因）";
+      return tt("workflow.forcePublishHint");
     }
-    return "需先有 VALID 编译结果，才能强制发布";
+    return tt("workflow.forcePublishNeedValid");
   });
   const selectedGraphNode = computed(() => editorGraph.value.nodes.find((node) => node.id === selectedNodeId.value));
   const selectedGraphEdge = computed(() => editorGraph.value.edges.find((edge) => edge.id === selectedEdgeId.value));
@@ -341,15 +342,16 @@ export function createWorkflowPageModel() {
     return workflowStore.executions.filter((execution) => execution.workflowId === workflowId).slice(0, 3);
   });
   const workflowEditorFeedbackMessage = computed(() => {
-    if (editorDraftLoadState.value === "loading") return "正在加载最新草稿和编译结果，请稍候…";
-    if (editorDraftLoadState.value === "failed") return workflowActionNote.value.trim() || "草稿加载失败，请稍后重试。";
-    if (pendingEditorAction.value === "save") return "正在保存当前画布，请稍候…";
-    if (pendingEditorAction.value === "validate") return "正在检查节点配置和连线问题，请稍候…";
-    if (pendingEditorAction.value === "trial-run") return "正在准备模拟运行，请稍候…";
-    if (pendingEditorAction.value === "publish") return "正在发布当前草稿，请稍候…";
-    if (pendingEditorAction.value === "force-publish") return "正在强制发布（跳过试运行），请稍候…";
+    if (editorDraftLoadState.value === "loading") return tt("workflow.loadingDraft");
+    if (editorDraftLoadState.value === "failed")
+      return workflowActionNote.value.trim() || tt("workflow.draftLoadFailedRetry");
+    if (pendingEditorAction.value === "save") return tt("workflow.savingCanvas");
+    if (pendingEditorAction.value === "validate") return tt("workflow.checkingIssuesBusy");
+    if (pendingEditorAction.value === "trial-run") return tt("workflow.preparingTrial");
+    if (pendingEditorAction.value === "publish") return tt("workflow.publishingDraft");
+    if (pendingEditorAction.value === "force-publish") return tt("workflow.forcePublishingSkipTrial");
     if (workflowActionNote.value.trim()) return workflowActionNote.value;
-    return "保存画布会更新节点和连线；检查问题会重新编译；模拟运行只做测试；发布上线后 Agent 才能调用。";
+    return tt("workflow.saveHint");
   });
   const workflowLifecycleSteps = computed(() =>
     buildWorkflowLifecycleSteps(selectedWorkflowReadiness.value?.stage, selectedWorkflowExecutions.value.length),
@@ -357,27 +359,23 @@ export function createWorkflowPageModel() {
   const workflowLifecycleHint = computed(() => {
     const workflow = selectedWorkflow.value;
     if (!workflow) {
-      return "先选择一个流程，查看当前闭环所处阶段和下一步动作。";
+      return tt("workflow.lifecycleHintSelect");
     }
     return workflowNextAction(workflow);
   });
   const selectedWorkflowRevisionEmptyText = computed(() =>
-    selectedWorkflow.value
-      ? "还没有发布版本。完成试运行并发布后，版本会显示在这里。"
-      : "请选择一个流程后查看发布版本。",
+    selectedWorkflow.value ? tt("workflow.revisionEmptyWithWorkflow") : tt("workflow.revisionEmptySelect"),
   );
   const selectedWorkflowDiffEmptyText = computed(() => {
     if (!selectedWorkflow.value) {
-      return "请选择一个流程后查看版本差异。";
+      return tt("workflow.diffEmptySelect");
     }
     return selectedWorkflowRevisions.value.length > 1
-      ? "点击历史版本的“对比”按钮，查看节点、配置和 branch label 的变化。"
-      : "至少需要两个 revision 才能比较差异。";
+      ? tt("workflow.diffEmptyHint")
+      : tt("workflow.diffEmptyNeedTwo");
   });
   const selectedWorkflowExecutionEmptyText = computed(() =>
-    selectedWorkflow.value
-      ? "还没有执行记录。可以先试运行一次，确认流程是否符合预期。"
-      : "请选择一个流程后查看最近执行。",
+    selectedWorkflow.value ? tt("workflow.executionEmptyWithWorkflow") : tt("workflow.executionEmptySelect"),
   );
 
   const selectedWorkflowSteps = computed(() => {
@@ -433,7 +431,7 @@ export function createWorkflowPageModel() {
         workflowToolCatalogWorkspaceId.value = workspaceId;
       } catch (error) {
         workflowToolCatalog.value = [];
-        workflowToolCatalogError.value = actionErrorMessage(error, "工具目录加载失败，请稍后重试。");
+        workflowToolCatalogError.value = actionErrorMessage(error, tt("workflow.toolCatalogLoadFailed"));
       }
     },
   );
@@ -536,9 +534,13 @@ export function createWorkflowPageModel() {
       // and do not clear selected workflow (ZKL-56 UX-01).
       editorDraftLoadState.value = "failed";
       const apiError = toAPIError(error);
-      const requestIdHint = apiError.requestId ? `（请求 ${apiError.requestId}）` : "";
-      const detail = apiError.message?.trim() && apiError.message !== "草稿加载失败" ? `：${apiError.message}` : "";
-      editorDraftLoadError.value = `草稿加载失败${detail}，请重试。${requestIdHint}`;
+      const requestIdHint = apiError.requestId ? tt("workflow.requestIdHint", { id: apiError.requestId }) : "";
+      const rawMessage = apiError.message?.trim() || "";
+      const detail =
+        rawMessage && rawMessage !== tt("workflow.draftLoadFailed") && rawMessage !== "草稿加载失败"
+          ? tt("workflow.detailPrefix", { message: rawMessage })
+          : "";
+      editorDraftLoadError.value = tt("workflow.draftLoadFailedWithDetail", { detail, requestId: requestIdHint });
       return "failed" as const;
     }
   }
@@ -643,13 +645,15 @@ export function createWorkflowPageModel() {
   }
 
   function executionStatusLabel(status?: string) {
-    if (!status) return "未试运行";
+    if (!status) return tt("workflow.notTrialRun");
     return executionStatusLabels[status] || status;
   }
 
   function validationLabel(workflow: WorkflowSummary) {
-    if (typeof workflow.lastValidationValid !== "boolean") return "未校验";
-    return workflow.lastValidationValid ? "校验通过" : `${workflow.lastValidationIssueCount || 0} 个问题`;
+    if (typeof workflow.lastValidationValid !== "boolean") return tt("workflow.notValidated");
+    return workflow.lastValidationValid
+      ? tt("workflow.validationPassed")
+      : tt("workflow.validationIssueCount", { n: workflow.lastValidationIssueCount || 0 });
   }
 
   function workflowLastExecution(workflow: WorkflowSummary): Execution | undefined {
@@ -668,21 +672,21 @@ export function createWorkflowPageModel() {
   function workflowReadinessFallbackAction(stage?: string) {
     switch (stage) {
       case "DraftMissing":
-        return "先创建或保存流程草稿，再继续校验。";
+        return tt("workflow.actionDraftMissing");
       case "CompileRequired":
-        return "保存或检查当前草稿，生成最新编译结果。";
+        return tt("workflow.actionCompileRequired");
       case "CompileFailed":
-        return "先修复编译问题，再继续试运行或发布。";
+        return tt("workflow.actionCompileFailed");
       case "TrialRequired":
-        return "运行当前已编译草稿的试运行。";
+        return tt("workflow.actionTrialRequired");
       case "PublishReady":
-        return "当前草稿已通过试运行，可以发布给 Agent 调用。";
+        return tt("workflow.actionPublishReady");
       case "Published":
-        return "已发布版本可供 Agent 调用。";
+        return tt("workflow.actionPublished");
       case "Disabled":
-        return "启用流程后才能继续校验、试运行或发布。";
+        return tt("workflow.actionDisabled");
       default:
-        return "等待后端返回就绪状态。";
+        return tt("workflow.waitReadiness");
     }
   }
 
@@ -693,15 +697,15 @@ export function createWorkflowPageModel() {
 
     switch (blocker.code) {
       case "draft_missing":
-        return "先创建或保存流程草稿，再继续校验。";
+        return tt("workflow.actionDraftMissing");
       case "compile_required":
-        return "保存或检查当前草稿，生成最新编译结果。";
+        return tt("workflow.actionCompileRequired");
       case "compile_failed":
-        return "先修复编译问题，再继续试运行或发布。";
+        return tt("workflow.actionCompileFailed");
       case "trial_required":
-        return "运行当前已编译草稿的试运行。";
+        return tt("workflow.actionTrialRequired");
       case "workflow_disabled":
-        return "启用流程后才能继续校验、试运行或发布。";
+        return tt("workflow.actionDisabled");
       default:
         return blocker.action.trim() || workflowReadinessFallbackAction(stage);
     }
@@ -710,17 +714,17 @@ export function createWorkflowPageModel() {
   function workflowPublishBlockedTitle(stage?: string) {
     switch (stage) {
       case "DraftMissing":
-        return "需先保存流程草稿";
+        return tt("workflow.publishNeedDraft");
       case "CompileRequired":
-        return "需先保存或检查最新草稿";
+        return tt("workflow.publishNeedCheck");
       case "CompileFailed":
-        return "需先修复编译问题";
+        return tt("workflow.publishNeedFix");
       case "TrialRequired":
-        return "需先完成试运行";
+        return tt("workflow.publishNeedTrial");
       case "Disabled":
-        return "需先启用流程";
+        return tt("workflow.publishNeedEnable");
       default:
-        return "当前 readiness 尚未允许发布";
+        return tt("workflow.publishNotReady");
     }
   }
 
@@ -767,7 +771,8 @@ export function createWorkflowPageModel() {
         ...(agentId ? { agentId } : {}),
         ...(compilation?.id ? { compilationId: compilation.id } : {}),
         feedbackSummary:
-          issues[0]?.message || (source === "compile" ? "编译失败，请按问题修订草稿" : "试运行失败，请按问题修订草稿"),
+          issues[0]?.message ||
+          (source === "compile" ? tt("workflow.reviseCompileFailed") : tt("workflow.reviseTrialFailed")),
         // Encode issues compactly for SmartDag seed (structural CTA).
         feedbackIssues: JSON.stringify(issues.slice(0, 16)),
       },
@@ -790,25 +795,25 @@ export function createWorkflowPageModel() {
     return [
       {
         key: "draft",
-        label: "草稿",
+        label: tt("workflow.summaryDraft"),
         icon: draftReady ? "fa-solid fa-check" : "fa-solid fa-clock",
         state: workflowReadinessStepState(draftReady, stage === "DraftMissing"),
       },
       {
         key: "compile",
-        label: "编译",
+        label: tt("workflow.readinessCompile"),
         icon: compileReady ? "fa-solid fa-check" : "fa-solid fa-clock",
         state: workflowReadinessStepState(compileReady, stage === "CompileRequired" || stage === "CompileFailed"),
       },
       {
         key: "trial",
-        label: "模拟试运行",
+        label: tt("workflow.readinessTrial"),
         icon: trialReady ? "fa-solid fa-check" : "fa-solid fa-clock",
         state: workflowReadinessStepState(trialReady, stage === "TrialRequired"),
       },
       {
         key: "publish",
-        label: "发布",
+        label: tt("workflow.readinessPublish"),
         icon: publishReady ? "fa-solid fa-check" : "fa-solid fa-clock",
         state: workflowReadinessStepState(publishReady, stage === "PublishReady" || stage === "Published"),
       },
@@ -816,10 +821,12 @@ export function createWorkflowPageModel() {
   }
 
   function workflowTriggerText(workflow = selectedWorkflow.value) {
-    if (!workflow) return "暂无触发条件";
+    if (!workflow) return tt("workflow.triggerNone");
     const execution = workflowLastExecution(workflow);
     if (execution?.trigger) return execution.trigger;
-    return workflow.status === "Published" ? "由 Agent 或人工操作触发" : "发布后可配置触发条件";
+    return workflow.status === "Published"
+      ? tt("workflow.triggerAgentOrManual")
+      : tt("workflow.triggerAfterPublish");
   }
 
   function workflowExecutionCount(workflow: WorkflowSummary) {
@@ -829,17 +836,17 @@ export function createWorkflowPageModel() {
   function workflowSuccessRateLabel(workflow: WorkflowSummary) {
     const executions = workflowStore.executions.filter((execution) => execution.workflowId === workflow.id);
     if (!executions.length) {
-      return "100% (0 次)";
+      return tt("workflow.successRateNone");
     }
     const successCount = executions.filter((execution) => execution.status === "Success").length;
     const rate = Math.round((successCount / executions.length) * 100);
-    return `${rate}% (${executions.length} 次)`;
+    return tt("workflow.successRate", { rate, n: executions.length });
   }
 
   function workflowTableStatusLabel(workflow: WorkflowSummary) {
-    if (workflow.status === "Published") return "已发布";
-    if (workflow.status === "Disabled") return "已停用";
-    return "开发中草稿";
+    if (workflow.status === "Published") return tt("workflow.tablePublished");
+    if (workflow.status === "Disabled") return tt("workflow.tableDisabled");
+    return tt("workflow.tableDevDraft");
   }
 
   function workflowTableStatusClass(workflow: WorkflowSummary) {
@@ -853,11 +860,11 @@ export function createWorkflowPageModel() {
     const timestamp = Date.parse(workflow.updatedAt);
     if (!Number.isFinite(timestamp)) return workflow.updatedAt;
     const elapsedMinutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
-    if (elapsedMinutes < 1) return "刚刚";
-    if (elapsedMinutes < 60) return `${elapsedMinutes} 分钟前`;
+    if (elapsedMinutes < 1) return tt("workflow.justNow");
+    if (elapsedMinutes < 60) return tt("workflow.minutesAgo", { n: elapsedMinutes });
     const elapsedHours = Math.floor(elapsedMinutes / 60);
-    if (elapsedHours < 24) return `${elapsedHours} 小时前`;
-    return `${Math.floor(elapsedHours / 24)} 天前`;
+    if (elapsedHours < 24) return tt("workflow.hoursAgo", { n: elapsedHours });
+    return tt("workflow.daysAgo", { n: Math.floor(elapsedHours / 24) });
   }
 
   function loadWorkflowRegistry(overrides: WorkflowListQuery = {}) {
@@ -907,16 +914,16 @@ export function createWorkflowPageModel() {
 
   function nodeTypeLabel(type: string) {
     const labels: Record<string, string> = {
-      Start: "开始",
-      End: "结束",
-      Tool: "工具调用",
-      HTTP: "HTTP 请求",
-      SubWorkflow: "子流程",
-      Transform: "参数整理",
-      Approval: "人工确认",
-      Condition: "条件判断",
-      Parallel: "并行分支",
-      ForEach: "循环",
+      Start: tt("workflow.nodeStart"),
+      End: tt("workflow.nodeEnd"),
+      Tool: tt("workflow.nodeTool"),
+      HTTP: tt("workflow.nodeHttp"),
+      SubWorkflow: tt("workflow.nodeSubWorkflow"),
+      Transform: tt("workflow.nodeTransform"),
+      Approval: tt("workflow.nodeApproval"),
+      Condition: tt("workflow.nodeCondition"),
+      Parallel: tt("workflow.nodeParallel"),
+      ForEach: tt("workflow.nodeForEach"),
     };
     return labels[type] || type;
   }
@@ -953,7 +960,7 @@ export function createWorkflowPageModel() {
     // Permission gate: no EDIT → no editor entry (backend still enforces 403).
     const userId = auth.user?.id || "";
     if (userId && !workspaces.can(workflow.workspaceId, userId, "EDIT")) {
-      workflowActionNote.value = "当前角色无权编辑流程图。";
+      workflowActionNote.value = tt("workflow.noEditPermission");
       return;
     }
     captureWorkflowFocus();
@@ -967,7 +974,8 @@ export function createWorkflowPageModel() {
     const status = await loadEditorDraft(workflow.id);
     if (status !== "loaded") {
       if (status === "failed") {
-        workflowActionNote.value = editorDraftLoadError.value || `${workflow.name} 草稿加载失败，请稍后重试。`;
+        workflowActionNote.value =
+          editorDraftLoadError.value || tt("workflow.draftLoadFailedNamed", { name: workflow.name });
         // Ensure detail stays open for recovery / retry.
         workflowDetailVisible.value = true;
       }
@@ -1133,7 +1141,7 @@ export function createWorkflowPageModel() {
 
     if (isProtectedTerminalNode(node)) {
       closeContextMenu();
-      workflowActionNote.value = `${node.label} 是流程起止节点，不可删除。`;
+      workflowActionNote.value = tt("workflow.cannotDeleteTerminalNamed", { label: node.label });
       return;
     }
 
@@ -1154,8 +1162,8 @@ export function createWorkflowPageModel() {
 
     workflowActionNote.value =
       removedEdges.length > 0
-        ? `已删除节点 ${node.label}，并移除 ${removedEdges.length} 条关联连线。`
-        : `已删除节点 ${node.label}。`;
+        ? tt("workflow.deletedNodeWithEdges", { label: node.label, n: removedEdges.length })
+        : tt("workflow.deletedNode", { label: node.label });
   }
 
   function deleteSelectedEdge() {
@@ -1171,7 +1179,7 @@ export function createWorkflowPageModel() {
 
     selectedEdgeId.value = "";
     closeContextMenu();
-    workflowActionNote.value = `已删除连线 ${edge.id}。`;
+    workflowActionNote.value = tt("workflow.deletedEdge", { id: edge.id });
   }
 
   function closeContextMenu() {
@@ -1256,7 +1264,7 @@ export function createWorkflowPageModel() {
     replaceEditorGraph({ ...editorGraph.value, nodes: [...editorGraph.value.nodes, node] });
     selectedNodeId.value = node.id;
     selectedEdgeId.value = "";
-    workflowActionNote.value = `已添加节点 ${node.label}，可在属性面板继续配置。`;
+    workflowActionNote.value = tt("workflow.addedNode", { label: node.label });
   }
 
   function duplicateSelectedNode() {
@@ -1288,12 +1296,12 @@ export function createWorkflowPageModel() {
     });
     selectedNodeId.value = duplicatedNode.id;
     selectedEdgeId.value = "";
-    workflowActionNote.value = `已复制节点 ${node.label}。`;
+    workflowActionNote.value = tt("workflow.duplicatedNode", { label: node.label });
   }
 
   function applyAutoLayout() {
     replaceEditorGraph(autoLayoutWorkflowGraph(editorGraph.value));
-    workflowActionNote.value = "已格式化画布布局。";
+    workflowActionNote.value = tt("workflow.formattedLayout");
   }
 
   function undoEditorChange() {
@@ -1418,11 +1426,14 @@ export function createWorkflowPageModel() {
       resetEditorHistory();
       syncSelection();
       workflowStore.selectedWorkflowId = created.id;
-      workflowActionNote.value = `${created.name} 已创建，并生成可编辑画布。`;
+      workflowActionNote.value = tt("workflow.createdWithCanvas", { name: created.name });
     } else {
       const updated = await workflowStore.updateWorkflow(workflowDraft.value.id, payload);
       workflowStore.selectedWorkflowId = updated.id;
-      workflowActionNote.value = `${updated.name} 已保存为 ${updated.status}。`;
+      workflowActionNote.value = tt("workflow.savedAsStatus", {
+        name: updated.name,
+        status: statusLabel(updated.status),
+      });
     }
     await loadWorkflowRegistry({ page: createdWorkflow ? 1 : workflowStore.pagination.page });
     closeWorkflowMetadata();
@@ -1436,9 +1447,9 @@ export function createWorkflowPageModel() {
       if (!selectedWorkflow.value) return;
       const saved = await persistEditorDraft();
       if (!saved) return;
-      workflowActionNote.value = `${selectedWorkflow.value.name} 草稿已保存；请执行“检查问题”生成最新编译结果。`;
+      workflowActionNote.value = tt("workflow.draftSavedCheckIssues", { name: selectedWorkflow.value.name });
     } catch (error) {
-      workflowActionNote.value = actionErrorMessage(error, "保存草稿失败，请稍后重试。");
+      workflowActionNote.value = actionErrorMessage(error, tt("workflow.saveDraftFailed"));
     } finally {
       pendingEditorAction.value = undefined;
     }
@@ -1469,37 +1480,37 @@ export function createWorkflowPageModel() {
   function workflowMenuActions(workflow: WorkflowSummary): ManagementRowAction[] {
     const validating = pendingWorkflowValidationId.value === workflow.id;
     return [
-      { key: "detail", label: "查看详情", icon: "fa-solid fa-eye", tone: "primary" },
-      { key: "edit", label: "编辑流程图", icon: "fa-solid fa-pen-ruler" },
+      { key: "detail", label: tt("common.viewDetails"), icon: "fa-solid fa-eye", tone: "primary" },
+      { key: "edit", label: tt("workflow.editGraph"), icon: "fa-solid fa-pen-ruler" },
       {
         key: "validate",
-        label: "校验流程",
+        label: tt("workflow.validateWorkflow"),
         icon: "fa-solid fa-list-check",
         loading: validating,
         disabled: validating,
-        disabledReason: validating ? "校验中" : undefined,
+        disabledReason: validating ? tt("workflow.validatingShort") : undefined,
       },
       {
         key: "trial-run",
-        label: "模拟试运行",
+        label: tt("workflow.readinessTrial"),
         icon: "fa-solid fa-vial",
         loading: pendingTrialRun.value,
         disabled: pendingTrialRun.value,
-        disabledReason: pendingTrialRun.value ? "模拟试运行提交中" : undefined,
+        disabledReason: pendingTrialRun.value ? tt("workflow.trialSubmitting") : undefined,
       },
       ...(workflow.activeRevisionId
         ? [
             {
               key: "production-run",
-              label: "生产运行",
+              label: tt("workflow.productionRun"),
               icon: "fa-solid fa-play",
               loading: pendingProductionRun.value,
               disabled: pendingProductionRun.value,
-              disabledReason: pendingProductionRun.value ? "生产运行提交中" : undefined,
+              disabledReason: pendingProductionRun.value ? tt("workflow.productionSubmitting") : undefined,
             } satisfies ManagementRowAction,
           ]
         : []),
-      { key: "delete", label: "删除流程", icon: "fa-solid fa-trash", tone: "danger" },
+      { key: "delete", label: tt("workflow.deleteWorkflow"), icon: "fa-solid fa-trash", tone: "danger" },
     ];
   }
 
@@ -1535,7 +1546,7 @@ export function createWorkflowPageModel() {
         ? workflowStore.pagination.page - 1
         : workflowStore.pagination.page;
     await loadWorkflowRegistry({ page });
-    workflowActionNote.value = `${workflow.name} 已删除。`;
+    workflowActionNote.value = tt("workflow.deletedNamed", { name: workflow.name });
     if (wasSelected) {
       workflowDetailVisible.value = false;
       closeWorkflowEditor({ restoreFocus: false });
@@ -1552,8 +1563,12 @@ export function createWorkflowPageModel() {
       const validation = await workflowStore.validateWorkflow(workflow.id);
       const firstIssue = validation.issues[0];
       workflowActionNote.value = validation.valid
-        ? `${workflow.name} 校验通过。`
-        : `${workflow.name} 存在 ${validation.issues.length} 个问题：${firstIssue?.message || "请打开流程检查详情"}`;
+        ? tt("workflow.validationPassedNamed", { name: workflow.name })
+        : tt("workflow.validationFailedNamed", {
+            name: workflow.name,
+            n: validation.issues.length,
+            message: firstIssue?.message || tt("workflow.validationOpenDetail"),
+          });
     } finally {
       pendingWorkflowValidationId.value = "";
     }
@@ -1568,13 +1583,17 @@ export function createWorkflowPageModel() {
       if (!saved) return;
       const validation = await workflowStore.validateWorkflow(selectedWorkflow.value.id);
       if (!validation.valid) {
-        workflowActionNote.value = `${selectedWorkflow.value.name} 草稿已保存，但仍有 ${validation.issues.length} 个编译问题：${validation.issues[0]?.message || "请检查右侧问题面板"}`;
+        workflowActionNote.value = tt("workflow.draftSavedWithIssues", {
+          name: selectedWorkflow.value.name,
+          n: validation.issues.length,
+          message: validation.issues[0]?.message || tt("workflow.checkIssuesPanel"),
+        });
         focusFirstCompilationIssue();
         return;
       }
-      workflowActionNote.value = `${selectedWorkflow.value.name} 校验通过。`;
+      workflowActionNote.value = tt("workflow.validationPassedNamed", { name: selectedWorkflow.value.name });
     } catch (error) {
-      workflowActionNote.value = actionErrorMessage(error, "校验失败，请稍后重试。");
+      workflowActionNote.value = actionErrorMessage(error, tt("workflow.validateFailed"));
     } finally {
       pendingEditorAction.value = undefined;
     }
@@ -1588,14 +1607,18 @@ export function createWorkflowPageModel() {
     const execution = await workflowStore.trialRunWorkflow(workflowId, input, outboundCredentials);
     activeTraceExecutionId.value = execution.id;
     const workflow = workflowStore.workflows.find((item) => item.id === workflowId) || selectedWorkflow.value;
-    workflowActionNote.value = `${workflow?.name || "当前流程"} 模拟试运行已生成 ${execution.id}，状态 ${execution.status}（非生产）。`;
+    workflowActionNote.value = tt("workflow.trialRunCreated", {
+      name: workflow?.name || tt("workflow.currentWorkflow"),
+      id: execution.id,
+      status: execution.status,
+    });
     return execution;
   }
 
   async function runWorkflowProduction(workflow: WorkflowSummary) {
     if (pendingProductionRun.value) return;
     if (!workflow.activeRevisionId) {
-      workflowActionNote.value = `${workflow.name} 尚无 active 发布版本，无法生产运行。请先完成模拟试运行并发布。`;
+      workflowActionNote.value = tt("workflow.noActiveRevision", { name: workflow.name });
       return;
     }
     pendingProductionRun.value = true;
@@ -1603,9 +1626,14 @@ export function createWorkflowPageModel() {
     try {
       const execution = await workflowStore.executeProductionWorkflow(workflow.id, {});
       activeTraceExecutionId.value = execution.id;
-      workflowActionNote.value = `${workflow.name} 生产运行已提交 ${execution.id}，状态 ${execution.status}，trace ${execution.traceId}。`;
+      workflowActionNote.value = tt("workflow.productionRunSubmitted", {
+        name: workflow.name,
+        id: execution.id,
+        status: execution.status,
+        trace: execution.traceId,
+      });
     } catch (error) {
-      workflowActionNote.value = actionErrorMessage(error, "生产运行失败，请稍后重试。");
+      workflowActionNote.value = actionErrorMessage(error, tt("workflow.productionRunFailed"));
     } finally {
       pendingProductionRun.value = false;
     }
@@ -1621,7 +1649,7 @@ export function createWorkflowPageModel() {
       if (!saved) return;
       const validation = await workflowStore.validateWorkflow(workflow.id);
       if (!validation.valid) {
-        workflowActionNote.value = buildCompilationBlockedMessage(workflow, "试运行");
+        workflowActionNote.value = buildCompilationBlockedMessage(workflow, "trial");
         focusFirstCompilationIssue();
         return;
       }
@@ -1631,7 +1659,7 @@ export function createWorkflowPageModel() {
         workflowStore.activeDraft = draft;
         workflowStore.activeCompilation = latestCompilation;
       } catch {
-        workflowActionNote.value = `${workflow.name} 草稿加载失败，请稍后重试。`;
+        workflowActionNote.value = tt("workflow.draftLoadFailedNamed", { name: workflow.name });
         return;
       }
     }
@@ -1656,7 +1684,7 @@ export function createWorkflowPageModel() {
       if (!selectedWorkflow.value) return;
       await openTrialRunDialog(selectedWorkflow.value, { persistEditorDraft: true });
     } catch (error) {
-      workflowActionNote.value = actionErrorMessage(error, "试运行准备失败，请稍后重试。");
+      workflowActionNote.value = actionErrorMessage(error, tt("workflow.trialPrepareFailed"));
     } finally {
       pendingEditorAction.value = undefined;
     }
@@ -1669,7 +1697,7 @@ export function createWorkflowPageModel() {
       return;
     }
     const published = await workflowStore.publishWorkflow(workflow.id);
-    workflowActionNote.value = `${published.workflow.name} 已发布上线，可供 Agent 调用。`;
+    workflowActionNote.value = tt("workflow.publishedOnline", { name: published.workflow.name });
   }
 
   async function activateRevision(revisionId: string) {
@@ -1677,9 +1705,12 @@ export function createWorkflowPageModel() {
     pendingRevisionActionId.value = revisionId;
     try {
       const result = await workflowStore.activateWorkflowRevision(selectedWorkflow.value.id, revisionId);
-      workflowActionNote.value = `${result.workflow.name} 已切换到版本 ${revisionId}。`;
+      workflowActionNote.value = tt("workflow.activatedRevision", {
+        name: result.workflow.name,
+        revisionId,
+      });
     } catch (error) {
-      workflowActionNote.value = actionErrorMessage(error, "激活版本失败，请稍后重试。");
+      workflowActionNote.value = actionErrorMessage(error, tt("workflow.activateRevisionFailed"));
     } finally {
       pendingRevisionActionId.value = "";
     }
@@ -1690,9 +1721,12 @@ export function createWorkflowPageModel() {
     pendingRevisionActionId.value = revisionId;
     try {
       const result = await workflowStore.rollbackWorkflowRevision(selectedWorkflow.value.id, revisionId);
-      workflowActionNote.value = `${result.workflow.name} 已回滚到版本 ${revisionId}。`;
+      workflowActionNote.value = tt("workflow.rolledBackRevision", {
+        name: result.workflow.name,
+        revisionId,
+      });
     } catch (error) {
-      workflowActionNote.value = actionErrorMessage(error, "回滚版本失败，请稍后重试。");
+      workflowActionNote.value = actionErrorMessage(error, tt("workflow.rollbackRevisionFailed"));
     } finally {
       pendingRevisionActionId.value = "";
     }
@@ -1703,9 +1737,13 @@ export function createWorkflowPageModel() {
     pendingRevisionCompare.value = true;
     try {
       await workflowStore.loadWorkflowRevisionDiff(selectedWorkflow.value.id, leftRevisionId, rightRevisionId);
-      workflowActionNote.value = `${selectedWorkflow.value.name} 已比较版本 ${leftRevisionId} 与 ${rightRevisionId}。`;
+      workflowActionNote.value = tt("workflow.comparedRevisions", {
+        name: selectedWorkflow.value.name,
+        left: leftRevisionId,
+        right: rightRevisionId,
+      });
     } catch (error) {
-      workflowActionNote.value = actionErrorMessage(error, "版本差异加载失败，请稍后重试。");
+      workflowActionNote.value = actionErrorMessage(error, tt("workflow.diffLoadFailed"));
     } finally {
       pendingRevisionCompare.value = false;
     }
@@ -1716,9 +1754,9 @@ export function createWorkflowPageModel() {
     pendingWorkflowDisable.value = true;
     try {
       const workflow = await workflowStore.disableWorkflow(selectedWorkflow.value.id);
-      workflowActionNote.value = `${workflow.name} 已停用，新的 published execution 将被阻止。`;
+      workflowActionNote.value = tt("workflow.disabledNewRuns", { name: workflow.name });
     } catch (error) {
-      workflowActionNote.value = actionErrorMessage(error, "停用流程失败，请稍后重试。");
+      workflowActionNote.value = actionErrorMessage(error, tt("workflow.disableFailed"));
     } finally {
       pendingWorkflowDisable.value = false;
     }
@@ -1741,7 +1779,7 @@ export function createWorkflowPageModel() {
 
       await publishWorkflow(selectedWorkflow.value);
     } catch (error) {
-      workflowActionNote.value = actionErrorMessage(error, "发布失败，请稍后重试。");
+      workflowActionNote.value = actionErrorMessage(error, tt("workflow.publishFailed"));
     } finally {
       pendingEditorAction.value = undefined;
     }
@@ -1751,11 +1789,11 @@ export function createWorkflowPageModel() {
     if (workflowEditorBusy.value) return;
     if (!selectedWorkflow.value) return;
     if (!canForcePublishWorkflow.value) {
-      workflowActionNote.value = "仅平台管理员可强制发布。";
+      workflowActionNote.value = tt("workflow.forcePublishAdminOnly");
       return;
     }
     if (!selectedWorkflowCanForcePublish.value) {
-      workflowActionNote.value = "需先检查问题得到 VALID 编译，再强制发布。";
+      workflowActionNote.value = tt("workflow.forcePublishNeedValidCompile");
       return;
     }
     forcePublishReasonDraft.value = "local-dev skip trial";
@@ -1777,7 +1815,7 @@ export function createWorkflowPageModel() {
     if (!selectedWorkflow.value) return;
     const trimmed = reason.trim();
     if (trimmed.length < 8) {
-      workflowActionNote.value = "强制发布已取消：原因至少 8 个字符。";
+      workflowActionNote.value = tt("workflow.forcePublishCancelled");
       return;
     }
     pendingEditorAction.value = "force-publish";
@@ -1787,14 +1825,14 @@ export function createWorkflowPageModel() {
         if (!saved) return;
         forcePublishDialogVisible.value = false;
         // Dirty save invalidates compilation — force user to re-check before force publish.
-        workflowActionNote.value = "草稿已保存，请先「检查问题」生成 VALID 编译后再强制发布。";
+        workflowActionNote.value = tt("workflow.forcePublishNeedCheckAfterSave");
         return;
       }
       const published = await workflowStore.forcePublishWorkflow(selectedWorkflow.value.id, trimmed);
       forcePublishDialogVisible.value = false;
-      workflowActionNote.value = `${published.workflow.name} 已强制发布（跳过试运行）。`;
+      workflowActionNote.value = tt("workflow.forcePublished", { name: published.workflow.name });
     } catch (error) {
-      workflowActionNote.value = actionErrorMessage(error, "强制发布失败，请稍后重试。");
+      workflowActionNote.value = actionErrorMessage(error, tt("workflow.forcePublishFailed"));
     } finally {
       pendingEditorAction.value = undefined;
     }
@@ -1815,16 +1853,18 @@ export function createWorkflowPageModel() {
       const latestCompilation = extractCompilationFromError(error);
       if (workflow && latestCompilation && isStaleCompilationForWorkflow(workflowId, latestCompilation)) {
         closeTrialRunDialog();
-        workflowActionNote.value = `${workflow.name} 当前编译结果已过期，请先重新保存草稿后再试运行。`;
+        workflowActionNote.value = tt("workflow.compilationStale", { name: workflow.name });
         return;
       }
       if (workflow && (latestCompilation?.status === "Invalid" || latestCompilation?.status === "INVALID")) {
         closeTrialRunDialog();
-        workflowActionNote.value = buildCompilationBlockedMessage(workflow, "试运行");
+        workflowActionNote.value = buildCompilationBlockedMessage(workflow, "trial");
         focusCompilationIssue(latestCompilation.issues[0]);
         return;
       }
-      workflowActionNote.value = `${workflow?.name || "当前流程"} 试运行失败，请稍后重试。`;
+      workflowActionNote.value = tt("workflow.trialRunFailed", {
+        name: workflow?.name || tt("workflow.currentWorkflow"),
+      });
     } finally {
       pendingTrialRun.value = false;
     }
@@ -1852,18 +1892,23 @@ export function createWorkflowPageModel() {
     focusCompilationIssue(activeCompilationIssues.value[0]);
   }
 
-  function buildCompilationBlockedMessage(workflow: WorkflowSummary, action: "试运行" | "发布") {
+  function buildCompilationBlockedMessage(workflow: WorkflowSummary, action: "trial" | "publish") {
+    const actionLabel = action === "trial" ? tt("workflow.trialRun") : tt("workflow.publish");
     if (hasStaleCompilation(workflow.id)) {
-      return `${workflow.name} 当前编译结果已过期，请先重新保存草稿后再${action}。`;
+      return tt("workflow.compilationStaleAction", { name: workflow.name, action: actionLabel });
     }
     const compilation = compilationForWorkflow(workflow.id);
     if (!compilation) {
-      return `${workflow.name} 暂无可用编译结果，请先保存草稿后再${action}。`;
+      return tt("workflow.compilationMissing", { name: workflow.name, action: actionLabel });
     }
     if (compilation.issues.length > 0) {
-      return `${workflow.name} 仍有 ${compilation.issues.length} 个编译问题，请先修复后再${action}。`;
+      return tt("workflow.compilationHasIssues", {
+        name: workflow.name,
+        n: compilation.issues.length,
+        action: actionLabel,
+      });
     }
-    return `${workflow.name} 当前编译结果不可用于${action}。`;
+    return tt("workflow.compilationUnusable", { name: workflow.name, action: actionLabel });
   }
 
   function focusCompilationIssue(issue?: WorkflowCompilationIssue) {

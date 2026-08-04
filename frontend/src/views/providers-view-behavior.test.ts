@@ -3,6 +3,8 @@ import { reactive } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import AppSelect from "../components/AppSelect.vue";
+import { setI18nLocale } from "../i18n";
+import { createTestI18n } from "../test-utils/i18n";
 import type { CapabilityProvider, ProviderAsset } from "../types/domain";
 import ProvidersView from "./ProvidersView.vue";
 
@@ -51,6 +53,7 @@ function mountView() {
   return mount(ProvidersView, {
     attachTo: document.body,
     global: {
+      plugins: [createTestI18n("zh-CN")],
       stubs: {
         RouterLink: { template: "<a><slot /></a>" },
         teleport: true,
@@ -90,6 +93,7 @@ describe("providers management view", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     localStorage.clear();
+    setI18nLocale("zh-CN");
     fixture.providers = createIntegrationStore();
     fixture.workspaces = reactive({
       activeWorkspaceId: "workspace-1",

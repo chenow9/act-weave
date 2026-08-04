@@ -6,6 +6,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import type { ManagementListColumn } from "../components/ManagementList.vue";
 import type { ManagementRowAction } from "../components/ManagementRowActions.vue";
+import { getI18nLocale } from "../i18n";
+import { tt } from "../i18n/tt";
 import { useConnectionsStore } from "../stores/connections";
 import { useProvidersStore } from "../stores/providers";
 import { useWorkspaceStore } from "../stores/workspaces";
@@ -115,39 +117,42 @@ export function createServiceConnectionsPageModel() {
     refreshMode: "connection-refresh-mode-menu",
   };
 
-  const environmentOptions = [
-    { label: "生产", value: "生产" },
-    { label: "测试", value: "测试" },
-  ];
-  const refreshModeOptions = [
-    { label: "重新获取访问凭证", value: "same" },
-    { label: "调用续期接口自动更新", value: "dedicated" },
-    { label: "过期后人工处理", value: "none" },
-  ];
+  // Legacy stored environment values may be Chinese; keep as stable option values.
+  const environmentOptions = computed(() => [
+    { label: tt("connections.envProduction"), value: "生产" },
+    { label: tt("connections.envTest"), value: "测试" },
+  ]);
+  const refreshModeOptions = computed(() => [
+    { label: tt("connections.refreshModeSame"), value: "same" },
+    { label: tt("connections.refreshModeDedicated"), value: "dedicated" },
+    { label: tt("connections.refreshModeNone"), value: "none" },
+  ]);
   const verificationMethodOptions = [
     { label: "GET", value: "GET" },
     { label: "POST", value: "POST" },
     { label: "HEAD", value: "HEAD" },
   ];
-  const connectionStatusOptions = [
-    { label: "全部", value: "ALL" },
-    { label: "已验证", value: "VERIFIED" },
-    { label: "未验证", value: "UNVERIFIED" },
-    { label: "错误", value: "ERROR" },
-    { label: "已停用", value: "DISABLED" },
-  ];
-  const connectionMigrationOptions = [
-    { label: "全部", value: "ALL" },
-    { label: "待迁移", value: "MIGRATION_REQUIRED" },
-  ];
-  const connectionModeOptions = [
-    { label: "全部", value: "ALL" },
-    { label: "Broker / OBO", value: "BROKER_OBO" },
-    { label: "请求透传", value: "REQUEST_PASSTHROUGH" },
-  ];
+  const connectionStatusOptions = computed(() => [
+    { label: tt("connections.filterAll"), value: "ALL" },
+    { label: tt("connections.statusVerified"), value: "VERIFIED" },
+    { label: tt("connections.statusUnverified"), value: "UNVERIFIED" },
+    { label: tt("connections.statusError"), value: "ERROR" },
+    { label: tt("connections.statusDisabled"), value: "DISABLED" },
+  ]);
+  const connectionMigrationOptions = computed(() => [
+    { label: tt("connections.filterAll"), value: "ALL" },
+    { label: tt("connections.filterMigrationRequired"), value: "MIGRATION_REQUIRED" },
+  ]);
+  const connectionModeOptions = computed(() => [
+    { label: tt("connections.filterAll"), value: "ALL" },
+    { label: tt("connections.modeBroker"), value: "BROKER_OBO" },
+    { label: tt("connections.modePassthrough"), value: "REQUEST_PASSTHROUGH" },
+  ]);
   const providerOptions = computed(() =>
     providersStore.providers.map((provider) => ({
-      label: isProviderReadyForConnections(provider) ? provider.name : `${provider.name}（待完成配置）`,
+      label: isProviderReadyForConnections(provider)
+        ? provider.name
+        : tt("connections.providerPendingConfig", { name: provider.name }),
       value: provider.id,
       disabled: !isProviderReadyForConnections(provider),
     })),
@@ -162,7 +167,7 @@ export function createServiceConnectionsPageModel() {
   const connectionColumns = computed<ManagementListColumn<ServiceConnection>[]>(() => [
     {
       key: "name",
-      label: "连接名称",
+      label: tt("connections.colName"),
       width: 200,
       sortable: true,
       sortKey: "name",
@@ -170,7 +175,7 @@ export function createServiceConnectionsPageModel() {
     },
     {
       key: "protocol",
-      label: "协议",
+      label: tt("connections.colProtocol"),
       width: 84,
       align: "center",
       headerAlign: "center",
@@ -181,7 +186,7 @@ export function createServiceConnectionsPageModel() {
     },
     {
       key: "environment",
-      label: "环境",
+      label: tt("connections.colEnvironment"),
       width: 84,
       align: "center",
       headerAlign: "center",
@@ -192,7 +197,7 @@ export function createServiceConnectionsPageModel() {
     },
     {
       key: "address",
-      label: "地址 & 验证接口",
+      label: tt("connections.colAddressVerify"),
       width: 220,
       hidable: true,
       sortable: true,
@@ -201,7 +206,7 @@ export function createServiceConnectionsPageModel() {
     },
     {
       key: "outboundMode",
-      label: "身份策略",
+      label: tt("connections.colIdentityPolicy"),
       width: 140,
       hidable: true,
       sortable: true,
@@ -210,7 +215,7 @@ export function createServiceConnectionsPageModel() {
     },
     {
       key: "status",
-      label: "配置状态",
+      label: tt("connections.colConfigStatus"),
       width: 120,
       align: "center",
       headerAlign: "center",
@@ -221,14 +226,17 @@ export function createServiceConnectionsPageModel() {
     },
     {
       key: "migrationState",
-      label: "迁移",
+      label: tt("connections.colMigration"),
       width: 100,
       align: "center",
       headerAlign: "center",
       hidable: true,
-      getValue: (connection) => (connection.migrationState === "MIGRATION_REQUIRED" ? "需迁移" : "—"),
+      getValue: (connection) =>
+        connection.migrationState === "MIGRATION_REQUIRED"
+          ? tt("connections.migrationRequired")
+          : tt("connections.emDash"),
     },
-    { key: "actions", label: "操作", width: 68, align: "right", headerAlign: "center" },
+    { key: "actions", label: tt("connections.colActions"), width: 68, align: "right", headerAlign: "center" },
   ]);
 
   const hasConnectionRecords = computed(() => connectionsStore.serviceConnectionRegistryTotal > 0);
@@ -323,27 +331,35 @@ export function createServiceConnectionsPageModel() {
       };
     },
   });
-  const connectionFormTitle = computed(() => (connectionFormMode.value === "create" ? "新建服务连接" : "编辑服务连接"));
+  const connectionFormTitle = computed(() =>
+    connectionFormMode.value === "create" ? tt("connections.create") : tt("connections.formEditTitle"),
+  );
   const formSubmitting = computed(() => savingConnection.value || savingAndVerifyingConnection.value);
-  const saveButtonText = computed(() => (savingConnection.value ? "保存中" : "保存草稿"));
+  const saveButtonText = computed(() =>
+    savingConnection.value ? tt("connections.saving") : tt("connections.saveDraft"),
+  );
   const saveAndVerifyButtonText = computed(() => {
-    if (savingAndVerifyingConnection.value) return "验证中";
-    return connectionFormMode.value === "create" ? "创建并验证" : "保存并验证";
+    if (savingAndVerifyingConnection.value) return tt("connections.verifying");
+    return connectionFormMode.value === "create"
+      ? tt("connections.createAndVerify")
+      : tt("connections.saveAndVerify");
   });
   const draftConnectionVerificationPreview = computed(
-    () => connectionVerificationTarget(draftConnection.value) || "填写服务地址后显示验证接口",
+    () => connectionVerificationTarget(draftConnection.value) || tt("connections.verificationAfterAddress"),
   );
   const verificationPathDisplay = computed(
-    () => draftConnection.value.protocolConfig.verificationPath.trim() || "使用服务根地址",
+    () => draftConnection.value.protocolConfig.verificationPath.trim() || tt("connections.useServiceRoot"),
   );
   const authModeHelp = computed(() => authModeInstruction());
   const draftEnvironmentLabel = computed(() =>
-    draftConnection.value.environment ? environmentLabel(draftConnection.value.environment) : "请选择使用环境",
+    draftConnection.value.environment
+      ? environmentLabel(draftConnection.value.environment)
+      : tt("connections.selectEnvironment"),
   );
   const computedRefreshModeLabel = computed(
     () =>
-      refreshModeOptions.find((option) => option.value === draftConnection.value.authConfig.refreshMode)?.label ||
-      "重新获取访问凭证",
+      refreshModeOptions.value.find((option) => option.value === draftConnection.value.authConfig.refreshMode)
+        ?.label || tt("connections.refreshModeSame"),
   );
   const needsRefreshConfig = computed(() => false);
   const showsTokenFieldPaths = computed(() => false);
@@ -354,49 +370,54 @@ export function createServiceConnectionsPageModel() {
   );
   const deleteDialogDirty = computed(() => Boolean(deleteConfirmName.value.trim()));
   const deleteConfirmMatches = computed(() => deleteConfirmName.value.trim() === pendingDeleteConnection.value?.name);
-  const verificationChecks: VerificationCheckDefinition[] = [
+  const verificationChecks = computed<VerificationCheckDefinition[]>(() => [
     {
       key: "address",
-      label: "地址可访问",
-      failedLabel: "地址不可访问",
-      actionLabel: "编辑服务地址",
-      desc: "域名、端口和 Base Path 拼出的地址是否可以访问",
+      label: tt("connections.checkAddress"),
+      failedLabel: tt("connections.checkAddressFailed"),
+      actionLabel: tt("connections.checkAddressAction"),
+      desc: tt("connections.checkAddressDesc"),
       icon: "fa-solid fa-network-wired",
     },
     {
       key: "credential",
-      label: "凭证已配置/已获取",
-      failedLabel: "凭证获取失败",
-      actionLabel: "编辑认证配置",
-      desc: "固定 Token、API Key 或认证接口可以得到可注入的访问凭证",
+      label: tt("connections.checkCredential"),
+      failedLabel: tt("connections.checkCredentialFailed"),
+      actionLabel: tt("connections.checkCredentialAction"),
+      desc: tt("connections.checkCredentialDesc"),
       icon: "fa-solid fa-key",
     },
     {
       key: "testCall",
-      label: "验证接口通过",
-      failedLabel: "验证接口失败",
-      actionLabel: "编辑验证接口",
-      desc: "带上当前凭证请求验证接口，状态码和响应内容符合预期",
+      label: tt("connections.checkTestCall"),
+      failedLabel: tt("connections.checkTestCallFailed"),
+      actionLabel: tt("connections.checkTestCallAction"),
+      desc: tt("connections.checkTestCallDesc"),
       icon: "fa-solid fa-vial",
     },
     {
       key: "refresh",
-      label: "续期策略",
-      failedLabel: "续期策略未就绪",
-      actionLabel: "编辑凭证续期",
-      desc: "凭证过期后可以按当前方式处理",
+      label: tt("connections.checkRefresh"),
+      failedLabel: tt("connections.checkRefreshFailed"),
+      actionLabel: tt("connections.checkRefreshAction"),
+      desc: tt("connections.checkRefreshDesc"),
       icon: "fa-solid fa-rotate",
     },
-  ];
+  ]);
   const detailVerificationChecks = computed(() => {
     const connection = detailConnection.value;
     if (!connection) return [];
-    return verificationChecks.map((check) => {
+    return verificationChecks.value.map((check) => {
       const status = verificationCheckStatus(connection, check.key);
       return {
         ...check,
         status,
-        statusLabel: status === "failed" ? check.failedLabel : status === "passed" ? check.label : "尚未检查",
+        statusLabel:
+          status === "failed"
+            ? check.failedLabel
+            : status === "passed"
+              ? check.label
+              : tt("connections.notYetChecked"),
         actionLabel: verificationCheckActionLabel(connection, check),
       };
     });
@@ -407,24 +428,30 @@ export function createServiceConnectionsPageModel() {
     const passed = verification.status === "SUCCEEDED";
     return [
       {
-        label: "连接验证",
+        label: tt("connections.connectionVerification"),
         passed,
         desc: passed
-          ? "连接验证通过"
+          ? tt("connections.connectionVerificationPassed")
           : [verification.diagnostics.code, verification.diagnostics.detail].filter(Boolean).join(" · ") ||
-            "连接验证失败",
+            tt("connections.connectionVerificationFailed"),
       },
-      { label: "安全诊断", passed, desc: verification.diagnostics.category || "无诊断分类" },
+      {
+        label: tt("connections.securityDiagnostics"),
+        passed,
+        desc: verification.diagnostics.category || tt("connections.noDiagnosticsCategory"),
+      },
     ];
   });
   const formVerificationResultTitle = computed(() => {
-    if (connectionVerificationPhase.value === "saving") return "正在保存连接";
-    if (connectionVerificationPhase.value === "saveFailed") return "未能保存连接";
-    if (connectionVerificationPhase.value === "verifying") return "正在验证连接";
+    if (connectionVerificationPhase.value === "saving") return tt("connections.phaseSaving");
+    if (connectionVerificationPhase.value === "saveFailed") return tt("connections.phaseSaveFailed");
+    if (connectionVerificationPhase.value === "verifying") return tt("connections.phaseVerifying");
     if (connectionVerificationPhase.value === "verificationFailed") {
-      return formVerificationFeedback.value ? "连接已保存，但验证未通过" : "连接已保存，但验证请求失败";
+      return formVerificationFeedback.value
+        ? tt("connections.phaseSavedButVerifyFailed")
+        : tt("connections.phaseSavedButVerifyRequestFailed");
     }
-    if (connectionVerificationPhase.value === "passed") return "连接验证通过";
+    if (connectionVerificationPhase.value === "passed") return tt("connections.connectionVerificationPassed");
     return "";
   });
 
@@ -460,7 +487,8 @@ export function createServiceConnectionsPageModel() {
       await providersStore.loadProviders();
       await Promise.all([loadConnectionPage(), connectionsStore.loadServiceConnectionCatalog()]);
     } catch (error) {
-      connectionLoadError.value = error instanceof Error && error.message ? error.message : "加载失败，请稍后重试。";
+      connectionLoadError.value =
+        error instanceof Error && error.message ? error.message : tt("connections.loadFailedRetry");
     } finally {
       connectionListLoading.value = false;
       connectionsHasLoaded.value = true;
@@ -568,7 +596,8 @@ export function createServiceConnectionsPageModel() {
     try {
       await loadConnectionPage(overrides);
     } catch (error) {
-      connectionLoadError.value = error instanceof Error && error.message ? error.message : "加载失败，请稍后重试。";
+      connectionLoadError.value =
+        error instanceof Error && error.message ? error.message : tt("connections.loadFailedRetry");
     } finally {
       connectionListLoading.value = false;
       connectionsHasLoaded.value = true;
@@ -637,17 +666,17 @@ export function createServiceConnectionsPageModel() {
   function connectionMenuActions(connection: ServiceConnection): ManagementRowAction[] {
     const verifying = isConnectionVerifying(connection.id);
     return [
-      { key: "detail", label: "查看详情", icon: "fa-solid fa-eye", tone: "primary" },
-      { key: "edit", label: "编辑连接", icon: "fa-solid fa-pen-to-square" },
+      { key: "detail", label: tt("connections.viewDetail"), icon: "fa-solid fa-eye", tone: "primary" },
+      { key: "edit", label: tt("connections.editConnection"), icon: "fa-solid fa-pen-to-square" },
       {
         key: "verify",
-        label: "验证连接",
+        label: tt("connections.verifyConnection"),
         icon: "fa-solid fa-vial",
         loading: verifying,
         disabled: verifying,
-        disabledReason: verifying ? "验证中" : undefined,
+        disabledReason: verifying ? tt("connections.verifying") : undefined,
       },
-      { key: "delete", label: "删除连接", icon: "fa-solid fa-trash-can", tone: "danger" },
+      { key: "delete", label: tt("connections.deleteConnection"), icon: "fa-solid fa-trash-can", tone: "danger" },
     ];
   }
 
@@ -751,9 +780,9 @@ export function createServiceConnectionsPageModel() {
     try {
       if (!navigator.clipboard) throw new Error("clipboard unavailable");
       await navigator.clipboard.writeText(value);
-      showActionNote(`${label}已复制。`);
+      showActionNote(tt("connections.copiedNote", { label }));
     } catch {
-      showActionNote("当前浏览器不允许自动复制，请手动选择文本。", "warning");
+      showActionNote(tt("connections.clipboardBlocked"), "warning");
     }
   }
 
@@ -776,7 +805,7 @@ export function createServiceConnectionsPageModel() {
   }
 
   function warnUnsavedConnectionForm() {
-    showActionNote("表单有未保存内容；关闭表单需在确认框中确认放弃修改。", "warning");
+    showActionNote(tt("connections.unsavedFormWarning"), "warning");
   }
 
   function handleGlobalKeydown(event: KeyboardEvent) {
@@ -793,7 +822,7 @@ export function createServiceConnectionsPageModel() {
     if (pendingDeleteConnection.value) {
       event.preventDefault();
       if (deleteDialogDirty.value) {
-        showActionNote("删除确认已输入内容，请点击取消或完成删除。", "warning");
+        showActionNote(tt("connections.deleteConfirmHasInput"), "warning");
         return;
       }
       closeDeleteDialog();
@@ -821,12 +850,17 @@ export function createServiceConnectionsPageModel() {
     }
   }
 
+  function isConnectionAvailable(connection: ServiceConnection) {
+    if (!connection.id) return false;
+    if (testedConnectionIds.value.includes(connection.id)) return true;
+    return connection.status === "VERIFIED";
+  }
+
   function statusLabel(connection: ServiceConnection) {
-    if (!connection.id) return "未保存";
-    if (testedConnectionIds.value.includes(connection.id)) return "可用";
-    if (connection.status === "VERIFIED") return "可用";
-    if (connection.status === "DISABLED") return "已停用";
-    return "需处理";
+    if (!connection.id) return tt("connections.statusUnsaved");
+    if (isConnectionAvailable(connection)) return tt("connections.statusAvailable");
+    if (connection.status === "DISABLED") return tt("connections.statusDisabled");
+    return tt("connections.statusNeedsAttention");
   }
 
   function supportsCredentialRenewalConfig(connection: ServiceConnection) {
@@ -835,32 +869,32 @@ export function createServiceConnectionsPageModel() {
 
   function verificationCheckStatus(connection: ServiceConnection, _key: VerificationCheckKey): VerificationCheckStatus {
     const verification = connectionsStore.verificationByConnectionId[connection.id];
-    if (!verification) return statusLabel(connection) === "可用" ? "passed" : "pending";
+    if (!verification) return isConnectionAvailable(connection) ? "passed" : "pending";
     return verification.status === "SUCCEEDED" ? "passed" : "failed";
   }
 
-  function verificationCheckLabel(connection: ServiceConnection, check: (typeof verificationChecks)[number]) {
+  function verificationCheckLabel(connection: ServiceConnection, check: VerificationCheckDefinition) {
     const status = verificationCheckStatus(connection, check.key);
     if (status === "passed") return check.label;
     if (status === "failed") return check.failedLabel;
-    return "尚未检查";
+    return tt("connections.notYetChecked");
   }
 
   function verificationCheckActionLabel(connection: ServiceConnection, check: VerificationCheckDefinition) {
-    if (check.key === "refresh" && !supportsCredentialRenewalConfig(connection)) return "编辑认证配置";
+    if (check.key === "refresh" && !supportsCredentialRenewalConfig(connection)) {
+      return tt("connections.checkCredentialAction");
+    }
     return check.actionLabel;
   }
 
   function verificationCheckAction(connection: ServiceConnection, check: VerificationCheckDefinition) {
     const actionLabel = verificationCheckActionLabel(connection, check);
     openConnectionEditor(connection);
-    showActionNote(`${actionLabel}后请重新验证连接。`, "warning");
+    showActionNote(tt("connections.reverifyAfterAction", { action: actionLabel }), "warning");
   }
 
   function statusClass(connection: ServiceConnection) {
-    const label = statusLabel(connection);
-    if (label === "可用") return "available";
-    return "attention";
+    return isConnectionAvailable(connection) ? "available" : "attention";
   }
 
   function statusPillClass(connection: ServiceConnection) {
@@ -872,35 +906,35 @@ export function createServiceConnectionsPageModel() {
   }
 
   function lastVerified(connection: ServiceConnection) {
-    if (testedConnectionIds.value.includes(connection.id)) return "刚刚";
-    if (!connection.lastVerifiedAt) return "尚未验证";
+    if (testedConnectionIds.value.includes(connection.id)) return tt("connections.justNow");
+    if (!connection.lastVerifiedAt) return tt("connections.notYetVerified");
     const timestamp = Date.parse(connection.lastVerifiedAt);
     if (!Number.isFinite(timestamp)) return connection.lastVerifiedAt;
     const elapsedMinutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
-    if (elapsedMinutes < 1) return "刚刚";
-    if (elapsedMinutes < 60) return `${elapsedMinutes} 分钟前`;
+    if (elapsedMinutes < 1) return tt("connections.justNow");
+    if (elapsedMinutes < 60) return tt("connections.minutesAgo", { n: elapsedMinutes });
     const elapsedHours = Math.floor(elapsedMinutes / 60);
-    if (elapsedHours < 24) return `${elapsedHours} 小时前`;
-    return `${Math.floor(elapsedHours / 24)} 天前`;
+    if (elapsedHours < 24) return tt("connections.hoursAgo", { n: elapsedHours });
+    return tt("connections.daysAgo", { n: Math.floor(elapsedHours / 24) });
   }
 
   function lastVerifiedTitle(connection: ServiceConnection) {
-    if (testedConnectionIds.value.includes(connection.id)) return "刚刚验证";
-    if (!connection.lastVerifiedAt) return "尚未验证";
+    if (testedConnectionIds.value.includes(connection.id)) return tt("connections.justVerified");
+    if (!connection.lastVerifiedAt) return tt("connections.notYetVerified");
     const timestamp = Date.parse(connection.lastVerifiedAt);
     if (!Number.isFinite(timestamp)) return connection.lastVerifiedAt;
-    return new Date(timestamp).toLocaleString("zh-CN");
+    return new Date(timestamp).toLocaleString(getI18nLocale());
   }
 
   function connectionAddress(connection: ServiceConnection) {
-    return serviceEndpointAddress(connection) || "未配置地址";
+    return serviceEndpointAddress(connection) || tt("connections.addressNotConfigured");
   }
 
   /** Compact list primary: host[:port] without scheme; base path kept as secondary suffix. */
   function connectionAddressPrimary(connection: ServiceConnection) {
     const full = serviceEndpointAddress(connection);
     if (!full) {
-      return { hostPort: "未配置地址", basePath: "", scheme: "" };
+      return { hostPort: tt("connections.addressNotConfigured"), basePath: "", scheme: "" };
     }
     try {
       const parsed = new URL(/^https?:\/\//i.test(full) ? full : `http://${full}`);
@@ -1002,25 +1036,33 @@ export function createServiceConnectionsPageModel() {
 
   function connectionPortLabel(connection: ServiceConnection) {
     const parts = endpointUrlParts(connection.protocolConfig.domain);
-    return connection.protocolConfig.port || parts.port || defaultPortForScheme(parts.scheme) || "未填写";
+    return (
+      connection.protocolConfig.port ||
+      parts.port ||
+      defaultPortForScheme(parts.scheme) ||
+      tt("connections.notFilled")
+    );
   }
 
   function credentialPlacementLabel(connection: ServiceConnection) {
     const provider = providersStore.providers.find((item) => item.id === connection.providerId);
     const scheme = providerAuthScheme(provider, connection.authConfig.schemeKey);
     if (scheme?.oauth2) return `Header · ${scheme.oauth2.injection.headerName}`;
-    if (connection.authConfig.credentialPlacement === "query") return "查询参数";
+    if (connection.authConfig.credentialPlacement === "query") return tt("connections.credentialPlacementQuery");
     if (connection.authConfig.mode === "fixed-token" || connection.authConfig.mode === "api-key-secret")
-      return "请求 Header";
-    return "认证接口返回后注入 Header";
+      return tt("connections.credentialPlacementHeader");
+    return tt("connections.credentialPlacementAuthInject");
   }
 
   function refreshModeLabel(connection: ServiceConnection) {
     const provider = providersStore.providers.find((item) => item.id === connection.providerId);
     const scheme = providerAuthScheme(provider, connection.authConfig.schemeKey);
-    if (scheme?.oauth2?.refreshStrategy === "REFRESH_TOKEN") return "使用 Renewal Token";
-    if (scheme?.oauth2) return "重新执行 Client Credentials";
-    return refreshModeOptions.find((option) => option.value === connection.authConfig.refreshMode)?.label || "未配置";
+    if (scheme?.oauth2?.refreshStrategy === "REFRESH_TOKEN") return tt("connections.refreshUseRenewalToken");
+    if (scheme?.oauth2) return tt("connections.refreshClientCredentials");
+    return (
+      refreshModeOptions.value.find((option) => option.value === connection.authConfig.refreshMode)?.label ||
+      tt("connections.notConfigured")
+    );
   }
 
   function normalizeServiceAddress() {
@@ -1047,20 +1089,22 @@ export function createServiceConnectionsPageModel() {
   }
 
   function outboundModeLabel(connection: ServiceConnection): string {
-    if (connection.migrationState === "MIGRATION_REQUIRED" && !connection.outboundMode) return "需迁移";
-    if (connection.outboundMode === "BROKER_OBO") return "Broker / OBO";
-    if (connection.outboundMode === "REQUEST_PASSTHROUGH") return "请求透传";
-    return "—";
+    if (connection.migrationState === "MIGRATION_REQUIRED" && !connection.outboundMode) {
+      return tt("connections.migrationRequired");
+    }
+    if (connection.outboundMode === "BROKER_OBO") return tt("connections.modeBroker");
+    if (connection.outboundMode === "REQUEST_PASSTHROUGH") return tt("connections.modePassthrough");
+    return tt("connections.emDash");
   }
 
   function outboundModeCardTitle(mode: OutboundIdentityMode): string {
-    return mode === "BROKER_OBO" ? "Broker / OBO" : "本次请求透传";
+    return mode === "BROKER_OBO"
+      ? tt("connections.modeBroker")
+      : tt("connections.modePassthroughThisRequest");
   }
 
   function outboundModeCardHint(mode: OutboundIdentityMode): string {
-    return mode === "BROKER_OBO"
-      ? "用机器信任换当前用户的短期业务 Token；不保存用户 Token"
-      : "每次执行由调用方附带 Token；离开运行后不可恢复";
+    return mode === "BROKER_OBO" ? tt("connections.brokerModeHint") : tt("connections.passthroughModeHint");
   }
 
   function selectOutboundMode(mode: OutboundIdentityMode) {
@@ -1116,7 +1160,7 @@ export function createServiceConnectionsPageModel() {
       impactPreview.value = result;
       impactProof.value = result.impactConfirmationProof;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "影响预览失败";
+      const message = error instanceof Error ? error.message : tt("connections.impactPreviewFailed");
       showActionNote(message, "error");
       switchModePending.value = null;
     } finally {
@@ -1126,7 +1170,7 @@ export function createServiceConnectionsPageModel() {
 
   function confirmModeSwitch() {
     if (!switchModePending.value || !impactProof.value) {
-      showActionNote("影响范围已变化，请重新确认", "warning");
+      showActionNote(tt("connections.impactChangedReconfirm"), "warning");
       return;
     }
     applyOutboundMode(switchModePending.value);
@@ -1267,32 +1311,32 @@ export function createServiceConnectionsPageModel() {
   function validateConnectionForm(intent: ConnectionSubmitIntent) {
     const connection = draftConnection.value;
     const errors: Partial<Record<ConnectionFormFieldKey, string>> = {};
-    if (!connection.name.trim()) errors.name = "请输入连接名称。";
-    if (!connection.providerId) errors.address = "请选择已完成配置的 Provider。";
+    if (!connection.name.trim()) errors.name = tt("connections.validationNameRequired");
+    if (!connection.providerId) errors.address = tt("connections.validationProviderRequired");
     if (intent === "verify") {
-      if (!connection.environment.trim()) errors.environment = "请选择使用环境。";
+      if (!connection.environment.trim()) errors.environment = tt("connections.validationEnvironmentRequired");
     }
     if (usesDualModeForm.value) {
       if (!hasProviderOutboundContract.value && connectionFormMode.value === "create") {
-        errors.outboundMode = "该 Provider 尚未声明用户态出站契约（supportedModes），请先到 Provider 管理完成配置。";
+        errors.outboundMode = tt("connections.validationNoOutboundContract");
       } else if (!connection.outboundMode || !OUTBOUND_MODES.includes(connection.outboundMode)) {
-        errors.outboundMode = "请选择出站身份策略：Broker / OBO 或 本次请求透传。";
+        errors.outboundMode = tt("connections.validationOutboundModeRequired");
       } else if (hasProviderOutboundContract.value && !providerSupportedModes.value.includes(connection.outboundMode)) {
-        errors.outboundMode = "所选策略不在 Provider supportedModes 内。";
+        errors.outboundMode = tt("connections.validationOutboundModeUnsupported");
       } else if (connection.outboundMode === "BROKER_OBO") {
-        if (!brokerClientId.value.trim()) errors["broker.clientId"] = "请输入 clientId。";
+        if (!brokerClientId.value.trim()) errors["broker.clientId"] = tt("connections.validationBrokerClientId");
         if (
           !connection.machineCredentialConfigured &&
           !connection.credentialConfigured &&
           !machineCredentialInput.value?.value.trim()
         ) {
-          errors["broker.machineCredential"] = "请输入机器凭据（private key PEM）。";
+          errors["broker.machineCredential"] = tt("connections.validationBrokerMachineCredential");
         }
       }
     } else {
       const scheme = selectedAuthScheme.value;
       if (!scheme && connectionFormMode.value === "create") {
-        errors.authMode = "该 Provider 尚未发布认证契约，请先到 Provider 管理完成配置。";
+        errors.authMode = tt("connections.validationNoAuthContract");
       }
       if (scheme) {
         const values = connection.authConfig.values || {};
@@ -1304,17 +1348,17 @@ export function createServiceConnectionsPageModel() {
               !connection.credentialSecretId?.trim() &&
               !clientSecretInput.value?.value.trim()
             ) {
-              errors[`auth.${field.key}`] = `请输入${field.label}。`;
+              errors[`auth.${field.key}`] = tt("connections.validationFieldRequired", { label: field.label });
             }
           } else if (!values[field.key]?.trim()) {
-            errors[`auth.${field.key}`] = `请输入${field.label}。`;
+            errors[`auth.${field.key}`] = tt("connections.validationFieldRequired", { label: field.label });
           }
         }
       }
     }
     const credentialSecretID = connection.credentialSecretId?.trim() || "";
     if (credentialSecretID && !UUID_PATTERN.test(credentialSecretID)) {
-      errors.credentialSecretId = "Secret ID 必须是有效的 UUID，不能填写 API Key 或 Token。";
+      errors.credentialSecretId = tt("connections.validationSecretIdUuid");
     }
     connectionFormErrors.value = errors;
     return Object.keys(errors).length === 0;
@@ -1532,7 +1576,7 @@ export function createServiceConnectionsPageModel() {
         };
     draftConnection.value = {
       ...connection,
-      environment: connection.environment.trim() ? environmentLabel(connection.environment) : "",
+      environment: environmentOptionValue(connection.environment),
       protocolConfig: {
         ...connection.protocolConfig,
         verificationMethod: connection.protocolConfig.verificationMethod || "GET",
@@ -1633,8 +1677,9 @@ export function createServiceConnectionsPageModel() {
       try {
         saved = await persistConnectionDraft(wasCreate);
       } catch (error) {
-        const message = error instanceof Error && error.message ? error.message : "保存失败，请稍后重试。";
-        showActionNote(`未能保存连接：${message}`, "error");
+        const message =
+          error instanceof Error && error.message ? error.message : tt("connections.saveFailedRetry");
+        showActionNote(tt("connections.saveFailedNote", { message }), "error");
         return;
       }
       promoteSavedConnectionToEdit(saved);
@@ -1643,12 +1688,13 @@ export function createServiceConnectionsPageModel() {
       try {
         await reloadConnectionData({ page: wasCreate ? 1 : connectionsStore.serviceConnectionPagination.page });
       } catch (error) {
-        const message = error instanceof Error && error.message ? error.message : "请稍后重试。";
-        refreshError = `列表刷新失败：${message}`;
+        const message =
+          error instanceof Error && error.message ? error.message : tt("connections.tryAgainLater");
+        refreshError = tt("connections.listRefreshFailed", { message });
       }
       const savedMessage = wasCreate
-        ? `${saved.name} 已保存，稍后需要验证后才能被 Tool 稳定使用。`
-        : `${saved.name} 已仅保存，验证状态已重置。`;
+        ? tt("connections.savedNeedVerify", { name: saved.name })
+        : tt("connections.savedDraftOnly", { name: saved.name });
       showActionNote(
         refreshError ? `${savedMessage} ${refreshError}` : savedMessage,
         wasCreate || refreshError ? "warning" : "success",
@@ -1668,10 +1714,16 @@ export function createServiceConnectionsPageModel() {
       const status: ServiceConnection["status"] = verification.status === "SUCCEEDED" ? "VERIFIED" : "ERROR";
       syncConnectionVerifiedState(connection.id, status);
       if (status === "VERIFIED") {
-        showActionNote(`${connection.name} 已通过连接验证。`);
+        showActionNote(tt("connections.verifyPassed", { name: connection.name }));
         return;
       }
-      showActionNote(`${connection.name} 验证后仍需处理：${formatVerificationFailure(verification)}`, "warning");
+      showActionNote(
+        tt("connections.verifyStillNeedsAttention", {
+          name: connection.name,
+          detail: formatVerificationFailure(verification),
+        }),
+        "warning",
+      );
     } finally {
       removeVerifyingConnection(connection.id);
     }
@@ -1694,10 +1746,11 @@ export function createServiceConnectionsPageModel() {
       try {
         saved = await persistConnectionDraft(wasCreate);
       } catch (error) {
-        const message = error instanceof Error && error.message ? error.message : "保存失败，请稍后重试。";
+        const message =
+          error instanceof Error && error.message ? error.message : tt("connections.saveFailedRetry");
         connectionVerificationPhase.value = "saveFailed";
         formSubmitError.value = message;
-        showActionNote(`未能保存连接：${message}`, "error");
+        showActionNote(tt("connections.saveFailedNote", { message }), "error");
         return;
       }
       promoteSavedConnectionToEdit(saved);
@@ -1706,9 +1759,10 @@ export function createServiceConnectionsPageModel() {
       try {
         verification = await connectionsStore.verifyConnection(saved.id);
       } catch (error) {
-        const message = error instanceof Error && error.message ? error.message : "请稍后重试。";
+        const message =
+          error instanceof Error && error.message ? error.message : tt("connections.tryAgainLater");
         connectionVerificationPhase.value = "verificationFailed";
-        formSubmitError.value = `连接已保存，但验证请求失败：${message}`;
+        formSubmitError.value = tt("connections.savedButVerifyRequestFailed", { message });
         showActionNote(formSubmitError.value, "error");
         return;
       }
@@ -1721,22 +1775,30 @@ export function createServiceConnectionsPageModel() {
       try {
         await reloadConnectionData({ page: wasCreate ? 1 : connectionsStore.serviceConnectionPagination.page });
       } catch (error) {
-        const message = error instanceof Error && error.message ? error.message : "请稍后重试。";
-        refreshError = `列表刷新失败：${message}`;
+        const message =
+          error instanceof Error && error.message ? error.message : tt("connections.tryAgainLater");
+        refreshError = tt("connections.listRefreshFailed", { message });
       }
       if (status === "VERIFIED") {
         showActionNote(
-          refreshError ? `${saved.name} 已保存并通过验证，但${refreshError}` : `${saved.name} 已保存并通过验证。`,
+          refreshError
+            ? tt("connections.savedAndVerifiedButRefresh", { name: saved.name, refreshError })
+            : tt("connections.savedAndVerified", { name: saved.name }),
           refreshError ? "warning" : "success",
         );
         closeConnectionForm();
         return;
       }
       formSubmitError.value = formatVerificationFailure(verification);
+      const detail = formatVerificationFailure(verification);
       showActionNote(
         refreshError
-          ? `${saved.name} 已保存，但验证仍需处理（${formatVerificationFailure(verification)}）；${refreshError}`
-          : `${saved.name} 已保存，但验证仍需处理：${formatVerificationFailure(verification)}`,
+          ? tt("connections.savedButVerifyNeedsAttentionWithRefresh", {
+              name: saved.name,
+              detail,
+              refreshError,
+            })
+          : tt("connections.savedButVerifyNeedsAttention", { name: saved.name, detail }),
         "warning",
       );
       focusFirstVerificationFailure(verification);
@@ -1772,7 +1834,7 @@ export function createServiceConnectionsPageModel() {
 
   function requestCloseDeleteDialog(_reason: "backdrop" | "escape") {
     if (deleteDialogDirty.value) {
-      showActionNote("删除确认已输入内容，请点击取消或完成删除。", "warning");
+      showActionNote(tt("connections.deleteConfirmHasInput"), "warning");
       return;
     }
     closeDeleteDialog();
@@ -1782,7 +1844,7 @@ export function createServiceConnectionsPageModel() {
     const connection = pendingDeleteConnection.value;
     if (!connection || deletingConnection.value) return;
     if (!deleteConfirmMatches.value) {
-      deleteError.value = "请输入连接名称以确认删除。";
+      deleteError.value = tt("connections.deleteConfirmNameRequired");
       return;
     }
     deletingConnection.value = true;
@@ -1799,10 +1861,11 @@ export function createServiceConnectionsPageModel() {
         detailConnectionId.value = "";
         connectionCurrentView.value = "list";
       }
-      showActionNote(`${connection.name} 已删除。`, "warning");
+      showActionNote(tt("connections.deletedNote", { name: connection.name }), "warning");
       closeDeleteDialog();
     } catch (error) {
-      const message = error instanceof Error && error.message ? error.message : "删除失败，请稍后重试。";
+      const message =
+        error instanceof Error && error.message ? error.message : tt("connections.deleteFailedRetry");
       deleteError.value = message;
       showActionNote(message, "error");
     } finally {
@@ -1810,10 +1873,21 @@ export function createServiceConnectionsPageModel() {
     }
   }
 
-  function environmentLabel(environment: string) {
-    if (!environment.trim()) return "未选择";
+  /** Map stored/API environment to stable form option values (legacy Chinese tokens). */
+  function environmentOptionValue(environment: string) {
+    if (!environment.trim()) return "";
     if (["测试", "Sandbox", "Staging", "TEST", "STAGING", "DEVELOPMENT"].includes(environment)) return "测试";
+    if (["生产", "Production", "PRODUCTION", "PROD", "LIVE"].includes(environment)) return "生产";
     return "生产";
+  }
+
+  function environmentLabel(environment: string) {
+    if (!environment.trim()) return tt("connections.envNotSelected");
+    // Legacy Chinese stored values ("测试") and English synonyms map to localized chrome.
+    if (["测试", "Sandbox", "Staging", "TEST", "STAGING", "DEVELOPMENT"].includes(environment)) {
+      return tt("connections.envTest");
+    }
+    return tt("connections.envProduction");
   }
 
   function normalizeAuthMode(mode: string, label = "") {
@@ -1832,9 +1906,9 @@ export function createServiceConnectionsPageModel() {
       "oauth2-client": "OAuth2 Client Credentials",
       "api-key-secret": "API Key",
       "fixed-token": "Bearer Token",
-      none: "无需认证",
+      none: tt("connections.authNone"),
     };
-    return fallback || labels[normalizedMode] || mode || "未选择";
+    return fallback || labels[normalizedMode] || mode || tt("connections.envNotSelected");
   }
 
   function selectRefreshMode(mode: string) {
@@ -1843,30 +1917,29 @@ export function createServiceConnectionsPageModel() {
   }
 
   function authModeInstruction() {
-    return (
-      selectedAuthScheme.value?.description || "认证协议由 Provider 管理；这里只填写当前环境的账号字段和一次性凭据。"
-    );
+    // scheme.description is UGC once saved — do not translate.
+    return selectedAuthScheme.value?.description || tt("connections.authModeInstructionDefault");
   }
 
   function formatVerificationFailure(verification: { diagnostics?: Record<string, string>; status?: string }) {
     const code = verification.diagnostics?.code?.trim();
     const detail = verification.diagnostics?.detail?.trim();
-    if (code && detail) return `${code}（${detail}）`;
+    // diagnostics content is backend/UGC; only wrap structure.
+    if (code && detail) return `${code} (${detail})`;
     if (code) return code;
     if (detail) return detail;
-    return "请检查 Provider 验证 URL、认证与网络连通性。";
+    return tt("connections.verifyFailureHint");
   }
 
   function verificationModeLabel(connectionId: string) {
     const verification = connectionsStore.verificationByConnectionId[connectionId];
-    if (verification) return `后端验证 · ${verification.latencyMs ?? 0}ms`;
-    if (verification) return "后端已返回验证结果";
-    return "尚未验证";
+    if (verification) return tt("connections.backendVerifyWithLatency", { ms: verification.latencyMs ?? 0 });
+    return tt("connections.notYetVerified");
   }
 
   function verificationSummary(connectionId: string) {
     const verification = connectionsStore.verificationByConnectionId[connectionId];
-    if (!verification) return "点击验证后会显示后端返回的稳定诊断码。";
+    if (!verification) return tt("connections.verifyDiagnosticsHint");
     if (verification.status === "SUCCEEDED") {
       return `${verification.diagnostics.category || "OK"} · ${verification.diagnostics.code || "CONNECTION_VERIFIED"}`;
     }

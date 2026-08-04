@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 
 import { useModalFocus } from "../composables/useModalFocus";
 import { useConnectionsStore } from "../stores/connections";
@@ -16,6 +17,7 @@ const emit = defineEmits<{
   (event: "update:modelValue", value: boolean): void;
 }>();
 
+const { t } = useI18n();
 const toolsStore = useToolsStore();
 const connectionsStore = useConnectionsStore();
 const inputDraft = ref<Record<string, unknown>>({});
@@ -43,7 +45,7 @@ const testBlockedReason = computed(() => {
   if (!tool?.versions.length) return "";
   const editableVersion = [...tool.versions].reverse().find((version) => version.lifecycleStatus !== "PUBLISHED");
   if (editableVersion) return "";
-  return "当前只有已发布版本，不能直接重测。请先编辑 Tool 创建新的 Draft Version，再执行测试。";
+  return t("tools.testBlockedPublishedOnly");
 });
 
 const toolConnection = computed(() => {
@@ -106,7 +108,7 @@ function buildOutboundEnvelope(): OutboundCredentialsEnvelope | undefined {
   const connectionId = passthroughConnectionId.value || props.tool?.connectionId || "";
   const token = normalizePassthroughToken(passthroughToken.value);
   if (!connectionId || !token) {
-    errorMessage.value = "透传 Connection 需要一次性业务 Token 与 Connection。";
+    errorMessage.value = t("tools.passthroughNeedToken");
     return undefined;
   }
   // Prefer explicit UI value; fall back to +1h. Must be strictly after server "now".
@@ -114,12 +116,12 @@ function buildOutboundEnvelope(): OutboundCredentialsEnvelope | undefined {
     ? new Date(passthroughExpiresAt.value)
     : new Date(Date.now() + 60 * 60 * 1000);
   if (Number.isNaN(expiresDate.getTime())) {
-    errorMessage.value = "过期时间格式无效，请重新选择（本地时间）。";
+    errorMessage.value = t("tools.expiresInvalid");
     return undefined;
   }
   // Require at least ~2 minutes remaining to absorb clock skew + request RTT.
   if (expiresDate.getTime() <= Date.now() + 2 * 60 * 1000) {
-    errorMessage.value = "过期时间必须晚于当前时间至少 2 分钟（当前设置已过期或过近）。";
+    errorMessage.value = t("tools.expiresTooSoon");
     return undefined;
   }
   return {
@@ -176,13 +178,13 @@ function toolTestActionError(error: unknown) {
   const code = typeof payload === "object" && payload ? payload.code : undefined;
   const message = typeof payload === "string" ? payload : payload?.message;
   if (code === "OUTBOUND_CREDENTIAL_EXPIRED" || /no longer available|expired/i.test(message || "")) {
-    return "出站 Token 信封已过期：请把「过期时间」调到当前时间之后（建议 +1 小时），并重新粘贴业务 Token。";
+    return t("tools.outboundExpired");
   }
   if (code === "OUTBOUND_CREDENTIAL_INVALID" || /envelope is not valid/i.test(message || "")) {
-    return "出站凭据无效：请检查 Token 是否为空/含换行、Connection 是否匹配，以及过期时间是否为将来时间。Token 勿重复加 Bearer 前缀。";
+    return t("tools.outboundInvalid");
   }
   if (typeof message === "string" && message) return message;
-  return error instanceof Error && error.message ? error.message : "执行测试失败";
+  return error instanceof Error && error.message ? error.message : t("tools.runTestFailed");
 }
 
 function closeDialog() {
@@ -198,7 +200,7 @@ function responseMessage(value: unknown) {
 }
 
 function formatResponseBody(body: unknown) {
-  if (body === undefined || body === null) return "(无响应体)";
+  if (body === undefined || body === null) return t("tools.noResponseBody");
   if (typeof body === "string") {
     try {
       return JSON.stringify(JSON.parse(body), null, 2);
@@ -220,7 +222,7 @@ function formatToolTestError(testResult: ToolTestExecutionResult) {
   if (!credentialFailure) return "";
 
   const detail = upstreamMessage || testResult.errorMessage || `HTTP ${testResult.responseStatus}`;
-  return `服务连接凭证无效或已过期：${detail}。请到服务连接更新凭证后重新执行测试。`;
+  return t("tools.credentialInvalid", { detail });
 }
 
 function updateBooleanInput(paramName: string, event: Event) {
@@ -248,17 +250,17 @@ function updateComplexInput(paramName: string, event: Event) {
       class="modal-card tool-test-modal-card"
       role="dialog"
       aria-modal="true"
-      aria-label="测试工具"
+      :aria-label="t('tools.testDialogAria')"
     >
       <header class="modal-card-head">
         <div>
           <span>Tool Runtime Test</span>
-          <h3>测试工具</h3>
+          <h3>{{ t("tools.testDialogTitle") }}</h3>
         </div>
         <button
           class="icon-action-button"
           type="button"
-          aria-label="关闭测试工具"
+          :aria-label="t('tools.closeTestAria')"
           data-modal-initial-focus
           @click="closeDialog"
         >
@@ -269,8 +271,8 @@ function updateComplexInput(paramName: string, event: Event) {
       <div class="tool-test-dialog-grid">
         <section class="tool-test-form-card">
           <header class="tool-test-section-header">
-            <strong>{{ tool?.name || "未选择工具" }}</strong>
-            <span>按参数契约生成默认测试入参，可直接修改后执行。</span>
+            <strong>{{ tool?.name || t("tools.noToolSelected") }}</strong>
+            <span>{{ t("tools.testDialogHelp") }}</span>
           </header>
 
           <div v-for="group in groupedParams" :key="group.location" class="tool-test-param-group">
@@ -314,25 +316,25 @@ function updateComplexInput(paramName: string, event: Event) {
             v-if="requiresPassthrough"
             class="tool-test-outbound-envelope"
             data-testid="tool-test-outbound-envelope"
-            aria-label="出站透传凭据（一次性）"
+            :aria-label="t('tools.outboundPassthroughAria')"
           >
             <header>
-              <strong>出站请求透传</strong>
-              <span>Token 为 write-only，不会写入测试结果、历史或本地存储。</span>
+              <strong>{{ t("tools.outboundPassthroughTitle") }}</strong>
+              <span>{{ t("tools.outboundPassthroughHelp") }}</span>
             </header>
             <label>
-              业务 Token
+              {{ t("tools.businessToken") }}
               <input
                 v-model="passthroughToken"
                 type="password"
                 autocomplete="new-password"
                 data-testid="tool-test-passthrough-token"
-                placeholder="一次性业务 Token"
+                :placeholder="t('tools.businessTokenPlaceholder')"
                 :disabled="running"
               />
             </label>
             <label>
-              过期时间
+              {{ t("tools.expiresAt") }}
               <input
                 v-model="passthroughExpiresAt"
                 type="datetime-local"
@@ -344,7 +346,7 @@ function updateComplexInput(paramName: string, event: Event) {
 
           <div class="tool-test-dialog-actions">
             <p v-if="testBlockedReason" class="tool-test-error" role="alert">{{ testBlockedReason }}</p>
-            <button class="ghost-button" type="button" @click="closeDialog">取消</button>
+            <button class="ghost-button" type="button" @click="closeDialog">{{ t("common.cancel") }}</button>
             <button
               class="primary-button"
               type="button"
@@ -352,14 +354,16 @@ function updateComplexInput(paramName: string, event: Event) {
               @click="runTest"
             >
               <i class="fa-solid fa-vial" aria-hidden="true" />
-              {{ running ? "执行中..." : "执行测试" }}
+              {{ running ? t("tools.running") : t("tools.runTest") }}
             </button>
           </div>
         </section>
 
         <section class="tool-test-result-card">
           <header class="tool-test-result-summary">
-            <strong>{{ result ? (result.passed ? "测试通过" : "测试失败") : "等待执行" }}</strong>
+            <strong>{{
+              result ? (result.passed ? t("tools.testPass") : t("tools.testFail")) : t("tools.waitingRun")
+            }}</strong>
             <span v-if="result">HTTP {{ result.responseStatus }}</span>
             <span v-if="result">{{ result.latencyMs }}ms</span>
           </header>
@@ -368,11 +372,11 @@ function updateComplexInput(paramName: string, event: Event) {
 
           <div v-if="result" class="tool-test-result-panels">
             <div>
-              <h4>请求入参</h4>
+              <h4>{{ t("tools.requestInput") }}</h4>
               <pre class="tool-test-json-block">{{ JSON.stringify(result.requestInput, null, 2) }}</pre>
             </div>
             <div>
-              <h4>上游响应原文</h4>
+              <h4>{{ t("tools.upstreamResponse") }}</h4>
               <pre class="tool-test-json-block">{{ formatResponseBody(result.responseBody) }}</pre>
             </div>
           </div>

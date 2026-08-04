@@ -1,16 +1,27 @@
 <script lang="ts">
-export const WORKFLOW_BRANCH_OPTIONS = [
-  { label: "默认分支", value: "default" },
-  { label: "条件成立", value: "true" },
-  { label: "条件不成立", value: "false" },
-  { label: "成功", value: "success" },
-  { label: "失败", value: "failure" },
-];
+import { tt } from "../../i18n/tt";
 
-const WORKFLOW_BRANCH_SELECT_OPTIONS = [{ label: "无分支标签", value: "" }, ...WORKFLOW_BRANCH_OPTIONS];
+/** Branch option values shared with the canvas edge labels. */
+export const WORKFLOW_BRANCH_VALUES = ["default", "true", "false", "success", "failure"] as const;
+
+export function getWorkflowBranchOptions() {
+  return [
+    { label: tt("workflow.branchDefault"), value: "default" },
+    { label: tt("workflow.branchTrue"), value: "true" },
+    { label: tt("workflow.branchFalse"), value: "false" },
+    { label: tt("workflow.branchSuccess"), value: "success" },
+    { label: tt("workflow.branchFailure"), value: "failure" },
+  ];
+}
+
+/** @deprecated Prefer getWorkflowBranchOptions() so labels follow the active locale. */
+export const WORKFLOW_BRANCH_OPTIONS = getWorkflowBranchOptions();
 </script>
 
 <script setup lang="ts">
+import { computed } from "vue";
+import { useI18n } from "vue-i18n";
+
 import AppSelect from "../AppSelect.vue";
 import type { WorkflowGraphEdge } from "../../types/domain";
 
@@ -22,6 +33,17 @@ const emit = defineEmits<{
   (event: "update-edge-data", payload: { key: string; value: unknown }): void;
 }>();
 
+const { t } = useI18n();
+
+const branchSelectOptions = computed(() => [
+  { label: t("workflow.branchNone"), value: "" },
+  { label: t("workflow.branchDefault"), value: "default" },
+  { label: t("workflow.branchTrue"), value: "true" },
+  { label: t("workflow.branchFalse"), value: "false" },
+  { label: t("workflow.branchSuccess"), value: "success" },
+  { label: t("workflow.branchFailure"), value: "failure" },
+]);
+
 function edgeDataValue(key: string) {
   const value = props.edge?.data?.[key];
   return typeof value === "string" ? value : "";
@@ -31,16 +53,16 @@ function edgeDataValue(key: string) {
 <template>
   <section class="workflow-edge-inspector">
     <div class="workflow-panel-heading">
-      <span>连线面板</span>
-      <h3>{{ props.edge?.id || "选择一条连线" }}</h3>
+      <span>{{ t("workflow.edgePanel") }}</span>
+      <h3>{{ props.edge?.id || t("workflow.selectEdge") }}</h3>
       <p>
-        {{ props.edge ? "配置连线分支后，画布标签和运行时路由会使用同一个值。" : "点击画布中的连线后在这里编辑。" }}
+        {{ props.edge ? t("workflow.edgeHintSelected") : t("workflow.edgeHintEmpty") }}
       </p>
     </div>
 
     <div v-if="props.edge" class="workflow-inspector-form">
       <div class="workflow-inspector-meta">
-        <span>连线 ID {{ props.edge.id }}</span>
+        <span>{{ t("workflow.edgeId", { id: props.edge.id }) }}</span>
         <span
           >{{ props.edge.sourceNodeId }}:{{ props.edge.sourcePort }} -> {{ props.edge.targetNodeId }}:{{
             props.edge.targetPort
@@ -50,16 +72,16 @@ function edgeDataValue(key: string) {
 
       <section class="workflow-inspector-vars">
         <div class="workflow-section-caption">
-          <strong>分支标签</strong>
+          <strong>{{ t("workflow.branchLabel") }}</strong>
           <small>edge.data.branch</small>
         </div>
         <label class="drawer-field">
-          <span>分支标签</span>
+          <span>{{ t("workflow.branchLabel") }}</span>
           <AppSelect
             class="workflow-branch-select"
             :model-value="edgeDataValue('branch')"
-            :options="WORKFLOW_BRANCH_SELECT_OPTIONS"
-            placeholder="选择分支"
+            :options="branchSelectOptions"
+            :placeholder="t('workflow.selectBranch')"
             @update:model-value="emit('update-edge-data', { key: 'branch', value: $event })"
           />
         </label>
@@ -68,8 +90,8 @@ function edgeDataValue(key: string) {
 
     <div v-else class="workflow-inspector-empty">
       <i class="fa-solid fa-route" />
-      <strong>还没有选中连线</strong>
-      <small>点击画布中的连线后，在这里配置分支标签。</small>
+      <strong>{{ t("workflow.noEdgeSelected") }}</strong>
+      <small>{{ t("workflow.noEdgeSelectedHint") }}</small>
     </div>
   </section>
 </template>

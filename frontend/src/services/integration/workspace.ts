@@ -1,13 +1,14 @@
 /**
  * Shared workspace id resolution for integration domain stores (ZKL-64 item 10).
  */
+import { tt } from "../../i18n/tt";
 import { useWorkspaceStore } from "../../stores/workspaces";
 
 export function requireActiveWorkspaceId(): string {
   const store = useWorkspaceStore();
   const workspaceID = store.activeWorkspaceId || store.items[0]?.id;
   if (!workspaceID) {
-    throw new Error("当前没有可用的业务空间。请先创建业务空间，或联系管理员加入已有空间。");
+    throw new Error(tt("common.noActiveWorkspace"));
   }
   return workspaceID;
 }

@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 
+import { tt } from "../i18n/tt";
 import { apiClient } from "../services/api";
 import type { OverviewMetrics, RiskItem } from "../types/domain";
 
@@ -82,12 +83,11 @@ export const useOverviewStore = defineStore("overview", {
           params: { from: next.from, to: next.to },
         });
         this.metrics = response.data;
-        // Prefer server-normalized bounds when present.
         if (response.data.fromDate) this.rangeFrom = response.data.fromDate;
         if (response.data.toDate) this.rangeTo = response.data.toDate;
         this.risks = collectRisks(response.data);
       } catch (error) {
-        this.error = error instanceof Error ? error.message : "加载空间总览失败";
+        this.error = error instanceof Error ? error.message : tt("overview.loadFailed");
         throw error;
       } finally {
         this.loading = false;
@@ -113,7 +113,6 @@ function normalizeRange(range: OverviewDateRange): OverviewDateRange {
   }
   const days = inclusiveDayCount(from, to);
   if (days > MAX_WINDOW_DAYS) {
-    // Keep `to`, pull `from` back to max window.
     const end = new Date(`${to}T00:00:00Z`);
     end.setUTCDate(end.getUTCDate() - (MAX_WINDOW_DAYS - 1));
     from = formatDateUTC(end);
@@ -127,43 +126,67 @@ function collectRisks(metrics: OverviewMetrics): RiskItem[] {
   const kpis = metrics.kpis;
   const spaces = metrics.workspaceCount || inv.workspaceCount || 0;
   const span =
-    metrics.fromDate && metrics.toDate ? `${metrics.fromDate} ~ ${metrics.toDate}` : `近 ${metrics.windowDays} 天`;
+    metrics.fromDate && metrics.toDate
+      ? `${metrics.fromDate} ~ ${metrics.toDate}`
+      : tt("overview.risk.recentDays", { n: metrics.windowDays });
 
   if (spaces === 0) {
-    risks.push({ tone: "amber", title: "尚无可访问业务空间", detail: "请先创建或加入至少一个业务空间。" });
+    risks.push({
+      tone: "amber",
+      title: tt("overview.risk.noWorkspaceTitle"),
+      detail: tt("overview.risk.noWorkspaceDetail"),
+    });
   }
   if (!inv.hasVerifiedModel) {
     risks.push({
       tone: "amber",
-      title: "模型配置未就绪",
-      detail: "所有可访问空间中尚未发现已验证的模型配置。",
+      title: tt("overview.risk.modelTitle"),
+      detail: tt("overview.risk.modelDetail"),
     });
   }
   if (inv.agentCount === 0 && spaces > 0) {
-    risks.push({ tone: "red", title: "尚未创建 Agent", detail: "请在业务空间中创建并启用至少一个 Agent。" });
+    risks.push({
+      tone: "red",
+      title: tt("overview.risk.noAgentTitle"),
+      detail: tt("overview.risk.noAgentDetail"),
+    });
   }
   if (inv.connectionTotal > 0 && inv.connectionVerified < inv.connectionTotal) {
     risks.push({
       tone: "amber",
-      title: "连接需要处理",
-      detail: `${inv.connectionTotal - inv.connectionVerified} 个服务连接尚未通过验证（跨全部可访问空间）。`,
+      title: tt("overview.risk.connectionTitle"),
+      detail: tt("overview.risk.connectionDetail", {
+        n: inv.connectionTotal - inv.connectionVerified,
+      }),
     });
   }
   if (kpis.runsTotal >= 5 && kpis.runSuccessRate < 90) {
     risks.push({
       tone: "red",
-      title: "链路成功率偏低",
-      detail: `${span} 全空间 Agent Run 成功率为 ${kpis.runSuccessRate.toFixed(1)}%。`,
+      title: tt("overview.risk.runRateTitle"),
+      detail: tt("overview.risk.runRateDetail", {
+        span,
+        rate: kpis.runSuccessRate.toFixed(1),
+      }),
     });
   }
   if (kpis.toolCallsTotal >= 5 && kpis.toolCallSuccessRate < 90) {
     risks.push({
       tone: "red",
-      title: "工具调用成功率偏低",
-      detail: `${span} 全空间工具调用成功率为 ${kpis.toolCallSuccessRate.toFixed(1)}%。`,
+      title: tt("overview.risk.toolRateTitle"),
+      detail: tt("overview.risk.toolRateDetail", {
+        span,
+        rate: kpis.toolCallSuccessRate.toFixed(1),
+      }),
     });
   }
   return risks.length
     ? risks
-    : [{ tone: "cyan", title: "运行状态正常", detail: "当前筛选区间内跨全部可访问空间未发现明显风险。" }];
+    : [
+        {
+          tone: "cyan",
+          title: tt("overview.risk.okTitle"),
+          detail: tt("overview.risk.okDetail"),
+        },
+      ];
 }

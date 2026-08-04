@@ -1,8 +1,10 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { setI18nLocale } from "../i18n";
 import ToolTestDialog from "./ToolTestDialog.vue";
 import type { Tool, ToolVersion } from "../types/domain";
+import { createTestI18n } from "../test-utils/i18n";
 
 const testToolMock = vi.fn();
 
@@ -69,11 +71,15 @@ function mountDialog(tool = makeTool()) {
       modelValue: true,
       tool,
     },
+    global: {
+      plugins: [createTestI18n("zh-CN")],
+    },
   });
 }
 
 describe("tool test dialog behavior", () => {
   beforeEach(() => {
+    setI18nLocale("zh-CN");
     vi.clearAllMocks();
     document.body.innerHTML = "";
   });

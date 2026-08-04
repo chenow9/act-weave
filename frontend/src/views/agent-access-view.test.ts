@@ -2,6 +2,7 @@ import { computed, reactive } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createTestI18n } from "../test-utils/i18n";
 import AgentAccessView from "./AgentAccessView.vue";
 
 vi.mock("vue-router", () => ({
@@ -148,6 +149,7 @@ describe("Agent Access management view", () => {
 function mountView() {
   return mount(AgentAccessView, {
     global: {
+      plugins: [createTestI18n("zh-CN")],
       stubs: {
         ManagementSummaryStrip: { template: "<div data-testid='summary-strip' />" },
         ManagementPageHeader: {

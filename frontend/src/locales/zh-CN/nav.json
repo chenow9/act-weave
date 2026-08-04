@@ -1,0 +1,35 @@
+{
+  "section": {
+    "space": "空间",
+    "build": "构建",
+    "connect": "接入",
+    "run": "运行",
+    "govern": "治理"
+  },
+  "item": {
+    "overview": "空间总览",
+    "workspaces": "业务空间",
+    "agents": "Agent 管理",
+    "tools": "工具管理",
+    "workflow": "编排",
+    "smartDag": "智能编排",
+    "providers": "服务 Provider",
+    "connections": "服务连接",
+    "openapiImports": "OpenAPI 导入",
+    "modelApis": "模型 API 配置",
+    "agentAccess": "Agent Access",
+    "chat": "运行调试台",
+    "logs": "Agent 审计中心",
+    "users": "用户与权限"
+  },
+  "pinned": "常用",
+  "allModules": "全部模块",
+  "searchPlaceholder": "搜索模块或工作区域…",
+  "searchAria": "搜索模块",
+  "closeNav": "关闭导航中心",
+  "noMatch": "没有匹配的模块",
+  "currentWorkspace": "当前空间：{name}",
+  "mainNav": "主导航",
+  "backToOverview": "返回空间总览",
+  "accessibleSpaces": "{count} 个可访问空间"
+}

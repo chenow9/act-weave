@@ -1,0 +1,11 @@
+{
+  "NETWORK_ERROR": "网络异常，请检查连接后重试。",
+  "UNAUTHORIZED": "登录已失效，请重新登录。",
+  "FORBIDDEN": "没有权限执行此操作。",
+  "NOT_FOUND": "请求的资源不存在。",
+  "CONFLICT": "数据已变更，请刷新后重试。",
+  "VALIDATION_FAILED": "请求参数无效。",
+  "INVALID_ARGUMENT": "请求参数无效。",
+  "INTERNAL": "服务暂时不可用，请稍后重试。",
+  "RATE_LIMITED": "请求过于频繁，请稍后重试。"
+}

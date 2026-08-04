@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 
 import type { OutboundCredentialsEnvelope } from "../../types/domain";
 
@@ -30,6 +31,8 @@ const emit = defineEmits<{
   submit: [payload: WorkflowTrialRunSubmitPayload];
   close: [];
 }>();
+
+const { t } = useI18n();
 
 const form = reactive<Record<string, unknown>>({});
 const touched = reactive<Record<string, boolean>>({});
@@ -64,7 +67,7 @@ watch(
 function buildOutboundEnvelope(): OutboundCredentialsEnvelope | undefined {
   if (!props.requiresPassthrough) return undefined;
   if (!props.passthroughConnectionId || !passthroughToken.value.trim()) {
-    rawJsonError.value = "透传 Connection 需要一次性业务 Token。";
+    rawJsonError.value = t("workflow.passthroughTokenRequired");
     return undefined;
   }
   const expiresAt = passthroughExpiresAt.value
@@ -212,7 +215,7 @@ function submit() {
     const value = form[field.key];
     const present = hasValue(field, value);
     if (field.required && !present) {
-      fieldErrors[field.key] = "请填写必填项";
+      fieldErrors[field.key] = t("workflow.requiredFieldFill");
       hasErrors = true;
       continue;
     }
@@ -235,12 +238,12 @@ function submitRawJson() {
   try {
     const parsed = JSON.parse(rawJsonInput.value || "{}") as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      rawJsonError.value = "JSON 必须是对象";
+      rawJsonError.value = t("workflow.jsonMustBeObject");
       return;
     }
     emitSubmit(parsed as Record<string, unknown>);
   } catch {
-    rawJsonError.value = "JSON 格式不正确";
+    rawJsonError.value = t("workflow.invalidJson");
   }
 }
 </script>
@@ -258,16 +261,18 @@ function submitRawJson() {
     >
       <header class="workflow-trial-run-header">
         <div>
-          <span>模拟试运行输入（非生产）</span>
-          <h4>{{ workflowName || "当前流程" }}</h4>
-          <p>根据 Start 节点声明、原始 JSON 或上次成功输入提交本次模拟试运行。生产副作用请使用「生产运行」。</p>
+          <span>{{ t("workflow.trialInputTitle") }}</span>
+          <h4>{{ workflowName || t("workflow.currentWorkflow") }}</h4>
+          <p>{{ t("workflow.trialInputHint") }}</p>
         </div>
-        <button class="ghost-button" type="button" :disabled="submitting" @click="closeIfIdle">关闭</button>
+        <button class="ghost-button" type="button" :disabled="submitting" @click="closeIfIdle">
+          {{ t("common.close") }}
+        </button>
       </header>
 
       <div class="workflow-trial-run-mode-tabs">
         <button type="button" :class="{ active: inputMode === 'form' }" data-mode="form" @click="inputMode = 'form'">
-          表单
+          {{ t("workflow.formMode") }}
         </button>
         <button type="button" :class="{ active: inputMode === 'raw' }" data-mode="raw" @click="inputMode = 'raw'">
           JSON
@@ -279,7 +284,7 @@ function submitRawJson() {
           :disabled="!hasLastSuccessfulInput"
           @click="inputMode = 'reuse'"
         >
-          上次成功
+          {{ t("workflow.lastSuccess") }}
         </button>
       </div>
 
@@ -308,7 +313,7 @@ function submitRawJson() {
 
       <div v-else-if="inputMode === 'form'" class="workflow-trial-run-empty">
         <i class="fa-solid fa-vial" />
-        <span>Start 节点没有声明输入字段，将使用空输入试运行。</span>
+        <span>{{ t("workflow.noStartFields") }}</span>
       </div>
 
       <div v-else-if="inputMode === 'raw'" class="workflow-trial-run-raw">
@@ -318,32 +323,32 @@ function submitRawJson() {
 
       <div v-else class="workflow-trial-run-reuse">
         <pre v-if="hasLastSuccessfulInput">{{ JSON.stringify(lastSuccessfulInput, null, 2) }}</pre>
-        <span v-else>当前会话还没有成功试运行输入。</span>
+        <span v-else>{{ t("workflow.noLastSuccess") }}</span>
       </div>
 
       <section
         v-if="requiresPassthrough"
         class="workflow-trial-outbound"
         data-testid="workflow-trial-outbound-envelope"
-        aria-label="出站透传凭据（一次性）"
+        :aria-label="t('workflow.outboundPassthroughAria')"
       >
         <header>
-          <strong>出站请求透传</strong>
-          <span>Token 为 write-only，不进入 Workflow input 历史。</span>
+          <strong>{{ t("workflow.outboundPassthrough") }}</strong>
+          <span>{{ t("workflow.outboundTokenHint") }}</span>
         </header>
         <label>
-          业务 Token
+          {{ t("workflow.businessToken") }}
           <input
             v-model="passthroughToken"
             type="password"
             autocomplete="new-password"
             data-testid="workflow-trial-passthrough-token"
-            placeholder="一次性业务 Token"
+            :placeholder="t('workflow.oneTimeTokenPh')"
             :disabled="submitting"
           />
         </label>
         <label>
-          过期时间
+          {{ t("workflow.expiresAt") }}
           <input
             v-model="passthroughExpiresAt"
             type="datetime-local"
@@ -354,7 +359,9 @@ function submitRawJson() {
       </section>
 
       <footer class="workflow-trial-run-actions">
-        <button class="ghost-button" type="button" :disabled="submitting" @click="closeIfIdle">取消</button>
+        <button class="ghost-button" type="button" :disabled="submitting" @click="closeIfIdle">
+          {{ t("common.cancel") }}
+        </button>
         <button
           data-action="submit-trial-run"
           class="primary-button"
@@ -362,7 +369,7 @@ function submitRawJson() {
           :disabled="submitting"
           @click="submit"
         >
-          {{ submitting ? "正在模拟试运行…" : "模拟试运行" }}
+          {{ submitting ? t("workflow.submittingTrial") : t("workflow.simulateRun") }}
         </button>
       </footer>
     </section>

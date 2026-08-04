@@ -3,6 +3,7 @@ import { Chunk, MergeView } from "@codemirror/merge";
 import { EditorState, Text, type Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 
 const props = defineProps<{
   before: string;
@@ -12,6 +13,7 @@ const props = defineProps<{
   title?: string;
 }>();
 
+const { t } = useI18n();
 const mergeHost = ref<HTMLElement | null>(null);
 const activeChunkIndex = ref(0);
 const editorError = ref("");
@@ -22,8 +24,8 @@ const afterDoc = computed(() => Text.of(splitDiffLines(props.after)));
 const chunks = computed(() => Chunk.build(beforeDoc.value, afterDoc.value, { scanLimit: 1200, timeout: 750 }));
 const changeCount = computed(() => chunks.value.length);
 const activeChangeLabel = computed(() => {
-  if (changeCount.value === 0) return "无变更";
-  return `变更 ${activeChunkIndex.value + 1} / ${changeCount.value}`;
+  if (changeCount.value === 0) return t("agents.noChanges");
+  return t("agents.changeProgress", { current: activeChunkIndex.value + 1, total: changeCount.value });
 });
 const minimapMarks = computed(() => {
   const totalLines = Math.max(1, afterDoc.value.lines);
@@ -165,7 +167,7 @@ function buildMergeView() {
     });
     void nextTick(() => scrollToActiveChunk());
   } catch (error) {
-    editorError.value = error instanceof Error ? error.message : "Diff editor 初始化失败。";
+    editorError.value = error instanceof Error ? error.message : t("agents.diffInitFailed");
   }
 }
 
@@ -193,34 +195,34 @@ function scrollToActiveChunk() {
 </script>
 
 <template>
-  <section class="agent-prompt-diff-viewer" aria-label="系统提示词变更对比">
+  <section class="agent-prompt-diff-viewer" :aria-label="t('agents.diffAria')">
     <div class="agent-prompt-diff-toolbar">
       <div>
-        <strong>{{ title || "变更对比" }}</strong>
-        <small>{{ activeChangeLabel }} · 折叠未变更 · 左右对照</small>
+        <strong>{{ title || t("agents.diffTitle") }}</strong>
+        <small>{{ activeChangeLabel }} · {{ t("agents.collapseUnchangedSideBySide") }}</small>
       </div>
-      <div class="agent-prompt-diff-nav" aria-label="提示词变更导航">
+      <div class="agent-prompt-diff-nav" :aria-label="t('agents.changeNavAria')">
         <button
           class="agent-prompt-diff-nav-button"
           type="button"
           :disabled="changeCount === 0"
-          title="上一处变更"
-          aria-label="上一处变更"
+          :title="t('agents.prevChange')"
+          :aria-label="t('agents.prevChange')"
           @click="moveChunk(-1)"
         >
           <i class="fa-solid fa-arrow-up" aria-hidden="true" />
-          <span>上一处变更</span>
+          <span>{{ t("agents.prevChange") }}</span>
         </button>
         <button
           class="agent-prompt-diff-nav-button"
           type="button"
           :disabled="changeCount === 0"
-          title="下一处变更"
-          aria-label="下一处变更"
+          :title="t('agents.nextChange')"
+          :aria-label="t('agents.nextChange')"
           @click="moveChunk(1)"
         >
           <i class="fa-solid fa-arrow-down" aria-hidden="true" />
-          <span>下一处变更</span>
+          <span>{{ t("agents.nextChange") }}</span>
         </button>
       </div>
     </div>
@@ -228,9 +230,9 @@ function scrollToActiveChunk() {
     <div class="agent-prompt-diff-editor-shell">
       <div class="agent-prompt-diff-pane-head">
         <span>{{ beforeLabel }}</span>
-        <b>只读</b>
+        <b>{{ t("agents.readOnly") }}</b>
         <span>{{ afterLabel }}</span>
-        <b>只读</b>
+        <b>{{ t("agents.readOnly") }}</b>
       </div>
       <div class="agent-prompt-diff-editor-row">
         <div ref="mergeHost" class="agent-prompt-diff-merge-host" />

@@ -1,3 +1,4 @@
+import { tt } from "../i18n/tt";
 import type { Tool, ToolRequestParam, ToolSchemaNode } from "../types/domain";
 
 type ActionParameter = {
@@ -138,7 +139,7 @@ export function collectToolTestParams(tool: Pick<Tool, "requestParams" | "action
   }
 
   // If still no query params on a GET-like list path, inject common pagination helpers
-  // so 配置分页-style endpoints don't send bare {}.
+  // so pagination-style list endpoints don't send bare {}.
   const method = String((tool.actionConfig as { method?: string })?.method || "GET").toUpperCase();
   const hasQuery = [...byName.values()].some((p) => p.location === "Query");
   if (method === "GET" && !hasQuery && !pathPlaceholders(path).length) {
@@ -149,7 +150,7 @@ export function collectToolTestParams(tool: Pick<Tool, "requestParams" | "action
         name,
         type: "integer",
         required: false,
-        description: "自动补全的分页参数（OpenAPI 未声明时）",
+        description: tt("tools.autoPaginationDescription"),
         defaultValue: value,
         valueSource: "SystemDefault",
       });

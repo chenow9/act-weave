@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 
 import { useWorkspaceStore } from "../stores/workspaces";
@@ -17,6 +18,7 @@ withDefaults(
   },
 );
 
+const { t } = useI18n();
 const emit = defineEmits<{ retry: [] }>();
 const router = useRouter();
 const workspaces = useWorkspaceStore();
@@ -33,9 +35,9 @@ async function recheckWorkspace() {
       emit("retry");
       return;
     }
-    checkError.value = "当前账号仍没有可访问的业务空间。";
+    checkError.value = t("common.wsContextStillEmpty");
   } catch {
-    checkError.value = "暂时无法检查业务空间，请确认服务状态后重试。";
+    checkError.value = t("common.wsContextCheckFailed");
   } finally {
     checking.value = false;
   }
@@ -50,22 +52,26 @@ async function recheckWorkspace() {
     aria-live="polite"
   >
     <div class="workspace-context-state-icon" aria-hidden="true"><i :class="icon" /></div>
-    <span class="workspace-context-state-eyebrow">业务空间上下文</span>
-    <h2>还没有可用的业务空间</h2>
-    <p>{{ feature }}需要归属于业务空间。创建一个新空间，或请空间管理员将当前账号加入已有空间后即可继续。</p>
+    <span class="workspace-context-state-eyebrow">{{ t("common.wsContextEyebrow") }}</span>
+    <h2>{{ t("common.wsContextTitle") }}</h2>
+    <p>{{ t("common.wsContextBody", { feature }) }}</p>
     <div class="workspace-context-state-actions">
       <button class="primary-button" type="button" @click="router.push('/workspaces')">
         <i class="fa-solid fa-arrow-right" aria-hidden="true" />
-        前往业务空间
+        {{ t("common.wsContextGo") }}
       </button>
       <button class="ghost-button" type="button" :disabled="checking" @click="recheckWorkspace">
         <i :class="checking ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-rotate'" aria-hidden="true" />
-        {{ checking ? "正在检查" : "重新检查" }}
+        {{ checking ? t("common.wsContextChecking") : t("common.wsContextRecheck") }}
       </button>
     </div>
     <div class="workspace-context-state-guidance">
-      <span><i class="fa-solid fa-circle-plus" aria-hidden="true" />首次使用：先创建业务空间</span>
-      <span><i class="fa-solid fa-user-group" aria-hidden="true" />已有空间：联系管理员添加成员</span>
+      <span
+        ><i class="fa-solid fa-circle-plus" aria-hidden="true" />{{ t("common.wsContextHintCreate") }}</span
+      >
+      <span
+        ><i class="fa-solid fa-user-group" aria-hidden="true" />{{ t("common.wsContextHintJoin") }}</span
+      >
     </div>
     <p v-if="checkError" class="workspace-context-state-error" role="alert">{{ checkError }}</p>
   </section>

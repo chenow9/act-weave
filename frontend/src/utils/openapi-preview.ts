@@ -1,5 +1,7 @@
 import { parse as parseYaml } from "yaml";
 
+import { tt } from "../i18n/tt";
+
 export interface OpenAPIPreviewRow {
   method: string;
   path: string;
@@ -28,17 +30,19 @@ export function parseOpenAPIPreview(source: string): OpenAPIPreviewResult {
   } catch {
     return {
       ...emptyPreview(),
-      error: "当前文档无法解析，请检查 OpenAPI JSON/YAML 格式。",
+      error: tt("openapi.previewParseError"),
     };
   }
 
   if (!isRecord(document) || !isRecord(document.paths)) {
     return {
       ...emptyPreview(),
-      error: "当前文档未识别到 OpenAPI paths。",
+      error: tt("openapi.previewNoPaths"),
     };
   }
 
+  const readyStatus = tt("openapi.previewStatusReady");
+  const pendingStatus = tt("openapi.previewStatusPending");
   const rows: OpenAPIPreviewRow[] = [];
   for (const [path, pathItem] of Object.entries(document.paths)) {
     if (!isRecord(pathItem)) {
@@ -57,7 +61,7 @@ export function parseOpenAPIPreview(source: string): OpenAPIPreviewResult {
         method: method.toUpperCase(),
         path,
         suggestedTool,
-        statusText: suggestedTool ? "可生成" : "待确认",
+        statusText: suggestedTool ? readyStatus : pendingStatus,
       });
     }
   }
@@ -72,13 +76,13 @@ export function parseOpenAPIPreview(source: string): OpenAPIPreviewResult {
   if (!rows.length) {
     return {
       ...emptyPreview(),
-      error: "当前文档没有可识别的接口定义。",
+      error: tt("openapi.previewNoEndpoints"),
     };
   }
 
   return {
     endpointCount: rows.length,
-    readyCount: rows.filter((row) => row.statusText === "可生成").length,
+    readyCount: rows.filter((row) => row.statusText === readyStatus).length,
     rows,
     error: "",
   };

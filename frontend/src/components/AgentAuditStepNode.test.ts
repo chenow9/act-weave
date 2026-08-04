@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mount } from "@vue/test-utils";
 import AgentAuditStepNode from "./AgentAuditStepNode.vue";
 import type { AgentAuditStep } from "../types/domain";
+import { createTestI18n } from "../test-utils/i18n";
 
 const stubs = {
   formatLatency: (ms: number) => `${ms}ms`,
@@ -26,6 +27,9 @@ function mountStep(step: AgentAuditStep, depth = 0) {
       index: 0,
       depth,
       ...stubs,
+    },
+    global: {
+      plugins: [createTestI18n("zh-CN")],
     },
   });
 }

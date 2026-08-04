@@ -3,6 +3,7 @@ import { h, nextTick } from "vue";
 import { describe, expect, it, vi } from "vitest";
 
 import DataTable, { type DataTableColumn, type DataTableSelectionTone } from "./DataTable.vue";
+import { createTestI18n } from "../test-utils/i18n";
 
 type TestRow = {
   id: string;
@@ -48,6 +49,7 @@ function mountTable(storageKey = "test-table-columns", options: { selectionTone?
       "cell-name": ({ row }: { row: TestRow }) => `<strong>${row.name}</strong><span>${row.owner}</span>`,
       "cell-actions": () => h("button", { type: "button" }, "编辑"),
     },
+    global: { plugins: [createTestI18n("zh-CN")] },
   });
 }
 
@@ -60,6 +62,7 @@ describe("DataTable", () => {
     const detailRows = rows.map((row) => ({ ...row, observation: "Healthy" }));
     const wrapper = mount(DataTable<TestRow>, {
       props: { rows: detailRows, columns, rowKey: "id", expandedRowKey: "row-2" },
+      global: { plugins: [createTestI18n("zh-CN")] },
       slots: {
         "row-detail": ({ row, columns: visibleColumns }: { row: TestRow; columns: DataTableColumn<TestRow>[] }) =>
           h("section", { class: "test-row-detail", "data-column-count": visibleColumns.length }, row.name),
@@ -79,6 +82,7 @@ describe("DataTable", () => {
 
   it("keeps the existing row DOM when no expanded key is provided", () => {
     const wrapper = mount(DataTable<TestRow>, {
+      global: { plugins: [createTestI18n("zh-CN")] },
       props: { rows, columns, rowKey: "id" },
       slots: {
         "row-detail": ({ row }: { row: TestRow }) => h("section", { class: "test-row-detail" }, row.name),
@@ -96,6 +100,7 @@ describe("DataTable", () => {
       { key: "actions", label: "操作", width: 148 },
     ];
     const wrapper = mount(DataTable<TestRow>, {
+      global: { plugins: [createTestI18n("zh-CN")] },
       props: { rows, columns: sortableColumns, rowKey: "id", stickyRightKeys: ["actions"] },
     });
 

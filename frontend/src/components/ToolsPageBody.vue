@@ -10,9 +10,11 @@ import ToolDetailPanel from "./ToolDetailPanel.vue";
 import ToolEditorPanel from "./ToolEditorPanel.vue";
 import ToolTestDialog from "./ToolTestDialog.vue";
 import WorkspaceContextState from "./WorkspaceContextState.vue";
+import { useI18n } from "vue-i18n";
 import { useToolsPageContext } from "../composables/useToolsPageContext";
 import { getToolTypeLabel } from "../utils/tool-presentation";
 
+const { t } = useI18n();
 const scp = useToolsPageContext();
 const {
   toolsStore,
@@ -105,24 +107,24 @@ void getToolTypeLabel;
   <div class="page-grid tool-grid management-page-grid" v-loading="toolsStore.loading" @click="closeFloatingMenus">
     <ManagementPageHeader
       class="span-12"
-      title="工具管理"
-      description="管理工具契约、服务绑定、版本测试与发布状态。"
+      :title="t('tools.title')"
+      :description="t('tools.subtitle')"
       icon="fa-solid fa-screwdriver-wrench"
     >
       <template #actions>
         <button class="ghost-button tool-header-secondary" type="button" @click="router.push('/openapi-imports')">
           <i class="fa-solid fa-file-import" />
-          <span>导入 OpenAPI</span>
+          <span>{{ t("common.import") }} OpenAPI</span>
         </button>
         <button
           class="primary-button tool-header-primary"
           type="button"
           :disabled="!hasWorkspaceContext"
-          :title="hasWorkspaceContext ? '创建工具' : '请先创建或加入业务空间'"
+          :title="hasWorkspaceContext ? t('tools.newTool') : t('workspaces.emptyHint')"
           @click="openCreateTool"
         >
           <i class="fa-solid fa-circle-plus" />
-          <span>创建工具</span>
+          <span>{{ t("tools.newTool") }}</span>
         </button>
       </template>
     </ManagementPageHeader>
@@ -132,10 +134,9 @@ void getToolTypeLabel;
     <section class="span-12 tool-runtime-card management-list-card">
       <div v-if="hasWorkspaceContext && hasToolRecords" class="tool-section-bar">
         <span
-          ><i class="fa-solid fa-circle-info" />这里不再配置域名、端口和认证；这些属于服务连接。Tool
-          关注业务名称、Endpoint、入参出参、重试超时和发布测试。</span
+          ><i class="fa-solid fa-circle-info" />{{ t("tools.sectionNote") }}</span
         >
-        <button type="button" @click="router.push('/openapi-imports')">查看 OpenAPI 导入</button>
+        <button type="button" @click="router.push('/openapi-imports')">{{ t("tools.viewOpenapi") }}</button>
       </div>
 
       <ManagementList
@@ -149,15 +150,15 @@ void getToolTypeLabel;
         :selectable="false"
         checkable
         :checked-row-keys="selectedToolRowKeys"
-        :row-selection-label="(tool: Tool) => `选择 ${tool.name}`"
+        :row-selection-label="(tool: Tool) => t('tools.selectTool', { name: tool.name })"
         :loading="hasWorkspaceContext && toolsStore.toolPageLoading"
         :error="hasWorkspaceContext ? toolsStore.toolPageError : undefined"
         :has-loaded="hasWorkspaceContext ? toolsStore.toolPageHasLoaded : true"
         :search="query"
-        search-placeholder="搜索 Tool / 连接 / 路径"
-        search-aria-label="搜索 Tool、服务连接或路径"
-        reset-label="重置"
-        reset-aria-label="重置工具筛选"
+        :search-placeholder="t('tools.searchPlaceholder')"
+        :search-aria-label="t('tools.searchAria')"
+        :reset-label="t('tools.reset')"
+        :reset-aria-label="t('tools.resetAria')"
         :pagination="toolsStore.toolPagination"
         :sort-by="toolsStore.toolListQuery?.sortBy"
         :sort-order="toolsStore.toolListQuery?.sortOrder"
@@ -176,15 +177,15 @@ void getToolTypeLabel;
             "
             :title="
               batchTesting
-                ? '批量测试进行中'
+                ? t('tools.batchTesting')
                 : !canTestWorkspace
-                  ? '当前空间无测试权限'
-                  : '使用默认入参批量测试已选 Tool'
+                  ? t('tools.noTestPerm')
+                  : t('tools.batchTestTitle')
             "
             @click="batchTestSelectedTools"
           >
             <i :class="['fa-solid', batchTesting ? 'fa-spinner fa-spin' : 'fa-vial']" aria-hidden="true" />
-            <span>{{ batchTesting ? "测试中…" : "批量测试" }}</span>
+            <span>{{ batchTesting ? t("tools.testing") : t("tools.batchTest") }}</span>
           </button>
           <button
             v-if="canForcePublishTools"
@@ -198,36 +199,36 @@ void getToolTypeLabel;
             "
             :title="
               batchForcePublishing
-                ? '强制发布进行中'
-                : '平台管理员：跳过实调测试，批量强制发布未发布 Tool（需服务端 allowForcePublish）'
+                ? t('tools.forcePublishing')
+                : t('tools.forcePublishTitle')
             "
             @click="openBatchForcePublishConfirmation"
           >
             <i :class="['fa-solid', batchForcePublishing ? 'fa-spinner fa-spin' : 'fa-rocket']" aria-hidden="true" />
-            <span>{{ batchForcePublishing ? "发布中…" : "强制发布" }}</span>
+            <span>{{ batchForcePublishing ? t("tools.publishing") : t("tools.forcePublish") }}</span>
           </button>
           <button
             type="button"
             class="management-list-batch-action is-danger"
             :disabled="!selectedTools.length || batchTesting || batchDeleting || batchForcePublishing"
-            :title="batchDeleting ? '批量删除进行中' : '批量删除已选 Tool'"
+            :title="batchDeleting ? t('tools.batchDeleting') : t('tools.batchDeleteTitle')"
             @click="openBatchDeleteConfirmation"
           >
             <i :class="['fa-solid', batchDeleting ? 'fa-spinner fa-spin' : 'fa-trash']" aria-hidden="true" />
-            <span>批量删除</span>
+            <span>{{ t("tools.batchDelete") }}</span>
           </button>
         </template>
         <template #filters>
           <ManagementSegmentedFilter
             :model-value="selectedStatusFilter"
             :options="statusTabs"
-            ariaLabel="工具状态筛选"
+            :ariaLabel="t('tools.statusFilterAria')"
             @update:model-value="selectStatusFilter($event as ToolStatusFilter)"
           />
           <ManagementSegmentedFilter
             :model-value="selectedToolTypeFilter"
             :options="toolTypeTabs"
-            ariaLabel="工具类型筛选"
+            :ariaLabel="t('tools.typeFilterAria')"
             @update:model-value="selectToolTypeFilter($event as ToolTypeFilter)"
           />
         </template>
@@ -236,7 +237,7 @@ void getToolTypeLabel;
             <span class="tool-entity-icon" aria-hidden="true"><i class="fa-solid fa-screwdriver-wrench" /></span>
             <span class="tool-entity-copy">
               <strong class="aw-table-title" :title="tool.name">{{ tool.name }}</strong>
-              <small class="aw-table-subtitle" :title="tool.description">{{ tool.description || "暂无描述" }}</small>
+              <small class="aw-table-subtitle" :title="tool.description">{{ tool.description || t("tools.noDescription") }}</small>
             </span>
           </div>
         </template>
@@ -257,7 +258,7 @@ void getToolTypeLabel;
         <template #cell-connection="{ row: tool }">
           <span class="tool-provider-connection" :title="toolProviderConnectionLabel(tool)">
             <strong class="aw-table-title">{{ providerForTool(tool)?.name || tool.providerId || "-" }}</strong>
-            <small class="aw-table-subtitle">{{ connectionForTool(tool)?.name || "连接缺失" }}</small>
+            <small class="aw-table-subtitle">{{ connectionForTool(tool)?.name || t("tools.connectionMissing") }}</small>
           </span>
         </template>
         <template #cell-status="{ row: tool }">
@@ -290,7 +291,7 @@ void getToolTypeLabel;
         <template #cell-actions="{ row: tool }">
           <ManagementRowActions
             :menu-actions="toolMenuActions(tool)"
-            menu-label="更多工具操作"
+            :menu-label="t('tools.moreActions')"
             @action="handleToolRowAction($event, tool)"
           />
         </template>
@@ -298,25 +299,25 @@ void getToolTypeLabel;
           <WorkspaceContextState
             v-if="!hasWorkspaceContext"
             embedded-in-list
-            feature="工具管理"
+            :feature="t('tools.featureName')"
             icon="fa-solid fa-screwdriver-wrench"
             @retry="loadToolPageAssets"
           />
           <div v-else-if="!hasToolRecords" class="empty-state registry-empty-state management-registry-empty-state">
             <div class="management-empty-state-icon"><i class="fa-solid fa-box-open" /></div>
-            <h2>暂无工具</h2>
-            <p>可以注册 Tool，或者从 OpenAPI 导入生成草稿。</p>
+            <h2>{{ t("tools.emptyTitle") }}</h2>
+            <p>{{ t("tools.emptyBody") }}</p>
             <div class="registry-empty-actions">
-              <button class="primary-button" type="button" @click="openCreateTool">新建 Tool</button
+              <button class="primary-button" type="button" @click="openCreateTool">{{ t("tools.createTool") }}</button
               ><button class="ghost-button" type="button" @click="router.push('/openapi-imports')">
-                从 OpenAPI 生成
+                {{ t("tools.fromOpenapi") }}
               </button>
             </div>
           </div>
           <div v-else class="empty-state registry-empty-state management-registry-empty-state">
             <div class="management-empty-state-icon"><i class="fa-solid fa-magnifying-glass" /></div>
-            <h2>没有匹配的工具</h2>
-            <p>调整工具名称、状态或路径关键词后再试。</p>
+            <h2>{{ t("tools.noMatchTitle") }}</h2>
+            <p>{{ t("tools.noMatchBody") }}</p>
           </div>
         </template>
       </ManagementList>
@@ -342,7 +343,7 @@ void getToolTypeLabel;
           <button
             class="icon-action-button"
             type="button"
-            aria-label="关闭确认对话框"
+            :aria-label="t('tools.closeConfirm')"
             data-modal-initial-focus
             @click="closeRiskConfirmation"
           >
@@ -360,7 +361,7 @@ void getToolTypeLabel;
             </div>
           </div>
           <p class="tool-risk-description">{{ riskConfirmationDescription() }}</p>
-          <div class="tool-impact-summary" role="list" aria-label="影响面摘要">
+          <div class="tool-impact-summary" role="list" :aria-label="t('tools.impactSummaryAria')">
             <div
               v-for="item in riskImpactItems()"
               :key="item.key"
@@ -373,19 +374,19 @@ void getToolTypeLabel;
             </div>
           </div>
           <label v-if="pendingRiskAction.type === 'batch-force-publish'" class="tool-force-publish-reason">
-            <span>强制发布原因（必填，至少 8 个字符）</span>
+            <span>{{ t("tools.forceReasonLabel") }}</span>
             <textarea
               v-model="forcePublishReason"
               rows="3"
               maxlength="500"
-              placeholder="例如：生产环境无法安全实调 DELETE 类接口，已在预发完成契约核对。"
+              :placeholder="t('tools.forceReasonPlaceholder')"
               :disabled="batchForcePublishing"
-              aria-label="强制发布原因"
+              :aria-label="t('tools.forceReasonAria')"
             />
             <small :class="{ error: forcePublishReason.trim().length > 0 && !forcePublishReasonValid }">
               {{ forcePublishReason.trim().length }}/500
               <template v-if="forcePublishReason.trim().length > 0 && !forcePublishReasonValid">
-                · 至少 8 个字符
+                · {{ t("tools.forceReasonMin") }}
               </template>
             </small>
           </label>
@@ -397,7 +398,7 @@ void getToolTypeLabel;
             :disabled="batchDeleting || batchForcePublishing"
             @click="closeRiskConfirmation"
           >
-            取消
+            {{ t("common.cancel") }}
           </button>
           <button
             class="primary-button"
@@ -423,17 +424,17 @@ void getToolTypeLabel;
         class="modal-card tool-risk-confirmation-modal tool-batch-test-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="批量测试 Tool"
+        :aria-label="t('tools.batchTestAria')"
       >
         <div class="modal-card-head tool-risk-confirmation-head">
           <div>
-            <span>批量测试</span>
-            <h3>用默认入参测试已选 Tool</h3>
+            <span>{{ t("tools.batchTestEyebrow") }}</span>
+            <h3>{{ t("tools.batchTestHeading") }}</h3>
           </div>
           <button
             class="icon-action-button"
             type="button"
-            aria-label="关闭批量测试"
+            :aria-label="t('tools.closeBatchTestAria')"
             :disabled="batchTesting"
             @click="closeBatchTestDialog"
           >
@@ -442,45 +443,52 @@ void getToolTypeLabel;
         </div>
         <div class="tool-risk-confirmation-body">
           <p class="tool-risk-description">
-            将对 <strong>{{ selectedTools.length }}</strong> 个已选 Tool 顺序执行测试：自动补全 Path/Query 默认参数（如
-            pageNum=1、pageSize=10），结果仅汇总通过/失败数量。
+            {{ t("tools.batchTestDescription", { count: selectedTools.length }) }}
           </p>
           <ul class="tool-batch-test-notes">
-            <li>仅测试可编辑草稿（已发布且无新草稿的会跳过）</li>
-            <li>缺少连接的 Tool 会跳过</li>
-            <li>透传连接需填写一次业务 Token，应用到全部透传项</li>
+            <li>{{ t("tools.batchNoteDraftOnly") }}</li>
+            <li>{{ t("tools.batchNoteMissingConn") }}</li>
+            <li>{{ t("tools.batchNotePassthrough") }}</li>
           </ul>
-          <section v-if="batchTestNeedsPassthrough" class="tool-batch-test-passthrough" aria-label="出站透传凭据">
+          <section
+            v-if="batchTestNeedsPassthrough"
+            class="tool-batch-test-passthrough"
+            :aria-label="t('tools.outboundCredsAria')"
+          >
             <header>
-              <strong>出站请求透传</strong>
-              <span>Token 为 write-only，不会写入历史或本地存储。请勿加 Bearer 前缀。</span>
+              <strong>{{ t("tools.outboundPassthroughTitle") }}</strong>
+              <span>{{ t("tools.outboundBatchHelp") }}</span>
             </header>
             <label>
-              业务 Token
+              {{ t("tools.businessToken") }}
               <input
                 v-model="batchPassthroughToken"
                 type="password"
                 autocomplete="off"
-                placeholder="一次性业务 JWT"
+                :placeholder="t('tools.businessJwtPlaceholder')"
                 :disabled="batchTesting"
               />
             </label>
             <label>
-              过期时间
+              {{ t("tools.expiresAt") }}
               <input v-model="batchPassthroughExpiresAt" type="datetime-local" :disabled="batchTesting" />
             </label>
           </section>
           <p v-if="batchTesting" class="tool-batch-test-progress" role="status">
-            测试中… {{ batchTestProgress.current }} / {{ batchTestProgress.total }}
+            {{ t("tools.batchProgress", { current: batchTestProgress.current, total: batchTestProgress.total }) }}
           </p>
         </div>
         <div class="tool-editor-actions tool-risk-confirmation-actions">
           <button class="ghost-button" type="button" :disabled="batchTesting" @click="closeBatchTestDialog">
-            取消
+            {{ t("common.cancel") }}
           </button>
           <button class="primary-button" type="button" :disabled="batchTesting" @click="confirmBatchTestSelectedTools">
             <i :class="['fa-solid', batchTesting ? 'fa-spinner fa-spin' : 'fa-vial']" aria-hidden="true" />
-            {{ batchTesting ? "测试中…" : `开始测试 ${selectedTools.length} 项` }}
+            {{
+              batchTesting
+                ? t("tools.testing")
+                : t("tools.startTestCount", { count: selectedTools.length })
+            }}
           </button>
         </div>
       </section>

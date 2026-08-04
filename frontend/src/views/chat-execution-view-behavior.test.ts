@@ -5,6 +5,8 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { reactive } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { setI18nLocale } from "../i18n";
+import { createTestI18n } from "../test-utils/i18n";
 import ChatExecutionView from "./ChatExecutionView.vue";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -82,6 +84,7 @@ function mountView() {
   return mount(ChatExecutionView, {
     attachTo: document.body,
     global: {
+      plugins: [createTestI18n("zh-CN")],
       directives: {
         loading: () => undefined,
       },
@@ -98,6 +101,7 @@ describe("chat execution view FE-02 archive busy", () => {
 
   beforeEach(() => {
     document.body.innerHTML = "";
+    setI18nLocale("zh-CN");
     archiveControl = createChatStore();
     fixture.chat = archiveControl.store;
     fixture.workspaces = reactive({
@@ -110,7 +114,9 @@ describe("chat execution view FE-02 archive busy", () => {
     fixture.agents = reactive({
       items: [{ id: "agent-1", workspaceId: "ws-1", name: "Agent One", status: "Active" }],
       load: vi.fn(async () => undefined),
+      loadAgents: vi.fn(async () => undefined),
     });
+    fixture.workspaces.selectWorkspace = vi.fn();
     fixture.auth = reactive({
       user: { id: "user-1", username: "ops", displayName: "Ops" },
     });

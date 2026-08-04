@@ -1,3 +1,4 @@
+import { tt } from "../i18n/tt";
 import type { ModelRuntimeCapabilities, SessionContextPolicy } from "../types/domain";
 
 /** Product defaults when Agent mode is rolling_summary (matches build payload fallbacks). */
@@ -79,9 +80,10 @@ export function normalizeRuntimeCapabilities(
 export const COMPACTION_TRIGGER_BPS = 8000;
 export const COMPACTION_TARGET_BPS = 6000;
 
-/** Permanent-disclosure warning for Agent setting (T4-B). */
-export const COMPACTION_SUMMARY_PERMANENCE_WARNING =
-  "开启后，成功 Compact 的摘要正文将永久以 PostgreSQL 明文协议投影及备份保留；关闭只影响后续新 run，不会删除既有 run 正文。";
+/** Permanent-disclosure warning for Agent setting (T4-B). Locale-aware. */
+export function compactionSummaryPermanenceWarning(): string {
+  return tt("agents.compactionSummaryPermanenceWarning");
+}
 
 /** Build session-context-policy.v1/v2 for API. Empty / inherit → {}. */
 export function buildContextPolicyPayload(

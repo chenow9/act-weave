@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 
 import AppSelect from "../../AppSelect.vue";
 import type { WorkflowGraphNode } from "../../../types/domain";
+
+const { t } = useI18n();
 
 type MappingValue = { kind: "ref"; path: string } | { kind: "literal"; value: unknown };
 
@@ -234,17 +237,17 @@ function normalizeMappingDraft(rawMapping: unknown) {
 <template>
   <section class="workflow-http-node-editor">
     <label class="drawer-field">
-      <span>请求方法</span>
+      <span>{{ t("workflow.httpMethod") }}</span>
       <AppSelect
         :model-value="nodeString('method')"
         :options="methodOptions"
-        placeholder="选择 HTTP Method"
+        :placeholder="t('workflow.selectHttpMethod')"
         @update:model-value="emit('update-node-data', { key: 'method', value: String($event) })"
       />
     </label>
 
     <label class="drawer-field">
-      <span>请求地址</span>
+      <span>{{ t("workflow.httpEndpoint") }}</span>
       <input
         name="node-http-endpoint"
         :value="nodeString('endpoint')"
@@ -255,17 +258,17 @@ function normalizeMappingDraft(rawMapping: unknown) {
 
     <section class="workflow-inspector-vars">
       <div class="workflow-section-caption">
-        <strong>输入绑定</strong>
-        <small>支持 `input` 或 `inputMapping`</small>
+        <strong>{{ t("workflow.inputBinding") }}</strong>
+        <small>{{ t("workflow.inputBindingHint") }}</small>
       </div>
-      <div class="workflow-tool-mapping-mode" role="group" aria-label="HTTP 输入模式">
+      <div class="workflow-tool-mapping-mode" role="group" :aria-label="t('workflow.httpInputModeAria')">
         <button
           type="button"
           data-action="http-input-mode-mapping"
           :class="{ active: inputMode === 'mapping' }"
           @click="updateInputMode('mapping')"
         >
-          变量映射
+          {{ t("workflow.variableMapping") }}
         </button>
         <button
           type="button"
@@ -273,7 +276,7 @@ function normalizeMappingDraft(rawMapping: unknown) {
           :class="{ active: inputMode === 'json' }"
           @click="updateInputMode('json')"
         >
-          JSON 输入
+          {{ t("workflow.jsonInput") }}
         </button>
       </div>
 
@@ -285,28 +288,28 @@ function normalizeMappingDraft(rawMapping: unknown) {
           :data-entry-key="entry.key"
         >
           <label class="drawer-field">
-            <span>输入字段</span>
+            <span>{{ t("workflow.inputField") }}</span>
             <input
               :name="`http-input-key-${index}`"
               :value="entry.key"
-              placeholder="例如 orderId"
+              :placeholder="t('workflow.fieldKeyPh')"
               @input="renameMappingKey(index, ($event.target as HTMLInputElement).value)"
             />
           </label>
-          <div class="workflow-tool-mapping-mode" role="group" aria-label="HTTP 字段映射方式">
+          <div class="workflow-tool-mapping-mode" role="group" :aria-label="t('workflow.mappingModeAria')">
             <button
               type="button"
               :class="{ active: mappingKind(entry.key) === 'ref' }"
               @click="setMappingKind(entry.key, 'ref')"
             >
-              变量
+              {{ t("workflow.mapVariable") }}
             </button>
             <button
               type="button"
               :class="{ active: mappingKind(entry.key) === 'literal' }"
               @click="setMappingKind(entry.key, 'literal')"
             >
-              固定值
+              {{ t("workflow.mapLiteral") }}
             </button>
           </div>
           <AppSelect
@@ -314,23 +317,25 @@ function normalizeMappingDraft(rawMapping: unknown) {
             class="workflow-advanced-input-select"
             :model-value="mappingRefValue(entry.key)"
             :options="variableOptions"
-            placeholder="选择变量"
+            :placeholder="t('workflow.selectVariable')"
             @update:model-value="setRefMapping(entry.key, String($event))"
           />
           <input
             v-else
             :name="`http-input-literal-${index}`"
             :value="mappingLiteralValue(entry.key)"
-            placeholder="输入固定值"
+            :placeholder="t('workflow.enterLiteral')"
             @input="setLiteralMapping(entry.key, ($event.target as HTMLInputElement).value)"
           />
-          <button type="button" class="ghost-button" @click="removeMappingRow(entry.key)">删除字段</button>
+          <button type="button" class="ghost-button" @click="removeMappingRow(entry.key)">
+            {{ t("workflow.deleteFieldSimple") }}
+          </button>
         </article>
-        <button type="button" class="ghost-button" @click="addMappingRow">添加字段</button>
+        <button type="button" class="ghost-button" @click="addMappingRow">{{ t("workflow.addFieldSimple") }}</button>
       </div>
 
       <label v-else class="drawer-field">
-        <span>JSON 输入</span>
+        <span>{{ t("workflow.jsonInput") }}</span>
         <textarea
           name="node-http-input-json"
           rows="6"
@@ -343,10 +348,10 @@ function normalizeMappingDraft(rawMapping: unknown) {
 
     <section class="workflow-inspector-vars workflow-schema-preview">
       <div class="workflow-section-caption">
-        <strong>运行语义</strong>
+        <strong>{{ t("workflow.runtimeSemantics") }}</strong>
         <small>HTTP runtime summary</small>
       </div>
-      <p>当前运行时会记录 method、endpoint 与解析后的 request 输入，并在节点输出中返回 request/status 摘要。</p>
+      <p>{{ t("workflow.httpRuntimeHint") }}</p>
     </section>
   </section>
 </template>

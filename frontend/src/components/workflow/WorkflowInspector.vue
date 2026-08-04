@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import StartNodeEditor from "./editors/StartNodeEditor.vue";
-import EndNodeEditor from "./editors/EndNodeEditor.vue";
-import ToolNodeEditor from "./editors/ToolNodeEditor.vue";
-import HTTPNodeEditor from "./editors/HTTPNodeEditor.vue";
-import SubWorkflowNodeEditor from "./editors/SubWorkflowNodeEditor.vue";
-import ParallelNodeEditor from "./editors/ParallelNodeEditor.vue";
-import ForEachNodeEditor from "./editors/ForEachNodeEditor.vue";
+import { useI18n } from "vue-i18n";
+
 import type { Tool, WorkflowGraphNode } from "../../types/domain";
+import EndNodeEditor from "./editors/EndNodeEditor.vue";
+import ForEachNodeEditor from "./editors/ForEachNodeEditor.vue";
+import HTTPNodeEditor from "./editors/HTTPNodeEditor.vue";
+import ParallelNodeEditor from "./editors/ParallelNodeEditor.vue";
+import StartNodeEditor from "./editors/StartNodeEditor.vue";
+import SubWorkflowNodeEditor from "./editors/SubWorkflowNodeEditor.vue";
+import ToolNodeEditor from "./editors/ToolNodeEditor.vue";
+
+const { t } = useI18n();
 
 const props = defineProps<{
   node?: WorkflowGraphNode;
@@ -30,14 +34,14 @@ function nodeDataValue(key: string) {
 <template>
   <section class="workflow-inspector">
     <div class="workflow-panel-heading">
-      <span>属性面板</span>
-      <h3>{{ props.node?.label || "选择一个节点" }}</h3>
-      <p>{{ props.node ? "修改节点名称后，画布会立即同步。" : "从中间画布选择节点后在这里编辑。" }}</p>
+      <span>{{ t("workflow.inspectorTitle") }}</span>
+      <h3>{{ props.node?.label || t("workflow.selectNode") }}</h3>
+      <p>{{ props.node ? t("workflow.inspectorHintSelected") : t("workflow.inspectorHintEmpty") }}</p>
     </div>
 
     <div v-if="props.node" class="workflow-inspector-form">
       <label class="drawer-field">
-        <span>节点名称</span>
+        <span>{{ t("workflow.nodeName") }}</span>
         <input
           name="node-label"
           :value="props.node.label"
@@ -45,18 +49,23 @@ function nodeDataValue(key: string) {
         />
       </label>
       <label class="drawer-field">
-        <span>节点类型</span>
+        <span>{{ t("workflow.nodeType") }}</span>
         <input :value="props.node.type" readonly />
       </label>
 
       <div class="workflow-inspector-meta">
-        <span>节点 ID {{ props.node.id }}</span>
-        <span>坐标 X {{ Math.round(props.node.position.x) }} · Y {{ Math.round(props.node.position.y) }}</span>
+        <span>{{ t("workflow.nodeId", { id: props.node.id }) }}</span>
+        <span>{{
+          t("workflow.nodePosition", {
+            x: Math.round(props.node.position.x),
+            y: Math.round(props.node.position.y),
+          })
+        }}</span>
       </div>
 
       <section class="workflow-inspector-vars">
         <div class="workflow-section-caption">
-          <strong>节点参数</strong>
+          <strong>{{ t("workflow.nodeParams") }}</strong>
           <small>{{ props.node.type }}</small>
         </div>
 
@@ -91,12 +100,12 @@ function nodeDataValue(key: string) {
         />
 
         <label v-else-if="props.node.type === 'Condition'" class="drawer-field">
-          <span>条件表达式</span>
+          <span>{{ t("workflow.conditionExpression") }}</span>
           <textarea
             name="node-condition-expression"
             rows="4"
             :value="nodeDataValue('expression')"
-            placeholder="例如 nodeOutputs.tool.status == 'paid'"
+            :placeholder="t('workflow.conditionPh')"
             @input="
               emit('update-node-data', { key: 'expression', value: ($event.target as HTMLTextAreaElement).value })
             "
@@ -104,23 +113,23 @@ function nodeDataValue(key: string) {
         </label>
 
         <label v-else-if="props.node.type === 'Transform'" class="drawer-field">
-          <span>转换模板</span>
+          <span>{{ t("workflow.transformTemplate") }}</span>
           <textarea
             name="node-transform-template"
             rows="4"
             :value="nodeDataValue('template')"
-            placeholder="例如 订单 {{input.orderId}}"
+            :placeholder="t('workflow.transformPh')"
             @input="emit('update-node-data', { key: 'template', value: ($event.target as HTMLTextAreaElement).value })"
           />
         </label>
 
         <label v-else-if="props.node.type === 'Approval'" class="drawer-field">
-          <span>审批原因</span>
+          <span>{{ t("workflow.approvalReason") }}</span>
           <textarea
             name="node-approval-reason"
             rows="4"
             :value="nodeDataValue('reason')"
-            placeholder="描述需要人工确认的原因"
+            :placeholder="t('workflow.approvalPh')"
             @input="emit('update-node-data', { key: 'reason', value: ($event.target as HTMLTextAreaElement).value })"
           />
         </label>
@@ -148,8 +157,8 @@ function nodeDataValue(key: string) {
 
       <section class="workflow-inspector-vars">
         <div class="workflow-section-caption">
-          <strong>可用变量</strong>
-          <small>用于后续节点绑定</small>
+          <strong>{{ t("workflow.availableVars") }}</strong>
+          <small>{{ t("workflow.availableVarsHint") }}</small>
         </div>
         <div class="workflow-token-list">
           <span v-for="variable in props.variableRefs" :key="variable" class="workflow-token">{{ variable }}</span>
@@ -159,8 +168,8 @@ function nodeDataValue(key: string) {
 
     <div v-else class="workflow-inspector-empty">
       <i class="fa-solid fa-arrow-pointer" />
-      <strong>还没有选中节点</strong>
-      <small>点击画布中的节点后，在这里查看和修改属性。</small>
+      <strong>{{ t("workflow.noNodeSelected") }}</strong>
+      <small>{{ t("workflow.noNodeSelectedHint") }}</small>
     </div>
   </section>
 </template>

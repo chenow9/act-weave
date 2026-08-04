@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { useI18n } from "vue-i18n";
 
 export type DonutSlice = {
   id: string;
@@ -8,6 +9,8 @@ export type DonutSlice = {
   /** Optional secondary label shown as title tooltip */
   meta?: string;
 };
+
+const { t } = useI18n();
 
 const props = withDefaults(
   defineProps<{
@@ -19,11 +22,14 @@ const props = withDefaults(
   }>(),
   {
     size: 112,
-    emptyText: "暂无数据",
-    valueLabel: "合计",
+    emptyText: undefined,
+    valueLabel: undefined,
     colors: () => ["#0f9f6e", "#14b8a6", "#3b82f6", "#6366f1", "#8b5cf6", "#f59e0b", "#f43f5e", "#64748b"],
   },
 );
+
+const resolvedEmptyText = computed(() => props.emptyText ?? t("common.noData"));
+const resolvedValueLabel = computed(() => props.valueLabel ?? t("overview.totalSum"));
 
 const hoverId = ref<string | null>(null);
 
@@ -94,13 +100,13 @@ const active = computed(() => {
 const centerValue = computed(() => (active.value ? active.value.value : total.value));
 const centerSub = computed(() => {
   if (active.value) return `${active.value.pct.toFixed(0)}%`;
-  return props.valueLabel;
+  return resolvedValueLabel.value;
 });
 </script>
 
 <template>
   <div class="overview-donut">
-    <div v-if="!segments.length" class="overview-empty compact">{{ emptyText }}</div>
+    <div v-if="!segments.length" class="overview-empty compact">{{ resolvedEmptyText }}</div>
     <template v-else>
       <svg class="overview-donut-svg" :viewBox="`0 0 ${size} ${size}`" :width="size" :height="size" role="img">
         <path

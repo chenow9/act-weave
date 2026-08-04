@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import DataTable from "./DataTable.vue";
 import ManagementList, { type ManagementListColumn } from "./ManagementList.vue";
+import { createTestI18n } from "../test-utils/i18n";
 
 type TestRow = {
   id: string;
@@ -42,7 +43,7 @@ function mountList(overrides: Record<string, unknown> = {}) {
       empty: "<p>No matching records</p>",
       error: ({ error }: { error: string }) => `<p>Load failed: ${error}</p>`,
     },
-    global: { stubs: { Teleport: true } },
+    global: { plugins: [createTestI18n("zh-CN")], stubs: { Teleport: true } },
   });
 }
 
@@ -107,6 +108,7 @@ describe("ManagementList", () => {
     const wrapper = mount(ManagementList<TestRow>, {
       attachTo: host,
       props: { rows, columns, rowKey: "id", storageKey: "teleported-columns", search: "", resetDisabled: true },
+      global: { plugins: [createTestI18n("zh-CN")], stubs: { Teleport: false } },
     });
 
     await wrapper.get('button[aria-label="列设置"]').trigger("click");
@@ -126,6 +128,7 @@ describe("ManagementList", () => {
     const wrapper = mount(ManagementList<TestRow>, {
       attachTo: document.body,
       props: { rows, columns, rowKey: "id", storageKey: "native-column-menu", search: "", resetDisabled: true },
+      global: { plugins: [createTestI18n("zh-CN")], stubs: { Teleport: false } },
     });
 
     await wrapper.get('button[aria-label="列设置"]').trigger("click");

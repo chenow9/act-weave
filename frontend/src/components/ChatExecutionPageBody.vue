@@ -2,9 +2,11 @@
 // @ts-nocheck — inject surface under page split (ZKL-64 item 15)
 /** Chat execution page body (ZKL-64 item 15). */
 /* prettier-ignore */
+import { useI18n } from "vue-i18n";
 import DebugOutboundCredentialPanel from "./DebugOutboundCredentialPanel.vue";
 import { useChatExecutionPageContext } from "../composables/useChatExecutionPageContext";
 
+const { t } = useI18n();
 const scp = useChatExecutionPageContext();
 /* prettier-ignore */
 const {
@@ -34,18 +36,18 @@ void DebugOutboundCredentialPanel;
           @click.stop="toggleSidePanel('sessions')"
         >
           <i class="fa-regular fa-clock" aria-hidden="true" />
-          <span>历史会话</span>
+          <span>{{ t("chat.historySessions") }}</span>
         </button>
 
         <div class="orchestrator-context-shell">
           <div class="orchestrator-context-group">
-            <span class="orchestrator-context-label">新会话配置</span>
+            <span class="orchestrator-context-label">{{ t("chat.newSessionConfig") }}</span>
             <div class="chat-context-dropdown" @click.stop>
               <button
                 ref="workspaceDropdownTrigger"
                 type="button"
-                aria-label="选择新会话的业务空间"
-                title="选择新会话的业务空间"
+                :aria-label="t('chat.selectWorkspaceAria')"
+                :title="t('chat.selectWorkspaceAria')"
                 aria-haspopup="menu"
                 :aria-expanded="chatDropdowns.workspace"
                 @click="toggleChatDropdown('workspace')"
@@ -60,7 +62,7 @@ void DebugOutboundCredentialPanel;
                 class="chat-context-dropdown-menu"
                 data-dropdown="workspace"
                 role="menu"
-                aria-label="选择新会话的业务空间"
+                :aria-label="t('chat.selectWorkspaceAria')"
                 @keydown="handleDropdownMenuKeydown($event, 'workspace')"
               >
                 <button
@@ -83,8 +85,8 @@ void DebugOutboundCredentialPanel;
               <button
                 ref="agentDropdownTrigger"
                 type="button"
-                aria-label="选择新会话的 Agent"
-                title="选择新会话的 Agent"
+                :aria-label="t('chat.selectAgentAria')"
+                :title="t('chat.selectAgentAria')"
                 aria-haspopup="menu"
                 :aria-expanded="chatDropdowns.agent"
                 @click="toggleChatDropdown('agent')"
@@ -99,10 +101,10 @@ void DebugOutboundCredentialPanel;
                 class="chat-context-dropdown-menu agent-menu"
                 data-dropdown="agent"
                 role="menu"
-                aria-label="选择新会话的 Agent"
+                :aria-label="t('chat.selectAgentAria')"
                 @keydown="handleDropdownMenuKeydown($event, 'agent')"
               >
-                <p>选择新会话的 Agent</p>
+                <p>{{ t("chat.selectAgentPrompt") }}</p>
                 <button
                   v-for="agent in filteredAgents"
                   :key="agent.id"
@@ -127,11 +129,17 @@ void DebugOutboundCredentialPanel;
               type="button"
               :disabled="contextLoading || !selectedWorkspaceId || !selectedAgentId"
               :aria-busy="contextLoading"
-              :title="contextSelectionDirty ? '使用所选配置创建新会话' : '创建新会话'"
+              :title="contextSelectionDirty ? t('chat.createWithConfig') : t('chat.createSession')"
               @click="newSession"
             >
               <i class="fa-solid fa-plus" aria-hidden="true" />
-              <span>{{ contextLoading ? "载入配置" : contextSelectionDirty ? "应用并新建" : "新建会话" }}</span>
+              <span>{{
+                contextLoading
+                  ? t("chat.loadingConfig")
+                  : contextSelectionDirty
+                    ? t("chat.applyAndCreate")
+                    : t("chat.newSession")
+              }}</span>
             </button>
           </div>
         </div>
@@ -145,7 +153,7 @@ void DebugOutboundCredentialPanel;
         @click.stop="toggleSidePanel('runtime')"
       >
         <i class="fa-solid fa-list-check" aria-hidden="true" />
-        <span>运行详情</span>
+        <span>{{ t("chat.runtimeDetail") }}</span>
       </button>
     </header>
 
@@ -155,41 +163,45 @@ void DebugOutboundCredentialPanel;
           <div class="runtime-console-header-content">
             <div class="runtime-console-title">
               <div class="runtime-title-row">
-                <h1>运行调试台</h1>
+                <h1>{{ t("chat.consoleTitle") }}</h1>
                 <b :class="statusBadgeClass(chat.runStatus)">{{ runStatusLabel }}</b>
                 <button
                   v-if="chat.activeSession?.status === 'ACTIVE'"
                   class="chat-inline-action"
                   type="button"
-                  title="归档当前会话（消息会永久保留）"
+                  :title="t('chat.archiveTitle')"
                   :disabled="archivingSession"
                   :aria-busy="archivingSession ? 'true' : undefined"
                   @click="archiveCurrentSession"
                 >
-                  {{ archivingSession ? "归档中…" : "归档" }}
+                  {{ archivingSession ? t("chat.archiving") : t("chat.archive") }}
                 </button>
               </div>
               <p>
-                <span>{{ chat.activeSession?.title || "新会话" }}</span>
+                <span>{{ chat.activeSession?.title || t("chat.defaultSessionTitle") }}</span>
                 <i aria-hidden="true">/</i>
-                <span>{{ activeSessionWorkspace?.displayName || activeSessionWorkspace?.name || "未选择空间" }}</span>
+                <span>{{
+                  activeSessionWorkspace?.displayName || activeSessionWorkspace?.name || t("chat.noWorkspace")
+                }}</span>
                 <i aria-hidden="true">/</i>
                 <span>{{ activeSessionAgent?.name || chat.activeSession?.agentId || activeAgentLabel }}</span>
                 <b
                   v-if="activeSessionReadOnly"
                   class="runtime-agent-state"
-                  :title="`会话创建时使用的 Agent 当前${activeSessionAgentStatusLabel}，仅保留历史记录`"
+                  :title="t('chat.agentUnavailableTitle', { status: activeSessionAgentStatusLabel })"
                 >
                   {{ activeSessionAgentStatusLabel }}
                 </b>
               </p>
             </div>
-            <div class="runtime-summary-list" aria-label="当前运行摘要">
+            <div class="runtime-summary-list" :aria-label="t('chat.runtimeSummaryAria')">
               <span
-                ><small>意图</small><strong>{{ runtimeIntentLabel }}</strong></span
+                ><small>{{ t("chat.intent") }}</small
+                ><strong>{{ runtimeIntentLabel }}</strong></span
               >
               <span
-                ><small>本轮能力</small><strong>{{ capabilityCountLabel }}</strong></span
+                ><small>{{ t("chat.capabilitiesThisTurn") }}</small
+                ><strong>{{ capabilityCountLabel }}</strong></span
               >
             </div>
           </div>
@@ -198,30 +210,36 @@ void DebugOutboundCredentialPanel;
         <section class="debug-console-banner" role="status" data-testid="debug-console-nonprod-banner">
           <i class="fa-solid fa-flask" aria-hidden="true" />
           <div>
-            <strong>内部运行调试台（非生产）</strong>
-            <p>
-              用于配置验证与出站身份调试。业务 Token
-              不会写入会话正文、历史或本地存储；透传凭据通过下方独立绑定面板一次性提交。
-            </p>
+            <strong>{{ t("chat.debugBannerTitle") }}</strong>
+            <p>{{ t("chat.debugBannerBody") }}</p>
           </div>
         </section>
-        <div class="debug-subject-bar" data-testid="debug-console-subject" aria-label="当前 Subject">
+        <div class="debug-subject-bar" data-testid="debug-console-subject" :aria-label="t('chat.currentSubjectAria')">
           <span
-            ><small>当前 Subject</small><strong>{{ currentSubjectLabel }}</strong></span
+            ><small>{{ t("chat.currentSubject") }}</small
+            ><strong>{{ currentSubjectLabel }}</strong></span
           >
-          <span v-if="outboundAttachmentId"><small>出站绑定</small><strong>已绑定（下一条消息消费）</strong></span>
-          <span v-else><small>出站绑定</small><strong>未绑定</strong></span>
+          <span v-if="outboundAttachmentId"
+            ><small>{{ t("chat.outboundBinding") }}</small
+            ><strong>{{ t("chat.boundNextMessage") }}</strong></span
+          >
+          <span v-else
+            ><small>{{ t("chat.outboundBinding") }}</small
+            ><strong>{{ t("chat.notBound") }}</strong></span
+          >
         </div>
 
         <section v-if="activeSessionReadOnly" class="chat-session-agent-alert" role="status">
           <div class="chat-session-agent-alert-copy">
             <i class="fa-solid fa-user-slash" aria-hidden="true" />
             <div>
-              <strong>关联 Agent {{ activeSessionAgentStatusLabel }}</strong>
+              <strong>{{ t("chat.linkedAgentStatus", { status: activeSessionAgentStatusLabel }) }}</strong>
               <p>
-                “{{
-                  activeSessionAgent?.name || chat.activeSession?.agentId
-                }}”关联的会话仅可查看，不能继续执行；归档不会删除消息。
+                {{
+                  t("chat.sessionReadOnlyBody", {
+                    name: activeSessionAgent?.name || chat.activeSession?.agentId,
+                  })
+                }}
               </p>
             </div>
           </div>
@@ -232,7 +250,11 @@ void DebugOutboundCredentialPanel;
             @click="newSession"
           >
             <i class="fa-solid fa-plus" aria-hidden="true" />
-            <span>{{ contextLoading ? "载入可用 Agent" : `使用 ${activeAgentLabel} 新建会话` }}</span>
+            <span>{{
+              contextLoading
+                ? t("chat.loadingAgents")
+                : t("chat.newSessionWithAgent", { name: activeAgentLabel })
+            }}</span>
           </button>
         </section>
 
@@ -240,7 +262,7 @@ void DebugOutboundCredentialPanel;
           ref="chatScrollArea"
           class="chat-scroll-area"
           role="log"
-          aria-label="对话消息"
+          :aria-label="t('chat.messagesAria')"
           aria-live="polite"
           aria-relevant="additions text"
           :aria-busy="conversationBusy"
@@ -248,8 +270,8 @@ void DebugOutboundCredentialPanel;
         >
           <div v-if="!chat.messages.length" class="chat-empty-state">
             <span><i class="fa-solid fa-robot" aria-hidden="true" /></span>
-            <strong>开始一次可审计的执行对话</strong>
-            <p>描述目标即可。涉及敏感能力时，系统会在执行前请求你的确认。</p>
+            <strong>{{ t("chat.emptyTitle") }}</strong>
+            <p>{{ t("chat.emptyBody") }}</p>
           </div>
 
           <template v-for="(message, messageIndex) in chat.messages" :key="message.id">
@@ -289,11 +311,11 @@ void DebugOutboundCredentialPanel;
             <div class="risk-gate-head">
               <div>
                 <i class="fa-solid fa-shield-halved" aria-hidden="true" />
-                <strong>高风险拦截：执行前安全确认</strong>
+                <strong>{{ t("chat.riskGateTitle") }}</strong>
               </div>
               <span>MANUAL GATE</span>
             </div>
-            <p>该请求将访问敏感能力或触发高风险动作。只有本次执行的原发起人可以确认或取消。</p>
+            <p>{{ t("chat.riskGateBody") }}</p>
             <ul>
               <li v-for="reason in chat.pendingConfirmation.riskReasons" :key="reason">
                 <i class="fa-solid fa-circle-exclamation" aria-hidden="true" />
@@ -301,7 +323,7 @@ void DebugOutboundCredentialPanel;
               </li>
             </ul>
             <div class="risk-confirm-row">
-              <span v-if="!chat.pendingResumeToken" role="status">确认凭据未在当前浏览器恢复，请重新发起该操作。</span>
+              <span v-if="!chat.pendingResumeToken" role="status">{{ t("chat.resumeTokenMissing") }}</span>
               <button
                 type="button"
                 :disabled="confirming || activeSessionReadOnly"
@@ -309,7 +331,7 @@ void DebugOutboundCredentialPanel;
                 @click="cancelConfirmation"
               >
                 <i class="fa-solid fa-ban" aria-hidden="true" />
-                取消操作
+                {{ t("chat.cancelAction") }}
               </button>
               <button
                 type="button"
@@ -318,7 +340,7 @@ void DebugOutboundCredentialPanel;
                 @click="confirm"
               >
                 <i class="fa-solid fa-unlock-keyhole" aria-hidden="true" />
-                {{ confirming ? "授权中" : "授权执行" }}
+                {{ confirming ? t("chat.authorizing") : t("chat.authorizeRun") }}
               </button>
             </div>
           </section>
@@ -326,7 +348,7 @@ void DebugOutboundCredentialPanel;
 
         <button v-if="hasUnreadMessages" class="chat-new-message-button" type="button" @click="revealLatestMessages">
           <i class="fa-solid fa-arrow-down" aria-hidden="true" />
-          <span>有新消息</span>
+          <span>{{ t("chat.newMessages") }}</span>
         </button>
 
         <div class="chat-composer-dock">
@@ -334,7 +356,7 @@ void DebugOutboundCredentialPanel;
             {{ actionError }}
           </p>
           <div v-if="!chat.messages.length && !activeSessionReadOnly" class="prompt-suggestion-strip">
-            <span>暂无快捷指令</span>
+            <span>{{ t("chat.noShortcuts") }}</span>
           </div>
           <div
             v-if="chat.activeSession && !activeSessionReadOnly"
@@ -342,8 +364,8 @@ void DebugOutboundCredentialPanel;
             data-testid="debug-outbound-credential-panel"
           >
             <label v-if="requiresPassthroughToken && passthroughConnections.length > 1" class="debug-connection-picker">
-              透传 Connection
-              <select v-model="debugPassthroughConnectionId" aria-label="选择透传 Connection">
+              {{ t("chat.passthroughConnection") }}
+              <select v-model="debugPassthroughConnectionId" :aria-label="t('chat.selectPassthroughConnection')">
                 <option v-for="c in passthroughConnections" :key="c.id" :value="c.id">{{ c.name }}</option>
               </select>
             </label>
@@ -361,13 +383,13 @@ void DebugOutboundCredentialPanel;
             <textarea
               v-model="composer"
               rows="1"
-              aria-label="输入业务指令或目标任务"
+              :aria-label="t('chat.composerAria')"
               :placeholder="composerPlaceholder"
               :disabled="activeSessionReadOnly"
               :aria-describedby="actionError ? 'chat-composer-shortcut chat-action-error' : 'chat-composer-shortcut'"
               @keydown.enter.exact.prevent="send"
             />
-            <span id="chat-composer-shortcut" class="chat-sr-only">按 Enter 发送，按 Shift 加 Enter 换行。</span>
+            <span id="chat-composer-shortcut" class="chat-sr-only">{{ t("chat.composerShortcut") }}</span>
             <button
               type="button"
               :disabled="sending || activeSessionReadOnly || !composer.trim()"
@@ -375,7 +397,7 @@ void DebugOutboundCredentialPanel;
               @click="send"
             >
               <i class="fa-solid" :class="sending ? 'fa-spinner' : 'fa-paper-plane'" aria-hidden="true" />
-              <span>{{ sending ? "发送中" : "发送" }}</span>
+              <span>{{ sending ? t("chat.sending") : t("chat.send") }}</span>
             </button>
           </div>
         </div>
@@ -392,21 +414,21 @@ void DebugOutboundCredentialPanel;
             class="chat-session-rail chat-side-panel"
             role="dialog"
             aria-modal="true"
-            aria-label="历史会话"
+            :aria-label="t('chat.historyAria')"
             tabindex="-1"
             @keydown.tab="trapSidePanelFocus"
           >
             <div class="chat-session-head">
               <div>
-                <span>历史会话</span>
-                <h2>执行记录</h2>
+                <span>{{ t("chat.historySessions") }}</span>
+                <h2>{{ t("chat.executionRecords") }}</h2>
               </div>
               <div class="chat-panel-head-actions">
                 <button
                   class="chat-panel-icon-button primary"
                   type="button"
-                  title="创建新会话"
-                  aria-label="创建新会话"
+                  :title="t('chat.createSession')"
+                  :aria-label="t('chat.createSession')"
                   @click="newSession"
                 >
                   <i class="fa-solid fa-plus" aria-hidden="true" />
@@ -415,8 +437,8 @@ void DebugOutboundCredentialPanel;
                   ref="sessionPanelCloseButton"
                   class="chat-panel-icon-button"
                   type="button"
-                  title="关闭历史会话"
-                  aria-label="关闭历史会话"
+                  :title="t('chat.closeHistory')"
+                  :aria-label="t('chat.closeHistory')"
                   @click="closeSidePanel"
                 >
                   <i class="fa-solid fa-xmark" aria-hidden="true" />
@@ -425,7 +447,7 @@ void DebugOutboundCredentialPanel;
             </div>
             <label class="chat-session-search">
               <i class="fa-solid fa-magnifying-glass" aria-hidden="true" />
-              <input v-model="sessionKeyword" type="text" placeholder="筛选会话..." />
+              <input v-model="sessionKeyword" type="text" :placeholder="t('chat.filterSessions')" />
             </label>
 
             <div class="chat-session-list">
@@ -446,7 +468,7 @@ void DebugOutboundCredentialPanel;
                         session.status === 'ARCHIVED' || !agents.items.some((agent) => agent.id === session.agentId)
                       "
                     >
-                      {{ session.status === "ARCHIVED" ? "已归档" : "不可用" }}
+                      {{ session.status === "ARCHIVED" ? t("chat.archived") : t("chat.unavailable") }}
                     </b>
                   </small>
                   <small>{{ sessionTime(session.updatedAt) }}</small>
@@ -455,8 +477,8 @@ void DebugOutboundCredentialPanel;
 
               <div v-if="!filteredSessions.length" class="chat-session-empty">
                 <i class="fa-regular fa-message" aria-hidden="true" />
-                <strong>没有匹配的会话</strong>
-                <small>调整关键词，或新建一个执行会话。</small>
+                <strong>{{ t("chat.noMatchTitle") }}</strong>
+                <small>{{ t("chat.noMatchBody") }}</small>
               </div>
             </div>
           </aside>
@@ -470,21 +492,21 @@ void DebugOutboundCredentialPanel;
             class="runtime-monitor-panel chat-side-panel"
             role="dialog"
             aria-modal="true"
-            aria-label="运行详情"
+            :aria-label="t('chat.runtimeDetail')"
             tabindex="-1"
             @keydown.tab="trapSidePanelFocus"
           >
             <div class="runtime-monitor-head">
               <div>
-                <span>运行详情</span>
-                <h2>{{ chat.latestRun ? "Run 与执行链路" : "等待会话运行" }}</h2>
+                <span>{{ t("chat.runtimeDetail") }}</span>
+                <h2>{{ chat.latestRun ? t("chat.runAndTrace") : t("chat.waitingRun") }}</h2>
               </div>
               <button
                 ref="runtimePanelCloseButton"
                 class="chat-panel-icon-button"
                 type="button"
-                title="关闭运行详情"
-                aria-label="关闭运行详情"
+                :title="t('chat.closeRuntime')"
+                :aria-label="t('chat.closeRuntime')"
                 @click="closeSidePanel"
               >
                 <i class="fa-solid fa-xmark" aria-hidden="true" />
@@ -494,21 +516,21 @@ void DebugOutboundCredentialPanel;
             <div class="runtime-monitor-body">
               <section class="runtime-decision-card">
                 <div>
-                  <span>决策目标</span>
-                  <small>{{ chat.latestRun?.triggerType || "待识别" }}</small>
+                  <span>{{ t("chat.decisionTarget") }}</span>
+                  <small>{{ chat.latestRun?.triggerType || t("chat.pendingIdentify") }}</small>
                 </div>
-                <strong>{{ runtimeTargetReleaseId || "尚未匹配 Capability Release" }}</strong>
+                <strong>{{ runtimeTargetReleaseId || t("chat.noCapabilityRelease") }}</strong>
                 <p>{{ runtimeSummary }}</p>
                 <div class="runtime-decision-meta">
-                  <span>风险等级</span>
-                  <b>{{ chat.pendingConfirmation?.riskLevel || "标准" }}</b>
+                  <span>{{ t("chat.riskLevel") }}</span>
+                  <b>{{ chat.pendingConfirmation?.riskLevel || t("chat.riskStandard") }}</b>
                 </div>
               </section>
 
               <section class="runtime-step-section">
                 <div class="runtime-section-title">
-                  <span>执行链路</span>
-                  <small>{{ latestRunStepRows.length }} 个事件</small>
+                  <span>{{ t("chat.executionChain") }}</span>
+                  <small>{{ t("chat.eventCount", { n: latestRunStepRows.length }) }}</small>
                 </div>
                 <div v-if="latestRunStepRows.length" class="runtime-step-list">
                   <div v-for="step in latestRunStepRows" :key="step.id" class="runtime-step-row">
@@ -521,31 +543,35 @@ void DebugOutboundCredentialPanel;
                   </div>
                 </div>
                 <div v-else class="runtime-empty-note">
-                  <strong>暂无执行事件</strong>
-                  <small>发送指令后，这里会按顺序展示意图分析、能力调用和确认节点。</small>
+                  <strong>{{ t("chat.noEventsTitle") }}</strong>
+                  <small>{{ t("chat.noEventsBody") }}</small>
                 </div>
               </section>
 
               <details class="runtime-policy-card" :open="chat.pendingConfirmation?.status === 'PENDING'">
                 <summary>
-                  <span><i class="fa-solid fa-shield-halved" aria-hidden="true" />安全策略</span>
+                  <span
+                    ><i class="fa-solid fa-shield-halved" aria-hidden="true" />{{ t("chat.securityPolicy") }}</span
+                  >
                   <span class="runtime-disclosure-state">
-                    <small v-if="chat.pendingConfirmation?.status === 'PENDING'">需要确认</small>
+                    <small v-if="chat.pendingConfirmation?.status === 'PENDING'">{{
+                      t("chat.needsConfirmation")
+                    }}</small>
                     <i class="fa-solid fa-angle-down" aria-hidden="true" />
                   </span>
                 </summary>
                 <div class="runtime-policy-detail">
                   <i class="fa-solid fa-shield-halved" aria-hidden="true" />
                   <span>
-                    <strong>敏感能力访问</strong>
-                    <small>涉及高风险动作时需要人工授权并写入审计链路。</small>
+                    <strong>{{ t("chat.sensitiveAccess") }}</strong>
+                    <small>{{ t("chat.sensitiveAccessBody") }}</small>
                   </span>
                 </div>
               </details>
 
               <details class="runtime-trace-section">
                 <summary>
-                  <span><i class="fa-solid fa-bug" aria-hidden="true" />技术信息与 Trace</span>
+                  <span><i class="fa-solid fa-bug" aria-hidden="true" />{{ t("chat.techTrace") }}</span>
                   <i class="fa-solid fa-angle-down" aria-hidden="true" />
                 </summary>
                 <div class="runtime-trace-block">

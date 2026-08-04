@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import "@vue-flow/core/dist/style.css";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import {
   BaseEdge,
   ConnectionMode,
@@ -17,8 +18,10 @@ import {
 
 import type { WorkflowGraphDraft } from "../../types/domain";
 import { primaryPortKey } from "../../utils/workflow-graph";
-import { WORKFLOW_BRANCH_OPTIONS } from "./WorkflowEdgeInspector.vue";
+import { getWorkflowBranchOptions } from "./WorkflowEdgeInspector.vue";
 import { LONG_EDGE_MIN_DX, SAME_LANE_EPS, buildFlowchartEdgePath } from "./workflow-edge-path";
+
+const { t } = useI18n();
 
 const props = defineProps<{
   graph: WorkflowGraphDraft;
@@ -211,7 +214,7 @@ function branchLabel(branch: unknown) {
   if (typeof branch !== "string" || !branch) {
     return undefined;
   }
-  return WORKFLOW_BRANCH_OPTIONS.find((option) => option.value === branch)?.label || branch;
+  return getWorkflowBranchOptions().find((option) => option.value === branch)?.label || branch;
 }
 
 function handleNodeDragStop(event: NodeDragEvent) {
@@ -411,8 +414,13 @@ function fitCanvasView(source: "auto" | "user" = "user") {
             :key="port.key"
             :type="port.direction === 'input' ? 'target' : 'source'"
             :position="port.direction === 'input' ? Position.Left : Position.Right"
-            :aria-label="`${nodeProps.data.label} ${port.direction === 'input' ? '输入' : '输出'}端口`"
-            :title="port.direction === 'input' ? '输入' : '输出（分支共用）'"
+            :aria-label="
+              t('workflow.portAria', {
+                label: nodeProps.data.label,
+                direction: port.direction === 'input' ? t('workflow.portInput') : t('workflow.portOutput'),
+              })
+            "
+            :title="port.direction === 'input' ? t('workflow.portInput') : t('workflow.portOutputShared')"
             class="workflow-flow-handle"
             :class="port.direction"
           />
@@ -421,14 +429,14 @@ function fitCanvasView(source: "auto" | "user" = "user") {
           <small>{{ nodeProps.id }}</small>
         </button>
       </template>
-      <div class="workflow-flow-controls" role="group" aria-label="画布缩放控制">
-        <button type="button" aria-label="放大画布" @click.stop="zoomInCanvas">
+      <div class="workflow-flow-controls" role="group" :aria-label="t('workflow.canvasZoomAria')">
+        <button type="button" :aria-label="t('workflow.zoomIn')" @click.stop="zoomInCanvas">
           <i class="fa-solid fa-plus" aria-hidden="true" />
         </button>
-        <button type="button" aria-label="缩小画布" @click.stop="zoomOutCanvas">
+        <button type="button" :aria-label="t('workflow.zoomOut')" @click.stop="zoomOutCanvas">
           <i class="fa-solid fa-minus" aria-hidden="true" />
         </button>
-        <button type="button" aria-label="适配全部节点" @click.stop="fitCanvasView()">
+        <button type="button" :aria-label="t('workflow.fitAllNodes')" @click.stop="fitCanvasView()">
           <i class="fa-solid fa-compress" aria-hidden="true" />
         </button>
       </div>

@@ -1,12 +1,23 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 
-import { groupNavItemsBySection, navItems, primaryNavigationIds, type NavItem } from "../config/navigation";
+import {
+  groupNavItemsBySection,
+  navItems,
+  primaryNavigationIds,
+  sectionLabelKey,
+  type NavItem,
+} from "../config/navigation";
+import { i18n } from "../i18n";
+import type { AppLocale } from "../i18n/types";
+import { setLocale } from "../services/locale";
 import { useAuthStore } from "../stores/auth";
 import { useOverviewStore } from "../stores/overview";
 import { useWorkspaceStore } from "../stores/workspaces";
 
+const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
@@ -41,13 +52,38 @@ const primaryNavigation = computed(() =>
     .map((id) => visibleNavItems.value.find((item) => item.id === id))
     .filter((item): item is NavItem => Boolean(item)),
 );
+
+function navLabel(item: NavItem, forLocale?: AppLocale): string {
+  if (forLocale) {
+    return String(i18n.global.t(item.labelKey, {}, { locale: forLocale }));
+  }
+  return t(item.labelKey);
+}
+
+function sectionLabel(sectionId: NavItem["sectionId"], forLocale?: AppLocale): string {
+  const key = sectionLabelKey(sectionId);
+  if (forLocale) {
+    return String(i18n.global.t(key, {}, { locale: forLocale }));
+  }
+  return t(key);
+}
+
 const filteredNavigationItems = computed(() => {
   const query = navigationQuery.value.trim().toLocaleLowerCase();
   if (!query) return visibleNavItems.value;
-  return visibleNavItems.value.filter((item) =>
-    [item.label, item.section, item.id].some((value) => value.toLocaleLowerCase().includes(query)),
-  );
+  // KD15: match id + both language labels + section labels
+  return visibleNavItems.value.filter((item) => {
+    const haystack = [
+      item.id,
+      navLabel(item, "zh-CN"),
+      navLabel(item, "en"),
+      sectionLabel(item.sectionId, "zh-CN"),
+      sectionLabel(item.sectionId, "en"),
+    ];
+    return haystack.some((value) => value.toLocaleLowerCase().includes(query));
+  });
 });
+
 /** 方案 1：完整分组，常用项仍出现在列表中（不再从分组剔除）。 */
 const groupedNavigation = computed(() => groupNavItemsBySection(filteredNavigationItems.value));
 const visiblePrimaryNavigation = computed(() => {
@@ -63,6 +99,7 @@ const userInitials = computed(() => {
   const parts = source.trim().split(/\s+/).filter(Boolean);
   return (parts.length > 1 ? `${parts[0][0]}${parts.at(-1)?.[0] || ""}` : source.slice(0, 2)).toUpperCase();
 });
+const currentLocale = computed<AppLocale>(() => (locale.value === "zh-CN" ? "zh-CN" : "en"));
 
 onMounted(async () => {
   document.addEventListener("pointerdown", handleDocumentPointerdown);
@@ -70,7 +107,6 @@ onMounted(async () => {
   try {
     await workspaces.load();
     workspaceBootstrapReady.value = true;
-    // Overview is platform-wide (all accessible spaces), not the top-bar current workspace.
     if (activeModule.value === "overview") {
       await overview.load();
     }
@@ -105,12 +141,13 @@ function getHttpStatus(error: unknown) {
 }
 
 function moduleMeta(item?: NavItem) {
-  if (!item) return "管理控制台";
+  if (!item) return t("common.console");
   if (item.id === "workspaces") {
     const total = workspaces.summary.total || workspaces.items.length;
-    return `${total} 个可访问空间`;
+    return t("nav.accessibleSpaces", { count: total });
   }
-  return item.badge ? `${item.section} · ${item.badge}` : item.section;
+  const section = sectionLabel(item.sectionId);
+  return item.badge ? `${section} · ${item.badge}` : section;
 }
 
 watch(
@@ -150,11 +187,11 @@ async function runWorkspaceRemoteSearch(query: string) {
 }
 
 function workspaceDisplayName(workspace = activeWorkspace.value) {
-  return workspace?.displayName || workspace?.name || "选择业务空间";
+  return workspace?.displayName || workspace?.name || t("shell.selectWorkspace");
 }
 
 function workspaceModeLabel(mode?: string) {
-  return mode === "Production" ? "生产" : "沙箱";
+  return mode === "Production" ? t("shell.modeProduction") : t("shell.modeSandbox");
 }
 
 async function openNavigation() {
@@ -228,6 +265,19 @@ function logout() {
   void router.push({ name: "login" });
 }
 
+async function switchLanguage(next: AppLocale) {
+  if (next === currentLocale.value) {
+    profileMenuOpen.value = false;
+    return;
+  }
+  await setLocale(next, {
+    syncServer: Boolean(auth.user),
+    lockVersion: auth.user?.lockVersion,
+    onUserUpdated: (user) => auth.applyUser(user),
+  });
+  profileMenuOpen.value = false;
+}
+
 function handleDocumentPointerdown(event: PointerEvent) {
   if (!(event.target instanceof Node)) return;
   if (navigationOpen.value && !navigationRef.value?.contains(event.target)) closeNavigation();
@@ -251,16 +301,16 @@ function handleDocumentKeydown(event: KeyboardEvent) {
 <template>
   <div class="app-shell">
     <header class="topbar app-topbar">
-      <router-link class="app-brand" to="/overview" aria-label="返回空间总览">
+      <router-link class="app-brand" to="/overview" :aria-label="t('nav.backToOverview')">
         <span class="app-brand-mark" aria-hidden="true"><i class="fa-solid fa-circle-nodes" /></span>
-        <span>ACTWEAVE 织行</span>
+        <span>{{ t("common.appTitle") }}</span>
       </router-link>
 
-      <section ref="navigationRef" class="fluid-island" :class="{ open: navigationOpen }" aria-label="主导航">
+      <section ref="navigationRef" class="fluid-island" :class="{ open: navigationOpen }" :aria-label="t('nav.mainNav')">
         <button class="fluid-trigger" type="button" :aria-expanded="navigationOpen" @click="toggleNavigation">
           <span class="live-orb" aria-hidden="true" />
           <span class="fluid-current"
-            ><b>{{ activeNavItem?.label }}</b
+            ><b>{{ activeNavItem ? navLabel(activeNavItem) : t("common.console") }}</b
             ><small>{{ moduleMeta(activeNavItem) }}</small></span
           >
           <i class="fa-solid fa-chevron-down fluid-chevron" aria-hidden="true" />
@@ -274,17 +324,18 @@ function handleDocumentKeydown(event: KeyboardEvent) {
                 ref="navigationSearchInput"
                 v-model="navigationQuery"
                 type="search"
-                placeholder="搜索模块或工作区域…"
-                aria-label="搜索模块"
+                :placeholder="t('nav.searchPlaceholder')"
+                :aria-label="t('nav.searchAria')"
+                data-testid="nav-search"
               />
             </label>
-            <button class="island-close" type="button" aria-label="关闭导航中心" @click="closeNavigation(true)">
+            <button class="island-close" type="button" :aria-label="t('nav.closeNav')" @click="closeNavigation(true)">
               <i class="fa-solid fa-xmark" />
             </button>
           </div>
 
           <div v-if="showPrimaryShortcuts" class="island-section">
-            <span class="island-section-label">常用</span>
+            <span class="island-section-label">{{ t("nav.pinned") }}</span>
             <div class="island-grid">
               <router-link
                 v-for="item in visiblePrimaryNavigation"
@@ -296,7 +347,7 @@ function handleDocumentKeydown(event: KeyboardEvent) {
               >
                 <span class="island-module-icon"><i :class="item.icon" aria-hidden="true" /></span>
                 <span
-                  ><b>{{ item.label }}</b
+                  ><b>{{ navLabel(item) }}</b
                   ><small>{{ moduleMeta(item) }}</small></span
                 >
               </router-link>
@@ -304,35 +355,35 @@ function handleDocumentKeydown(event: KeyboardEvent) {
           </div>
 
           <div v-if="groupedNavigation.length" class="island-section island-section--all">
-            <span class="island-section-label">全部模块</span>
+            <span class="island-section-label">{{ t("nav.allModules") }}</span>
             <div class="island-groups">
-              <section v-for="group in groupedNavigation" :key="group.section" class="island-group">
-                <span class="island-group-title">{{ group.section }}</span>
+              <section v-for="group in groupedNavigation" :key="group.sectionId" class="island-group">
+                <span class="island-group-title">{{ sectionLabel(group.sectionId) }}</span>
                 <router-link
                   v-for="item in group.items"
                   :key="item.id"
                   class="island-row island-module"
                   :class="{ active: item.id === activeModule }"
                   :to="item.route"
+                  :data-nav-id="item.id"
                   @click="closeNavigation(true)"
                 >
                   <span class="island-module-icon"><i :class="item.icon" aria-hidden="true" /></span>
-                  <span>{{ item.label }}</span>
+                  <span>{{ navLabel(item) }}</span>
                   <small v-if="item.badge">{{ item.badge }}</small>
                 </router-link>
               </section>
             </div>
           </div>
 
-          <p v-if="!hasNavigationResults" class="island-empty">没有匹配的模块</p>
+          <p v-if="!hasNavigationResults" class="island-empty">{{ t("nav.noMatch") }}</p>
           <footer class="island-footer">
-            <span>当前空间：{{ workspaceDisplayName() }}</span>
+            <span>{{ t("nav.currentWorkspace", { name: workspaceDisplayName() }) }}</span>
           </footer>
         </div>
       </section>
 
       <div class="topbar-right top-right">
-        <!-- 空间总览是全平台聚合视图，不展示「当前业务空间」切换器。 -->
         <div
           v-if="workspaces.items.length && activeModule !== 'overview'"
           ref="workspaceSwitcherRef"
@@ -344,25 +395,30 @@ function handleDocumentKeydown(event: KeyboardEvent) {
             type="button"
             aria-haspopup="dialog"
             :aria-expanded="workspaceMenuOpen"
-            :aria-label="`切换当前业务空间：${workspaceDisplayName()}`"
+            :aria-label="t('shell.switchWorkspaceAria', { name: workspaceDisplayName() })"
             @click="toggleWorkspaceMenu"
           >
             <i class="fa-solid fa-layer-group" aria-hidden="true" />
             <span>{{ workspaceDisplayName() }}</span>
             <i class="fa-solid fa-chevron-down workspace-switcher-chevron" aria-hidden="true" />
           </button>
-          <section v-if="workspaceMenuOpen" class="workspace-switcher-menu" role="dialog" aria-label="选择业务空间">
+          <section
+            v-if="workspaceMenuOpen"
+            class="workspace-switcher-menu"
+            role="dialog"
+            :aria-label="t('shell.selectWorkspace')"
+          >
             <header>
               <i class="fa-solid fa-magnifying-glass" aria-hidden="true" />
               <input
                 ref="workspaceSearchInput"
                 v-model="workspaceQuery"
                 type="search"
-                placeholder="搜索业务空间"
-                aria-label="搜索业务空间"
+                :placeholder="t('shell.searchWorkspaces')"
+                :aria-label="t('shell.searchWorkspaces')"
               />
             </header>
-            <div class="workspace-switcher-options" role="listbox" aria-label="可访问的业务空间">
+            <div class="workspace-switcher-options" role="listbox" :aria-label="t('shell.accessibleWorkspaces')">
               <button
                 v-for="workspace in filteredWorkspaces"
                 :key="workspace.id"
@@ -380,14 +436,14 @@ function handleDocumentKeydown(event: KeyboardEvent) {
                 >
                 <span class="workspace-option-meta">
                   <em>{{ workspaceModeLabel(workspace.mode) }}</em>
-                  <em v-if="workspace.status === 'Disabled'" class="disabled">已停用</em>
+                  <em v-if="workspace.status === 'Disabled'" class="disabled">{{ t("common.disabled") }}</em>
                 </span>
               </button>
-              <p v-if="!filteredWorkspaces.length">没有匹配的业务空间</p>
+              <p v-if="!filteredWorkspaces.length">{{ t("shell.noMatchingWorkspaces") }}</p>
             </div>
             <footer>
               <button type="button" @click="goWorkspaceManagement">
-                <i class="fa-solid fa-gear" aria-hidden="true" />管理业务空间
+                <i class="fa-solid fa-gear" aria-hidden="true" />{{ t("shell.manageWorkspaces") }}
               </button>
             </footer>
           </section>
@@ -397,25 +453,59 @@ function handleDocumentKeydown(event: KeyboardEvent) {
           <button
             class="user-avatar avatar"
             type="button"
-            aria-label="打开用户菜单"
+            data-testid="user-menu-trigger"
+            :aria-label="t('shell.openUserMenu')"
             :aria-expanded="profileMenuOpen"
             @click="toggleProfileMenu"
           >
             {{ userInitials }}
           </button>
-          <section v-if="profileMenuOpen" class="profile-menu" aria-label="用户菜单">
+          <section v-if="profileMenuOpen" class="profile-menu" :aria-label="t('shell.userMenu')" data-testid="user-menu">
             <header>
               <strong>{{ auth.user?.displayName || auth.user?.username }}</strong
               ><small>{{ auth.user?.role }}</small>
             </header>
+            <div class="profile-menu-section" data-testid="language-switcher" role="group" :aria-label="t('common.language')">
+              <span class="profile-menu-section-label">{{ t("common.language") }}</span>
+              <button
+                type="button"
+                class="profile-menu-choice"
+                data-testid="lang-zh-CN"
+                :class="{ active: currentLocale === 'zh-CN' }"
+                :aria-pressed="currentLocale === 'zh-CN'"
+                @click="switchLanguage('zh-CN')"
+              >
+                <i class="fa-solid fa-language" aria-hidden="true" />
+                <span>{{ t("common.languageZh") }}</span>
+                <i v-if="currentLocale === 'zh-CN'" class="fa-solid fa-check profile-menu-choice-check" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                class="profile-menu-choice"
+                data-testid="lang-en"
+                :class="{ active: currentLocale === 'en' }"
+                :aria-pressed="currentLocale === 'en'"
+                @click="switchLanguage('en')"
+              >
+                <i class="fa-solid fa-language" aria-hidden="true" />
+                <span>{{ t("common.languageEn") }}</span>
+                <i v-if="currentLocale === 'en'" class="fa-solid fa-check profile-menu-choice-check" aria-hidden="true" />
+              </button>
+            </div>
             <button type="button" @click="goRuntimeStatus">
-              <i class="fa-solid fa-wave-square" aria-hidden="true" />运行时状态
+              <i class="fa-solid fa-wave-square" aria-hidden="true" />{{ t("shell.runtimeStatus") }}
             </button>
             <button type="button" @click="goNotifications">
-              <i class="fa-regular fa-bell" aria-hidden="true" />通知与审计
+              <i class="fa-regular fa-bell" aria-hidden="true" />{{ t("shell.notificationsAudit") }}
             </button>
-            <button class="logout-button" type="button" aria-label="退出登录" @click="logout">
-              <i class="fa-solid fa-power-off" aria-hidden="true" />退出登录
+            <button
+              class="logout-button"
+              type="button"
+              :aria-label="t('shell.signOut')"
+              data-testid="sign-out"
+              @click="logout"
+            >
+              <i class="fa-solid fa-power-off" aria-hidden="true" />{{ t("shell.signOut") }}
             </button>
           </section>
         </div>
@@ -426,7 +516,7 @@ function handleDocumentKeydown(event: KeyboardEvent) {
       v-if="navigationOpen"
       class="nav-scrim open"
       type="button"
-      aria-label="关闭导航中心"
+      :aria-label="t('nav.closeNav')"
       @click="closeNavigation(true)"
     />
 
@@ -437,3 +527,4 @@ function handleDocumentKeydown(event: KeyboardEvent) {
     </main>
   </div>
 </template>
+

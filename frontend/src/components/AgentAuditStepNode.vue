@@ -3,8 +3,11 @@
  * Recursive agent audit timeline node — supports A→B→C… nesting of any depth.
  */
 import { computed, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import type { AgentAuditStep } from "../types/domain";
 import AgentAuditStepNode from "./AgentAuditStepNode.vue";
+
+const { t } = useI18n();
 
 const props = defineProps<{
   step: AgentAuditStep;
@@ -122,7 +125,7 @@ function delegationPath(step: AgentAuditStep): string {
           class="mono pill"
           data-testid="delegation-attempts"
         >
-          尝试 {{ step.attemptCount ?? 0 }} / 重试 {{ step.retryCount ?? 0 }}
+          {{ t("logs.attempts", { attempt: step.attemptCount ?? 0, retry: step.retryCount ?? 0 }) }}
         </span>
       </div>
       <p
@@ -132,12 +135,14 @@ function delegationPath(step: AgentAuditStep): string {
       >
         <span data-testid="delegation-meta-text">{{ delegationMeta(step) }}</span>
         <span v-if="delegationPath(step)" data-testid="delegation-path">
-          · 路径 {{ delegationPath(step) }}
+          · {{ t("logs.path", { path: delegationPath(step) }) }}
         </span>
-        <span v-if="step.childRunId" :title="step.childRunId"> · 子任务</span>
-        <span v-if="step.remoteTaskId" :title="step.remoteTaskId"> · 远端任务</span>
+        <span v-if="step.childRunId" :title="step.childRunId"> · {{ t("logs.childTask") }}</span>
+        <span v-if="step.remoteTaskId" :title="step.remoteTaskId"> · {{ t("logs.remoteTask") }}</span>
         <span v-if="step.remoteEndpointRef"> · {{ step.remoteEndpointRef }}</span>
-        <span v-if="step.protocolStatus"> · 协议状态 {{ step.protocolStatus }}</span>
+        <span v-if="step.protocolStatus">
+          · {{ t("logs.protocolStatus", { status: step.protocolStatus }) }}
+        </span>
         <span v-if="step.errorMessage"> · {{ step.errorMessage }}</span>
       </p>
       <p v-if="stepText(step)" class="step-content" :class="{ reasoning: step.type === 'reasoning' }">
@@ -145,21 +150,21 @@ function delegationPath(step: AgentAuditStep): string {
       </p>
       <div v-if="step.type === 'tool'" class="tool-grid">
         <div>
-          <div class="json-label">参数</div>
+          <div class="json-label">{{ t("logs.params") }}</div>
           <pre class="json-view">{{ JSON.stringify(displayJson(step.params, step.paramsState), null, 2) }}</pre>
         </div>
         <div>
-          <div class="json-label">结果</div>
+          <div class="json-label">{{ t("logs.result") }}</div>
           <pre class="json-view">{{ JSON.stringify(displayJson(step.result, step.resultState), null, 2) }}</pre>
         </div>
       </div>
       <div v-else-if="step.type === 'agent_delegation'" class="tool-grid">
         <div>
-          <div class="json-label">委派输入</div>
+          <div class="json-label">{{ t("logs.delegationInput") }}</div>
           <pre class="json-view">{{ JSON.stringify(displayJson(step.params, step.paramsState), null, 2) }}</pre>
         </div>
         <div>
-          <div class="json-label">委派输出</div>
+          <div class="json-label">{{ t("logs.delegationOutput") }}</div>
           <pre class="json-view">{{ JSON.stringify(displayJson(step.result, step.resultState), null, 2) }}</pre>
         </div>
       </div>

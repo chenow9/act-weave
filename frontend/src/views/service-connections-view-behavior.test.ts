@@ -2,6 +2,8 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { reactive } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { setI18nLocale } from "../i18n";
+import { createTestI18n } from "../test-utils/i18n";
 import type {
   CapabilityProvider,
   ProviderAsset,
@@ -80,6 +82,7 @@ function mountView() {
   return mount(ServiceConnectionsView, {
     attachTo: document.body,
     global: {
+      plugins: [createTestI18n("zh-CN")],
       directives: { loading: () => undefined },
       stubs: {
         teleport: true,
@@ -108,6 +111,7 @@ describe("service connections v1 behavior", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     localStorage.clear();
+    setI18nLocale("zh-CN");
     window.history.pushState({}, "", "/connections");
     const stores = createStores();
     fixture.providers = stores.providers;

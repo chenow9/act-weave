@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import "./model-api-page.css";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from "vue";
+import { useI18n } from "vue-i18n";
 
 import AppSelect from "../components/AppSelect.vue";
 import ManagementList, { type ManagementListColumn } from "../components/ManagementList.vue";
@@ -16,24 +17,26 @@ import { normalizeRuntimeCapabilities } from "../utils/session-context-config";
 const OPENAI_COMPATIBLE_PROVIDER = "OpenAI Compatible";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const tokenizerProfileOptions = [
-  { label: "o200k_base（推荐，多数新模型）", value: "o200k_base" },
-  { label: "cl100k_base（GPT-4 / 3.5 系）", value: "cl100k_base" },
-  { label: "byte_upper_bound（不确定时更保守）", value: "byte_upper_bound" },
-];
+const { t } = useI18n();
 
-const outputTokenLimitModeOptions = [
-  { label: "max_tokens（常见）", value: "max_tokens" },
+const tokenizerProfileOptions = computed(() => [
+  { label: t("modelApis.tokenizerO200k"), value: "o200k_base" },
+  { label: t("modelApis.tokenizerCl100k"), value: "cl100k_base" },
+  { label: t("modelApis.tokenizerByteUpper"), value: "byte_upper_bound" },
+]);
+
+const outputTokenLimitModeOptions = computed(() => [
+  { label: t("modelApis.outputLimitMaxTokens"), value: "max_tokens" },
   { label: "max_completion_tokens", value: "max_completion_tokens" },
-];
+]);
 
 /** One-click window presets so users need not know exact vendor limits. */
-const contextWindowPresets = [
-  { label: "32K", tokens: 32000, hint: "省成本" },
+const contextWindowPresets = computed(() => [
+  { label: "32K", tokens: 32000, hint: t("modelApis.presetCostSaving") },
   { label: "64K", tokens: 64000, hint: "" },
-  { label: "128K", tokens: 128000, hint: "推荐" },
-  { label: "200K", tokens: 200000, hint: "长上下文" },
-] as const;
+  { label: "128K", tokens: 128000, hint: t("modelApis.presetRecommended") },
+  { label: "200K", tokens: 200000, hint: t("modelApis.presetLongContext") },
+]);
 type ModelStatusFilter = "ALL" | ModelApiConfig["status"];
 type ModelModalFeedback = { tone: "success" | "error"; message: string } | null;
 type ModelDraftField = "name" | "credentialSecretId" | "apiBase" | "modelName";
@@ -82,13 +85,15 @@ const modelModalFocusableSelector = [
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
 
-const modelStatusOptions: Array<{ label: string; value: ModelStatusFilter }> = [
-  { label: "全部", value: "ALL" },
-  { label: "已验证", value: "VERIFIED" },
-  { label: "未验证", value: "UNVERIFIED" },
-];
+const modelStatusOptions = computed<Array<{ label: string; value: ModelStatusFilter }>>(() => [
+  { label: t("modelApis.statusAll"), value: "ALL" },
+  { label: t("modelApis.statusVerified"), value: "VERIFIED" },
+  { label: t("modelApis.statusUnverified"), value: "UNVERIFIED" },
+]);
 
-const modelModalTitle = computed(() => (modelModalMode.value === "create" ? "新增模型配置" : "编辑模型配置"));
+const modelModalTitle = computed(() =>
+  modelModalMode.value === "create" ? t("modelApis.create") : t("modelApis.edit"),
+);
 const activeModelDraft = computed(() =>
   modelModalMode.value === "create" ? draftModelConfig.value : editingModelDraft.value,
 );
@@ -102,15 +107,22 @@ const modelKeyboardNavigationActive = computed(
   () => modelModalVisible.value || discardModelDraftVisible.value || Boolean(pendingModelDeletion.value),
 );
 const activeStatusFilterLabel = computed(
-  () => modelStatusOptions.find((option) => option.value === modelStatusFilter.value)?.label || "",
+  () => modelStatusOptions.value.find((option) => option.value === modelStatusFilter.value)?.label || "",
 );
 const hasSearchQuery = computed(() => query.value.trim().length > 0);
 const hasActiveModelFilters = computed(() => hasSearchQuery.value || modelStatusFilter.value !== "ALL");
 const modelConfigColumns = computed<ManagementListColumn<ModelApiConfig>[]>(() => [
-  { key: "config", label: "配置名称", width: 244, sortable: true, sortKey: "name", getValue: (item) => item.name },
+  {
+    key: "config",
+    label: t("modelApis.colConfig"),
+    width: 244,
+    sortable: true,
+    sortKey: "name",
+    getValue: (item) => item.name,
+  },
   {
     key: "provider",
-    label: "Provider",
+    label: t("modelApis.colProvider"),
     width: 164,
     hidable: true,
     sortable: true,
@@ -119,14 +131,15 @@ const modelConfigColumns = computed<ManagementListColumn<ModelApiConfig>[]>(() =
   },
   {
     key: "credential",
-    label: "凭据",
+    label: t("modelApis.colCredential"),
     width: 140,
     hidable: true,
-    getValue: (item) => (item.credentialConfigured ? "已配置" : "未配置"),
+    getValue: (item) =>
+      item.credentialConfigured ? t("modelApis.credentialConfigured") : t("modelApis.credentialNotConfigured"),
   },
   {
     key: "apiBase",
-    label: "API 请求地址",
+    label: t("modelApis.colApiBase"),
     width: 244,
     hidable: true,
     sortable: true,
@@ -135,7 +148,7 @@ const modelConfigColumns = computed<ManagementListColumn<ModelApiConfig>[]>(() =
   },
   {
     key: "modelName",
-    label: "模型名称",
+    label: t("modelApis.colModelName"),
     width: 190,
     hidable: true,
     sortable: true,
@@ -144,7 +157,7 @@ const modelConfigColumns = computed<ManagementListColumn<ModelApiConfig>[]>(() =
   },
   {
     key: "latency",
-    label: "延迟",
+    label: t("modelApis.colLatency"),
     width: 132,
     align: "right",
     headerAlign: "center",
@@ -152,10 +165,10 @@ const modelConfigColumns = computed<ManagementListColumn<ModelApiConfig>[]>(() =
     sortable: true,
     sortKey: "latency",
     defaultHiddenWhenEmpty: true,
-    placeholderValues: ["-", "未测试"],
+    placeholderValues: ["-", t("modelApis.notTested")],
     getValue: (item) => (displayedLatency(item) ? `${displayedLatency(item)}ms` : "-"),
   },
-  { key: "actions", label: "操作", width: 68, align: "right", headerAlign: "center" },
+  { key: "actions", label: t("modelApis.colActions"), width: 68, align: "right", headerAlign: "center" },
 ]);
 
 onMounted(async () => {
@@ -205,7 +218,7 @@ onBeforeUnmount(() => {
 function newModelConfig(): ModelApiConfig {
   return {
     id: "",
-    name: "生产网关 / Claude Sonnet",
+    name: t("modelApis.defaultDraftName"),
     provider: OPENAI_COMPATIBLE_PROVIDER,
     apiBase: "https://llm-gateway.actweave.local/v1",
     modelName: "claude-sonnet-4",
@@ -277,7 +290,7 @@ function isContextWindowPresetActive(tokens: number) {
 }
 
 function formatContextWindowLabel(tokens: number | undefined) {
-  if (!tokens || !Number.isFinite(tokens) || tokens <= 0) return "未设置";
+  if (!tokens || !Number.isFinite(tokens) || tokens <= 0) return t("modelApis.contextNotSet");
   if (tokens % 1000 === 0) {
     const k = tokens / 1000;
     if (k >= 1) return `${k}K`;
@@ -291,7 +304,7 @@ const modelRuntimeSectionSummary = computed(() => {
     caps.contextWindowTokens != null ? Number(caps.contextWindowTokens) : undefined,
   );
   const reserve = caps.defaultOutputReserveTokens || 4096;
-  return `${windowLabel} · 预留 ${reserve}`;
+  return t("modelApis.contextSummary", { window: windowLabel, reserve });
 });
 
 async function toggleModelRuntimeSection() {
@@ -334,8 +347,8 @@ async function testConnection(item: ModelApiConfig) {
     await loadModelConfigPage();
     const note =
       verified.status === "VERIFIED"
-        ? `${item.name} 验证通过。`
-        : `${item.name} 验证未通过，请检查凭据、地址和模型名称。`;
+        ? t("modelApis.verifyPassed", { name: item.name })
+        : t("modelApis.verifyFailed", { name: item.name });
     showActionNote(note);
   } finally {
     verifyingModelId.value = null;
@@ -348,15 +361,15 @@ function modelMenuActions(item: ModelApiConfig): ManagementRowAction[] {
   return [
     {
       key: "verify",
-      label: "测试",
+      label: t("modelApis.actionTest"),
       icon: "fa-solid fa-plug-circle-bolt",
       tone: "primary",
       disabled: verificationLocked,
       loading: isVerifying,
-      disabledReason: verificationLocked && !isVerifying ? "已有模型配置正在测试" : undefined,
+      disabledReason: verificationLocked && !isVerifying ? t("modelApis.verifyBusy") : undefined,
     },
-    { key: "edit", label: "编辑", icon: "fa-solid fa-pen-to-square" },
-    { key: "delete", label: "删除", icon: "fa-solid fa-trash-can", tone: "danger" },
+    { key: "edit", label: t("modelApis.actionEdit"), icon: "fa-solid fa-pen-to-square" },
+    { key: "delete", label: t("modelApis.actionDelete"), icon: "fa-solid fa-trash-can", tone: "danger" },
   ];
 }
 
@@ -418,7 +431,7 @@ async function deleteModel(item: ModelApiConfig) {
   }
   const pageCount = Math.max(1, Math.ceil(modelConfigs.pagination.total / modelConfigs.pagination.pageSize));
   await loadModelConfigPage({ page: Math.min(modelConfigs.pagination.page, pageCount) });
-  showActionNote(`${item.name} 已删除。`);
+  showActionNote(t("modelApis.deleted", { name: item.name }));
 }
 
 async function confirmModelDeletion() {
@@ -432,7 +445,7 @@ async function confirmModelDeletion() {
     pendingModelDeletion.value = null;
     modelConfirmationRestoreTarget = null;
   } catch {
-    modelDeleteError.value = "删除失败，请检查网络或稍后重试。";
+    modelDeleteError.value = t("modelApis.deleteFailed");
   } finally {
     deletingModelConfig.value = false;
   }
@@ -453,12 +466,12 @@ async function saveDraftModelConfig() {
       credentialSecretId: credential.id,
     });
     await loadModelConfigPage({ page: 1 });
-    showActionNote(`${created.name} 已创建。`);
+    showActionNote(t("modelApis.created", { name: created.name }));
     closeModelModal();
   } catch {
     modelModalFeedback.value = {
       tone: "error",
-      message: "保存失败，请检查网络或稍后重试。",
+      message: t("modelApis.saveFailed"),
     };
   } finally {
     if (credentialPlaintextInput.value) credentialPlaintextInput.value.value = "";
@@ -477,12 +490,12 @@ async function saveEditedModelConfig() {
       provider: OPENAI_COMPATIBLE_PROVIDER,
     });
     await loadModelConfigPage();
-    showActionNote(`${updated.name} 已保存。`);
+    showActionNote(t("modelApis.saved", { name: updated.name }));
     closeModelModal();
   } catch {
     modelModalFeedback.value = {
       tone: "error",
-      message: "保存失败，请检查网络或稍后重试。",
+      message: t("modelApis.saveFailed"),
     };
   } finally {
     savingModelConfig.value = false;
@@ -532,10 +545,10 @@ function latencyTone(latencyMs: number) {
 }
 
 function latencyLabel(latencyMs: number) {
-  if (!latencyMs) return "未测试";
-  if (latencyMs < 500) return "健康";
-  if (latencyMs <= 2000) return "偏慢";
-  return "过慢";
+  if (!latencyMs) return t("modelApis.notTested");
+  if (latencyMs < 500) return t("modelApis.latencyHealthy");
+  if (latencyMs <= 2000) return t("modelApis.latencySlow");
+  return t("modelApis.latencyVerySlow");
 }
 
 function resetModelFilters() {
@@ -620,22 +633,23 @@ function modelDraftValidationError(field: ModelDraftField) {
   const draft = activeModelDraft.value;
   if (!draft) return "";
 
-  if (field === "name" && !draft.name.trim()) return "请输入配置名称。";
+  if (field === "name" && !draft.name.trim()) return t("modelApis.validationName");
   if (field === "credentialSecretId") {
     const secretID = draft.credentialSecretId?.trim() || "";
-    if (modelModalMode.value === "create" && !credentialPlaintextInput.value?.value.trim()) return "请输入 API Key。";
-    if (secretID && !UUID_PATTERN.test(secretID)) return "Secret ID 必须是有效的 UUID，不能填写 API Key 或 Token。";
+    if (modelModalMode.value === "create" && !credentialPlaintextInput.value?.value.trim())
+      return t("modelApis.validationApiKey");
+    if (secretID && !UUID_PATTERN.test(secretID)) return t("modelApis.validationSecretUuid");
   }
-  if (field === "modelName" && !draft.modelName.trim()) return "请输入模型名称。";
+  if (field === "modelName" && !draft.modelName.trim()) return t("modelApis.validationModelName");
   if (field === "apiBase") {
-    if (!draft.apiBase.trim()) return "请输入 API 请求地址。";
+    if (!draft.apiBase.trim()) return t("modelApis.validationApiBase");
     try {
       const url = new URL(draft.apiBase);
       if (url.protocol === "http:" || url.protocol === "https:") return "";
     } catch {
       // The field-level error below explains the expected format.
     }
-    return "请输入有效的 URL（包含 http:// 或 https://）。";
+    return t("modelApis.validationApiBaseUrl");
   }
   return "";
 }
@@ -679,7 +693,7 @@ function showActionNote(note: string) {
 
 async function copyApiBase(item: ModelApiConfig) {
   await navigator.clipboard?.writeText(item.apiBase);
-  showActionNote(`${item.name} 的 API 请求地址已复制。`);
+  showActionNote(t("modelApis.apiBaseCopied", { name: item.name }));
 }
 
 function dialogFocusableElements(dialog: HTMLElement | null) {
@@ -766,21 +780,21 @@ function handleModelModalKeydown(event: KeyboardEvent) {
   <div class="model-config-page management-page-grid management-page-grid--two-rows">
     <ManagementPageHeader
       class="model-config-header"
-      title="模型 API 配置"
-      description="统一维护模型供应商、Secret 引用、请求地址和模型名称；凭据明文不会进入页面状态。"
+      :title="t('modelApis.title')"
+      :description="t('modelApis.description')"
       icon="fa-solid fa-microchip"
-      eyebrow="Model Gateway"
+      :eyebrow="t('modelApis.eyebrow')"
     >
       <template #actions>
         <button
           class="primary-button"
           type="button"
           :disabled="!hasWorkspaceContext"
-          :title="hasWorkspaceContext ? '新增模型配置' : '请先创建或加入业务空间'"
+          :title="hasWorkspaceContext ? t('modelApis.create') : t('modelApis.createNeedWorkspace')"
           @click="openCreateModel"
         >
           <i class="fa-solid fa-circle-plus" aria-hidden="true" />
-          新增模型配置
+          {{ t("modelApis.create") }}
         </button>
       </template>
     </ManagementPageHeader>
@@ -800,8 +814,8 @@ function handleModelModalKeydown(event: KeyboardEvent) {
           :error="hasWorkspaceContext ? modelConfigs.error : undefined"
           :has-loaded="hasWorkspaceContext ? modelConfigs.hasLoaded : true"
           :search="query"
-          search-placeholder="搜索模型 / Provider / 创建者"
-          search-aria-label="搜索模型、Provider 或创建者"
+          :search-placeholder="t('modelApis.searchPlaceholder')"
+          :search-aria-label="t('modelApis.searchAria')"
           :reset-disabled="!query && modelStatusFilter === 'ALL'"
           :pagination="modelConfigs.pagination"
           :sort-by="modelConfigs.listQuery?.sortBy"
@@ -816,7 +830,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               class="model-status-filter"
               :model-value="modelStatusFilter"
               :options="modelStatusOptions"
-              ariaLabel="模型配置状态筛选"
+              :ariaLabel="t('modelApis.statusFilterAria')"
               @update:model-value="updateModelStatusFilter"
             />
           </template>
@@ -827,7 +841,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               </div>
               <div>
                 <strong class="aw-table-title">{{ item.name }}</strong>
-                <span class="aw-table-subtitle">{{ item.createdBy || "由 Workspace 记录" }}</span>
+                <span class="aw-table-subtitle">{{ item.createdBy || t("modelApis.createdByWorkspace") }}</span>
               </div>
             </div>
           </template>
@@ -839,7 +853,11 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               <i
                 :class="item.credentialConfigured ? 'fa-solid fa-shield-halved' : 'fa-solid fa-triangle-exclamation'"
               />
-              {{ item.credentialConfigured ? "已配置" : "未配置" }}
+              {{
+                item.credentialConfigured
+                  ? t("modelApis.credentialConfigured")
+                  : t("modelApis.credentialNotConfigured")
+              }}
             </span>
           </template>
           <template #cell-apiBase="{ row: item }">
@@ -848,8 +866,8 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               <button
                 type="button"
                 class="model-copy-button"
-                aria-label="复制 API 请求地址"
-                title="复制 API 请求地址"
+                :aria-label="t('modelApis.copyApiBase')"
+                :title="t('modelApis.copyApiBase')"
                 @click.stop="copyApiBase(item)"
               >
                 <i class="fa-regular fa-copy" />
@@ -879,13 +897,13 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                   <div class="model-config-icon"><i class="fa-solid fa-microchip" /></div>
                   <div>
                     <strong>{{ item.name }}</strong>
-                    <span>{{ item.createdBy || "由 Workspace 记录" }}</span>
+                    <span>{{ item.createdBy || t("modelApis.createdByWorkspace") }}</span>
                   </div>
                 </div>
                 <button
                   type="button"
                   class="model-mobile-actions-toggle"
-                  aria-label="模型配置更多操作"
+                  :aria-label="t('modelApis.moreActions')"
                   :aria-expanded="mobileModelActionMenuId === item.id"
                   @click="toggleMobileModelActions(item)"
                 >
@@ -898,19 +916,21 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                   <dd>{{ OPENAI_COMPATIBLE_PROVIDER }}</dd>
                 </div>
                 <div>
-                  <dt>模型</dt>
+                  <dt>{{ t("modelApis.mobileModel") }}</dt>
                   <dd class="model-mono-text">{{ item.modelName }}</dd>
                 </div>
                 <div>
-                  <dt>延迟</dt>
-                  <dd>{{ displayedLatency(item) ? `${displayedLatency(item)}ms` : "未测试" }}</dd>
+                  <dt>{{ t("modelApis.mobileLatency") }}</dt>
+                  <dd>
+                    {{ displayedLatency(item) ? `${displayedLatency(item)}ms` : t("modelApis.notTested") }}
+                  </dd>
                 </div>
               </dl>
               <div
                 v-if="mobileModelActionMenuId === item.id"
                 class="model-mobile-actions-menu"
                 role="menu"
-                aria-label="模型配置操作"
+                :aria-label="t('modelApis.mobileActions')"
               >
                 <button
                   type="button"
@@ -918,13 +938,13 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                   :disabled="Boolean(verifyingModelId)"
                   @click="testConnection(item)"
                 >
-                  <i class="fa-solid fa-plug-circle-bolt" /> 测试连接
+                  <i class="fa-solid fa-plug-circle-bolt" /> {{ t("modelApis.testConnection") }}
                 </button>
                 <button type="button" role="menuitem" @click="openMobileModelEditor(item)">
-                  <i class="fa-solid fa-pen-to-square" /> 编辑配置
+                  <i class="fa-solid fa-pen-to-square" /> {{ t("modelApis.editConfig") }}
                 </button>
                 <button type="button" role="menuitem" class="danger" @click="requestMobileModelDeletion(item)">
-                  <i class="fa-solid fa-trash-can" /> 删除配置
+                  <i class="fa-solid fa-trash-can" /> {{ t("modelApis.deleteConfig") }}
                 </button>
               </div>
             </article>
@@ -932,8 +952,8 @@ function handleModelModalKeydown(event: KeyboardEvent) {
           <template #error="{ error }">
             <div v-if="modelConfigs.items.length" class="model-load-error-banner" role="alert">
               <i class="fa-solid fa-triangle-exclamation" />
-              <span>模型配置加载失败：{{ error }}</span>
-              <button type="button" @click="retryLoadModelConfigs">重试</button>
+              <span>{{ t("modelApis.loadFailed", { error }) }}</span>
+              <button type="button" @click="retryLoadModelConfigs">{{ t("modelApis.retry") }}</button>
             </div>
             <div
               v-else
@@ -943,16 +963,18 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               <div class="model-empty-state-icon management-empty-state-icon error">
                 <i class="fa-solid fa-triangle-exclamation" />
               </div>
-              <h2>模型配置加载失败</h2>
+              <h2>{{ t("modelApis.loadFailedTitle") }}</h2>
               <p>{{ error }}</p>
-              <button class="primary-button" type="button" @click="retryLoadModelConfigs">重试</button>
+              <button class="primary-button" type="button" @click="retryLoadModelConfigs">
+                {{ t("modelApis.retry") }}
+              </button>
             </div>
           </template>
           <template #empty>
             <WorkspaceContextState
               v-if="!hasWorkspaceContext"
               embedded-in-list
-              feature="模型 API 配置"
+              :feature="t('modelApis.featureName')"
               icon="fa-solid fa-microchip"
               @retry="retryLoadModelConfigs"
             />
@@ -961,10 +983,10 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               class="empty-state registry-empty-state management-registry-empty-state"
             >
               <div class="model-empty-state-icon management-empty-state-icon"><i class="fa-solid fa-microchip" /></div>
-              <h2>暂无模型配置</h2>
-              <p>新增模型 API 配置后，业务空间和 Agent 才能选择模型网关。</p>
+              <h2>{{ t("modelApis.emptyTitle") }}</h2>
+              <p>{{ t("modelApis.emptyBody") }}</p>
               <button v-if="canEditWorkspace" class="primary-button" type="button" @click="openCreateModel">
-                新增模型配置
+                {{ t("modelApis.create") }}
               </button>
             </div>
             <div v-else class="empty-state registry-empty-state management-registry-empty-state">
@@ -972,14 +994,18 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 <i :class="hasSearchQuery ? 'fa-solid fa-magnifying-glass' : 'fa-solid fa-filter-circle-xmark'" />
               </div>
               <template v-if="hasSearchQuery">
-                <h2>没有匹配的模型配置</h2>
-                <p>调整搜索词后再试</p>
-                <button class="ghost-button" type="button" @click="resetModelFilters">重置</button>
+                <h2>{{ t("modelApis.noMatchTitle") }}</h2>
+                <p>{{ t("modelApis.noMatchBody") }}</p>
+                <button class="ghost-button" type="button" @click="resetModelFilters">
+                  {{ t("modelApis.reset") }}
+                </button>
               </template>
               <template v-else>
-                <h2>当前没有「{{ activeStatusFilterLabel }}」状态的配置</h2>
-                <p>切回全部配置可查看其他状态的模型网关。</p>
-                <button class="ghost-button" type="button" @click="viewAllModelConfigs">查看全部配置</button>
+                <h2>{{ t("modelApis.emptyFilterTitle", { status: activeStatusFilterLabel }) }}</h2>
+                <p>{{ t("modelApis.emptyFilterBody") }}</p>
+                <button class="ghost-button" type="button" @click="viewAllModelConfigs">
+                  {{ t("modelApis.viewAll") }}
+                </button>
               </template>
             </div>
           </template>
@@ -1007,12 +1033,12 @@ function handleModelModalKeydown(event: KeyboardEvent) {
             </div>
             <div>
               <h3>{{ modelModalTitle }}</h3>
-              <p>配置统一的模型 API 网关接入参数</p>
+              <p>{{ t("modelApis.modalSubtitle") }}</p>
             </div>
             <button
               class="model-modal-close"
               type="button"
-              aria-label="关闭模型配置弹窗"
+              :aria-label="t('modelApis.closeModal')"
               :disabled="savingModelConfig"
               @click="requestModelModalClose"
             >
@@ -1023,7 +1049,8 @@ function handleModelModalKeydown(event: KeyboardEvent) {
           <div class="model-modal-form">
             <label class="model-modal-field">
               <span class="model-modal-field-label"
-                >配置名称 <span class="model-field-required" aria-hidden="true">*</span></span
+                >{{ t("modelApis.fieldName") }}
+                <span class="model-field-required" aria-hidden="true">*</span></span
               >
               <input
                 v-model="activeModelDraft.name"
@@ -1032,7 +1059,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 aria-required="true"
                 :aria-invalid="Boolean(visibleModelDraftValidationError('name'))"
                 aria-describedby="model-field-error-name"
-                placeholder="例如: 生产网关 / Claude Sonnet"
+                :placeholder="t('modelApis.fieldNamePlaceholder')"
                 @blur="touchModelDraftField('name')"
               />
               <span
@@ -1049,8 +1076,8 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 Provider
                 <i
                   class="fa-solid fa-lock model-field-lock"
-                  title="Provider 固定为 OpenAI Compatible；切换供应商请新建模型配置。"
-                  aria-label="Provider 固定为 OpenAI Compatible；切换供应商请新建模型配置。"
+                  :title="t('modelApis.providerLockedTitle')"
+                  :aria-label="t('modelApis.providerLockedTitle')"
                 />
               </span>
               <input :value="OPENAI_COMPATIBLE_PROVIDER" disabled readonly />
@@ -1070,7 +1097,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 aria-required="true"
                 :aria-invalid="Boolean(visibleModelDraftValidationError('credentialSecretId'))"
                 aria-describedby="model-field-error-credentialSecretId model-credential-help"
-                placeholder="粘贴 API Key"
+                :placeholder="t('modelApis.pasteApiKey')"
                 @blur="touchModelDraftField('credentialSecretId')"
               />
               <input
@@ -1080,13 +1107,17 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 autocomplete="off"
                 :aria-invalid="Boolean(visibleModelDraftValidationError('credentialSecretId'))"
                 aria-describedby="model-field-error-credentialSecretId model-credential-help"
-                :placeholder="activeModelDraft.credentialConfigured ? '留空以保留现有凭据' : 'Secret UUID'"
+                :placeholder="
+                  activeModelDraft.credentialConfigured
+                    ? t('modelApis.keepExistingCredential')
+                    : t('modelApis.secretUuid')
+                "
                 @blur="touchModelDraftField('credentialSecretId')"
               />
               <small id="model-credential-help">{{
                 modelModalMode === "create"
-                  ? "密钥仅在提交时发送给服务端加密保存，页面不会回显或保留明文。"
-                  : "只提交 Secret 引用；服务端不会返回或回填密钥明文。"
+                  ? t("modelApis.credentialHelpCreate")
+                  : t("modelApis.credentialHelpEdit")
               }}</small>
               <span
                 id="model-field-error-credentialSecretId"
@@ -1099,7 +1130,8 @@ function handleModelModalKeydown(event: KeyboardEvent) {
             </label>
             <label class="model-modal-field">
               <span class="model-modal-field-label"
-                >API 请求地址 <span class="model-field-required" aria-hidden="true">*</span></span
+                >{{ t("modelApis.fieldApiBase") }}
+                <span class="model-field-required" aria-hidden="true">*</span></span
               >
               <input
                 v-model="activeModelDraft.apiBase"
@@ -1124,7 +1156,8 @@ function handleModelModalKeydown(event: KeyboardEvent) {
             </label>
             <label class="model-modal-field">
               <span class="model-modal-field-label"
-                >模型名称 <span class="model-field-required" aria-hidden="true">*</span></span
+                >{{ t("modelApis.fieldModelName") }}
+                <span class="model-field-required" aria-hidden="true">*</span></span
               >
               <input
                 v-model="activeModelDraft.modelName"
@@ -1150,11 +1183,11 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 Created By
                 <i
                   class="fa-solid fa-lock model-field-lock"
-                  title="创建者由服务端审计字段记录，不允许客户端修改。"
-                  aria-label="创建者由服务端审计字段记录，不允许客户端修改。"
+                  :title="t('modelApis.createdByLockedTitle')"
+                  :aria-label="t('modelApis.createdByLockedTitle')"
                 />
               </span>
-              <input :value="activeModelDraft.createdBy || '保存后由服务端记录'" disabled readonly />
+              <input :value="activeModelDraft.createdBy || t('modelApis.createdByPending')" disabled readonly />
             </label>
 
             <section class="model-modal-fieldset model-runtime-section" :class="{ open: modelRuntimeSectionOpen }">
@@ -1167,7 +1200,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               >
                 <span class="model-runtime-section-title">
                   <i class="fa-solid fa-window-maximize" aria-hidden="true" />
-                  <span>会话上下文能力</span>
+                  <span>{{ t("modelApis.runtimeSection") }}</span>
                 </span>
                 <span class="model-runtime-section-meta">
                   <span class="model-runtime-section-summary">{{ modelRuntimeSectionSummary }}</span>
@@ -1176,10 +1209,9 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               </button>
               <div v-show="modelRuntimeSectionOpen" id="model-runtime-section-body" class="model-runtime-section-body">
                 <p class="model-modal-fieldset-help">
-                  告诉平台「这个模型一次大概能看多少内容」。不知道厂商精确规格时，点下方
-                  <strong>128K（推荐）</strong>即可。仅用于会话裁剪预算，不会改模型本身，也不会写入上游 Options。
+                  {{ t("modelApis.runtimeHelp") }}
                 </p>
-                <div class="model-context-presets" role="group" aria-label="上下文窗口快捷预设">
+                <div class="model-context-presets" role="group" :aria-label="t('modelApis.contextPresetsAria')">
                   <button
                     v-for="preset in contextWindowPresets"
                     :key="preset.tokens"
@@ -1193,13 +1225,13 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                   </button>
                 </div>
                 <label class="model-modal-field">
-                  <span class="model-modal-field-label">上下文窗口（tokens）</span>
+                  <span class="model-modal-field-label">{{ t("modelApis.contextWindowTokens") }}</span>
                   <input
                     class="mono"
                     type="number"
                     min="1"
                     step="1"
-                    placeholder="不知道就填 128000"
+                    :placeholder="t('modelApis.contextWindowPlaceholder')"
                     :value="draftRuntimeCaps().contextWindowTokens ?? ''"
                     @input="
                       setDraftRuntimeCap(
@@ -1209,11 +1241,11 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                     "
                   />
                   <small class="model-modal-field-hint">
-                    一次请求里历史+提示的大致上限。常见：Grok / GPT-4o 系可先用 128000；特别长上下文可试 200000。
+                    {{ t("modelApis.contextWindowHint") }}
                   </small>
                 </label>
                 <label class="model-modal-field">
-                  <span class="model-modal-field-label">输出预留（tokens）</span>
+                  <span class="model-modal-field-label">{{ t("modelApis.outputReserveTokens") }}</span>
                   <input
                     class="mono"
                     type="number"
@@ -1228,7 +1260,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                     "
                   />
                   <small class="model-modal-field-hint">
-                    先留给模型「写回答」的空间，一般 4096 即可；回答特别长再调大。
+                    {{ t("modelApis.outputReserveHint") }}
                   </small>
                 </label>
                 <button
@@ -1239,32 +1271,32 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                   @click="modelRuntimeAdvancedOpen = !modelRuntimeAdvancedOpen"
                 >
                   <i class="fa-solid fa-sliders" aria-hidden="true" />
-                  <span>高级选项</span>
+                  <span>{{ t("modelApis.advancedOptions") }}</span>
                   <i class="fa-solid fa-chevron-down model-runtime-advanced-chevron" aria-hidden="true" />
                 </button>
                 <div v-if="modelRuntimeAdvancedOpen" class="model-runtime-advanced">
                   <label class="model-modal-field">
-                    <span class="model-modal-field-label">长度估算方式（Tokenizer）</span>
+                    <span class="model-modal-field-label">{{ t("modelApis.tokenizerLabel") }}</span>
                     <AppSelect
                       class="model-modal-select"
                       :model-value="draftRuntimeCaps().tokenizerProfile || 'o200k_base'"
                       :options="tokenizerProfileOptions"
-                      placeholder="选择估算方式"
-                      aria-label="长度估算方式"
+                      :placeholder="t('modelApis.tokenizerPlaceholder')"
+                      :aria-label="t('modelApis.tokenizerAria')"
                       @update:model-value="setDraftRuntimeCap('tokenizerProfile', String($event ?? 'o200k_base'))"
                     />
                     <small class="model-modal-field-hint">
-                      平台用来估算内容长短，不是切换模型。不确定选推荐项；仍不放心选「保守上界」。
+                      {{ t("modelApis.tokenizerHint") }}
                     </small>
                   </label>
                   <label class="model-modal-field">
-                    <span class="model-modal-field-label">上游输出上限字段名</span>
+                    <span class="model-modal-field-label">{{ t("modelApis.outputLimitMode") }}</span>
                     <AppSelect
                       class="model-modal-select"
                       :model-value="draftRuntimeCaps().outputTokenLimitMode || 'max_tokens'"
                       :options="outputTokenLimitModeOptions"
-                      placeholder="选择字段名"
-                      aria-label="上游输出上限字段名"
+                      :placeholder="t('modelApis.outputLimitPlaceholder')"
+                      :aria-label="t('modelApis.outputLimitAria')"
                       @update:model-value="
                         setDraftRuntimeCap(
                           'outputTokenLimitMode',
@@ -1273,7 +1305,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                       "
                     />
                     <small class="model-modal-field-hint">
-                      绝大多数 OpenAI 兼容网关保持 max_tokens；仅当上游文档要求时再改。
+                      {{ t("modelApis.outputLimitHint") }}
                     </small>
                   </label>
                 </div>
@@ -1283,12 +1315,10 @@ function handleModelModalKeydown(event: KeyboardEvent) {
             <div class="model-modal-note">
               <i class="fa-solid fa-circle-info" />
               <div>
-                <strong>智能联动提醒：</strong>
+                <strong>{{ t("modelApis.smartHintTitle") }}</strong>
                 <p>
                   {{
-                    modelModalMode === "create"
-                      ? "上下文不知道怎么填就点 128K。创建后在 Agent 里选「Token 窗口」即可；Secret 明文不会进入页面状态。"
-                      : "留空 Secret ID 会保留现有凭据；保存后再从列表执行持久化验证。"
+                    modelModalMode === "create" ? t("modelApis.smartHintCreate") : t("modelApis.smartHintEdit")
                   }}
                 </p>
               </div>
@@ -1310,7 +1340,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
           </div>
 
           <div class="model-modal-actions">
-            <span>变更会立即同步到模型配置列表</span>
+            <span>{{ t("modelApis.syncNote") }}</span>
             <div>
               <button
                 class="model-modal-cancel"
@@ -1318,7 +1348,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 :disabled="savingModelConfig"
                 @click="requestModelModalClose"
               >
-                取消
+                {{ t("modelApis.cancel") }}
               </button>
               <button
                 v-if="modelModalMode === 'create'"
@@ -1329,7 +1359,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 @click="saveDraftModelConfig"
               >
                 <i v-if="savingModelConfig" class="fa-solid fa-spinner fa-spin" />
-                创建配置
+                {{ t("modelApis.createSubmit") }}
               </button>
               <button
                 v-else
@@ -1340,7 +1370,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 @click="saveEditedModelConfig"
               >
                 <i v-if="savingModelConfig" class="fa-solid fa-spinner fa-spin" />
-                保存修改
+                {{ t("modelApis.saveSubmit") }}
               </button>
             </div>
           </div>
@@ -1355,18 +1385,20 @@ function handleModelModalKeydown(event: KeyboardEvent) {
           class="modal-card model-confirmation-card"
           role="dialog"
           aria-modal="true"
-          aria-label="放弃未保存更改"
+          :aria-label="t('modelApis.discardAria')"
         >
           <header>
             <span>Unsaved Changes</span>
-            <h3>放弃未保存更改？</h3>
-            <p>当前模型配置草稿已有修改。放弃后，这些内容不会保存。</p>
+            <h3>{{ t("modelApis.discardTitle") }}</h3>
+            <p>{{ t("modelApis.discardBody") }}</p>
           </header>
           <footer>
             <button class="model-modal-cancel" type="button" data-modal-initial-focus @click="keepEditingModelDraft">
-              继续编辑
+              {{ t("modelApis.keepEditing") }}
             </button>
-            <button class="model-confirmation-danger" type="button" @click="confirmDiscardModelDraft">放弃修改</button>
+            <button class="model-confirmation-danger" type="button" @click="confirmDiscardModelDraft">
+              {{ t("modelApis.discardConfirm") }}
+            </button>
           </footer>
         </section>
       </div>
@@ -1379,12 +1411,12 @@ function handleModelModalKeydown(event: KeyboardEvent) {
           class="modal-card model-confirmation-card delete"
           role="dialog"
           aria-modal="true"
-          aria-label="删除模型配置"
+          :aria-label="t('modelApis.deleteAria')"
         >
           <header>
             <span>Danger Zone</span>
-            <h3>删除模型配置？</h3>
-            <p>将删除「{{ pendingModelDeletion.name }}」。此操作无法撤销。</p>
+            <h3>{{ t("modelApis.deleteTitle") }}</h3>
+            <p>{{ t("modelApis.deleteBody", { name: pendingModelDeletion.name }) }}</p>
           </header>
           <p v-if="modelDeleteError" class="model-confirmation-error" role="alert">{{ modelDeleteError }}</p>
           <footer>
@@ -1395,7 +1427,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               :disabled="deletingModelConfig"
               @click="closeModelDeletionConfirm"
             >
-              取消
+              {{ t("modelApis.cancel") }}
             </button>
             <button
               class="model-confirmation-danger"
@@ -1406,7 +1438,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               @click="confirmModelDeletion"
             >
               <i :class="deletingModelConfig ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-trash-can'" />
-              删除模型配置
+              {{ t("modelApis.deleteSubmit") }}
             </button>
           </footer>
         </section>
@@ -1415,7 +1447,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
 
     <div v-if="actionNote && !modelModalVisible" class="action-toast" role="status" aria-live="polite">
       <span>{{ actionNote }}</span>
-      <button type="button" aria-label="关闭提示" @click="clearActionNote">
+      <button type="button" :aria-label="t('modelApis.closeNote')" @click="clearActionNote">
         <i class="fa-solid fa-xmark" />
       </button>
     </div>

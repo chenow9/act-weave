@@ -3,10 +3,10 @@ import { describe, expect, it } from "vitest";
 import { groupNavItemsBySection, navItems, navSectionOrder, primaryNavigationIds } from "./navigation";
 
 describe("navigation information architecture", () => {
-  it("uses the 空间 → 构建 → 接入 → 运行 → 治理 section order", () => {
-    expect([...navSectionOrder]).toEqual(["空间", "构建", "接入", "运行", "治理"]);
+  it("uses Space → Build → Connect → Run → Govern section order", () => {
+    expect([...navSectionOrder]).toEqual(["space", "build", "connect", "run", "govern"]);
     for (const item of navItems) {
-      expect(navSectionOrder).toContain(item.section);
+      expect(navSectionOrder).toContain(item.sectionId);
     }
   });
 
@@ -20,7 +20,7 @@ describe("navigation information architecture", () => {
 
   it("groups every item under ordered sections without dropping primaries", () => {
     const groups = groupNavItemsBySection(navItems);
-    expect(groups.map((g) => g.section)).toEqual(["空间", "构建", "接入", "运行", "治理"]);
+    expect(groups.map((g) => g.sectionId)).toEqual(["space", "build", "connect", "run", "govern"]);
 
     const allIds = groups.flatMap((g) => g.items.map((item) => item.id));
     expect(allIds).toEqual(expect.arrayContaining([...primaryNavigationIds]));
@@ -29,13 +29,19 @@ describe("navigation information architecture", () => {
 
   it("places related modules together", () => {
     const byId = Object.fromEntries(navItems.map((item) => [item.id, item]));
-    expect(byId.workflow.section).toBe("构建");
-    expect(byId["smart-dag"].section).toBe("构建");
-    expect(byId.agents.section).toBe("构建");
-    expect(byId["agent-access"].section).toBe("接入");
-    expect(byId.providers.section).toBe("接入");
-    expect(byId.chat.section).toBe("运行");
-    expect(byId.logs.section).toBe("治理");
-    expect(byId.users.section).toBe("治理");
+    expect(byId.workflow.sectionId).toBe("build");
+    expect(byId["smart-dag"].sectionId).toBe("build");
+    expect(byId.agents.sectionId).toBe("build");
+    expect(byId["agent-access"].sectionId).toBe("connect");
+    expect(byId.providers.sectionId).toBe("connect");
+    expect(byId.chat.sectionId).toBe("run");
+    expect(byId.logs.sectionId).toBe("govern");
+    expect(byId.users.sectionId).toBe("govern");
+  });
+
+  it("uses i18n label keys instead of hard-coded Chinese labels", () => {
+    for (const item of navItems) {
+      expect(item.labelKey.startsWith("nav.item.")).toBe(true);
+    }
   });
 });

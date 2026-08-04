@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 运行调试台 — one-shot outbound credential attach panel (UI v0.1 / checklist #13).
+ * Run console — one-shot outbound credential attach panel (UI v0.1 / checklist #13).
  *
  * Constraints:
  * - Token inputs are password-type, never written to Pinia / localStorage / history.
@@ -9,7 +9,10 @@
  * - Broker-only agents: hide the required token form (emit requiresPassthrough=false).
  */
 import { onBeforeUnmount, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import type { OutboundCredentialAttachmentResult, OutboundCredentialsEnvelope } from "../types/domain";
+
+const { t } = useI18n();
 
 const props = defineProps<{
   workspaceId: string;
@@ -48,7 +51,7 @@ async function onAttach() {
     return;
   }
   if (!props.connectionId || !tokenValue.value.trim()) {
-    errorText.value = "请填写 Connection 与业务 Token";
+    errorText.value = t("chat.attachNeedConnectionToken");
     return;
   }
   const exp = expiresAtLocal.value
@@ -73,7 +76,7 @@ async function onAttach() {
     emit("attachment", attachmentId.value);
     clearSecrets();
   } catch (e) {
-    errorText.value = e instanceof Error ? e.message : "出站凭据绑定失败";
+    errorText.value = e instanceof Error ? e.message : t("chat.attachFailed");
     clearSecrets();
     clearAttachment();
   } finally {
@@ -102,24 +105,28 @@ defineExpose({ clearSecrets, clearAttachment, attachmentId });
 </script>
 
 <template>
-  <section v-if="requiresPassthrough !== false" class="debug-outbound-panel" aria-label="出站透传凭据（一次性）">
+  <section
+    v-if="requiresPassthrough !== false"
+    class="debug-outbound-panel"
+    :aria-label="t('chat.outboundAria')"
+  >
     <header class="debug-outbound-header">
-      <strong>出站请求透传</strong>
-      <span class="debug-outbound-hint">Token 不会写入会话、日志或本地存储；发送后仅使用一次性 attachment ID。</span>
+      <strong>{{ t("chat.outboundTitle") }}</strong>
+      <span class="debug-outbound-hint">{{ t("chat.outboundHint") }}</span>
     </header>
     <div class="debug-outbound-fields">
       <label>
-        业务 Token
+        {{ t("chat.businessToken") }}
         <input
           v-model="tokenValue"
           type="password"
           autocomplete="new-password"
-          placeholder="一次性业务 Token"
+          :placeholder="t('chat.businessTokenPh')"
           :disabled="busy || !!attachmentId"
         />
       </label>
       <label>
-        过期时间（本地）
+        {{ t("chat.expiresLocal") }}
         <input v-model="expiresAtLocal" type="datetime-local" :disabled="busy || !!attachmentId" />
       </label>
       <button
@@ -129,7 +136,7 @@ defineExpose({ clearSecrets, clearAttachment, attachmentId });
         :aria-busy="busy ? 'true' : undefined"
         @click="onAttach"
       >
-        {{ attachmentId ? "已绑定" : busy ? "绑定中…" : "绑定出站凭据" }}
+        {{ attachmentId ? t("chat.bound") : busy ? t("chat.binding") : t("chat.bindOutbound") }}
       </button>
       <button
         v-if="attachmentId"
@@ -140,16 +147,16 @@ defineExpose({ clearSecrets, clearAttachment, attachmentId });
           clearAttachment();
         "
       >
-        清除绑定
+        {{ t("chat.clearBinding") }}
       </button>
     </div>
-    <p v-if="attachmentId" class="debug-outbound-ok">已绑定（将随下一条消息消费）· 过期 {{ expiresAt }}</p>
+    <p v-if="attachmentId" class="debug-outbound-ok">
+      {{ t("chat.boundExpires", { at: expiresAt }) }}
+    </p>
     <p v-if="errorText" class="debug-outbound-error">{{ errorText }}</p>
   </section>
-  <section v-else class="debug-outbound-panel broker-only" aria-label="Broker 出站说明">
-    <p class="debug-outbound-hint">
-      当前 Agent 仅需 Broker / OBO：将以你的内部用户 Subject 换取短期 Token，无需填写业务 Token。
-    </p>
+  <section v-else class="debug-outbound-panel broker-only" :aria-label="t('chat.brokerAria')">
+    <p class="debug-outbound-hint">{{ t("chat.brokerOnlyHint") }}</p>
   </section>
 </template>
 

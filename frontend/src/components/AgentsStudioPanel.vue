@@ -1,11 +1,13 @@
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
+const { t } = useI18n();
 // @ts-nocheck — inject surface under page split (ZKL-64 item 16)
 /** Agents studio panel (ZKL-64 item 16). */
 import AppSelect from "./AppSelect.vue";
 import AgentPromptDiffViewer from "./AgentPromptDiffViewer.vue";
 import AgentDelegationPanel from "./AgentDelegationPanel.vue";
 import { useAgentsPageContext } from "../composables/useAgentsPageContext";
-import { COMPACTION_SUMMARY_PERMANENCE_WARNING } from "../utils/session-context-config";
+
 import { computed } from "vue";
 
 const scp = useAgentsPageContext();
@@ -24,10 +26,10 @@ const {
 } = scp;
 
 const agentContextModeOptions = [
-  { label: "Token 窗口（推荐，大多数场景）", value: "token_window" },
-  { label: "滚动摘要（长会话，可选）", value: "rolling_summary" },
-  { label: "继承 / 不启用（全量历史）", value: "" },
-  { label: "关闭窗口管理", value: "disabled" },
+  { label: t("agents.modeTokenWindow"), value: "token_window" },
+  { label: t("agents.modeRolling"), value: "rolling_summary" },
+  { label: t("agents.modeInherit"), value: "" },
+  { label: t("agents.modeDisabled"), value: "disabled" },
 ];
 
 /** Options for delegation target picker (exclude self when possible). */
@@ -62,24 +64,24 @@ void AgentDelegationPanel;
           <div class="agent-studio-title">
             <button class="agent-back-button" type="button" @click="requestCloseStudio('back')">
               <i class="fa-solid fa-chevron-left" aria-hidden="true" />
-              <span>返回列表</span>
+              <span>{{ t("agents.backToList") }}</span>
             </button>
             <span class="agent-studio-divider" aria-hidden="true" />
             <div class="agent-studio-heading">
               <p class="agent-studio-eyebrow">
-                {{ studioMode === "create" ? "新建" : "编辑" }}
+                {{ studioMode === "create" ? t("agents.modeCreate") : t("agents.modeEdit") }}
               </p>
               <h3 :title="studioMode === 'edit' && draftAgent.name ? draftAgent.name : undefined">
                 {{
                   studioMode === "create"
-                    ? "创建 Agent"
-                    : draftAgent.name?.trim() || "未命名 Agent"
+                    ? t("agents.createTitle")
+                    : draftAgent.name?.trim() || t("agents.untitled")
                 }}
               </h3>
             </div>
           </div>
           <div class="agent-studio-actions">
-            <button class="ghost-button" type="button" :disabled="savingAgent" @click="closeStudio">放弃改动</button>
+            <button class="ghost-button" type="button" :disabled="savingAgent" @click="closeStudio">{{ t("agents.discard") }}</button>
             <button class="primary-button" type="button" :disabled="!canSaveAgent" @click="saveDraftAgent">
               <i :class="['fa-solid', savingAgent ? 'fa-spinner fa-spin' : 'fa-circle-check']" aria-hidden="true" />
               <span>{{ agentSaveButtonLabel }}</span>
@@ -95,32 +97,32 @@ void AgentDelegationPanel;
         <div class="agent-studio-body">
           <section class="agent-studio-section agent-parameters-panel">
             <header>
-              <span><i class="fa-solid fa-sliders" aria-hidden="true" /> Agent 参数</span>
+              <span><i class="fa-solid fa-sliders" aria-hidden="true" /> {{ t("agents.params") }}</span>
             </header>
             <div class="agent-studio-fields">
               <label class="modal-field">
-                <span>Agent 运行名称 <b class="required-mark" aria-hidden="true">*</b></span>
+                <span>{{ t("agents.runName") }} <b class="required-mark" aria-hidden="true">*</b></span>
                 <input
                   ref="agentNameInputRef"
                   v-model="draftAgent.name"
                   type="text"
                   required
                   aria-required="true"
-                  aria-label="Agent 运行名称"
+                  :aria-label="t('agents.runName')"
                   :aria-invalid="Boolean(agentNameError)"
                   :aria-describedby="agentNameError ? 'agent-name-error' : undefined"
-                  placeholder="例如: 智能风控审查官"
+                  :placeholder="t('agents.runNamePh')"
                 />
                 <small v-if="agentNameError" id="agent-name-error" class="field-error">{{ agentNameError }}</small>
               </label>
               <label class="modal-field">
-                <span>绑定业务空间 <b class="required-mark" aria-hidden="true">*</b></span>
+                <span>{{ t("agents.bindWorkspace") }} <b class="required-mark" aria-hidden="true">*</b></span>
                 <AppSelect
                   class="agent-studio-select"
                   v-model="draftAgent.workspaceId"
                   :options="workspaceOptions"
-                  placeholder="选择业务空间"
-                  aria-label="绑定业务空间"
+                  :placeholder="t('agents.selectWorkspace')"
+                  :aria-label="t('agents.bindWorkspace')"
                   :aria-required="true"
                   :aria-invalid="Boolean(agentWorkspaceError)"
                   :aria-describedby="agentWorkspaceError ? 'agent-workspace-error' : undefined"
@@ -130,13 +132,13 @@ void AgentDelegationPanel;
                 }}</small>
               </label>
               <label class="modal-field">
-                <span>决策大模型 <b class="required-mark" aria-hidden="true">*</b></span>
+                <span>{{ t("agents.decisionModel") }} <b class="required-mark" aria-hidden="true">*</b></span>
                 <AppSelect
                   class="agent-studio-select"
                   v-model="draftAgent.modelConfigId"
                   :options="modelConfigOptions"
-                  placeholder="选择模型配置"
-                  aria-label="决策大模型"
+                  :placeholder="t('agents.selectModel')"
+                  :aria-label="t('agents.decisionModel')"
                   :aria-required="true"
                   :aria-invalid="Boolean(agentModelError)"
                   :aria-describedby="agentModelError ? 'agent-model-error' : undefined"
@@ -144,28 +146,28 @@ void AgentDelegationPanel;
                 <small v-if="agentModelError" id="agent-model-error" class="field-error">{{ agentModelError }}</small>
               </label>
               <label class="modal-field">
-                <span>场景决策职责 <b class="required-mark" aria-hidden="true">*</b></span>
+                <span>{{ t("agents.roleDuty") }} <b class="required-mark" aria-hidden="true">*</b></span>
                 <input
                   v-model="draftAgent.roleDescription"
                   type="text"
                   required
                   aria-required="true"
-                  aria-label="场景决策职责"
+                  :aria-label="t('agents.roleDuty')"
                   :aria-invalid="Boolean(agentRoleError)"
                   :aria-describedby="agentRoleError ? 'agent-role-error' : undefined"
-                  placeholder="简述其在协同链路下的核心边界..."
+                  :placeholder="t('agents.rolePh')"
                 />
                 <small v-if="agentRoleError" id="agent-role-error" class="field-error">{{ agentRoleError }}</small>
               </label>
               <div class="agent-status-toggle">
                 <div>
-                  <p>激活运行状态</p>
-                  <small>允许平台对该 Agent 注入生产流量并开启心跳监测。</small>
+                  <p>{{ t("agents.activeRun") }}</p>
+                  <small>{{ t("agents.activeRunHint") }}</small>
                 </div>
                 <button
                   type="button"
                   role="switch"
-                  aria-label="切换 Agent 激活运行状态"
+                  :aria-label="t('agents.toggleActive')"
                   :aria-checked="draftAgent.status === 'ACTIVE'"
                   :class="{ active: draftAgent.status === 'ACTIVE' }"
                   @click="toggleDraftStatus"
@@ -176,31 +178,31 @@ void AgentDelegationPanel;
 
               <div class="agent-context-policy">
                 <header>
-                  <strong>会话上下文策略</strong>
-                  <small>对话太长时，平台如何裁剪历史再送给模型。不知道怎么选就保持「Token 窗口」。</small>
+                  <strong>{{ t("agents.contextPolicy") }}</strong>
+                  <small>{{ t("agents.contextPolicyHint") }}</small>
                 </header>
                 <label class="modal-field">
-                  <span>上下文模式</span>
+                  <span>{{ t("agents.contextMode") }}</span>
                   <AppSelect
                     class="agent-studio-select"
                     :model-value="agentContextMode"
                     :options="agentContextModeOptions"
-                    placeholder="选择上下文模式"
-                    aria-label="会话上下文模式"
+                    :placeholder="t('agents.selectContextMode')"
+                    :aria-label="t('agents.contextMode')"
                     @update:model-value="setAgentContextMode(String($event ?? ''))"
                   />
                 </label>
                 <p class="agent-context-policy-hint">
                   <template v-if="agentContextMode === 'token_window' || !agentContextMode">
-                    推荐默认：按绑定模型的窗口自动裁掉过旧历史；通常无需再改高级项。
+                    {{ t("agents.contextHintTokenWindow") }}
                   </template>
                   <template v-else-if="agentContextMode === 'rolling_summary'">
-                    已套用推荐默认（最近约 20 轮原文 + 摘要参数）。一般不用展开高级选项。
+                    {{ t("agents.contextHintRolling") }}
                   </template>
                   <template v-else-if="agentContextMode === 'disabled'">
-                    关闭窗口管理后，会话可能随长度增长而变慢或触发上游超限。
+                    {{ t("agents.contextHintDisabled") }}
                   </template>
-                  需先在模型 API 里用预设点好「上下文窗口」（如 128K）。
+                  {{ t("agents.contextHintModelWindow") }}
                 </p>
                 <template v-if="agentContextMode === 'token_window' || agentContextMode === 'rolling_summary'">
                   <button
@@ -211,13 +213,13 @@ void AgentDelegationPanel;
                     @click="toggleAgentContextAdvanced"
                   >
                     <i class="fa-solid fa-sliders" aria-hidden="true" />
-                    <span>高级选项</span>
+                    <span>{{ t("agents.contextAdvanced") }}</span>
                     <i class="fa-solid fa-chevron-down agent-context-advanced-chevron" aria-hidden="true" />
                   </button>
                   <div v-if="agentContextAdvancedOpen" class="agent-context-advanced">
                     <div class="agent-context-policy-limits">
                       <label class="modal-field">
-                        <span>输入上限（0=跟模型窗口走）</span>
+                        <span>{{ t("agents.maxInputTokens") }}</span>
                         <input
                           type="number"
                           min="0"
@@ -228,7 +230,7 @@ void AgentDelegationPanel;
                         />
                       </label>
                       <label class="modal-field">
-                        <span>最近原文轮次（0=不限条数）</span>
+                        <span>{{ t("agents.maxRecentTurns") }}</span>
                         <input
                           type="number"
                           min="0"
@@ -241,7 +243,7 @@ void AgentDelegationPanel;
                     </div>
                     <div v-if="agentContextMode === 'rolling_summary'" class="agent-context-policy-limits">
                       <label class="modal-field">
-                        <span>摘要长度上限</span>
+                        <span>{{ t("agents.summaryMaxTokens") }}</span>
                         <input
                           type="number"
                           min="1"
@@ -252,7 +254,7 @@ void AgentDelegationPanel;
                         />
                       </label>
                       <label class="modal-field">
-                        <span>至少淘汰几轮再摘要</span>
+                        <span>{{ t("agents.summaryMinEvicted") }}</span>
                         <input
                           type="number"
                           min="0"
@@ -265,7 +267,7 @@ void AgentDelegationPanel;
                         />
                       </label>
                       <label class="modal-field">
-                        <span>摘要最多生成几轮</span>
+                        <span>{{ t("agents.summaryMaxPasses") }}</span>
                         <input
                           type="number"
                           min="1"
@@ -277,20 +279,18 @@ void AgentDelegationPanel;
                       </label>
                     </div>
                     <p class="agent-context-policy-hint">
-                      0 表示不额外收紧。滚动摘要默认：摘要 2048、淘汰 4 轮、生成 2 轮、最近 20 轮。
+                      {{ t("agents.contextAdvancedHint") }}
                     </p>
                     <div class="agent-context-aap-disclosure">
                       <div class="agent-context-aap-toggle">
                         <div>
-                          <p>AAP 返回 Compact 摘要正文</p>
-                          <small
-                            >默认关闭。仅影响本 Agent 新 run 快照；关闭后不会删除既有 run 中已写入的协议明文。</small
-                          >
+                          <p>{{ t("agents.aapCompactSummary") }}</p>
+                          <small>{{ t("agents.aapCompactSummaryHint") }}</small>
                         </div>
                         <button
                           type="button"
                           role="switch"
-                          aria-label="AAP 返回 Compact 摘要正文"
+                          :aria-label="t('agents.aapCompactSummary')"
                           :aria-checked="agentContextIncludeCompactionSummary"
                           :class="{ active: agentContextIncludeCompactionSummary }"
                           @click="setAgentContextIncludeCompactionSummary(!agentContextIncludeCompactionSummary)"
@@ -299,7 +299,7 @@ void AgentDelegationPanel;
                         </button>
                       </div>
                       <p class="agent-context-policy-hint agent-context-permanence-warning">
-                        {{ COMPACTION_SUMMARY_PERMANENCE_WARNING }}
+                        {{ t("agents.compactionSummaryPermanenceWarning") }}
                       </p>
                     </div>
                   </div>
@@ -320,14 +320,14 @@ void AgentDelegationPanel;
             class="agent-studio-section agent-delegation-deferred"
           >
             <header>
-              <span><i class="fa-solid fa-sitemap" aria-hidden="true" /> 协作与对外能力</span>
-              <span class="agent-delegation-deferred-badge">创建后可配置</span>
+              <span><i class="fa-solid fa-sitemap" aria-hidden="true" /> {{ t("agents.collabExternal") }}</span>
+              <span class="agent-delegation-deferred-badge">{{ t("agents.configureAfterCreate") }}</span>
             </header>
             <div class="agent-delegation-deferred-body">
               <i class="fa-solid fa-lock" aria-hidden="true" />
               <div>
-                <p>请其他 Agent 帮忙、对外开放、呼叫外部服务，需要先创建并保存本 Agent。</p>
-                <small>创建成功后，在编辑页展开对应区块即可配置，无需现在填写。</small>
+                <p>{{ t("agents.collabDeferredBody") }}</p>
+                <small>{{ t("agents.collabDeferredHint") }}</small>
               </div>
             </div>
           </section>
@@ -336,14 +336,14 @@ void AgentDelegationPanel;
             <header>
               <span
                 ><i class="fa-solid fa-code" aria-hidden="true" />
-                {{ studioMode === "create" ? "初始系统提示词" : "AI 整理要求" }}
+                {{ studioMode === "create" ? t("agents.initialSystemPrompt") : t("agents.aiRewriteRequest") }}
                 <b v-if="studioMode === 'create'" class="required-mark" aria-hidden="true">*</b></span
               >
               <button
                 class="agent-weave-button"
                 type="button"
                 :disabled="!canEnhanceDraftPrompt"
-                :title="canEnhanceDraftPrompt ? 'AI 智能整理系统提示词' : '请先完善业务空间、模型和系统提示词'"
+                :title="canEnhanceDraftPrompt ? t('agents.aiEnhanceTitle') : t('agents.aiEnhanceDisabled')"
                 aria-describedby="agent-weave-helper"
                 @click="enhancePrompt"
               >
@@ -354,24 +354,24 @@ void AgentDelegationPanel;
                   ]"
                   aria-hidden="true"
                 />
-                <span>AI 智能整理</span>
+                <span>{{ t("agents.aiEnhance") }}</span>
               </button>
             </header>
             <div
               class="agent-prompt-overview"
-              :aria-label="studioMode === 'create' ? '系统提示词首段预览' : 'AI 整理要求首段预览'"
+              :aria-label="studioMode === 'create' ? t('agents.promptPreviewAriaCreate') : t('agents.promptPreviewAriaEdit')"
             >
               <div>
-                <strong>首段预览</strong>
+                <strong>{{ t("agents.firstParagraphPreview") }}</strong>
                 <p class="agent-prompt-preview-text">{{ promptPreviewText }}</p>
               </div>
               <dl>
                 <div>
-                  <dt>行数</dt>
+                  <dt>{{ t("agents.lineCount") }}</dt>
                   <dd>{{ promptLineCount }}</dd>
                 </div>
                 <div>
-                  <dt>字符</dt>
+                  <dt>{{ t("agents.charCount") }}</dt>
                   <dd>{{ draftAgent.systemPrompt?.length || 0 }}</dd>
                 </div>
               </dl>
@@ -385,25 +385,25 @@ void AgentDelegationPanel;
                 rows="8"
                 :required="studioMode === 'create'"
                 :aria-required="studioMode === 'create'"
-                :aria-label="studioMode === 'create' ? '系统提示词' : 'AI 整理要求'"
+                :aria-label="studioMode === 'create' ? t('agents.systemPrompt') : t('agents.aiRewriteRequest')"
                 :aria-invalid="Boolean(agentPromptError)"
                 :aria-describedby="agentPromptError ? 'agent-prompt-error agent-weave-helper' : 'agent-weave-helper'"
                 :placeholder="
                   studioMode === 'create'
-                    ? '作为智能决策主控：负责解析当前业务输入...'
-                    : '描述希望模型如何整理当前系统提示词；服务端不会回传现有提示词原文。'
+                    ? t('agents.promptPhCreate')
+                    : t('agents.promptPhEdit')
                 "
               />
             </div>
             <div class="agent-prompt-meter">
               <span
-                ><i class="fa-solid fa-calculator" aria-hidden="true" /> 字符长度:
+                ><i class="fa-solid fa-calculator" aria-hidden="true" /> {{ t("agents.charLength") }}:
                 <strong>{{ draftAgent.systemPrompt?.length || 0 }}</strong></span
               >
               <span id="agent-weave-helper">{{
                 studioMode === "create" || !draftAgent.id
-                  ? "创建前可直接整理系统提示词；应用到草稿后需再点「创建 Agent」才会保存。"
-                  : "整理预览后可采纳为新版本；不会回填当前生效提示词。"
+                  ? t("agents.weaveHelperCreate")
+                  : t("agents.weaveHelperEdit")
               }}</span>
             </div>
             <small v-if="agentPromptError" id="agent-prompt-error" class="field-error agent-prompt-error">{{
@@ -428,21 +428,21 @@ void AgentDelegationPanel;
         class="modal-card agent-prompt-save-review-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="生产 Agent 提示词变更审查"
+        :aria-label="t('agents.promptSaveReviewAria')"
       >
         <header class="agent-prompt-detail-head">
           <div>
             <i class="fa-solid fa-shield-halved" aria-hidden="true" />
             <span>
-              <strong>生产 Agent 提示词变更审查</strong>
+              <strong>{{ t("agents.promptSaveReviewTitle") }}</strong>
               <small>AGENT: {{ pendingPromptSaveReview.id }}</small>
             </span>
           </div>
           <button
             class="icon-action-button"
             type="button"
-            title="关闭"
-            aria-label="关闭提示词变更审查"
+            :title="t('common.close')"
+            :aria-label="t('agents.closePromptReview')"
             @click="cancelPromptSaveReview"
           >
             <i class="fa-solid fa-xmark" aria-hidden="true" />
@@ -451,37 +451,37 @@ void AgentDelegationPanel;
         <div class="agent-risk-review-body">
           <p class="agent-risk-alert">
             <i class="fa-solid fa-triangle-exclamation" aria-hidden="true" />
-            当前 Agent 处于运行中，保存后会影响生产流量中的系统提示词。请确认差异后再生效。
+            {{ t("agents.promptSaveReviewAlert") }}
           </p>
           <div class="agent-prompt-diff-summary">
             <span
-              ><b>{{ promptSaveDiff.beforeChars }}</b> 原字符</span
+              ><b>{{ promptSaveDiff.beforeChars }}</b> {{ t("agents.charsOriginal") }}</span
             >
             <span
-              ><b>{{ promptSaveDiff.afterChars }}</b> 新字符</span
+              ><b>{{ promptSaveDiff.afterChars }}</b> {{ t("agents.charsNew") }}</span
             >
             <span
-              ><b>{{ formatSignedDelta(promptSaveDiff.charDelta) }}</b> 字符变化</span
+              ><b>{{ formatSignedDelta(promptSaveDiff.charDelta) }}</b> {{ t("agents.charsDelta") }}</span
             >
             <span
-              ><b>{{ formatSignedDelta(promptSaveDiff.lineDelta) }}</b> 行变化</span
+              ><b>{{ formatSignedDelta(promptSaveDiff.lineDelta) }}</b> {{ t("agents.linesDelta") }}</span
             >
           </div>
           <AgentPromptDiffViewer
             :before="originalPrompt"
             :after="pendingPromptText"
-            before-label="历史版本"
-            after-label="当前草稿"
-            title="变更对比"
+            :before-label="t('agents.historyVersion')"
+            :after-label="t('agents.currentDraft')"
+            :title="t('agents.diffTitle')"
           />
         </div>
         <footer class="agent-prompt-detail-footer">
           <button class="ghost-button" type="button" :disabled="savingAgent" @click="cancelPromptSaveReview">
-            返回编辑
+            {{ t("agents.backToEdit") }}
           </button>
           <button class="primary-button" type="button" :disabled="savingAgent" @click="confirmPromptSaveReview">
             <i :class="['fa-solid', savingAgent ? 'fa-spinner fa-spin' : 'fa-circle-check']" aria-hidden="true" />
-            <span>{{ savingAgent ? "保存中..." : "确认保存并生效" }}</span>
+            <span>{{ savingAgent ? t("agents.saving") : t("agents.confirmSaveApply") }}</span>
           </button>
         </footer>
       </section>
@@ -501,21 +501,21 @@ void AgentDelegationPanel;
         class="modal-card agent-weave-preview-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="AI 智能整理预览"
+        :aria-label="t('agents.weavePreviewAria')"
       >
         <header class="agent-prompt-detail-head">
           <div>
             <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true" />
             <span>
-              <strong>AI 整理预览</strong>
+              <strong>{{ t("agents.weavePreviewTitle") }}</strong>
               <small>AGENT: {{ draftAgent.id }}</small>
             </span>
           </div>
           <button
             class="icon-action-button"
             type="button"
-            title="关闭"
-            aria-label="关闭 AI 整理预览"
+            :title="t('common.close')"
+            :aria-label="t('agents.closeWeavePreview')"
             @click="cancelWeavePreview"
           >
             <i class="fa-solid fa-xmark" aria-hidden="true" />
@@ -524,32 +524,32 @@ void AgentDelegationPanel;
         <div class="agent-risk-review-body">
           <p class="agent-risk-alert neutral">
             <i class="fa-solid fa-circle-info" aria-hidden="true" />
-            预览不会修改 Agent；采纳会再次执行后端增强命令并创建不可变提示词版本，原始输入与输出永久留存。
+            {{ t("agents.weavePreviewAlert") }}
           </p>
           <div class="agent-prompt-diff-summary">
             <span
-              ><b>{{ weavePreviewDiff.beforeChars }}</b> 当前字符</span
+              ><b>{{ weavePreviewDiff.beforeChars }}</b> {{ t("agents.charsCurrent") }}</span
             >
             <span
-              ><b>{{ weavePreviewDiff.afterChars }}</b> 预览字符</span
+              ><b>{{ weavePreviewDiff.afterChars }}</b> {{ t("agents.charsPreview") }}</span
             >
             <span
-              ><b>{{ formatSignedDelta(weavePreviewDiff.charDelta) }}</b> 字符变化</span
+              ><b>{{ formatSignedDelta(weavePreviewDiff.charDelta) }}</b> {{ t("agents.charsDelta") }}</span
             >
             <span
-              ><b>{{ formatSignedDelta(weavePreviewDiff.lineDelta) }}</b> 行变化</span
+              ><b>{{ formatSignedDelta(weavePreviewDiff.lineDelta) }}</b> {{ t("agents.linesDelta") }}</span
             >
           </div>
           <AgentPromptDiffViewer
             :before="draftAgent.systemPrompt || ''"
             :after="weavePreviewAgent.output || ''"
-            before-label="当前要求"
-            after-label="AI 建议"
-            title="变更对比"
+            :before-label="t('agents.currentRequest')"
+            :after-label="t('agents.aiSuggestion')"
+            :title="t('agents.diffTitle')"
           />
         </div>
         <footer class="agent-prompt-detail-footer">
-          <button class="ghost-button" type="button" @click="cancelWeavePreview">取消</button>
+          <button class="ghost-button" type="button" @click="cancelWeavePreview">{{ t("common.cancel") }}</button>
           <button class="primary-button" type="button" :disabled="acceptingPromptRevision" @click="applyWeavePreview">
             <i
               :class="acceptingPromptRevision ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-check'"
@@ -558,11 +558,11 @@ void AgentDelegationPanel;
             <span>{{
               acceptingPromptRevision
                 ? studioMode === "create"
-                  ? "应用中..."
-                  : "采纳中..."
+                  ? t("agents.applying")
+                  : t("agents.accepting")
                 : studioMode === "create"
-                  ? "应用到草稿"
-                  : "采纳为新版本"
+                  ? t("agents.applyToDraft")
+                  : t("agents.acceptAsNewVersion")
             }}</span>
           </button>
         </footer>

@@ -143,7 +143,9 @@ describe("v1 API client", () => {
     expect(parsed.requestId).toBe("request-api-test");
     expect(parsed.traceId).toBe("trace-api-test");
     expect(parsed.details).toEqual([{ field: "name", reason: "required" }]);
-    expect(apiErrorMessage(parsed, "保存失败。")).toBe("保存失败。（请求 ID：request-api-test）");
+    // Fallback stays caller-owned; request-id suffix follows active i18n locale.
+    expect(apiErrorMessage(parsed, "保存失败。")).toMatch(/^保存失败。/);
+    expect(apiErrorMessage(parsed, "保存失败。")).toContain("request-api-test");
   });
 
   it("does not refresh or retry change-password on 401", async () => {

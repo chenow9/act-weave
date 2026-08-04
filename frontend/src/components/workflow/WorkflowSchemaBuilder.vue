@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 
 import AppSelect from "../AppSelect.vue";
 import type { WorkflowSchemaFieldDraft } from "../../utils/workflow-graph";
+
+const { t } = useI18n();
 
 const props = defineProps<{
   fields: WorkflowSchemaFieldDraft[];
@@ -60,26 +63,26 @@ function updateEnumValues(index: number, value: string) {
 <template>
   <section class="workflow-schema-builder">
     <div class="workflow-section-caption">
-      <strong>输入 Schema</strong>
-      <small>{{ props.fields.length }} 个字段</small>
+      <strong>{{ t("workflow.inputSchema") }}</strong>
+      <small>{{ t("workflow.fieldCount", { n: props.fields.length }) }}</small>
     </div>
 
     <div class="workflow-schema-field-list">
       <article v-for="(field, index) in props.fields" :key="`${field.key}-${index}`" class="workflow-schema-field-card">
         <div class="workflow-schema-field-card-header">
-          <strong>字段 {{ index + 1 }}</strong>
+          <strong>{{ t("workflow.fieldN", { n: index + 1 }) }}</strong>
           <button
             class="ghost-button workflow-schema-remove"
             type="button"
             :data-action="`remove-schema-field-${index}`"
             @click="removeField(index)"
           >
-            删除
+            {{ t("workflow.deleteField") }}
           </button>
         </div>
 
         <label class="drawer-field">
-          <span>字段 Key</span>
+          <span>{{ t("workflow.fieldKey") }}</span>
           <input
             :name="`schema-field-key-${index}`"
             :value="field.key"
@@ -88,18 +91,18 @@ function updateEnumValues(index: number, value: string) {
         </label>
 
         <label class="drawer-field">
-          <span>字段类型</span>
+          <span>{{ t("workflow.fieldType") }}</span>
           <AppSelect
             :name="`schema-field-type-${index}`"
             :model-value="field.type"
             :options="fieldTypeOptions"
-            :aria-label="`字段 ${index + 1} 类型`"
+            :aria-label="t('workflow.fieldTypeAria', { n: index + 1 })"
             @update:model-value="updateField(index, { type: String($event) })"
           />
         </label>
 
         <label class="drawer-field">
-          <span>字段描述</span>
+          <span>{{ t("workflow.fieldDescription") }}</span>
           <input
             :name="`schema-field-description-${index}`"
             :value="field.description"
@@ -108,17 +111,17 @@ function updateEnumValues(index: number, value: string) {
         </label>
 
         <label class="drawer-field">
-          <span>枚举值</span>
+          <span>{{ t("workflow.enumValues") }}</span>
           <input
             :name="`schema-field-enum-${index}`"
             :value="field.enumValues.join(',')"
-            placeholder="可选，逗号分隔"
+            :placeholder="t('workflow.enumPh')"
             @input="updateEnumValues(index, ($event.target as HTMLInputElement).value)"
           />
         </label>
 
         <label class="drawer-field">
-          <span>示例值</span>
+          <span>{{ t("workflow.exampleValue") }}</span>
           <input
             :name="`schema-field-example-${index}`"
             :value="field.example"
@@ -133,13 +136,13 @@ function updateEnumValues(index: number, value: string) {
             type="checkbox"
             @change="updateField(index, { required: ($event.target as HTMLInputElement).checked })"
           />
-          <span>必填字段</span>
+          <span>{{ t("workflow.requiredField") }}</span>
         </label>
       </article>
     </div>
 
     <button class="primary-button full" data-action="add-schema-field" type="button" @click="addField">
-      添加字段 {{ nextIndex + 1 }}
+      {{ t("workflow.addField", { n: nextIndex + 1 }) }}
     </button>
   </section>
 </template>

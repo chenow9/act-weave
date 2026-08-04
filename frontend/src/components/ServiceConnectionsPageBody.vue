@@ -1,6 +1,8 @@
 <script setup lang="ts">
 // @ts-nocheck — inject surface + slot row typing under page split (ZKL-64 item 11)
 /** Service Connections page body (ZKL-64 item 11). */
+import { useI18n } from "vue-i18n";
+
 import AppSelect from "./AppSelect.vue";
 import ConnectionDetailPanel from "./ConnectionDetailPanel.vue";
 import ConnectionFormPanel from "./ConnectionFormPanel.vue";
@@ -10,6 +12,21 @@ import ManagementRowActions from "./ManagementRowActions.vue";
 import ManagementSegmentedFilter from "./ManagementSegmentedFilter.vue";
 import WorkspaceContextState from "./WorkspaceContextState.vue";
 import { useServiceConnectionsPageContext } from "../composables/useServiceConnectionsPageContext";
+
+const { t } = useI18n();
+
+/** Match backend/env values that map to the test/sandbox environment CSS tone. */
+function isTestEnvironment(environment: string) {
+  const value = environment.trim();
+  const lower = value.toLowerCase();
+  return (
+    lower === "sandbox" ||
+    lower === "staging" ||
+    lower === "test" ||
+    lower === "development" ||
+    value === "\u6d4b\u8bd5" // legacy Chinese env label still stored by some workspaces
+  );
+}
 
 /* eslint-disable @typescript-eslint/no-unused-vars -- inject surface for template */
 const scp = useServiceConnectionsPageContext();
@@ -102,10 +119,10 @@ void WorkspaceContextState;
     <template v-if="connectionCurrentView === 'list'">
       <ManagementPageHeader
         class="connection-page-header"
-        title="服务连接"
-        description="Provider 管理协议与端点，Connection 只管理账号身份、授权范围与 Secret 引用；凭据明文不进入页面状态。"
+        :title="t('connections.title')"
+        :description="t('connections.description')"
         icon="fa-solid fa-plug-circle-bolt"
-        eyebrow="Integration Access"
+        :eyebrow="t('connections.eyebrow')"
       >
         <template #actions>
           <div class="connection-header-actions">
@@ -113,11 +130,11 @@ void WorkspaceContextState;
               class="ghost-button"
               type="button"
               :disabled="!hasWorkspaceContext"
-              :title="hasWorkspaceContext ? '注册 Provider' : '请先创建或加入业务空间'"
+              :title="hasWorkspaceContext ? t('connections.registerProvider') : t('connections.needWorkspace')"
               @click.stop="router.push('/providers')"
             >
               <i class="fa-solid fa-server" />
-              管理 Provider
+              {{ t("connections.manageProviders") }}
             </button>
             <button
               class="primary-button"
@@ -125,15 +142,15 @@ void WorkspaceContextState;
               :disabled="!hasWorkspaceContext || !readyProviderCount"
               :title="
                 !hasWorkspaceContext
-                  ? '请先创建或加入业务空间'
+                  ? t('connections.needWorkspace')
                   : readyProviderCount
-                    ? '新建服务连接'
-                    : '请先完成 Provider 的端点与认证契约配置'
+                    ? t('connections.create')
+                    : t('connections.createNeedProvider')
               "
               @click.stop="openCreateConnection"
             >
               <i class="fa-solid fa-circle-plus" />
-              新建服务连接
+              {{ t("connections.create") }}
             </button>
           </div>
         </template>
@@ -148,10 +165,9 @@ void WorkspaceContextState;
         >
           <i class="fa-solid fa-triangle-exclamation" aria-hidden="true" />
           <div>
-            <strong>有 {{ migrationRequiredCount }} 个连接需完成出站身份迁移</strong>
+            <strong>{{ t("connections.migrationBannerTitle", { count: migrationRequiredCount }) }}</strong>
             <p>
-              硬切后旧共享账号连接为 DISABLED + MIGRATION_REQUIRED，不可执行；请 OWNER/ADMIN 打开编辑并选择 Broker/OBO
-              或请求透传。
+              {{ t("connections.migrationBannerBody") }}
             </p>
           </div>
           <button
@@ -159,7 +175,7 @@ void WorkspaceContextState;
             class="connection-secondary-button"
             @click="updateConnectionMigrationFilter('MIGRATION_REQUIRED')"
           >
-            只看待迁移
+            {{ t("connections.viewMigrationOnly") }}
           </button>
         </div>
         <ManagementList
@@ -178,9 +194,9 @@ void WorkspaceContextState;
           :pagination="connectionsStore.serviceConnectionPagination"
           :sort-by="connectionsStore.serviceConnectionListQuery?.sortBy"
           :sort-order="connectionsStore.serviceConnectionListQuery?.sortOrder"
-          search-placeholder="搜索连接 / 域名 / IP / 策略"
-          search-aria-label="搜索服务连接"
-          clear-search-aria-label="清除服务连接搜索"
+          :search-placeholder="t('connections.searchPlaceholder')"
+          :search-aria-label="t('connections.searchAria')"
+          :clear-search-aria-label="t('connections.clearSearchAria')"
           :reset-disabled="
             !query &&
             connectionStatusFilter === 'ALL' &&
@@ -197,19 +213,19 @@ void WorkspaceContextState;
               <ManagementSegmentedFilter
                 :model-value="connectionStatusFilter"
                 :options="connectionStatusOptions"
-                ariaLabel="服务连接状态筛选"
+                :ariaLabel="t('connections.statusFilterAria')"
                 @update:model-value="updateConnectionStatusFilter"
               />
               <ManagementSegmentedFilter
                 :model-value="connectionMigrationFilter"
                 :options="connectionMigrationOptions"
-                ariaLabel="迁移状态筛选"
+                :ariaLabel="t('connections.migrationFilterAria')"
                 @update:model-value="updateConnectionMigrationFilter"
               />
               <ManagementSegmentedFilter
                 :model-value="connectionModeFilter"
                 :options="connectionModeOptions"
-                ariaLabel="身份策略筛选"
+                :ariaLabel="t('connections.modeFilterAria')"
                 @update:model-value="updateConnectionModeFilter"
               />
             </div>
@@ -222,7 +238,7 @@ void WorkspaceContextState;
           <template #cell-environment="{ row: connection }">
             <span
               class="connection-environment-value aw-table-pill"
-              :class="{ test: environmentLabel(connection.environment) === '测试' }"
+              :class="{ test: isTestEnvironment(connection.environment) }"
             >
               {{ environmentLabel(connection.environment) }}
             </span>
@@ -236,7 +252,7 @@ void WorkspaceContextState;
                   class="aw-table-title"
                   tabindex="0"
                   :title="connection.name"
-                  :aria-label="`完整连接名称：${connection.name}`"
+                  :aria-label="t('connections.fullNameAria', { name: connection.name })"
                   >{{ connection.name }}</strong
                 >
                 <span class="aw-table-subtitle"
@@ -265,7 +281,7 @@ void WorkspaceContextState;
               v-if="connection.migrationState === 'MIGRATION_REQUIRED'"
               class="connection-migration-badge"
               data-testid="migration-required-badge"
-              >需迁移</span
+              >{{ t("connections.migrationRequired") }}</span
             >
             <span v-else class="aw-table-meta">—</span>
           </template>
@@ -279,7 +295,7 @@ void WorkspaceContextState;
                     class="aw-table-title connection-address-host"
                     tabindex="0"
                     :title="connectionAddress(connection)"
-                    :aria-label="`完整服务地址：${connectionAddress(connection)}`"
+                    :aria-label="t('connections.fullAddressAria', { address: connectionAddress(connection) })"
                   >
                     {{ connectionAddressPrimary(connection).hostPort
                     }}<template v-if="connectionAddressPrimary(connection).basePath">{{
@@ -289,8 +305,8 @@ void WorkspaceContextState;
                   <button
                     class="connection-copy-button"
                     type="button"
-                    :aria-label="`复制 ${connection.name} 服务地址`"
-                    @click.stop="copyConnectionText(connectionAddress(connection), '服务地址')"
+                    :aria-label="t('connections.copyAddressAria', { name: connection.name })"
+                    @click.stop="copyConnectionText(connectionAddress(connection), t('connections.serviceAddress'))"
                   >
                     <i class="fa-regular fa-copy" />
                   </button>
@@ -299,7 +315,8 @@ void WorkspaceContextState;
                   class="aw-table-subtitle connection-address-verify"
                   :title="`${verificationMethodLabel(connection)} ${verificationPathLabel(connection)}`"
                 >
-                  验证 · {{ verificationMethodLabel(connection) }} {{ verificationPathLabel(connection) }}
+                  {{ t("connections.verifyPrefix") }} · {{ verificationMethodLabel(connection) }}
+                  {{ verificationPathLabel(connection) }}
                 </span>
               </div>
             </div>
@@ -318,7 +335,7 @@ void WorkspaceContextState;
           <template #cell-actions="{ row: connection }">
             <ManagementRowActions
               :menu-actions="connectionMenuActions(connection)"
-              menu-label="更多操作"
+              :menu-label="t('connections.moreActions')"
               @action="handleConnectionRowAction($event, connection)"
             />
           </template>
@@ -339,7 +356,7 @@ void WorkspaceContextState;
                 <button
                   class="connection-mobile-actions-toggle"
                   type="button"
-                  :aria-label="`${connection.name}连接操作`"
+                  :aria-label="t('connections.connectionActionsAria', { name: connection.name })"
                   :aria-expanded="mobileConnectionActionMenuId === connection.id"
                   @click.stop="toggleMobileConnectionActions(connection.id)"
                 >
@@ -350,21 +367,21 @@ void WorkspaceContextState;
                 <code :title="connectionAddress(connection)">{{ connectionAddress(connection) }}</code>
                 <button
                   type="button"
-                  :aria-label="`复制 ${connection.name} 服务地址`"
-                  @click.stop="copyConnectionText(connectionAddress(connection), '服务地址')"
+                  :aria-label="t('connections.copyAddressAria', { name: connection.name })"
+                  @click.stop="copyConnectionText(connectionAddress(connection), t('connections.serviceAddress'))"
                 >
                   <i class="fa-regular fa-copy" />
                 </button>
               </div>
               <dl>
                 <div>
-                  <dt>验证接口</dt>
+                  <dt>{{ t("connections.verificationEndpoint") }}</dt>
                   <dd>
                     {{ connection.protocolConfig.verificationMethod || "GET" }} {{ verificationPathLabel(connection) }}
                   </dd>
                 </div>
                 <div>
-                  <dt>状态</dt>
+                  <dt>{{ t("connections.status") }}</dt>
                   <dd>
                     <span class="connection-status-pill" :class="statusPillClass(connection)">{{
                       statusLabel(connection)
@@ -376,13 +393,13 @@ void WorkspaceContextState;
                 v-if="mobileConnectionActionMenuId === connection.id"
                 class="connection-mobile-actions-menu"
                 role="menu"
-                :aria-label="`${connection.name}连接操作`"
+                :aria-label="t('connections.connectionActionsAria', { name: connection.name })"
               >
                 <button type="button" role="menuitem" @click.stop="openMobileConnectionPreview(connection)">
-                  <i class="fa-solid fa-eye" />查看详情
+                  <i class="fa-solid fa-eye" />{{ t("connections.viewDetail") }}
                 </button>
                 <button type="button" role="menuitem" @click.stop="openMobileConnectionEditor(connection)">
-                  <i class="fa-solid fa-pen-to-square" />编辑连接
+                  <i class="fa-solid fa-pen-to-square" />{{ t("connections.editConnection") }}
                 </button>
                 <button
                   type="button"
@@ -393,7 +410,7 @@ void WorkspaceContextState;
                 >
                   <i
                     :class="isConnectionVerifying(connection.id) ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-vial'"
-                  />验证连接
+                  />{{ t("connections.verifyConnection") }}
                 </button>
                 <button
                   class="danger"
@@ -401,7 +418,7 @@ void WorkspaceContextState;
                   role="menuitem"
                   @click.stop="requestMobileRemoveConnection(connection)"
                 >
-                  <i class="fa-solid fa-trash-can" />删除连接
+                  <i class="fa-solid fa-trash-can" />{{ t("connections.deleteConnection") }}
                 </button>
               </div>
             </article>
@@ -410,9 +427,15 @@ void WorkspaceContextState;
           <template #error="{ error }">
             <div class="connection-load-error" role="alert">
               <div><i class="fa-solid fa-triangle-exclamation" /></div>
-              <h4>服务连接加载失败</h4>
+              <h4>{{ t("connections.loadFailedTitle") }}</h4>
               <p>{{ error }}</p>
-              <button type="button" aria-label="重试加载服务连接" @click.stop="retryLoadConnections">重试</button>
+              <button
+                type="button"
+                :aria-label="t('connections.retryLoadAria')"
+                @click.stop="retryLoadConnections"
+              >
+                {{ t("connections.retry") }}
+              </button>
             </div>
           </template>
 
@@ -420,18 +443,18 @@ void WorkspaceContextState;
             <WorkspaceContextState
               v-if="!hasWorkspaceContext"
               embedded-in-list
-              feature="Provider 与服务连接"
+              :feature="t('connections.featureName')"
               icon="fa-solid fa-plug-circle-xmark"
               @retry="loadConnections"
             />
             <div v-else class="connection-empty-state">
               <div><i class="fa-solid fa-plug-circle-xmark" /></div>
-              <h4>{{ hasConnectionRecords ? "没有匹配连接" : "暂无服务连接" }}</h4>
+              <h4>
+                {{ hasConnectionRecords ? t("connections.emptyNoMatch") : t("connections.emptyTitle") }}
+              </h4>
               <p>
                 {{
-                  hasConnectionRecords
-                    ? "调整连接名称、域名/IP 或认证方式关键词"
-                    : "先创建服务连接，再让 Tool 引用它配置业务动作。"
+                  hasConnectionRecords ? t("connections.emptyNoMatchBody") : t("connections.emptyBody")
                 }}
               </p>
               <button
@@ -440,10 +463,10 @@ void WorkspaceContextState;
                 type="button"
                 @click.stop="resetConnectionFilters"
               >
-                重置查询条件
+                {{ t("connections.resetFilters") }}
               </button>
               <button v-else class="primary-button" type="button" @click.stop="openCreateConnection">
-                新建服务连接
+                {{ t("connections.create") }}
               </button>
             </div>
           </template>
@@ -466,16 +489,16 @@ void WorkspaceContextState;
       <div class="connection-delete-dialog connection-discard-dialog" @click.stop>
         <header>
           <span class="connection-eyebrow">Unsaved Changes</span>
-          <h2 id="connection-discard-title">放弃未保存修改？</h2>
-          <p>当前服务连接表单已有修改。放弃后，这些内容不会保存，也不会用于后续验证。</p>
+          <h2 id="connection-discard-title">{{ t("connections.discardTitle") }}</h2>
+          <p>{{ t("connections.discardBody") }}</p>
         </header>
         <footer>
           <button class="connection-secondary-button" type="button" @click.stop="keepEditingConnectionForm">
-            继续编辑
+            {{ t("connections.keepEditing") }}
           </button>
           <button class="connection-danger-button" type="button" @click.stop="discardConnectionFormChanges">
             <i class="fa-solid fa-trash" />
-            放弃修改
+            {{ t("connections.discardConfirm") }}
           </button>
         </footer>
       </div>
@@ -492,11 +515,11 @@ void WorkspaceContextState;
       <div class="connection-delete-dialog" @click.stop>
         <header>
           <span class="connection-eyebrow">Danger Zone</span>
-          <h2 id="connection-delete-title">删除服务连接</h2>
-          <p>删除后所有引用该 Connection 的 Binding 或默认连接都会被后端完整性规则校验；页面不提交手工引用计数。</p>
+          <h2 id="connection-delete-title">{{ t("connections.deleteTitle") }}</h2>
+          <p>{{ t("connections.deleteBody") }}</p>
         </header>
         <label class="connection-field connection-delete-confirm-input">
-          <span>输入连接名称确认</span>
+          <span>{{ t("connections.deleteConfirmLabel") }}</span>
           <input v-model="deleteConfirmName" :placeholder="pendingDeleteConnection.name" />
         </label>
         <p v-if="deleteError" class="connection-delete-error">{{ deleteError }}</p>
@@ -507,7 +530,7 @@ void WorkspaceContextState;
             :disabled="deletingConnection"
             @click.stop="closeDeleteDialog"
           >
-            取消
+            {{ t("connections.cancel") }}
           </button>
           <button
             class="connection-danger-button"
@@ -517,7 +540,7 @@ void WorkspaceContextState;
             @click.stop="confirmRemoveConnection"
           >
             <i :class="deletingConnection ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-trash'" />
-            删除连接
+            {{ t("connections.deleteConnection") }}
           </button>
         </footer>
       </div>
@@ -526,7 +549,7 @@ void WorkspaceContextState;
     <div v-if="actionNote" class="action-toast" :class="actionToastTone" role="status" aria-live="polite">
       <i :class="actionToastTone === 'success' ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-exclamation'" />
       <span>{{ actionNote }}</span>
-      <button type="button" aria-label="关闭提示" @click.stop="dismissActionNote">
+      <button type="button" :aria-label="t('connections.closeNote')" @click.stop="dismissActionNote">
         <i class="fa-solid fa-xmark" />
       </button>
     </div>

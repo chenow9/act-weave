@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 
+const { t } = useI18n();
 const router = useRouter();
 
 function goOverview() {
@@ -12,9 +14,9 @@ function goOverview() {
   <div class="page-grid not-found-page">
     <section class="panel span-12 not-found-panel" role="status">
       <span class="not-found-code">404</span>
-      <h2>页面不存在</h2>
-      <p>该路径不在当前控制台路由中。请检查链接是否过期，或返回空间总览继续操作。</p>
-      <button class="primary-button" type="button" @click="goOverview">返回空间总览</button>
+      <h2>{{ t("common.notFound") }}</h2>
+      <p>{{ t("common.notFoundBody") }}</p>
+      <button class="primary-button" type="button" @click="goOverview">{{ t("common.backOverview") }}</button>
     </section>
   </div>
 </template>

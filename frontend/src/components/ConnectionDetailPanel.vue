@@ -1,8 +1,11 @@
 <script setup lang="ts">
 // @ts-nocheck — inject surface + slot row typing under page split (ZKL-64 item 11)
 /** Connection detail panel (ZKL-64 item 11). */
+import { useI18n } from "vue-i18n";
+
 import { useServiceConnectionsPageContext } from "../composables/useServiceConnectionsPageContext";
 
+const { t } = useI18n();
 const scp = useServiceConnectionsPageContext();
 const {
   connectionCurrentView,
@@ -36,10 +39,10 @@ const {
       <div>
         <button class="connection-detail-back" type="button" @click.stop="closeConnectionPreview">
           <i class="fa-solid fa-chevron-left" />
-          返回连接列表
+          {{ t("connections.backToList") }}
         </button>
         <span />
-        <small>只读详情</small>
+        <small>{{ t("connections.readonlyDetail") }}</small>
       </div>
       <div>
         <button
@@ -50,7 +53,11 @@ const {
           @click.stop="verifyConnection(detailConnection)"
         >
           <i :class="isConnectionVerifying(detailConnection.id) ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-vial'" />
-          {{ isConnectionVerifying(detailConnection.id) ? "验证中" : "验证连接" }}
+          {{
+            isConnectionVerifying(detailConnection.id)
+              ? t("connections.verifying")
+              : t("connections.verifyConnection")
+          }}
         </button>
         <button
           class="connection-primary-button compact"
@@ -58,7 +65,7 @@ const {
           @click.stop="openConnectionEditor(detailConnection)"
         >
           <i class="fa-solid fa-pen" />
-          编辑连接
+          {{ t("connections.editConnection") }}
         </button>
       </div>
     </div>
@@ -67,22 +74,28 @@ const {
       <div>
         <div class="connection-detail-hero-icon"><i class="fa-solid fa-plug" /></div>
         <div>
-          <span class="connection-eyebrow">连接详情</span>
-          <h2 tabindex="0" :title="detailConnection.name" :aria-label="`完整连接名称：${detailConnection.name}`">
+          <span class="connection-eyebrow">{{ t("connections.detailEyebrow") }}</span>
+          <h2
+            tabindex="0"
+            :title="detailConnection.name"
+            :aria-label="t('connections.fullNameAria', { name: detailConnection.name })"
+          >
             {{ detailConnection.name }}
           </h2>
           <p>
             <span
               tabindex="0"
               :title="connectionAddress(detailConnection)"
-              :aria-label="`完整服务地址：${connectionAddress(detailConnection)}`"
+              :aria-label="t('connections.fullAddressAria', { address: connectionAddress(detailConnection) })"
               >{{ connectionAddress(detailConnection) }}</span
             >
             <button
               class="connection-copy-button hero-copy"
               type="button"
-              aria-label="复制详情服务地址"
-              @click.stop="copyConnectionText(connectionAddress(detailConnection), '服务地址')"
+              :aria-label="t('connections.copyDetailAddressAria')"
+              @click.stop="
+                copyConnectionText(connectionAddress(detailConnection), t('connections.serviceAddress'))
+              "
             >
               <i class="fa-regular fa-copy" />
             </button>
@@ -98,11 +111,17 @@ const {
     <div class="connection-verdict-banner" :class="statusClass(detailConnection)">
       <i
         :class="
-          statusLabel(detailConnection) === '可用' ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-exclamation'
+          statusClass(detailConnection) === 'available'
+            ? 'fa-solid fa-circle-check'
+            : 'fa-solid fa-circle-exclamation'
         "
       />
       <div>
-        <strong>{{ statusLabel(detailConnection) === "可用" ? "当前连接可被 Tool 使用" : "当前连接需要处理" }}</strong>
+        <strong>{{
+          statusClass(detailConnection) === "available"
+            ? t("connections.availableForTools")
+            : t("connections.needsAttention")
+        }}</strong>
         <span>{{ verificationSummary(detailConnection.id) }}</span>
       </div>
     </div>
@@ -111,40 +130,46 @@ const {
       <article class="connection-detail-card">
         <header class="connection-detail-card-head">
           <i class="fa-solid fa-link" />
-          <strong>服务地址</strong>
-          <span>— Tool 调用时实际访问的位置</span>
+          <strong>{{ t("connections.serviceAddressCard") }}</strong>
+          <span>{{ t("connections.serviceAddressCardHint") }}</span>
         </header>
         <div class="connection-detail-facts">
           <span
-            ><small>最终访问地址</small
+            ><small>{{ t("connections.finalAddress") }}</small
             ><code
               tabindex="0"
               :title="connectionAddress(detailConnection)"
-              :aria-label="`完整最终访问地址：${connectionAddress(detailConnection)}`"
+              :aria-label="t('connections.fullFinalAddressAria', { address: connectionAddress(detailConnection) })"
               >{{ connectionAddress(detailConnection) }}</code
             ></span
           >
           <span
-            ><small>验证接口</small
+            ><small>{{ t("connections.verificationEndpoint") }}</small
             ><code
               tabindex="0"
               :title="`${detailConnection.protocolConfig.verificationMethod || 'GET'} ${verificationPathLabel(detailConnection)}`"
-              :aria-label="`完整验证接口：${detailConnection.protocolConfig.verificationMethod || 'GET'} ${verificationPathLabel(detailConnection)}`"
+              :aria-label="
+                t('connections.fullVerificationAria', {
+                  endpoint: `${detailConnection.protocolConfig.verificationMethod || 'GET'} ${verificationPathLabel(detailConnection)}`,
+                })
+              "
               >{{ detailConnection.protocolConfig.verificationMethod || "GET" }}
               {{ verificationPathLabel(detailConnection) }}</code
             ></span
           >
           <span
-            ><small>协议</small><b>{{ detailConnection.protocol || "HTTP" }}</b></span
+            ><small>{{ t("connections.protocol") }}</small
+            ><b>{{ detailConnection.protocol || "HTTP" }}</b></span
           >
           <span
-            ><small>端口</small><code>{{ connectionPortLabel(detailConnection) }}</code></span
+            ><small>{{ t("connections.port") }}</small
+            ><code>{{ connectionPortLabel(detailConnection) }}</code></span
           >
           <span
             ><small>Base Path</small><code>{{ detailConnection.protocolConfig.basePath || "/" }}</code></span
           >
           <span
-            ><small>期望状态码</small
+            ><small>{{ t("connections.expectedStatus") }}</small
             ><code>{{ detailConnection.protocolConfig.expectedStatus || "200-299" }}</code></span
           >
         </div>
@@ -153,21 +178,24 @@ const {
       <article class="connection-detail-card">
         <header class="connection-detail-card-head">
           <i class="fa-solid fa-key" />
-          <strong>认证方式</strong>
+          <strong>{{ t("connections.authMethod") }}</strong>
         </header>
         <div class="connection-detail-facts">
           <span
-            ><small>认证类型</small
+            ><small>{{ t("connections.authType") }}</small
             ><b>{{ authModeLabel(detailConnection.authConfig.mode, detailConnection.authConfig.label) }}</b></span
           >
           <span
-            ><small>凭证位置</small><b>{{ credentialPlacementLabel(detailConnection) }}</b></span
+            ><small>{{ t("connections.credentialPlacement") }}</small
+            ><b>{{ credentialPlacementLabel(detailConnection) }}</b></span
           >
           <span
-            ><small>使用环境</small><em>{{ environmentLabel(detailConnection.environment) }}</em></span
+            ><small>{{ t("connections.environment") }}</small
+            ><em>{{ environmentLabel(detailConnection.environment) }}</em></span
           >
           <span
-            ><small>凭证过期后</small><b>{{ refreshModeLabel(detailConnection) }}</b></span
+            ><small>{{ t("connections.afterExpires") }}</small
+            ><b>{{ refreshModeLabel(detailConnection) }}</b></span
           >
         </div>
       </article>
@@ -175,7 +203,7 @@ const {
       <article class="connection-detail-card">
         <header class="connection-detail-card-head">
           <i class="fa-solid fa-vial-circle-check" />
-          <strong>验证结果</strong>
+          <strong>{{ t("connections.verificationResult") }}</strong>
           <span>{{ verificationModeLabel(detailConnection.id) }}</span>
         </header>
         <div class="connection-verification-plan">

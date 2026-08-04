@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AppSelect from "../components/AppSelect.vue";
 import ManagementList from "../components/ManagementList.vue";
 import { APIError, apiClient, type AuthUserDTO } from "../services/api";
+import { createTestI18n } from "../test-utils/i18n";
 import UserAccessView from "./UserAccessView.vue";
 
 vi.mock("vue-router", () => ({
@@ -186,7 +187,10 @@ describe("user access management view", () => {
 function mountView() {
   return mount(UserAccessView, {
     attachTo: document.body,
-    global: { plugins: [createPinia(), ElementPlus], directives: { loading: () => undefined } },
+    global: {
+      plugins: [createPinia(), createTestI18n("zh-CN"), ElementPlus],
+      directives: { loading: () => undefined },
+    },
   });
 }
 

@@ -1,0 +1,18 @@
+{
+  "selectWorkspace": "选择业务空间",
+  "switchWorkspaceAria": "切换当前业务空间：{name}",
+  "searchWorkspaces": "搜索业务空间",
+  "accessibleWorkspaces": "可选择的业务空间",
+  "noMatchingWorkspaces": "没有匹配的业务空间",
+  "manageWorkspaces": "管理业务空间",
+  "modeProduction": "生产",
+  "modeSandbox": "沙箱",
+  "openUserMenu": "打开用户菜单",
+  "userMenu": "用户菜单",
+  "runtimeStatus": "运行时状态",
+  "notificationsAudit": "通知与审计",
+  "signOut": "退出登录",
+  "allWorkspaces": "全部业务空间",
+  "platformAdmin": "平台管理员",
+  "user": "用户"
+}

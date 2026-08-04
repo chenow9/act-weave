@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
+
 import AppSelect from "../../AppSelect.vue";
 import WorkflowVariablePicker from "../WorkflowVariablePicker.vue";
 import type { WorkflowGraphNode } from "../../../types/domain";
@@ -11,6 +13,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: "update-node-data", payload: { key: string; value: unknown }): void;
 }>();
+
+const { t } = useI18n();
 
 const variableOptions = props.variableRefs
   .map((value) => value.replace(/^\{\{/, "").replace(/\}\}$/, ""))
@@ -87,33 +91,33 @@ function updateOutputPath(path: string) {
 <template>
   <section class="workflow-foreach-node-editor">
     <label class="drawer-field">
-      <span>集合引用</span>
+      <span>{{ t("workflow.collectionRef") }}</span>
       <AppSelect
         class="workflow-advanced-input-select"
         :model-value="collectionPath()"
         :options="variableOptions"
-        placeholder="选择数组变量"
+        :placeholder="t('workflow.selectArrayVar')"
         @update:model-value="updateCollection(String($event))"
       />
     </label>
 
     <label class="drawer-field">
-      <span>迭代别名</span>
+      <span>{{ t("workflow.itemAlias") }}</span>
       <input
         name="node-foreach-item-alias"
         :value="itemAlias()"
-        placeholder="例如 order"
+        :placeholder="t('workflow.itemAliasPh')"
         @input="emit('update-node-data', { key: 'itemAlias', value: ($event.target as HTMLInputElement).value })"
       />
     </label>
 
     <label class="drawer-field">
-      <span>并发度</span>
+      <span>{{ t("workflow.concurrency") }}</span>
       <input
         name="node-foreach-concurrency"
         inputmode="numeric"
         :value="concurrencyValue()"
-        placeholder="例如 3"
+        :placeholder="t('workflow.concurrencyPh')"
         @input="updateConcurrency(($event.target as HTMLInputElement).value)"
       />
     </label>
@@ -127,8 +131,8 @@ function updateOutputPath(path: string) {
 
     <section class="workflow-inspector-vars">
       <div class="workflow-section-caption">
-        <strong>可用迭代变量</strong>
-        <small>下游可引用</small>
+        <strong>{{ t("workflow.iterationVars") }}</strong>
+        <small>{{ t("workflow.downstreamUsable") }}</small>
       </div>
       <div class="workflow-token-list">
         <span class="workflow-token">foreach.item</span>
@@ -138,13 +142,10 @@ function updateOutputPath(path: string) {
 
     <section class="workflow-inspector-vars workflow-schema-preview">
       <div class="workflow-section-caption">
-        <strong>运行语义</strong>
+        <strong>{{ t("workflow.runtimeSemantics") }}</strong>
         <small>foreach controller</small>
       </div>
-      <p>
-        当前运行时会解析 collection、itemAlias、concurrency，并让下游节点在循环作用域中使用 `foreach.item` /
-        `foreach.alias` 路径，同时支持 loop output mapping。
-      </p>
+      <p>{{ t("workflow.foreachRuntimeHint") }}</p>
     </section>
   </section>
 </template>
