@@ -351,7 +351,8 @@ test.describe("console smoke (mocked API)", () => {
     const newPassInputs = page.locator('input[autocomplete="new-password"]');
     await newPassInputs.nth(0).fill("New-Password-123456");
     await newPassInputs.nth(1).fill("New-Password-123456");
-    await page.getByRole("button", { name: /修改密码并重新登录/ }).click();
+    // auth.submitChangePassword (zh-CN): "更新密码"
+    await page.getByRole("button", { name: /更新密码/ }).click();
     await expect(page).toHaveURL(/login/, { timeout: 15_000 });
     await expect(page.getByText(/密码已更新/)).toBeVisible({ timeout: 10_000 });
   });
