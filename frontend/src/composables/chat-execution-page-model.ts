@@ -76,13 +76,9 @@ export function createChatExecutionPageModel() {
     () => selectedWorkspace.value?.displayName || selectedWorkspace.value?.name || tt("chat.allWorkspaces"),
   );
   const activeAgentLabel = computed(
-    () =>
-      selectedAgent.value?.name ||
-      (contextLoading.value ? tt("chat.loadingAgent") : tt("chat.selectAgent")),
+    () => selectedAgent.value?.name || (contextLoading.value ? tt("chat.loadingAgent") : tt("chat.selectAgent")),
   );
-  const activeUserLabel = computed(
-    () => auth.user?.username || auth.user?.displayName || tt("chat.currentUser"),
-  );
+  const activeUserLabel = computed(() => auth.user?.username || auth.user?.displayName || tt("chat.currentUser"));
   const activeUserInitials = computed(() => {
     const source = (auth.user?.displayName || auth.user?.username || tt("chat.me")).trim();
     const words = source.split(/[\s._-]+/).filter(Boolean);
@@ -101,9 +97,7 @@ export function createChatExecutionPageModel() {
     chat.activeSession?.status === "ARCHIVED" ? tt("chat.archived") : tt("chat.unavailable"),
   );
   const composerPlaceholder = computed(() =>
-    activeSessionReadOnly.value
-      ? tt("chat.composerReadonlyPlaceholder")
-      : tt("chat.composerPlaceholder"),
+    activeSessionReadOnly.value ? tt("chat.composerReadonlyPlaceholder") : tt("chat.composerPlaceholder"),
   );
   const filteredSessions = computed(() => {
     const keyword = sessionKeyword.value.trim().toLowerCase();
@@ -687,9 +681,7 @@ export function createChatExecutionPageModel() {
     if (step.errorCode) return tt("chat.errorCode", { code: step.errorCode });
     if (step.capabilityReleaseId) return tt("chat.capabilityRelease", { id: step.capabilityReleaseId });
     return (
-      summarizeRuntimeValue(step.outputSummary) ||
-      summarizeRuntimeValue(step.inputSummary) ||
-      tt("chat.stepPersisted")
+      summarizeRuntimeValue(step.outputSummary) || summarizeRuntimeValue(step.inputSummary) || tt("chat.stepPersisted")
     );
   }
 

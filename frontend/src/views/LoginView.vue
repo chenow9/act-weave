@@ -174,11 +174,12 @@ async function switchLanguage(next: AppLocale) {
 .login-lang button.active {
   background: #fff;
   color: var(--aw-green-ink, #0b7a55);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 0 0 1px color-mix(in srgb, var(--aw-green, #0f9f6e) 18%, transparent);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.08),
+    0 0 0 1px color-mix(in srgb, var(--aw-green, #0f9f6e) 18%, transparent);
 }
 .login-lang button:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--aw-green, #0f9f6e) 55%, transparent);
   outline-offset: 1px;
 }
 </style>
-

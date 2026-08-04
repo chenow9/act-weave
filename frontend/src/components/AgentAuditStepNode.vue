@@ -124,11 +124,7 @@ function delegationPath(step: AgentAuditStep): string {
         >
           tok unknown
         </span>
-        <span
-          v-if="step.type === 'agent_delegation'"
-          class="mono pill"
-          data-testid="delegation-attempts"
-        >
+        <span v-if="step.type === 'agent_delegation'" class="mono pill" data-testid="delegation-attempts">
           {{ t("logs.attempts", { attempt: step.attemptCount ?? 0, retry: step.retryCount ?? 0 }) }}
         </span>
       </div>
@@ -144,9 +140,7 @@ function delegationPath(step: AgentAuditStep): string {
         <span v-if="step.childRunId" :title="step.childRunId"> · {{ t("logs.childTask") }}</span>
         <span v-if="step.remoteTaskId" :title="step.remoteTaskId"> · {{ t("logs.remoteTask") }}</span>
         <span v-if="step.remoteEndpointRef"> · {{ step.remoteEndpointRef }}</span>
-        <span v-if="step.protocolStatus">
-          · {{ t("logs.protocolStatus", { status: step.protocolStatus }) }}
-        </span>
+        <span v-if="step.protocolStatus"> · {{ t("logs.protocolStatus", { status: step.protocolStatus }) }} </span>
         <span v-if="step.errorMessage"> · {{ step.errorMessage }}</span>
       </p>
       <p v-if="stepText(step)" class="step-content" :class="{ reasoning: step.type === 'reasoning' }">

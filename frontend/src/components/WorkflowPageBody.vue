@@ -170,9 +170,9 @@ void WorkspaceContextState;
           }}</span></template
         >
         <template #cell-nodes="{ row: workflow }"
-          ><span class="workflow-mono-cell aw-table-meta"
-            >{{ t("workflow.stepsEdges", { steps: workflowNodeCount(workflow), edges: workflowEdgeCount(workflow) }) }}</span
-          ></template
+          ><span class="workflow-mono-cell aw-table-meta">{{
+            t("workflow.stepsEdges", { steps: workflowNodeCount(workflow), edges: workflowEdgeCount(workflow) })
+          }}</span></template
         >
         <template #cell-successRate="{ row: workflow }"
           ><span class="workflow-success-cell aw-table-meta">{{ workflowSuccessRateLabel(workflow) }}</span></template
@@ -206,11 +206,7 @@ void WorkspaceContextState;
             </div>
             <h2>{{ workflowStore.workflows.length ? t("workflow.noMatchTitle") : t("workflow.emptyTitle") }}</h2>
             <p>
-              {{
-                workflowStore.workflows.length
-                  ? t("workflow.noMatchBody")
-                  : t("workflow.emptyBody")
-              }}
+              {{ workflowStore.workflows.length ? t("workflow.noMatchBody") : t("workflow.emptyBody") }}
             </p>
             <button
               v-if="workflowStore.workflows.length"
@@ -220,7 +216,9 @@ void WorkspaceContextState;
             >
               {{ t("workflow.clearFilters") }}
             </button>
-            <button v-else class="primary-button" type="button" @click="openCreateWorkflow">{{ t("workflow.newWorkflow") }}</button>
+            <button v-else class="primary-button" type="button" @click="openCreateWorkflow">
+              {{ t("workflow.newWorkflow") }}
+            </button>
           </div>
         </template>
       </ManagementList>
@@ -244,7 +242,12 @@ void WorkspaceContextState;
               <span>Workflow Lifecycle</span>
               <h3>{{ t("workflow.detailTitle") }}</h3>
             </div>
-            <button class="icon-action-button" type="button" :aria-label="t('workflow.closeDetail')" @click="closeWorkflowDetail">
+            <button
+              class="icon-action-button"
+              type="button"
+              :aria-label="t('workflow.closeDetail')"
+              @click="closeWorkflowDetail"
+            >
               <i class="fa-solid fa-xmark" />
             </button>
           </div>

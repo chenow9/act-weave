@@ -54,9 +54,7 @@ const {
         >
           <i :class="isConnectionVerifying(detailConnection.id) ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-vial'" />
           {{
-            isConnectionVerifying(detailConnection.id)
-              ? t("connections.verifying")
-              : t("connections.verifyConnection")
+            isConnectionVerifying(detailConnection.id) ? t("connections.verifying") : t("connections.verifyConnection")
           }}
         </button>
         <button
@@ -93,9 +91,7 @@ const {
               class="connection-copy-button hero-copy"
               type="button"
               :aria-label="t('connections.copyDetailAddressAria')"
-              @click.stop="
-                copyConnectionText(connectionAddress(detailConnection), t('connections.serviceAddress'))
-              "
+              @click.stop="copyConnectionText(connectionAddress(detailConnection), t('connections.serviceAddress'))"
             >
               <i class="fa-regular fa-copy" />
             </button>
@@ -111,9 +107,7 @@ const {
     <div class="connection-verdict-banner" :class="statusClass(detailConnection)">
       <i
         :class="
-          statusClass(detailConnection) === 'available'
-            ? 'fa-solid fa-circle-check'
-            : 'fa-solid fa-circle-exclamation'
+          statusClass(detailConnection) === 'available' ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-exclamation'
         "
       />
       <div>

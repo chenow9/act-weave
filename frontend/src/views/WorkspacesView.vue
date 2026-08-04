@@ -27,7 +27,7 @@ type WorkspaceModeFilter = "ALL" | Workspace["mode"];
 type WorkspaceDetailTab = "overview" | "members" | "agents";
 const router = useRouter();
 const auth = useAuthStore();
-const { t, locale } = useI18n();
+const { t } = useI18n();
 const workspaces = useWorkspaceStore();
 const agents = useAgentStore();
 
@@ -136,7 +136,13 @@ const workspaceColumns = computed<ManagementListColumn<Workspace>[]>(() => [
     sortKey: "mode",
     getValue: (workspace) => workspace.mode,
   },
-  { key: "defaultAgent", label: t("workspaces.colDefaultAgent"), width: 180, hidable: true, getValue: getDefaultAgentLabel },
+  {
+    key: "defaultAgent",
+    label: t("workspaces.colDefaultAgent"),
+    width: 180,
+    hidable: true,
+    getValue: getDefaultAgentLabel,
+  },
   {
     key: "status",
     label: t("workspaces.colStatus"),
@@ -226,14 +232,18 @@ const displayedWorkspaceAgents = computed<Agent[]>(() => {
   });
 });
 const workspaceAgentCount = computed(() => currentWorkspaceAgents.value.length);
-const workspaceModalTitle = computed(() => (workspaceModalMode.value === "create" ? t("workspaces.create") : t("workspaces.edit")));
+const workspaceModalTitle = computed(() =>
+  workspaceModalMode.value === "create" ? t("workspaces.create") : t("workspaces.edit"),
+);
 const workspaceNameError = computed(() => {
   const name = draftWorkspace.value.name.trim();
   if (!name) return t("workspaces.nameRequired");
   if (!workspaceNamePattern.test(name)) return t("workspaces.namePattern");
   return "";
 });
-const workspaceDisplayNameError = computed(() => (draftWorkspace.value.displayName.trim() ? "" : t("workspaces.displayNameRequired")));
+const workspaceDisplayNameError = computed(() =>
+  draftWorkspace.value.displayName.trim() ? "" : t("workspaces.displayNameRequired"),
+);
 const workspaceFormErrors = computed(() => {
   const errors: string[] = [];
   if (workspaceNameError.value) errors.push(workspaceNameError.value);
@@ -247,9 +257,10 @@ const workspaceDisplayNameInvalid = computed(
 const canSaveWorkspaceDraft = computed(() => workspaceFormErrors.value.length === 0);
 const workspaceFormMissingHint = computed(() => {
   if (canSaveWorkspaceDraft.value) return "";
-  const missing = [workspaceNameError.value && t("workspaces.fieldName"), workspaceDisplayNameError.value && t("workspaces.fieldDisplayName")].filter(
-    Boolean,
-  );
+  const missing = [
+    workspaceNameError.value && t("workspaces.fieldName"),
+    workspaceDisplayNameError.value && t("workspaces.fieldDisplayName"),
+  ].filter(Boolean);
   return t("workspaces.fillRequired", { fields: missing.join(", ") });
 });
 const canConfirmWorkspaceDelete = computed(() => {
@@ -518,7 +529,12 @@ async function bulkSetSelectedWorkspaceStatus(status: Workspace["status"]) {
       }
     }
     await refreshWorkspaceCatalogAndPage();
-    showWorkspaceToast(t("workspaces.bulkStatus", { action: status === "Active" ? t("workspaces.enabled") : t("workspaces.disabled"), n: selected.length }));
+    showWorkspaceToast(
+      t("workspaces.bulkStatus", {
+        action: status === "Active" ? t("workspaces.enabled") : t("workspaces.disabled"),
+        n: selected.length,
+      }),
+    );
     clearWorkspaceSelection();
   } finally {
     workspaceStatusSaving.value = false;
@@ -649,7 +665,9 @@ async function saveDraftWorkspace() {
 
 /** List-row menu: view → edit → lifecycle → danger (ZKL-33 menu-only). */
 function workspaceMenuActions(workspace: Workspace): ManagementRowAction[] {
-  const actions: ManagementRowAction[] = [{ key: "view", label: t("workspaces.viewDetails"), icon: "fa-solid fa-eye", tone: "primary" }];
+  const actions: ManagementRowAction[] = [
+    { key: "view", label: t("workspaces.viewDetails"), icon: "fa-solid fa-eye", tone: "primary" },
+  ];
   if (workspaces.can(workspace.id, "EDIT")) {
     actions.push({ key: "edit", label: t("workspaces.editInfo"), icon: "fa-solid fa-pen" });
   }
@@ -880,7 +898,16 @@ function reconcileWorkspaceListContext() {
         <button class="ghost-button" type="button" :disabled="pageInitialLoading" @click="reloadWorkspacePage">
           {{ pageInitialLoading ? t("workspaces.retrying") : t("workspaces.reload") }}
         </button>
-        <button v-if="workspacePageError.includes(t('workspaces.sessionMarker')) || workspacePageError.includes('session') || workspacePageError.includes('Session')" class="primary-button" type="button" @click="goLogin">
+        <button
+          v-if="
+            workspacePageError.includes(t('workspaces.sessionMarker')) ||
+            workspacePageError.includes('session') ||
+            workspacePageError.includes('Session')
+          "
+          class="primary-button"
+          type="button"
+          @click="goLogin"
+        >
           {{ t("workspaces.relogin") }}
         </button>
       </div>
@@ -892,9 +919,7 @@ function reconcileWorkspaceListContext() {
           <div>
             <span>{{ t("workspaces.listManage") }}</span>
             <strong>{{ t("workspaces.matchCount", { n: workspaces.pagination.total }) }}</strong>
-            <small
-              >{{ t("workspaces.fullCatalogHint", { n: workspaces.items.length }) }}</small
-            >
+            <small>{{ t("workspaces.fullCatalogHint", { n: workspaces.items.length }) }}</small>
           </div>
           <p class="workspace-narrow-notice">{{ t("workspaces.narrowNotice") }}</p>
         </header>
@@ -1047,7 +1072,9 @@ function reconcileWorkspaceListContext() {
               <p>
                 {{ t("workspaces.emptyBody") }}
               </p>
-              <button class="primary-button" type="button" @click="openCreateWorkspace">{{ t("workspaces.createShort") }}</button>
+              <button class="primary-button" type="button" @click="openCreateWorkspace">
+                {{ t("workspaces.createShort") }}
+              </button>
             </div>
             <div v-else class="empty-state registry-empty-state management-registry-empty-state">
               <div class="management-empty-state-icon">
@@ -1055,14 +1082,18 @@ function reconcileWorkspaceListContext() {
               </div>
               <h2>{{ t("workspaces.noMatchTitle") }}</h2>
               <p>{{ t("workspaces.noMatchHint") }}</p>
-              <button class="ghost-button" type="button" @click="clearWorkspaceFilters">{{ t("workspaces.resetFilters") }}</button>
+              <button class="ghost-button" type="button" @click="clearWorkspaceFilters">
+                {{ t("workspaces.resetFilters") }}
+              </button>
             </div>
           </template>
           <template #error>
             <div class="workspace-load-error" role="alert">
               <i class="fa-solid fa-circle-exclamation" aria-hidden="true" />
               <span>{{ workspaces.pageError || t("workspaces.listLoadFailed") }}</span>
-              <button class="ghost-button" type="button" @click="loadWorkspaceRegistry()">{{ t("workspaces.retry") }}</button>
+              <button class="ghost-button" type="button" @click="loadWorkspaceRegistry()">
+                {{ t("workspaces.retry") }}
+              </button>
             </div>
           </template>
         </ManagementList>
@@ -1181,7 +1212,9 @@ function reconcileWorkspaceListContext() {
               </article>
               <article>
                 <span><i class="fa-solid fa-shield-halved" aria-hidden="true" />{{ t("workspaces.isolationEnv") }}</span
-                ><strong>{{ detailWorkspace.mode === "Production" ? t("workspaces.prod") : t("workspaces.sandbox") }}</strong
+                ><strong>{{
+                  detailWorkspace.mode === "Production" ? t("workspaces.prod") : t("workspaces.sandbox")
+                }}</strong
                 ><small>{{ t("workspaces.isolationHint") }}</small>
               </article>
             </div>
@@ -1190,7 +1223,10 @@ function reconcileWorkspaceListContext() {
               <article class="workspace-detail-content-card">
                 <header class="workspace-detail-section-title">
                   <span><i class="fa-solid fa-fingerprint" aria-hidden="true" /></span>
-                  <div><strong>{{ t("workspaces.identityTitle") }}</strong><small>{{ t("workspaces.identitySub") }}</small></div>
+                  <div>
+                    <strong>{{ t("workspaces.identityTitle") }}</strong
+                    ><small>{{ t("workspaces.identitySub") }}</small>
+                  </div>
                 </header>
                 <dl class="workspace-detail-metadata">
                   <div>
@@ -1228,7 +1264,10 @@ function reconcileWorkspaceListContext() {
             <article class="workspace-detail-content-card workspace-detail-members-card">
               <header class="workspace-detail-section-title workspace-detail-section-title--split">
                 <span><i class="fa-solid fa-user-shield" aria-hidden="true" /></span>
-                <div><strong>{{ t("workspaces.membersRolesTitle") }}</strong><small>{{ t("workspaces.membersRolesSub") }}</small></div>
+                <div>
+                  <strong>{{ t("workspaces.membersRolesTitle") }}</strong
+                  ><small>{{ t("workspaces.membersRolesSub") }}</small>
+                </div>
                 <em>{{ t("workspaces.memberCount", { n: workspaceMembers(detailWorkspace.id).length }) }}</em>
               </header>
 
@@ -1258,7 +1297,9 @@ function reconcileWorkspaceListContext() {
                     <AppSelect
                       v-model="newMemberUserId"
                       :options="memberCandidateOptions"
-                      :placeholder="memberCandidatesLoading ? t('workspaces.loadingCandidates') : t('workspaces.selectUserToAdd')"
+                      :placeholder="
+                        memberCandidatesLoading ? t('workspaces.loadingCandidates') : t('workspaces.selectUserToAdd')
+                      "
                       :disabled="memberCandidatesLoading"
                       filterable
                       :aria-label="t('workspaces.selectMember')"
@@ -1267,9 +1308,9 @@ function reconcileWorkspaceListContext() {
                   <small v-if="memberCandidatesError" class="workspace-member-candidate-error" role="alert">{{
                     memberCandidatesError
                   }}</small>
-                  <small v-else-if="!memberCandidatesLoading && !memberCandidates.length"
-                    >{{ t("workspaces.noActiveUsers") }}</small
-                  >
+                  <small v-else-if="!memberCandidatesLoading && !memberCandidates.length">{{
+                    t("workspaces.noActiveUsers")
+                  }}</small>
                 </div>
                 <label class="workspace-member-role-field">
                   <span>{{ t("workspaces.spaceRole") }}</span>
@@ -1343,7 +1384,8 @@ function reconcileWorkspaceListContext() {
               <header class="workspace-detail-section-title workspace-detail-section-title--split">
                 <span><i class="fa-solid fa-robot" aria-hidden="true" /></span>
                 <div>
-                  <strong>{{ t("workspaces.agentsInSpaceTitle") }}</strong><small>{{ t("workspaces.agentsInSpaceSub") }}</small>
+                  <strong>{{ t("workspaces.agentsInSpaceTitle") }}</strong
+                  ><small>{{ t("workspaces.agentsInSpaceSub") }}</small>
                 </div>
                 <em>{{ t("workspaces.activeAgentCount", { n: workspaceAgentCount }) }}</em>
               </header>
@@ -1358,7 +1400,9 @@ function reconcileWorkspaceListContext() {
                     ><strong>{{ agent.name }}</strong
                     ><small>{{ agent.roleDescription }}</small></span
                   >
-                  <em v-if="agent.isDefault" class="workspace-detail-agent-default">{{ t("workspaces.defaultAgentBadge") }}</em>
+                  <em v-if="agent.isDefault" class="workspace-detail-agent-default">{{
+                    t("workspaces.defaultAgentBadge")
+                  }}</em>
                 </div>
                 <div v-if="!displayedWorkspaceAgents.length" class="workspace-detail-empty-state">
                   <i class="fa-solid fa-robot" aria-hidden="true" />
@@ -1416,9 +1460,7 @@ function reconcileWorkspaceListContext() {
                 required
                 @blur="workspaceFormTouched = true"
               />
-              <small id="workspace-name-helper"
-                >{{ t("workspaces.nameHelp") }}</small
-              >
+              <small id="workspace-name-helper">{{ t("workspaces.nameHelp") }}</small>
               <small v-if="workspaceNameInvalid" class="field-error">{{ workspaceNameError }}</small>
             </label>
             <label class="modal-field">
@@ -1449,7 +1491,9 @@ function reconcileWorkspaceListContext() {
                   @click="draftWorkspace.mode = option.value"
                 >
                   <i v-if="draftWorkspace.mode === option.value" class="fa-solid fa-circle-check" aria-hidden="true" />
-                  {{ option.value === "Sandbox" ? t("workspaces.modeSandboxLabel") : t("workspaces.modeProductionLabel") }}
+                  {{
+                    option.value === "Sandbox" ? t("workspaces.modeSandboxLabel") : t("workspaces.modeProductionLabel")
+                  }}
                 </button>
               </div>
             </div>
@@ -1460,11 +1504,7 @@ function reconcileWorkspaceListContext() {
               {{ workspaceFormMissingHint }}
             </p>
             <p class="form-helper">
-              {{
-                workspaceModalMode === "create"
-                  ? t("workspaces.createHint")
-                  : t("workspaces.saveAffectsConfig")
-              }}
+              {{ workspaceModalMode === "create" ? t("workspaces.createHint") : t("workspaces.saveAffectsConfig") }}
             </p>
           </div>
 
@@ -1512,7 +1552,13 @@ function reconcileWorkspaceListContext() {
           <header class="modal-card-head">
             <div>
               <span>Lifecycle Guard</span>
-              <h3>{{ pendingWorkspaceStatusAction === "disable" ? t("workspaces.disableTitle") : t("workspaces.enableTitle") }}</h3>
+              <h3>
+                {{
+                  pendingWorkspaceStatusAction === "disable"
+                    ? t("workspaces.disableTitle")
+                    : t("workspaces.enableTitle")
+                }}
+              </h3>
             </div>
             <button
               class="icon-action-button"
@@ -1615,9 +1661,7 @@ function reconcileWorkspaceListContext() {
             </div>
           </div>
           <label class="modal-field workspace-confirm-input">
-            <span
-              >{{ t("workspaces.typeNameConfirm", { name: workspaceDeleteTarget.name }) }}</span
-            >
+            <span>{{ t("workspaces.typeNameConfirm", { name: workspaceDeleteTarget.name }) }}</span>
             <input
               ref="workspaceDeleteInputRef"
               v-model.trim="workspaceDeleteConfirmName"
@@ -1625,9 +1669,7 @@ function reconcileWorkspaceListContext() {
               :aria-invalid="workspaceDeleteConfirmName.length > 0 && !canConfirmWorkspaceDelete"
               aria-describedby="workspace-delete-name-helper workspace-delete-name-error"
             />
-            <small id="workspace-delete-name-helper"
-              >{{ t("workspaces.exactNameMatch") }}</small
-            >
+            <small id="workspace-delete-name-helper">{{ t("workspaces.exactNameMatch") }}</small>
             <small v-if="workspaceDeleteNameError" id="workspace-delete-name-error" class="field-error">{{
               workspaceDeleteNameError
             }}</small>

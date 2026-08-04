@@ -1386,9 +1386,9 @@ function errorMessage(error: unknown, fallback: string) {
                 </p>
               </div>
               <button type="button" :disabled="isLoadingAssets(provider.id)" @click="loadAssets(provider.id)">
-                <i
-                  :class="isLoadingAssets(provider.id) ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-rotate'"
-                />{{ t("providers.refreshAssets") }}
+                <i :class="isLoadingAssets(provider.id) ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-rotate'" />{{
+                  t("providers.refreshAssets")
+                }}
               </button>
             </div>
             <p v-if="assetErrors[provider.id]" class="provider-inline-error" role="alert">
@@ -1405,9 +1405,7 @@ function errorMessage(error: unknown, fallback: string) {
               v-else-if="!(providerStore.providerAssetsByProvider[provider.id] || []).length"
               class="provider-assets-state"
             >
-              {{
-                hasProviderDocument(provider) ? t("providers.noAssetsSyncFirst") : t("providers.noAssetsContinue")
-              }}
+              {{ hasProviderDocument(provider) ? t("providers.noAssetsSyncFirst") : t("providers.noAssetsContinue") }}
             </div>
             <div v-else class="provider-assets-list">
               <article v-for="asset in providerStore.providerAssetsByProvider[provider.id]" :key="asset.id">
@@ -1480,8 +1478,8 @@ function errorMessage(error: unknown, fallback: string) {
               </div>
             </dl>
             <div class="provider-actions mobile">
-              <button type="button" @click="openEditEditor(provider)"
-                ><i class="fa-solid fa-pen" />{{ t("providers.edit") }}</button
+              <button type="button" @click="openEditEditor(provider)">
+                <i class="fa-solid fa-pen" />{{ t("providers.edit") }}</button
               ><button
                 type="button"
                 :title="providerSyncTitle(provider)"
@@ -1489,8 +1487,8 @@ function errorMessage(error: unknown, fallback: string) {
                 @click="syncProvider(provider)"
               >
                 <i class="fa-solid fa-rotate" />{{ t("providers.sync") }}</button
-              ><button type="button" @click="toggleAssets(provider)"
-                ><i class="fa-solid fa-cubes" />{{ t("providers.assets") }}</button
+              ><button type="button" @click="toggleAssets(provider)">
+                <i class="fa-solid fa-cubes" />{{ t("providers.assets") }}</button
               ><button class="danger" type="button" @click="requestDeleteProvider(provider)">
                 <i class="fa-solid fa-trash-can" />{{ t("providers.delete") }}
               </button>
@@ -1509,14 +1507,10 @@ function errorMessage(error: unknown, fallback: string) {
           <div v-else class="providers-empty-state">
             <span><i class="fa-solid fa-cloud-arrow-down" /></span>
             <h2>
-              {{
-                search || statusFilter !== "ALL" ? t("providers.noMatchTitle") : t("providers.emptyTitle")
-              }}
+              {{ search || statusFilter !== "ALL" ? t("providers.noMatchTitle") : t("providers.emptyTitle") }}
             </h2>
             <p>
-              {{
-                search || statusFilter !== "ALL" ? t("providers.noMatchBody") : t("providers.emptyBody")
-              }}
+              {{ search || statusFilter !== "ALL" ? t("providers.noMatchBody") : t("providers.emptyBody") }}
             </p>
             <button
               v-if="canEditWorkspace && !search && statusFilter === 'ALL'"
@@ -1552,18 +1546,11 @@ function errorMessage(error: unknown, fallback: string) {
             ><span
               ><small>Provider Registry</small>
               <h2 id="provider-editor-title">
-                {{
-                  editorMode === "create" ? t("providers.editorCreateTitle") : t("providers.editorEditTitle")
-                }}
+                {{ editorMode === "create" ? t("providers.editorCreateTitle") : t("providers.editorEditTitle") }}
               </h2></span
             >
           </div>
-          <button
-            type="button"
-            :aria-label="t('providers.closeEditorAria')"
-            :disabled="saving"
-            @click="closeEditor"
-          >
+          <button type="button" :aria-label="t('providers.closeEditorAria')" :disabled="saving" @click="closeEditor">
             <i class="fa-solid fa-xmark" />
           </button>
         </header>
@@ -1611,7 +1598,8 @@ function errorMessage(error: unknown, fallback: string) {
                 /><small>{{ t("providers.serviceBaseUrlHint") }}</small></label
               >
               <label
-                ><span>{{ t("providers.fieldDocumentUrl") }} <em>{{ t("providers.optional") }}</em></span
+                ><span
+                  >{{ t("providers.fieldDocumentUrl") }} <em>{{ t("providers.optional") }}</em></span
                 ><input
                   v-model="providerDraft.documentUrl"
                   data-testid="provider-document-url"
@@ -1621,7 +1609,8 @@ function errorMessage(error: unknown, fallback: string) {
                 /><small>{{ t("providers.documentUrlHint") }}</small></label
               >
               <label
-                ><span>{{ t("providers.fieldAllowedCidrs") }} <em>{{ t("providers.asNeeded") }}</em></span
+                ><span
+                  >{{ t("providers.fieldAllowedCidrs") }} <em>{{ t("providers.asNeeded") }}</em></span
                 ><textarea
                   v-model="providerDraft.allowedCIDRs"
                   data-testid="provider-allowed-cidrs"
@@ -1829,9 +1818,8 @@ function errorMessage(error: unknown, fallback: string) {
             </section>
           </div>
           <footer>
-            <button class="ghost-button" type="button" :disabled="saving" @click="closeEditor">{{
-              t("providers.cancel")
-            }}</button
+            <button class="ghost-button" type="button" :disabled="saving" @click="closeEditor">
+              {{ t("providers.cancel") }}</button
             ><button data-testid="provider-save" class="primary-button" type="submit" :disabled="saving">
               <i :class="saving ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-floppy-disk'" />{{
                 saving ? t("providers.saving") : t("providers.saveProvider")
@@ -1885,9 +1873,9 @@ function errorMessage(error: unknown, fallback: string) {
               : 'fa-solid fa-circle-check'
         "
       />{{ actionNote
-      }}<button type="button" :aria-label="t('providers.closeNoteAria')" @click="actionNote = ''"
-        ><i class="fa-solid fa-xmark"
-      /></button>
+      }}<button type="button" :aria-label="t('providers.closeNoteAria')" @click="actionNote = ''">
+        <i class="fa-solid fa-xmark" />
+      </button>
     </div>
   </div>
 </template>

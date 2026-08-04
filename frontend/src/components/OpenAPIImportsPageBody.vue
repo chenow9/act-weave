@@ -104,9 +104,7 @@ void WorkspaceContextState;
         </template>
         <template #cell-connection="{ row: record }">
           <span class="openapi-connection-name aw-table-meta">{{
-            connectionById(record.connectionId || "")?.name ||
-            record.connectionId ||
-            t("openapi.defaultConnection")
+            connectionById(record.connectionId || "")?.name || record.connectionId || t("openapi.defaultConnection")
           }}</span>
         </template>
         <template #cell-totalEndpoints="{ row: record }">
@@ -264,7 +262,9 @@ void WorkspaceContextState;
             <div><i class="fa-solid fa-magnifying-glass" /></div>
             <h4>{{ t("openapi.noMatchTitle") }}</h4>
             <p>{{ t("openapi.noMatchBody") }}</p>
-            <button class="ghost-button" type="button" @click="resetOpenAPIFilters">{{ t("openapi.clearSearch") }}</button>
+            <button class="ghost-button" type="button" @click="resetOpenAPIFilters">
+              {{ t("openapi.clearSearch") }}
+            </button>
           </div>
         </template>
       </ManagementList>

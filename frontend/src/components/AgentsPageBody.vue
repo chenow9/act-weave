@@ -132,7 +132,9 @@ void WorkspaceContextState;
               class="prompt-preview-trigger"
               :title="agent.currentPromptRevisionId ? t('agents.viewPrompt') : t('agents.noPromptYet')"
               :aria-label="
-                agent.currentPromptRevisionId ? t('agents.viewPromptNamed', { name: agent.name }) : t('agents.noPromptNamed', { name: agent.name })
+                agent.currentPromptRevisionId
+                  ? t('agents.viewPromptNamed', { name: agent.name })
+                  : t('agents.noPromptNamed', { name: agent.name })
               "
               :disabled="!agent.currentPromptRevisionId"
               :aria-disabled="!agent.currentPromptRevisionId"

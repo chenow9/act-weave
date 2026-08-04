@@ -129,7 +129,9 @@ void ToolFlatContractEditor;
             <div class="tool-hybrid-form-stack">
               <section class="tool-hybrid-form-section">
                 <div class="tool-hybrid-section-head">
-                  <div><span>01</span><strong>{{ t("tools.sectionBasics") }}</strong></div>
+                  <div>
+                    <span>01</span><strong>{{ t("tools.sectionBasics") }}</strong>
+                  </div>
                   <small>{{ t("tools.sectionBasicsHelp") }}</small>
                 </div>
                 <label class="drawer-field"
@@ -148,7 +150,9 @@ void ToolFlatContractEditor;
 
               <section class="tool-hybrid-form-section">
                 <div class="tool-hybrid-section-head">
-                  <div><span>02</span><strong>{{ t("tools.sectionAction") }}</strong></div>
+                  <div>
+                    <span>02</span><strong>{{ t("tools.sectionAction") }}</strong>
+                  </div>
                   <small>{{ t("tools.sectionActionHelp") }}</small>
                 </div>
                 <div class="tool-endpoint-fields">
@@ -263,7 +267,9 @@ void ToolFlatContractEditor;
               }}<b>{{ draftConnection?.name || t("tools.noConnectionSelected") }}</b></span
             >
             <i />
-            <span>Capability Binding：<b>{{ t("tools.capabilityBindingAfterPublish") }}</b></span>
+            <span
+              >Capability Binding：<b>{{ t("tools.capabilityBindingAfterPublish") }}</b></span
+            >
             <button type="button" @click="goToDraftStep(1)">{{ t("tools.editEndpoint") }}</button>
           </div>
 
@@ -363,7 +369,9 @@ void ToolFlatContractEditor;
                     </button>
                   </div>
                 </div>
-                <div v-else class="tool-schema-empty"><span>{{ t("tools.noErrorMappings") }}</span></div>
+                <div v-else class="tool-schema-empty">
+                  <span>{{ t("tools.noErrorMappings") }}</span>
+                </div>
               </div>
             </section>
           </div>
@@ -371,7 +379,9 @@ void ToolFlatContractEditor;
 
         <template v-else>
           <div class="tool-review-heading">
-            <div><span>03</span><strong>{{ t("tools.confirmSaveDraft") }}</strong></div>
+            <div>
+              <span>03</span><strong>{{ t("tools.confirmSaveDraft") }}</strong>
+            </div>
             <small>{{ t("tools.confirmSaveDraftHelp") }}</small>
           </div>
           <div class="tool-review-summary-grid">

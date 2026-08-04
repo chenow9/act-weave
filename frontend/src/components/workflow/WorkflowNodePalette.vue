@@ -16,8 +16,18 @@ const { t } = useI18n();
 const emptyVariableRef = "{{input.orderId}}";
 
 const nodeLibrary = computed(() => [
-  { type: "Start" as const, icon: "fa-solid fa-play", title: t("workflow.nodeStart"), description: t("workflow.nodeStartDesc") },
-  { type: "Tool" as const, icon: "fa-solid fa-plug", title: t("workflow.nodeTool"), description: t("workflow.nodeToolDesc") },
+  {
+    type: "Start" as const,
+    icon: "fa-solid fa-play",
+    title: t("workflow.nodeStart"),
+    description: t("workflow.nodeStartDesc"),
+  },
+  {
+    type: "Tool" as const,
+    icon: "fa-solid fa-plug",
+    title: t("workflow.nodeTool"),
+    description: t("workflow.nodeToolDesc"),
+  },
   {
     type: "Condition" as const,
     icon: "fa-solid fa-code-branch",
@@ -54,7 +64,12 @@ const nodeLibrary = computed(() => [
     title: t("workflow.nodeApproval"),
     description: t("workflow.nodeApprovalDesc"),
   },
-  { type: "End" as const, icon: "fa-solid fa-flag-checkered", title: t("workflow.nodeEnd"), description: t("workflow.nodeEndDesc") },
+  {
+    type: "End" as const,
+    icon: "fa-solid fa-flag-checkered",
+    title: t("workflow.nodeEnd"),
+    description: t("workflow.nodeEndDesc"),
+  },
 ]);
 </script>
 

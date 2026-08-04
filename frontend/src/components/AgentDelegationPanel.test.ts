@@ -72,11 +72,7 @@ describe("AgentDelegationPanel", () => {
     mocks.updateA2ARemote.mockResolvedValue({});
   });
 
-  function mountPanel(props: {
-    workspaceId: string;
-    agentId: string;
-    agentOptions: { id: string; name: string }[];
-  }) {
+  function mountPanel(props: { workspaceId: string; agentId: string; agentOptions: { id: string; name: string }[] }) {
     return mount(AgentDelegationPanel, {
       props,
       global: {

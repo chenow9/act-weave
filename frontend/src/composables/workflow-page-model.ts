@@ -132,8 +132,7 @@ export function createWorkflowPageModel() {
     { label: tt("workflow.statusPublished"), value: "Published" },
     { label: tt("workflow.statusDisabled"), value: "Disabled" },
   ];
-  const workflowEditorHelpText =
-    tt("workflow.saveHint");
+  const workflowEditorHelpText = tt("workflow.saveHint");
 
   const workspaceOptions = computed(() =>
     (workspaces.items || []).map((workspace) => ({
@@ -142,7 +141,9 @@ export function createWorkflowPageModel() {
     })),
   );
   const workflowNameError = computed(() => (workflowDraft.value.name.trim() ? "" : tt("workflow.nameRequired")));
-  const workflowWorkspaceError = computed(() => (workflowDraft.value.workspaceId.trim() ? "" : tt("workflow.workspaceRequired")));
+  const workflowWorkspaceError = computed(() =>
+    workflowDraft.value.workspaceId.trim() ? "" : tt("workflow.workspaceRequired"),
+  );
   const canSaveWorkflowMetadata = computed(() => !workflowNameError.value && !workflowWorkspaceError.value);
   const statusLabels: Record<WorkflowStatus, string> = {
     Draft: tt("workflow.statusDraft"),
@@ -370,9 +371,7 @@ export function createWorkflowPageModel() {
     if (!selectedWorkflow.value) {
       return tt("workflow.diffEmptySelect");
     }
-    return selectedWorkflowRevisions.value.length > 1
-      ? tt("workflow.diffEmptyHint")
-      : tt("workflow.diffEmptyNeedTwo");
+    return selectedWorkflowRevisions.value.length > 1 ? tt("workflow.diffEmptyHint") : tt("workflow.diffEmptyNeedTwo");
   });
   const selectedWorkflowExecutionEmptyText = computed(() =>
     selectedWorkflow.value ? tt("workflow.executionEmptyWithWorkflow") : tt("workflow.executionEmptySelect"),
@@ -824,9 +823,7 @@ export function createWorkflowPageModel() {
     if (!workflow) return tt("workflow.triggerNone");
     const execution = workflowLastExecution(workflow);
     if (execution?.trigger) return execution.trigger;
-    return workflow.status === "Published"
-      ? tt("workflow.triggerAgentOrManual")
-      : tt("workflow.triggerAfterPublish");
+    return workflow.status === "Published" ? tt("workflow.triggerAgentOrManual") : tt("workflow.triggerAfterPublish");
   }
 
   function workflowExecutionCount(workflow: WorkflowSummary) {

@@ -105,11 +105,7 @@ defineExpose({ clearSecrets, clearAttachment, attachmentId });
 </script>
 
 <template>
-  <section
-    v-if="requiresPassthrough !== false"
-    class="debug-outbound-panel"
-    :aria-label="t('chat.outboundAria')"
-  >
+  <section v-if="requiresPassthrough !== false" class="debug-outbound-panel" :aria-label="t('chat.outboundAria')">
     <header class="debug-outbound-header">
       <strong>{{ t("chat.outboundTitle") }}</strong>
       <span class="debug-outbound-hint">{{ t("chat.outboundHint") }}</span>

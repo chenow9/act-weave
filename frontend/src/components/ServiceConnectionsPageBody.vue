@@ -429,11 +429,7 @@ void WorkspaceContextState;
               <div><i class="fa-solid fa-triangle-exclamation" /></div>
               <h4>{{ t("connections.loadFailedTitle") }}</h4>
               <p>{{ error }}</p>
-              <button
-                type="button"
-                :aria-label="t('connections.retryLoadAria')"
-                @click.stop="retryLoadConnections"
-              >
+              <button type="button" :aria-label="t('connections.retryLoadAria')" @click.stop="retryLoadConnections">
                 {{ t("connections.retry") }}
               </button>
             </div>
@@ -453,9 +449,7 @@ void WorkspaceContextState;
                 {{ hasConnectionRecords ? t("connections.emptyNoMatch") : t("connections.emptyTitle") }}
               </h4>
               <p>
-                {{
-                  hasConnectionRecords ? t("connections.emptyNoMatchBody") : t("connections.emptyBody")
-                }}
+                {{ hasConnectionRecords ? t("connections.emptyNoMatchBody") : t("connections.emptyBody") }}
               </p>
               <button
                 v-if="hasConnectionRecords"

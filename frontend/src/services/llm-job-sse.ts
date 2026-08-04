@@ -3,14 +3,7 @@
  * POST with Accept: text/event-stream, wait for completed|failed (+ heartbeats).
  */
 
-import {
-  APIError,
-  authRefreshClient,
-  getAuthToken,
-  setAuthToken,
-  toAPIError,
-  type AuthTokenResponse,
-} from "./api";
+import { APIError, authRefreshClient, getAuthToken, setAuthToken, toAPIError, type AuthTokenResponse } from "./api";
 
 const apiBaseURL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 
@@ -73,7 +66,9 @@ async function readErrorBody(response: Response): Promise<APIError> {
   } catch {
     data = undefined;
   }
-  const body = data as { error?: { code?: string; message?: string; requestId?: string; traceId?: string; details?: unknown[] } } | undefined;
+  const body = data as
+    | { error?: { code?: string; message?: string; requestId?: string; traceId?: string; details?: unknown[] } }
+    | undefined;
   return new APIError({
     status: response.status,
     code: body?.error?.code || `HTTP_${response.status}`,

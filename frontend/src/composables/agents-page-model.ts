@@ -135,7 +135,9 @@ export function createAgentsPageModel() {
       }
     },
   });
-  const studioTitle = computed(() => (studioMode.value === "create" ? tt("agents.createTitle") : tt("agents.editTitle")));
+  const studioTitle = computed(() =>
+    studioMode.value === "create" ? tt("agents.createTitle") : tt("agents.editTitle"),
+  );
   const promptDetailHTML = computed(() => renderPromptMarkdown(currentPromptBody.value || ""));
   const agentManagementFilterOptions = computed<Array<{ label: string; value: AgentStatusFilter }>>(() => [
     { label: tt("agents.filterAll"), value: "ALL" },
@@ -1387,10 +1389,7 @@ export function createAgentsPageModel() {
         showAgentToast(tt("agents.batchUnboundSuccess", { n: success }));
         capabilitySelectedIds.value = [];
       } else {
-        showAgentToast(
-          tt("agents.batchUnboundPartial", { success, failed }),
-          success > 0 ? "success" : "error",
-        );
+        showAgentToast(tt("agents.batchUnboundPartial", { success, failed }), success > 0 ? "success" : "error");
       }
     } finally {
       capabilitySavingId.value = "";

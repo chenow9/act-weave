@@ -182,9 +182,7 @@ const {
               </div>
             </div>
             <label class="connection-field select-field">
-              <span
-                >{{ t("connections.fieldProvider") }}<b class="connection-required-mark">*</b></span
-              >
+              <span>{{ t("connections.fieldProvider") }}<b class="connection-required-mark">*</b></span>
               <AppSelect
                 :model-value="draftConnection.providerId"
                 :options="providerOptions"
@@ -209,9 +207,7 @@ const {
             <!-- Dual-mode outbound identity (UI v0.1): only BROKER_OBO | REQUEST_PASSTHROUGH -->
             <div class="connection-outbound-strategy" data-testid="connection-outbound-strategy">
               <header class="connection-outbound-strategy-head">
-                <strong
-                  >{{ t("connections.outboundStrategy") }} <b class="connection-required-mark">*</b></strong
-                >
+                <strong>{{ t("connections.outboundStrategy") }} <b class="connection-required-mark">*</b></strong>
                 <p>{{ t("connections.outboundStrategyHelp") }}</p>
               </header>
               <div

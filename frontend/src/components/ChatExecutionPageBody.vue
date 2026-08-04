@@ -251,9 +251,7 @@ void DebugOutboundCredentialPanel;
           >
             <i class="fa-solid fa-plus" aria-hidden="true" />
             <span>{{
-              contextLoading
-                ? t("chat.loadingAgents")
-                : t("chat.newSessionWithAgent", { name: activeAgentLabel })
+              contextLoading ? t("chat.loadingAgents") : t("chat.newSessionWithAgent", { name: activeAgentLabel })
             }}</span>
           </button>
         </section>
@@ -550,9 +548,7 @@ void DebugOutboundCredentialPanel;
 
               <details class="runtime-policy-card" :open="chat.pendingConfirmation?.status === 'PENDING'">
                 <summary>
-                  <span
-                    ><i class="fa-solid fa-shield-halved" aria-hidden="true" />{{ t("chat.securityPolicy") }}</span
-                  >
+                  <span><i class="fa-solid fa-shield-halved" aria-hidden="true" />{{ t("chat.securityPolicy") }}</span>
                   <span class="runtime-disclosure-state">
                     <small v-if="chat.pendingConfirmation?.status === 'PENDING'">{{
                       t("chat.needsConfirmation")

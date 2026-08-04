@@ -444,10 +444,7 @@ async function openActor(actor?: AgentAuditActor | null, fallbackLabel?: string 
 }
 
 /** Resolve USER actor to login username via admin users API. */
-async function resolveUsername(
-  actor?: AgentAuditActor | null,
-  fallbackLabel?: string | null,
-): Promise<string> {
+async function resolveUsername(actor?: AgentAuditActor | null, fallbackLabel?: string | null): Promise<string> {
   if (isHumanActorName(actor?.username) && !looksLikeUuid(actor?.username)) {
     return actor!.username!.trim();
   }
@@ -505,21 +502,6 @@ function stepIcon(type: string) {
   if (type === "context_compaction") return "fa-solid fa-compress";
   if (type === "agent_delegation") return "fa-solid fa-sitemap";
   return "fa-solid fa-terminal";
-}
-
-/** Expand/collapse state for nested agent_delegation frames. */
-const expandedDelegation = ref<Record<string, boolean>>({});
-
-function isDelegationExpanded(step: AgentAuditStep, index: number) {
-  const key = stepKey(step, index);
-  if (key in expandedDelegation.value) return expandedDelegation.value[key];
-  // Default: expanded for depth 0, collapsed when nested.
-  return !(step.collapsed || (step.depth != null && step.depth > 1));
-}
-
-function toggleDelegation(step: AgentAuditStep, index: number) {
-  const key = stepKey(step, index);
-  expandedDelegation.value[key] = !isDelegationExpanded(step, index);
 }
 
 /** Human-readable delegation summary (avoid protocol jargon in the timeline). */
@@ -695,8 +677,7 @@ async function runAction(action: () => Promise<void>, fallback: string) {
             <span class="audit-user-hover">
               <i
                 :class="
-                  actorKind(agentAudit.selected.user, agentAudit.selected.userLabel) ===
-                    'SERVICE_PRINCIPAL' ||
+                  actorKind(agentAudit.selected.user, agentAudit.selected.userLabel) === 'SERVICE_PRINCIPAL' ||
                   actorKind(agentAudit.selected.user, agentAudit.selected.userLabel) === 'SERVICE'
                     ? 'fa-solid fa-id-card'
                     : 'fa-solid fa-user'
@@ -712,15 +693,10 @@ async function runAction(action: () => Promise<void>, fallback: string) {
                 <i class="fa-solid fa-arrow-up-right-from-square audit-user-go" aria-hidden="true" />
               </button>
               <div class="audit-user-card" role="tooltip">
-                <strong>{{
-                  actorPrimaryName(agentAudit.selected.user, agentAudit.selected.userLabel)
-                }}</strong>
+                <strong>{{ actorPrimaryName(agentAudit.selected.user, agentAudit.selected.userLabel) }}</strong>
                 <ul>
                   <li
-                    v-for="(line, i) in actorTooltipLines(
-                      agentAudit.selected.user,
-                      agentAudit.selected.userLabel,
-                    )"
+                    v-for="(line, i) in actorTooltipLines(agentAudit.selected.user, agentAudit.selected.userLabel)"
                     :key="i"
                   >
                     {{ line }}
@@ -729,8 +705,7 @@ async function runAction(action: () => Promise<void>, fallback: string) {
               </div>
             </span>
             <span
-              >{{ t("logs.totalLatency") }}
-              <strong>{{ formatLatency(agentAudit.selected.latencyMs) }}</strong></span
+              >{{ t("logs.totalLatency") }} <strong>{{ formatLatency(agentAudit.selected.latencyMs) }}</strong></span
             >
           </div>
         </div>

@@ -340,9 +340,7 @@ export function createServiceConnectionsPageModel() {
   );
   const saveAndVerifyButtonText = computed(() => {
     if (savingAndVerifyingConnection.value) return tt("connections.verifying");
-    return connectionFormMode.value === "create"
-      ? tt("connections.createAndVerify")
-      : tt("connections.saveAndVerify");
+    return connectionFormMode.value === "create" ? tt("connections.createAndVerify") : tt("connections.saveAndVerify");
   });
   const draftConnectionVerificationPreview = computed(
     () => connectionVerificationTarget(draftConnection.value) || tt("connections.verificationAfterAddress"),
@@ -358,8 +356,8 @@ export function createServiceConnectionsPageModel() {
   );
   const computedRefreshModeLabel = computed(
     () =>
-      refreshModeOptions.value.find((option) => option.value === draftConnection.value.authConfig.refreshMode)
-        ?.label || tt("connections.refreshModeSame"),
+      refreshModeOptions.value.find((option) => option.value === draftConnection.value.authConfig.refreshMode)?.label ||
+      tt("connections.refreshModeSame"),
   );
   const needsRefreshConfig = computed(() => false);
   const showsTokenFieldPaths = computed(() => false);
@@ -413,11 +411,7 @@ export function createServiceConnectionsPageModel() {
         ...check,
         status,
         statusLabel:
-          status === "failed"
-            ? check.failedLabel
-            : status === "passed"
-              ? check.label
-              : tt("connections.notYetChecked"),
+          status === "failed" ? check.failedLabel : status === "passed" ? check.label : tt("connections.notYetChecked"),
         actionLabel: verificationCheckActionLabel(connection, check),
       };
     });
@@ -1037,10 +1031,7 @@ export function createServiceConnectionsPageModel() {
   function connectionPortLabel(connection: ServiceConnection) {
     const parts = endpointUrlParts(connection.protocolConfig.domain);
     return (
-      connection.protocolConfig.port ||
-      parts.port ||
-      defaultPortForScheme(parts.scheme) ||
-      tt("connections.notFilled")
+      connection.protocolConfig.port || parts.port || defaultPortForScheme(parts.scheme) || tt("connections.notFilled")
     );
   }
 
@@ -1098,9 +1089,7 @@ export function createServiceConnectionsPageModel() {
   }
 
   function outboundModeCardTitle(mode: OutboundIdentityMode): string {
-    return mode === "BROKER_OBO"
-      ? tt("connections.modeBroker")
-      : tt("connections.modePassthroughThisRequest");
+    return mode === "BROKER_OBO" ? tt("connections.modeBroker") : tt("connections.modePassthroughThisRequest");
   }
 
   function outboundModeCardHint(mode: OutboundIdentityMode): string {
@@ -1677,8 +1666,7 @@ export function createServiceConnectionsPageModel() {
       try {
         saved = await persistConnectionDraft(wasCreate);
       } catch (error) {
-        const message =
-          error instanceof Error && error.message ? error.message : tt("connections.saveFailedRetry");
+        const message = error instanceof Error && error.message ? error.message : tt("connections.saveFailedRetry");
         showActionNote(tt("connections.saveFailedNote", { message }), "error");
         return;
       }
@@ -1688,8 +1676,7 @@ export function createServiceConnectionsPageModel() {
       try {
         await reloadConnectionData({ page: wasCreate ? 1 : connectionsStore.serviceConnectionPagination.page });
       } catch (error) {
-        const message =
-          error instanceof Error && error.message ? error.message : tt("connections.tryAgainLater");
+        const message = error instanceof Error && error.message ? error.message : tt("connections.tryAgainLater");
         refreshError = tt("connections.listRefreshFailed", { message });
       }
       const savedMessage = wasCreate
@@ -1746,8 +1733,7 @@ export function createServiceConnectionsPageModel() {
       try {
         saved = await persistConnectionDraft(wasCreate);
       } catch (error) {
-        const message =
-          error instanceof Error && error.message ? error.message : tt("connections.saveFailedRetry");
+        const message = error instanceof Error && error.message ? error.message : tt("connections.saveFailedRetry");
         connectionVerificationPhase.value = "saveFailed";
         formSubmitError.value = message;
         showActionNote(tt("connections.saveFailedNote", { message }), "error");
@@ -1759,8 +1745,7 @@ export function createServiceConnectionsPageModel() {
       try {
         verification = await connectionsStore.verifyConnection(saved.id);
       } catch (error) {
-        const message =
-          error instanceof Error && error.message ? error.message : tt("connections.tryAgainLater");
+        const message = error instanceof Error && error.message ? error.message : tt("connections.tryAgainLater");
         connectionVerificationPhase.value = "verificationFailed";
         formSubmitError.value = tt("connections.savedButVerifyRequestFailed", { message });
         showActionNote(formSubmitError.value, "error");
@@ -1775,8 +1760,7 @@ export function createServiceConnectionsPageModel() {
       try {
         await reloadConnectionData({ page: wasCreate ? 1 : connectionsStore.serviceConnectionPagination.page });
       } catch (error) {
-        const message =
-          error instanceof Error && error.message ? error.message : tt("connections.tryAgainLater");
+        const message = error instanceof Error && error.message ? error.message : tt("connections.tryAgainLater");
         refreshError = tt("connections.listRefreshFailed", { message });
       }
       if (status === "VERIFIED") {
@@ -1864,8 +1848,7 @@ export function createServiceConnectionsPageModel() {
       showActionNote(tt("connections.deletedNote", { name: connection.name }), "warning");
       closeDeleteDialog();
     } catch (error) {
-      const message =
-        error instanceof Error && error.message ? error.message : tt("connections.deleteFailedRetry");
+      const message = error instanceof Error && error.message ? error.message : tt("connections.deleteFailedRetry");
       deleteError.value = message;
       showActionNote(message, "error");
     } finally {

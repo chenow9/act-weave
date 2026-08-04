@@ -7,12 +7,7 @@
 import type { AgentAuditStep } from "../types/domain";
 
 /** Backend MissingReasoningText and common placeholders. */
-const MISSING_REASONING_MARKERS = new Set([
-  "无推理数据",
-  "No reasoning data",
-  "(no data)",
-  "（无数据）",
-]);
+const MISSING_REASONING_MARKERS = new Set(["无推理数据", "No reasoning data", "(no data)", "（无数据）"]);
 
 type Translate = (key: string, params?: Record<string, unknown>) => string;
 
@@ -40,11 +35,7 @@ function stringField(obj: Record<string, unknown> | null, keys: string[]): strin
 
 /** Extract tool / callable name from params or legacy Chinese/English titles. */
 export function extractAuditToolName(step: Pick<AgentAuditStep, "title" | "params">): string {
-  const fromParams = stringField(asRecord(step.params), [
-    "callableName",
-    "toolName",
-    "name",
-  ]);
+  const fromParams = stringField(asRecord(step.params), ["callableName", "toolName", "name"]);
   if (fromParams) return fromParams;
 
   const { base } = stripStatusSuffix((step.title || "").trim());
@@ -63,7 +54,7 @@ export function extractAuditDelegationParts(title: string): {
   statusSuffix: string;
 } {
   const { base, suffix } = stripStatusSuffix((title || "").trim());
-  let rest = base.replace(/^(?:Agent 调用|Agent call)\s*:\s*/i, "").trim();
+  const rest = base.replace(/^(?:Agent 调用|Agent call)\s*:\s*/i, "").trim();
   // Trailing path in parentheses (IDs / agent path) — keep as-is (not translated).
   const pathMatch = rest.match(/^(.*?)\s+(\([^()]*(?:→|->)[^()]*\))\s*$/);
   if (pathMatch) {
@@ -148,9 +139,7 @@ export function localizedAuditStepTitle(
 }
 
 /** True when MODEL step has no displayable reasoning body. */
-export function isMissingReasoningContent(
-  step: Pick<AgentAuditStep, "type" | "content" | "contentState">,
-): boolean {
+export function isMissingReasoningContent(step: Pick<AgentAuditStep, "type" | "content" | "contentState">): boolean {
   if ((step.type || "").toLowerCase() !== "reasoning") return false;
   const state = (step.contentState || "").toLowerCase();
   if (state === "missing" || state === "redacted") return true;

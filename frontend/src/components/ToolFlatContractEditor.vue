@@ -71,7 +71,9 @@ function removeField(index: number) {
             <th>{{ t("common.required") }}</th>
             <th>{{ t("tools.fieldDescription") }}</th>
             <th>{{ t("tools.defaultAndSource") }}</th>
-            <th><span class="sr-only">{{ t("tools.actions") }}</span></th>
+            <th>
+              <span class="sr-only">{{ t("tools.actions") }}</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -102,9 +104,7 @@ function removeField(index: number) {
                 class="tool-flat-required-toggle"
                 :class="{ on: node.required }"
                 type="button"
-                :aria-label="
-                  `${node.name || t('tools.currentField')}${node.required ? t('tools.setOptional') : t('tools.setRequired')}`
-                "
+                :aria-label="`${node.name || t('tools.currentField')}${node.required ? t('tools.setOptional') : t('tools.setRequired')}`"
                 :aria-pressed="node.required"
                 @click="updateField(index, 'required', !node.required)"
               >
@@ -137,7 +137,9 @@ function removeField(index: number) {
             </td>
           </tr>
           <tr v-if="!modelValue.length">
-            <td colspan="6"><div class="tool-flat-empty">{{ t("tools.flatEmpty") }}</div></td>
+            <td colspan="6">
+              <div class="tool-flat-empty">{{ t("tools.flatEmpty") }}</div>
+            </td>
           </tr>
         </tbody>
       </table>

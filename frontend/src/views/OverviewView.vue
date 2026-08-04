@@ -248,7 +248,13 @@ function exportCsv() {
             </label>
             <span class="overview-glass-sep" aria-hidden="true">–</span>
             <label class="overview-glass-field">
-              <input v-model="draftTo" type="date" :min="draftFrom || undefined" :max="maxDate" :aria-label="t('overview.endDate')" />
+              <input
+                v-model="draftTo"
+                type="date"
+                :min="draftFrom || undefined"
+                :max="maxDate"
+                :aria-label="t('overview.endDate')"
+              />
             </label>
             <button class="overview-glass-query" type="button" :disabled="overview.loading" @click="applyRange">
               {{ t("overview.query") }}

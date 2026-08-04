@@ -223,8 +223,7 @@ async function copyPromptRaw() {
                 @click="batchBindCapabilities({ mode: 'selected' })"
               >
                 <i v-if="capabilityBatchBusy" class="fa-solid fa-spinner fa-spin" />
-                {{ t("agents.batchBindSelected")
-                }}{{ capabilitySelectedCount ? ` (${capabilitySelectedCount})` : "" }}
+                {{ t("agents.batchBindSelected") }}{{ capabilitySelectedCount ? ` (${capabilitySelectedCount})` : "" }}
               </button>
               <button
                 class="primary-button agent-capability-batch-bind-all"
@@ -394,9 +393,7 @@ async function copyPromptRaw() {
           </div>
         </div>
         <label class="modal-field agent-delete-confirm-input">
-          <span
-            >{{ t("agents.typeNameToConfirm", { name: agentDeleteTarget.name }) }}</span
-          >
+          <span>{{ t("agents.typeNameToConfirm", { name: agentDeleteTarget.name }) }}</span>
           <input
             ref="agentDeleteInputRef"
             v-model.trim="agentDeleteConfirmName"

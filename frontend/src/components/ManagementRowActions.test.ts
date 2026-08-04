@@ -144,7 +144,12 @@ describe("ManagementRowActions", () => {
   });
 
   it("reserves the third slot for an accessible overflow trigger", async () => {
-    const wrapper = trackWrapper(mount(ManagementRowActions, { global: { plugins: [createTestI18n("zh-CN")] }, props: { primaryActions, menuActions } }));
+    const wrapper = trackWrapper(
+      mount(ManagementRowActions, {
+        global: { plugins: [createTestI18n("zh-CN")] },
+        props: { primaryActions, menuActions },
+      }),
+    );
     const trigger = wrapper.get<HTMLButtonElement>('button[aria-label="更多操作"]');
 
     expect(wrapper.findAll('button[data-action-kind="primary"]')).toHaveLength(2);
@@ -324,7 +329,10 @@ describe("ManagementRowActions", () => {
   it("removes document and viewport listeners when unmounted", () => {
     const removeDocumentListener = vi.spyOn(document, "removeEventListener");
     const removeWindowListener = vi.spyOn(window, "removeEventListener");
-    const wrapper = mount(ManagementRowActions, { global: { plugins: [createTestI18n("zh-CN")] }, props: { primaryActions, menuActions } });
+    const wrapper = mount(ManagementRowActions, {
+      global: { plugins: [createTestI18n("zh-CN")] },
+      props: { primaryActions, menuActions },
+    });
 
     wrapper.unmount();
 

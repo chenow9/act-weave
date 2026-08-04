@@ -26,7 +26,13 @@ export type NavSection = NavSectionId;
 export const primaryNavigationIds = ["agents", "tools", "workflow", "chat"] as const;
 
 export const navItems: NavItem[] = [
-  { id: "overview", sectionId: "space", icon: "fa-solid fa-chart-pie", labelKey: "nav.item.overview", route: "/overview" },
+  {
+    id: "overview",
+    sectionId: "space",
+    icon: "fa-solid fa-chart-pie",
+    labelKey: "nav.item.overview",
+    route: "/overview",
+  },
   {
     id: "workspaces",
     sectionId: "space",

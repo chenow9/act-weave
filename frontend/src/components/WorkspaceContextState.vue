@@ -66,12 +66,8 @@ async function recheckWorkspace() {
       </button>
     </div>
     <div class="workspace-context-state-guidance">
-      <span
-        ><i class="fa-solid fa-circle-plus" aria-hidden="true" />{{ t("common.wsContextHintCreate") }}</span
-      >
-      <span
-        ><i class="fa-solid fa-user-group" aria-hidden="true" />{{ t("common.wsContextHintJoin") }}</span
-      >
+      <span><i class="fa-solid fa-circle-plus" aria-hidden="true" />{{ t("common.wsContextHintCreate") }}</span>
+      <span><i class="fa-solid fa-user-group" aria-hidden="true" />{{ t("common.wsContextHintJoin") }}</span>
     </div>
     <p v-if="checkError" class="workspace-context-state-error" role="alert">{{ checkError }}</p>
   </section>

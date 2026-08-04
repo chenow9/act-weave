@@ -100,8 +100,7 @@ function trapDialogFocus(event: KeyboardEvent) {
           <span>{{ t("workflow.forcePublishBadge") }}</span>
           <h4 id="workflow-force-publish-title">{{ workflowName || t("workflow.currentWorkflow") }}</h4>
           <p>
-            {{ t("workflow.forcePublishDescLead")
-            }}<strong>{{ t("workflow.forcePublishDescStrong") }}</strong
+            {{ t("workflow.forcePublishDescLead") }}<strong>{{ t("workflow.forcePublishDescStrong") }}</strong
             >{{ t("workflow.forcePublishDescTail") }}
           </p>
         </div>
@@ -126,7 +125,9 @@ function trapDialogFocus(event: KeyboardEvent) {
         </div>
 
         <label class="workflow-force-publish-field">
-          <span>{{ t("workflow.publishReason") }} <em>{{ t("workflow.publishReasonHint") }}</em></span>
+          <span
+            >{{ t("workflow.publishReason") }} <em>{{ t("workflow.publishReasonHint") }}</em></span
+          >
           <input
             ref="reasonInputRef"
             v-model="reason"

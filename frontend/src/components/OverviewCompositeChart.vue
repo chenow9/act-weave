@@ -360,13 +360,16 @@ function formatPct(rate: number) {
     >
       <strong>{{ tooltip.label }}</strong>
       <p>
-        <i style="background: #0d9488" /><span>{{ t("overview.legendRun") }}</span><b>{{ tooltip.runs }}</b>
+        <i style="background: #0d9488" /><span>{{ t("overview.legendRun") }}</span
+        ><b>{{ tooltip.runs }}</b>
       </p>
       <p>
-        <i style="background: #4f46e5" /><span>{{ t("overview.legendTool") }}</span><b>{{ tooltip.tools }}</b>
+        <i style="background: #4f46e5" /><span>{{ t("overview.legendTool") }}</span
+        ><b>{{ tooltip.tools }}</b>
       </p>
       <p>
-        <i style="background: #fb7185" /><span>{{ t("overview.legendRate") }}</span><b>{{ formatPct(tooltip.rate) }}</b>
+        <i style="background: #fb7185" /><span>{{ t("overview.legendRate") }}</span
+        ><b>{{ formatPct(tooltip.rate) }}</b>
       </p>
     </div>
   </div>

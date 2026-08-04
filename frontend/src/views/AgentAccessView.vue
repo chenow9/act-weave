@@ -195,8 +195,7 @@ const clientColumns = computed<ManagementListColumn<AgentAccessClient>[]>(() => 
     key: "status",
     label: t("agentAccess.colStatus"),
     width: 100,
-    getValue: (row) =>
-      row.status === "ACTIVE" ? t("agentAccess.statusActive") : t("agentAccess.statusDisabled"),
+    getValue: (row) => (row.status === "ACTIVE" ? t("agentAccess.statusActive") : t("agentAccess.statusDisabled")),
   },
   {
     key: "tokenTtlSeconds",
@@ -377,8 +376,7 @@ async function rotateCredential() {
       publicHint: isSecret ? undefined : rotateForm.publicHint.trim(),
     });
     rotateOpen.value = false;
-    if (result.secret)
-      showSecret(result.secret, t("agentAccess.secretContextNewCredential", { name: client.name }));
+    if (result.secret) showSecret(result.secret, t("agentAccess.secretContextNewCredential", { name: client.name }));
     else actionMessage.value = t("agentAccess.jwkRotated");
   }, t("agentAccess.rotateFailed"));
 }
@@ -634,9 +632,7 @@ function authMethodShort(method: string) {
               <h2>{{ selectedClient.name }}</h2>
               <span class="status-pill" :class="selectedClient.status.toLocaleLowerCase()">
                 {{
-                  selectedClient.status === "ACTIVE"
-                    ? t("agentAccess.statusActive")
-                    : t("agentAccess.statusDisabled")
+                  selectedClient.status === "ACTIVE" ? t("agentAccess.statusActive") : t("agentAccess.statusDisabled")
                 }}
               </span>
             </div>
@@ -900,10 +896,7 @@ function authMethodShort(method: string) {
         <div class="modal-form access-modal-form form-grid">
           <label class="span-2"
             ><span>{{ t("agentAccess.clientName") }}</span
-            ><input
-              v-model="createForm.name"
-              data-modal-initial-focus
-              :placeholder="t('agentAccess.clientNamePh')"
+            ><input v-model="createForm.name" data-modal-initial-focus :placeholder="t('agentAccess.clientNamePh')"
           /></label>
           <label>
             <span>{{ t("agentAccess.authMethod") }}</span>
@@ -1072,11 +1065,7 @@ function authMethodShort(method: string) {
           </label>
           <label v-if="grantForm.serviceDecision">
             <span>{{ t("agentAccess.maxRisk") }}</span>
-            <AppSelect
-              v-model="grantForm.maxRisk"
-              :options="maxRiskOptions"
-              :aria-label="t('agentAccess.maxRisk')"
-            />
+            <AppSelect v-model="grantForm.maxRisk" :options="maxRiskOptions" :aria-label="t('agentAccess.maxRisk')" />
           </label>
           <label
             ><span>{{ t("agentAccess.expiresOptional") }}</span
@@ -1124,7 +1113,9 @@ function authMethodShort(method: string) {
           <p v-if="copyNotice" class="copy-notice" role="status">{{ copyNotice }}</p>
         </div>
         <div class="access-modal-footer">
-          <button class="primary-button" type="button" @click="closeSecret">{{ t("agentAccess.secretSavedClose") }}</button>
+          <button class="primary-button" type="button" @click="closeSecret">
+            {{ t("agentAccess.secretSavedClose") }}
+          </button>
         </div>
       </section>
     </div>

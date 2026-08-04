@@ -306,7 +306,12 @@ function handleDocumentKeydown(event: KeyboardEvent) {
         <span>{{ t("common.appTitle") }}</span>
       </router-link>
 
-      <section ref="navigationRef" class="fluid-island" :class="{ open: navigationOpen }" :aria-label="t('nav.mainNav')">
+      <section
+        ref="navigationRef"
+        class="fluid-island"
+        :class="{ open: navigationOpen }"
+        :aria-label="t('nav.mainNav')"
+      >
         <button class="fluid-trigger" type="button" :aria-expanded="navigationOpen" @click="toggleNavigation">
           <span class="live-orb" aria-hidden="true" />
           <span class="fluid-current"
@@ -460,12 +465,22 @@ function handleDocumentKeydown(event: KeyboardEvent) {
           >
             {{ userInitials }}
           </button>
-          <section v-if="profileMenuOpen" class="profile-menu" :aria-label="t('shell.userMenu')" data-testid="user-menu">
+          <section
+            v-if="profileMenuOpen"
+            class="profile-menu"
+            :aria-label="t('shell.userMenu')"
+            data-testid="user-menu"
+          >
             <header>
               <strong>{{ auth.user?.displayName || auth.user?.username }}</strong
               ><small>{{ auth.user?.role }}</small>
             </header>
-            <div class="profile-menu-section" data-testid="language-switcher" role="group" :aria-label="t('common.language')">
+            <div
+              class="profile-menu-section"
+              data-testid="language-switcher"
+              role="group"
+              :aria-label="t('common.language')"
+            >
               <span class="profile-menu-section-label">{{ t("common.language") }}</span>
               <button
                 type="button"
@@ -477,7 +492,11 @@ function handleDocumentKeydown(event: KeyboardEvent) {
               >
                 <i class="fa-solid fa-language" aria-hidden="true" />
                 <span>{{ t("common.languageZh") }}</span>
-                <i v-if="currentLocale === 'zh-CN'" class="fa-solid fa-check profile-menu-choice-check" aria-hidden="true" />
+                <i
+                  v-if="currentLocale === 'zh-CN'"
+                  class="fa-solid fa-check profile-menu-choice-check"
+                  aria-hidden="true"
+                />
               </button>
               <button
                 type="button"
@@ -489,7 +508,11 @@ function handleDocumentKeydown(event: KeyboardEvent) {
               >
                 <i class="fa-solid fa-language" aria-hidden="true" />
                 <span>{{ t("common.languageEn") }}</span>
-                <i v-if="currentLocale === 'en'" class="fa-solid fa-check profile-menu-choice-check" aria-hidden="true" />
+                <i
+                  v-if="currentLocale === 'en'"
+                  class="fa-solid fa-check profile-menu-choice-check"
+                  aria-hidden="true"
+                />
               </button>
             </div>
             <button type="button" @click="goRuntimeStatus">
@@ -527,4 +550,3 @@ function handleDocumentKeydown(event: KeyboardEvent) {
     </main>
   </div>
 </template>
-

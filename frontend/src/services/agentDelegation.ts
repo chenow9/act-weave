@@ -1,9 +1,5 @@
 import { apiClient } from "./api";
-import type {
-  AgentA2AExposure,
-  AgentA2ARemoteBinding,
-  AgentDelegationBinding,
-} from "../types/domain";
+import type { AgentA2AExposure, AgentA2ARemoteBinding, AgentDelegationBinding } from "../types/domain";
 
 /** Server-authoritative A2A management capabilities (do not hardcode client-side). */
 export type A2ACapabilities = {
@@ -13,9 +9,7 @@ export type A2ACapabilities = {
 };
 
 export async function getA2ACapabilities(workspaceId: string): Promise<A2ACapabilities> {
-  const res = await apiClient.get<A2ACapabilities>(
-    `/workspaces/${workspaceId}/a2a/capabilities`,
-  );
+  const res = await apiClient.get<A2ACapabilities>(`/workspaces/${workspaceId}/a2a/capabilities`);
   return {
     allowAuthNone: !!res.data?.allowAuthNone,
     authModes: Array.isArray(res.data?.authModes) ? res.data.authModes : ["AGENT_ACCESS"],
@@ -69,20 +63,14 @@ export async function updateDelegationBinding(
   return res.data;
 }
 
-export async function disableDelegationBinding(
-  workspaceId: string,
-  bindingId: string,
-  expectedVersion: number,
-) {
+export async function disableDelegationBinding(workspaceId: string, bindingId: string, expectedVersion: number) {
   return apiClient.delete(`/workspaces/${workspaceId}/delegation-bindings/${bindingId}`, {
     data: { expectedVersion },
   });
 }
 
 export async function listA2AExposures(workspaceId: string) {
-  const res = await apiClient.get<{ items: AgentA2AExposure[] }>(
-    `/workspaces/${workspaceId}/a2a/exposures`,
-  );
+  const res = await apiClient.get<{ items: AgentA2AExposure[] }>(`/workspaces/${workspaceId}/a2a/exposures`);
   return res.data.items ?? [];
 }
 
@@ -111,18 +99,11 @@ export async function updateA2AExposure(
     enabled?: boolean;
   },
 ) {
-  const res = await apiClient.patch<AgentA2AExposure>(
-    `/workspaces/${workspaceId}/a2a/exposures/${exposureId}`,
-    body,
-  );
+  const res = await apiClient.patch<AgentA2AExposure>(`/workspaces/${workspaceId}/a2a/exposures/${exposureId}`, body);
   return res.data;
 }
 
-export async function disableA2AExposure(
-  workspaceId: string,
-  exposureId: string,
-  expectedVersion: number,
-) {
+export async function disableA2AExposure(workspaceId: string, exposureId: string, expectedVersion: number) {
   return apiClient.delete(`/workspaces/${workspaceId}/a2a/exposures/${exposureId}`, {
     data: { expectedVersion },
   });
@@ -163,11 +144,7 @@ export async function createA2ARemote(
   return res.data;
 }
 
-export async function disableA2ARemote(
-  workspaceId: string,
-  remoteId: string,
-  expectedVersion: number,
-) {
+export async function disableA2ARemote(workspaceId: string, remoteId: string, expectedVersion: number) {
   return apiClient.delete(`/workspaces/${workspaceId}/a2a-remotes/${remoteId}`, {
     data: { expectedVersion },
   });
@@ -188,9 +165,6 @@ export async function updateA2ARemote(
     enabled?: boolean;
   },
 ) {
-  const res = await apiClient.patch<AgentA2ARemoteBinding>(
-    `/workspaces/${workspaceId}/a2a-remotes/${remoteId}`,
-    body,
-  );
+  const res = await apiClient.patch<AgentA2ARemoteBinding>(`/workspaces/${workspaceId}/a2a-remotes/${remoteId}`, body);
   return res.data;
 }

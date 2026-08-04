@@ -133,9 +133,7 @@ void getToolTypeLabel;
 
     <section class="span-12 tool-runtime-card management-list-card">
       <div v-if="hasWorkspaceContext && hasToolRecords" class="tool-section-bar">
-        <span
-          ><i class="fa-solid fa-circle-info" />{{ t("tools.sectionNote") }}</span
-        >
+        <span><i class="fa-solid fa-circle-info" />{{ t("tools.sectionNote") }}</span>
         <button type="button" @click="router.push('/openapi-imports')">{{ t("tools.viewOpenapi") }}</button>
       </div>
 
@@ -197,11 +195,7 @@ void getToolTypeLabel;
               batchDeleting ||
               batchForcePublishing
             "
-            :title="
-              batchForcePublishing
-                ? t('tools.forcePublishing')
-                : t('tools.forcePublishTitle')
-            "
+            :title="batchForcePublishing ? t('tools.forcePublishing') : t('tools.forcePublishTitle')"
             @click="openBatchForcePublishConfirmation"
           >
             <i :class="['fa-solid', batchForcePublishing ? 'fa-spinner fa-spin' : 'fa-rocket']" aria-hidden="true" />
@@ -237,7 +231,9 @@ void getToolTypeLabel;
             <span class="tool-entity-icon" aria-hidden="true"><i class="fa-solid fa-screwdriver-wrench" /></span>
             <span class="tool-entity-copy">
               <strong class="aw-table-title" :title="tool.name">{{ tool.name }}</strong>
-              <small class="aw-table-subtitle" :title="tool.description">{{ tool.description || t("tools.noDescription") }}</small>
+              <small class="aw-table-subtitle" :title="tool.description">{{
+                tool.description || t("tools.noDescription")
+              }}</small>
             </span>
           </div>
         </template>
@@ -484,11 +480,7 @@ void getToolTypeLabel;
           </button>
           <button class="primary-button" type="button" :disabled="batchTesting" @click="confirmBatchTestSelectedTools">
             <i :class="['fa-solid', batchTesting ? 'fa-spinner fa-spin' : 'fa-vial']" aria-hidden="true" />
-            {{
-              batchTesting
-                ? t("tools.testing")
-                : t("tools.startTestCount", { count: selectedTools.length })
-            }}
+            {{ batchTesting ? t("tools.testing") : t("tools.startTestCount", { count: selectedTools.length }) }}
           </button>
         </div>
       </section>

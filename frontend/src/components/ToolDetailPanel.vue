@@ -119,10 +119,19 @@ void buildToolPublishChecklist;
           </div>
         </div>
         <div class="tool-detail-governance-strip">
-          <span><b>{{ t("tools.version") }}</b>{{ toolVersionLabel(detailTool) }}</span>
-          <span><b>{{ t("tools.lastTest") }}</b>{{ toolLastTestSummary(detailTool) }}</span>
+          <span
+            ><b>{{ t("tools.version") }}</b
+            >{{ toolVersionLabel(detailTool) }}</span
+          >
+          <span
+            ><b>{{ t("tools.lastTest") }}</b
+            >{{ toolLastTestSummary(detailTool) }}</span
+          >
           <span><b>Capability Binding</b>{{ agentImpactLabel(detailTool) }}</span>
-          <span><b>{{ t("tools.impactSurface") }}</b>{{ t("tools.impactByBinding") }}</span>
+          <span
+            ><b>{{ t("tools.impactSurface") }}</b
+            >{{ t("tools.impactByBinding") }}</span
+          >
         </div>
         <p class="form-helper">{{ detailTool.description }}</p>
 
@@ -295,16 +304,20 @@ void buildToolPublishChecklist;
         >
           <div class="tool-test-card">
             <div class="tool-test-request">
-              <strong>{{ t("tools.testMethod") }}</strong><span>{{ t("tools.testMethodHelp") }}</span>
+              <strong>{{ t("tools.testMethod") }}</strong
+              ><span>{{ t("tools.testMethodHelp") }}</span>
             </div>
             <div class="tool-test-result">
-              <strong>{{ t("tools.currentStatus") }}</strong><span>{{ toolStatusLabel(detailTool.status) }}</span>
+              <strong>{{ t("tools.currentStatus") }}</strong
+              ><span>{{ toolStatusLabel(detailTool.status) }}</span>
             </div>
             <div class="tool-test-result">
-              <strong>{{ t("tools.lastResult") }}</strong><span>{{ toolLastTestSummary(detailTool) }}</span>
+              <strong>{{ t("tools.lastResult") }}</strong
+              ><span>{{ toolLastTestSummary(detailTool) }}</span>
             </div>
             <div class="tool-test-result">
-              <strong>{{ t("tools.testDetail") }}</strong><span>{{ toolLastTestDetail(detailTool) }}</span>
+              <strong>{{ t("tools.testDetail") }}</strong
+              ><span>{{ toolLastTestDetail(detailTool) }}</span>
             </div>
             <div id="tool-publish-readiness" class="tool-test-result">
               <strong>{{ t("tools.publishCondition") }}</strong

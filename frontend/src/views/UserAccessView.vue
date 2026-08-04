@@ -169,8 +169,7 @@ function formatFieldList(items: string[]) {
 const pendingActionTitle = computed(() => {
   const action = pendingAction.value;
   if (!action) return t("users.confirmAction");
-  if (action.kind === "role")
-    return action.value === "PLATFORM_ADMIN" ? t("users.grantAdmin") : t("users.removeAdmin");
+  if (action.kind === "role") return action.value === "PLATFORM_ADMIN" ? t("users.grantAdmin") : t("users.removeAdmin");
   if (action.kind === "unlock") return t("users.unlockUser");
   return action.value === "ACTIVE" ? t("users.enableUser") : t("users.disableUser");
 });
@@ -184,9 +183,7 @@ const pendingActionDescription = computed(() => {
       : t("users.demoteUserDesc", { username });
   }
   if (action.kind === "unlock") return t("users.unlockDesc", { username });
-  return action.value === "ACTIVE"
-    ? t("users.enableDesc", { username })
-    : t("users.disableDesc", { username });
+  return action.value === "ACTIVE" ? t("users.enableDesc", { username }) : t("users.disableDesc", { username });
 });
 
 function applyRouteSearch() {
@@ -385,14 +382,12 @@ function clearFeedback() {
 
 function statusLabel(status: UserStatus) {
   return (
-    (
-      {
-        ACTIVE: t("users.statusActive"),
-        LOCKED: t("users.statusLocked"),
-        DISABLED: t("users.statusDisabled"),
-      } as const
-    )[status]
-  );
+    {
+      ACTIVE: t("users.statusActive"),
+      LOCKED: t("users.statusLocked"),
+      DISABLED: t("users.statusDisabled"),
+    } as const
+  )[status];
 }
 
 function roleLabel(role: PlatformRole) {
@@ -534,9 +529,7 @@ function formatDate(value?: string) {
             }}</span>
             <span>
               <strong class="aw-table-title">{{ user.displayName }}</strong>
-              <small class="aw-table-subtitle"
-                >@{{ user.username }} · {{ user.email || t("users.emailNotSet") }}</small
-              >
+              <small class="aw-table-subtitle">@{{ user.username }} · {{ user.email || t("users.emailNotSet") }}</small>
             </span>
           </div>
         </template>
@@ -579,9 +572,7 @@ function formatDate(value?: string) {
             </h2>
             <p>
               {{
-                filters.query || filters.status || filters.platformRole
-                  ? t("users.noMatchBody")
-                  : t("users.emptyBody")
+                filters.query || filters.status || filters.platformRole ? t("users.noMatchBody") : t("users.emptyBody")
               }}
             </p>
             <button
@@ -621,13 +612,11 @@ function formatDate(value?: string) {
         </header>
         <form class="user-access-form" @submit.prevent="submitCreate">
           <label
-            ><span
-              >{{ t("users.fieldUsername") }} <span class="user-field-required" aria-hidden="true">*</span></span
+            ><span>{{ t("users.fieldUsername") }} <span class="user-field-required" aria-hidden="true">*</span></span
             ><input v-model.trim="createDraft.username" required autocomplete="off"
           /></label>
           <label
-            ><span
-              >{{ t("users.fieldDisplayName") }} <span class="user-field-required" aria-hidden="true">*</span></span
+            ><span>{{ t("users.fieldDisplayName") }} <span class="user-field-required" aria-hidden="true">*</span></span
             ><input v-model.trim="createDraft.displayName" required
           /></label>
           <label
@@ -716,8 +705,7 @@ function formatDate(value?: string) {
         </header>
         <form class="user-access-form" @submit.prevent="saveProfile">
           <label
-            ><span
-              >{{ t("users.fieldDisplayName") }} <span class="user-field-required" aria-hidden="true">*</span></span
+            ><span>{{ t("users.fieldDisplayName") }} <span class="user-field-required" aria-hidden="true">*</span></span
             ><input v-model.trim="profileDraft.displayName" required
           /></label>
           <label
@@ -788,8 +776,7 @@ function formatDate(value?: string) {
         <h3>{{ t("users.resetTitle", { username: resetUser.username }) }}</h3>
         <p>{{ t("users.resetBody") }}</p>
         <label
-          ><span
-            >{{ t("users.fieldTempPassword") }} <span class="user-field-required" aria-hidden="true">*</span></span
+          ><span>{{ t("users.fieldTempPassword") }} <span class="user-field-required" aria-hidden="true">*</span></span
           ><input v-model="temporaryPassword" type="password" minlength="12" required autocomplete="new-password"
         /></label>
         <footer>
@@ -818,12 +805,7 @@ function formatDate(value?: string) {
             <span>WORKSPACE MEMBERSHIP</span>
             <h3>{{ t("users.workspacesTitle", { username: workspaceUser.username }) }}</h3>
           </div>
-          <button
-            class="icon-action-button"
-            type="button"
-            :aria-label="t('users.close')"
-            @click="workspaceUser = null"
-          >
+          <button class="icon-action-button" type="button" :aria-label="t('users.close')" @click="workspaceUser = null">
             <i class="fa-solid fa-xmark" aria-hidden="true" />
           </button>
         </header>

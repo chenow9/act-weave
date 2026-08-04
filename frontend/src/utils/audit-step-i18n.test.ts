@@ -54,12 +54,10 @@ describe("localizedAuditStepTitle", () => {
     const t = makeT(en);
     expect(localizedAuditStepTitle({ type: "input", title: "用户输入" }, t)).toBe("User input");
     expect(localizedAuditStepTitle({ type: "output", title: "最终输出" }, t)).toBe("Final output");
-    expect(localizedAuditStepTitle({ type: "reasoning", title: "大模型推理" }, t)).toBe(
-      "Model reasoning",
+    expect(localizedAuditStepTitle({ type: "reasoning", title: "大模型推理" }, t)).toBe("Model reasoning");
+    expect(localizedAuditStepTitle({ type: "tool", title: "工具调用: check_inventory" }, t)).toBe(
+      "Tool call: check_inventory",
     );
-    expect(
-      localizedAuditStepTitle({ type: "tool", title: "工具调用: check_inventory" }, t),
-    ).toBe("Tool call: check_inventory");
     expect(
       localizedAuditStepTitle(
         {
@@ -74,9 +72,9 @@ describe("localizedAuditStepTitle", () => {
   it("keeps Chinese labels when locale is zh-CN", () => {
     const t = makeT(zh);
     expect(localizedAuditStepTitle({ type: "input", title: "用户输入" }, t)).toBe("用户输入");
-    expect(
-      localizedAuditStepTitle({ type: "tool", title: "工具调用: create_order" }, t),
-    ).toBe("工具调用: create_order");
+    expect(localizedAuditStepTitle({ type: "tool", title: "工具调用: create_order" }, t)).toBe(
+      "工具调用: create_order",
+    );
   });
 
   it("prefers callableName from params for tools", () => {
@@ -108,12 +106,9 @@ describe("localizedAuditStepTitle", () => {
 
   it("localizes context compaction titles", () => {
     const t = makeT(en);
-    expect(
-      localizedAuditStepTitle(
-        { type: "context_compaction", title: "上下文 Compact 完成" },
-        t,
-      ),
-    ).toBe("Context compaction completed");
+    expect(localizedAuditStepTitle({ type: "context_compaction", title: "上下文 Compact 完成" }, t)).toBe(
+      "Context compaction completed",
+    );
     expect(
       localizedAuditStepTitle(
         {
@@ -130,9 +125,7 @@ describe("extract helpers", () => {
   it("extractAuditToolName", () => {
     expect(extractAuditToolName({ title: "工具调用: foo" })).toBe("foo");
     expect(extractAuditToolName({ title: "Tool call: bar" })).toBe("bar");
-    expect(
-      extractAuditToolName({ title: "x", params: { toolName: "from_params" } }),
-    ).toBe("from_params");
+    expect(extractAuditToolName({ title: "x", params: { toolName: "from_params" } })).toBe("from_params");
   });
 
   it("extractAuditDelegationParts", () => {

@@ -854,9 +854,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 :class="item.credentialConfigured ? 'fa-solid fa-shield-halved' : 'fa-solid fa-triangle-exclamation'"
               />
               {{
-                item.credentialConfigured
-                  ? t("modelApis.credentialConfigured")
-                  : t("modelApis.credentialNotConfigured")
+                item.credentialConfigured ? t("modelApis.credentialConfigured") : t("modelApis.credentialNotConfigured")
               }}
             </span>
           </template>
@@ -1049,8 +1047,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
           <div class="model-modal-form">
             <label class="model-modal-field">
               <span class="model-modal-field-label"
-                >{{ t("modelApis.fieldName") }}
-                <span class="model-field-required" aria-hidden="true">*</span></span
+                >{{ t("modelApis.fieldName") }} <span class="model-field-required" aria-hidden="true">*</span></span
               >
               <input
                 v-model="activeModelDraft.name"
@@ -1115,9 +1112,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 @blur="touchModelDraftField('credentialSecretId')"
               />
               <small id="model-credential-help">{{
-                modelModalMode === "create"
-                  ? t("modelApis.credentialHelpCreate")
-                  : t("modelApis.credentialHelpEdit")
+                modelModalMode === "create" ? t("modelApis.credentialHelpCreate") : t("modelApis.credentialHelpEdit")
               }}</small>
               <span
                 id="model-field-error-credentialSecretId"
@@ -1130,8 +1125,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
             </label>
             <label class="model-modal-field">
               <span class="model-modal-field-label"
-                >{{ t("modelApis.fieldApiBase") }}
-                <span class="model-field-required" aria-hidden="true">*</span></span
+                >{{ t("modelApis.fieldApiBase") }} <span class="model-field-required" aria-hidden="true">*</span></span
               >
               <input
                 v-model="activeModelDraft.apiBase"
@@ -1317,9 +1311,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               <div>
                 <strong>{{ t("modelApis.smartHintTitle") }}</strong>
                 <p>
-                  {{
-                    modelModalMode === "create" ? t("modelApis.smartHintCreate") : t("modelApis.smartHintEdit")
-                  }}
+                  {{ modelModalMode === "create" ? t("modelApis.smartHintCreate") : t("modelApis.smartHintEdit") }}
                 </p>
               </div>
             </div>

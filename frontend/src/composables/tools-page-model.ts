@@ -206,28 +206,34 @@ export function createToolsPageModel() {
     { label: tt("tools.rateConservative"), value: "30 rpm", description: tt("tools.rateConservativeDesc") },
     { label: tt("tools.rateHigh"), value: "120 rpm", description: tt("tools.rateHighDesc") },
   ]);
-  const toolStatusOptions = computed((): Array<{ label: string; value: ToolStatus }> => [
-    { label: tt("tools.draft"), value: "Draft" },
-    { label: tt("tools.review"), value: "Review" },
-    { label: tt("tools.tested"), value: "Tested" },
-    { label: tt("tools.published"), value: "Published" },
-    { label: tt("tools.disabled"), value: "Disabled" },
-  ]);
+  const toolStatusOptions = computed(
+    (): Array<{ label: string; value: ToolStatus }> => [
+      { label: tt("tools.draft"), value: "Draft" },
+      { label: tt("tools.review"), value: "Review" },
+      { label: tt("tools.tested"), value: "Tested" },
+      { label: tt("tools.published"), value: "Published" },
+      { label: tt("tools.disabled"), value: "Disabled" },
+    ],
+  );
   const toolStatusHelperText = computed(() => tt("tools.statusHelper"));
-  const statusTabs = computed((): Array<{ label: string; value: ToolStatusFilter }> => [
-    { label: tt("tools.statusAll"), value: "all" },
-    { label: tt("tools.attention"), value: "attention" },
-    { label: tt("tools.published"), value: "Published" },
-    { label: tt("tools.tested"), value: "Tested" },
-    { label: tt("tools.review"), value: "Review" },
-    { label: tt("tools.draft"), value: "Draft" },
-    { label: tt("tools.disabled"), value: "Disabled" },
-  ]);
-  const toolTypeTabs = computed((): Array<{ label: string; value: ToolTypeFilter }> => [
-    { label: tt("tools.typeAll"), value: "all" },
-    { label: "HTTP", value: "HTTP Tool" },
-    { label: "Workflow", value: "Workflow Tool" },
-  ]);
+  const statusTabs = computed(
+    (): Array<{ label: string; value: ToolStatusFilter }> => [
+      { label: tt("tools.statusAll"), value: "all" },
+      { label: tt("tools.attention"), value: "attention" },
+      { label: tt("tools.published"), value: "Published" },
+      { label: tt("tools.tested"), value: "Tested" },
+      { label: tt("tools.review"), value: "Review" },
+      { label: tt("tools.draft"), value: "Draft" },
+      { label: tt("tools.disabled"), value: "Disabled" },
+    ],
+  );
+  const toolTypeTabs = computed(
+    (): Array<{ label: string; value: ToolTypeFilter }> => [
+      { label: tt("tools.typeAll"), value: "all" },
+      { label: "HTTP", value: "HTTP Tool" },
+      { label: "Workflow", value: "Workflow Tool" },
+    ],
+  );
 
   const draftTool = ref<ToolDraft>(defaultToolDraft());
 
@@ -1468,15 +1474,10 @@ export function createToolsPageModel() {
         }
       }
       await loadToolRegistry();
-      const parts = [
-        tt("tools.batchPassedCount", { n: passed }),
-        tt("tools.batchFailedCount", { n: failed }),
-      ];
+      const parts = [tt("tools.batchPassedCount", { n: passed }), tt("tools.batchFailedCount", { n: failed })];
       if (skipped) parts.push(tt("tools.batchSkippedCount", { n: skipped }));
       const hint =
-        failureHints.length > 0
-          ? tt("tools.batchExamplePrefix", { hints: failureHints.slice(0, 3).join("；") })
-          : "";
+        failureHints.length > 0 ? tt("tools.batchExamplePrefix", { hints: failureHints.slice(0, 3).join("；") }) : "";
       setActionFeedback(
         tt("tools.batchTestDone", {
           count: tools.length,

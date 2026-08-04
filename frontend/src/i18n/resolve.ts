@@ -1,9 +1,4 @@
-import {
-  DEFAULT_LOCALE,
-  LOCALE_STORAGE_KEY,
-  type AppLocale,
-  isAppLocale,
-} from "./types";
+import { DEFAULT_LOCALE, LOCALE_STORAGE_KEY, type AppLocale, isAppLocale } from "./types";
 
 /** Normalize any BCP-47-ish string to an AppLocale. */
 export function normalizeLocale(input: string | null | undefined): AppLocale {

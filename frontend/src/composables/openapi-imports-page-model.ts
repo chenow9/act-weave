@@ -107,9 +107,7 @@ export function createOpenAPIImportsPageModel() {
       sortable: true,
       sortKey: "connection",
       getValue: (record) =>
-        connectionById(record.connectionId || "")?.name ||
-        record.connectionId ||
-        tt("openapi.defaultConnection"),
+        connectionById(record.connectionId || "")?.name || record.connectionId || tt("openapi.defaultConnection"),
     },
     {
       key: "totalEndpoints",
@@ -612,8 +610,7 @@ export function createOpenAPIImportsPageModel() {
       if (requestId !== detailRequestSeq || selectedImportId.value !== targetId) return;
     } catch (error) {
       if (requestId !== detailRequestSeq || selectedImportId.value !== targetId) return;
-      detailError.value =
-        error instanceof Error ? error.message : String(error) || tt("openapi.detailLoadFailed");
+      detailError.value = error instanceof Error ? error.message : String(error) || tt("openapi.detailLoadFailed");
     } finally {
       if (requestId === detailRequestSeq) detailLoading.value = false;
     }

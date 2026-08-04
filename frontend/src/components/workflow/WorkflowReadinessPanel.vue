@@ -84,7 +84,9 @@ const checklist = computed(() => [
 <template>
   <section class="workflow-readiness-panel" :class="{ compact }">
     <div class="workflow-readiness-head">
-      <span class="workflow-readiness-stage">{{ stageLabels[readiness?.stage || ""] || t("workflow.stageUnknown") }}</span>
+      <span class="workflow-readiness-stage">{{
+        stageLabels[readiness?.stage || ""] || t("workflow.stageUnknown")
+      }}</span>
       <strong>{{ nextAction }}</strong>
     </div>
 

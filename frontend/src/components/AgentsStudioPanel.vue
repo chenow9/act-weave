@@ -73,15 +73,15 @@ void AgentDelegationPanel;
               </p>
               <h3 :title="studioMode === 'edit' && draftAgent.name ? draftAgent.name : undefined">
                 {{
-                  studioMode === "create"
-                    ? t("agents.createTitle")
-                    : draftAgent.name?.trim() || t("agents.untitled")
+                  studioMode === "create" ? t("agents.createTitle") : draftAgent.name?.trim() || t("agents.untitled")
                 }}
               </h3>
             </div>
           </div>
           <div class="agent-studio-actions">
-            <button class="ghost-button" type="button" :disabled="savingAgent" @click="closeStudio">{{ t("agents.discard") }}</button>
+            <button class="ghost-button" type="button" :disabled="savingAgent" @click="closeStudio">
+              {{ t("agents.discard") }}
+            </button>
             <button class="primary-button" type="button" :disabled="!canSaveAgent" @click="saveDraftAgent">
               <i :class="['fa-solid', savingAgent ? 'fa-spinner fa-spin' : 'fa-circle-check']" aria-hidden="true" />
               <span>{{ agentSaveButtonLabel }}</span>
@@ -315,10 +315,7 @@ void AgentDelegationPanel;
             :agent-options="delegationAgentOptions"
           />
           <!-- Create mode: bindings need a persisted agentId — show deferred hint only. -->
-          <section
-            v-else-if="studioMode === 'create'"
-            class="agent-studio-section agent-delegation-deferred"
-          >
+          <section v-else-if="studioMode === 'create'" class="agent-studio-section agent-delegation-deferred">
             <header>
               <span><i class="fa-solid fa-sitemap" aria-hidden="true" /> {{ t("agents.collabExternal") }}</span>
               <span class="agent-delegation-deferred-badge">{{ t("agents.configureAfterCreate") }}</span>
@@ -359,7 +356,9 @@ void AgentDelegationPanel;
             </header>
             <div
               class="agent-prompt-overview"
-              :aria-label="studioMode === 'create' ? t('agents.promptPreviewAriaCreate') : t('agents.promptPreviewAriaEdit')"
+              :aria-label="
+                studioMode === 'create' ? t('agents.promptPreviewAriaCreate') : t('agents.promptPreviewAriaEdit')
+              "
             >
               <div>
                 <strong>{{ t("agents.firstParagraphPreview") }}</strong>
@@ -388,11 +387,7 @@ void AgentDelegationPanel;
                 :aria-label="studioMode === 'create' ? t('agents.systemPrompt') : t('agents.aiRewriteRequest')"
                 :aria-invalid="Boolean(agentPromptError)"
                 :aria-describedby="agentPromptError ? 'agent-prompt-error agent-weave-helper' : 'agent-weave-helper'"
-                :placeholder="
-                  studioMode === 'create'
-                    ? t('agents.promptPhCreate')
-                    : t('agents.promptPhEdit')
-                "
+                :placeholder="studioMode === 'create' ? t('agents.promptPhCreate') : t('agents.promptPhEdit')"
               />
             </div>
             <div class="agent-prompt-meter">
@@ -401,9 +396,7 @@ void AgentDelegationPanel;
                 <strong>{{ draftAgent.systemPrompt?.length || 0 }}</strong></span
               >
               <span id="agent-weave-helper">{{
-                studioMode === "create" || !draftAgent.id
-                  ? t("agents.weaveHelperCreate")
-                  : t("agents.weaveHelperEdit")
+                studioMode === "create" || !draftAgent.id ? t("agents.weaveHelperCreate") : t("agents.weaveHelperEdit")
               }}</span>
             </div>
             <small v-if="agentPromptError" id="agent-prompt-error" class="field-error agent-prompt-error">{{

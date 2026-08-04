@@ -157,8 +157,7 @@ export function getToolUnifiedStatus(tool: Tool, connection?: ServiceConnection)
   const run = getToolRunStatus(tool, connection);
 
   if (run.tone === "danger" || run.tone === "warning") {
-    const publishedHint =
-      tool.status === "Published" ? tt("tools.govPublishedUnsafe") : lifecycle.description;
+    const publishedHint = tool.status === "Published" ? tt("tools.govPublishedUnsafe") : lifecycle.description;
     return {
       label: `${lifecycle.label} · ${run.label}`,
       tone: run.tone,

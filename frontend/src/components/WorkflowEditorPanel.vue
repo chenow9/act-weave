@@ -104,7 +104,7 @@ void WorkflowTrialRunDialog;
         <header class="workflow-editor-topbar">
           <div>
             <span>{{ t("workflow.canvasEdit") }}</span>
-            <h3>{{ selectedWorkflow?.name || t('workflow.graphTitle') }}</h3>
+            <h3>{{ selectedWorkflow?.name || t("workflow.graphTitle") }}</h3>
             <p>{{ workflowEditorFeedbackMessage }}</p>
           </div>
         </header>
@@ -132,7 +132,7 @@ void WorkflowTrialRunDialog;
             <div class="workflow-editor-meta">
               <span>{{ t("workflow.canvasEdit") }}</span>
               <div class="workflow-editor-title-row">
-                <h3>{{ selectedWorkflow?.name || t('workflow.graphTitle') }}</h3>
+                <h3>{{ selectedWorkflow?.name || t("workflow.graphTitle") }}</h3>
                 <button
                   class="workflow-editor-help-button"
                   type="button"
@@ -223,7 +223,10 @@ void WorkflowTrialRunDialog;
               </div>
             </div>
           </div>
-          <div class="workflow-editor-primary-actions workflow-editor-actions" :aria-label="t('workflow.primaryActions')">
+          <div
+            class="workflow-editor-primary-actions workflow-editor-actions"
+            :aria-label="t('workflow.primaryActions')"
+          >
             <button
               data-action="save-editor-draft"
               class="primary-button"

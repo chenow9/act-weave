@@ -46,7 +46,6 @@ const capabilities = ref<A2ACapabilities>({
   authModes: ["AGENT_ACCESS"],
   softDisable: true,
 });
-const allowAuthNone = computed(() => capabilities.value.allowAuthNone);
 const form = ref({
   targetAgentId: "",
   callableName: "",
@@ -70,9 +69,7 @@ const exposureForm = ref({
 
 /** Target agents for create / edit pickers (exclude self). */
 const targetAgentSelectOptions = computed<AppSelectOption[]>(() =>
-  props.agentOptions
-    .filter((a) => a.id !== props.agentId)
-    .map((a) => ({ label: a.name, value: a.id })),
+  props.agentOptions.filter((a) => a.id !== props.agentId).map((a) => ({ label: a.name, value: a.id })),
 );
 
 /** User-facing labels; API still uses INLINE / TASK / AGENT_ACCESS / NONE. */
@@ -429,149 +426,139 @@ onMounted(() => {
         </button>
 
         <div v-show="isBlockOpen('internal')" id="adp-internal-body" class="adp-block-body">
-        <p class="adp-hint">
-          {{ t("agents.adpInternalHint") }}
-        </p>
+          <p class="adp-hint">
+            {{ t("agents.adpInternalHint") }}
+          </p>
 
-        <ul v-if="bindings.length" class="adp-list">
-          <li v-for="b in bindings" :key="b.id" class="adp-card" :class="{ disabled: !b.enabled }">
-            <div class="adp-card-top">
-              <div class="adp-card-identity">
-                <code class="adp-callable">{{ b.callableName }}</code>
-                <i class="fa-solid fa-arrow-right adp-arrow" aria-hidden="true" />
-                <span class="adp-target">{{ agentName(b.targetAgentId) }}</span>
-                <span class="adp-pill" :title="b.mode">{{ modeLabel(b.mode) }}</span>
-                <span class="adp-pill muted" :title="t('agents.adpTaskContextOnlyTitle')">{{
-                  t("agents.adpTaskContextOnly")
-                }}</span>
-                <span class="adp-pill" :class="b.enabled ? 'on' : 'off'">
-                  {{ b.enabled ? t("agents.adpEnabled") : t("agents.adpDisabled") }}
-                </span>
+          <ul v-if="bindings.length" class="adp-list">
+            <li v-for="b in bindings" :key="b.id" class="adp-card" :class="{ disabled: !b.enabled }">
+              <div class="adp-card-top">
+                <div class="adp-card-identity">
+                  <code class="adp-callable">{{ b.callableName }}</code>
+                  <i class="fa-solid fa-arrow-right adp-arrow" aria-hidden="true" />
+                  <span class="adp-target">{{ agentName(b.targetAgentId) }}</span>
+                  <span class="adp-pill" :title="b.mode">{{ modeLabel(b.mode) }}</span>
+                  <span class="adp-pill muted" :title="t('agents.adpTaskContextOnlyTitle')">{{
+                    t("agents.adpTaskContextOnly")
+                  }}</span>
+                  <span class="adp-pill" :class="b.enabled ? 'on' : 'off'">
+                    {{ b.enabled ? t("agents.adpEnabled") : t("agents.adpDisabled") }}
+                  </span>
+                </div>
+                <div class="adp-card-actions">
+                  <button type="button" class="ghost-button small" :disabled="!b.enabled" @click="onDisable(b)">
+                    {{ t("agents.adpDisable") }}
+                  </button>
+                  <button type="button" class="ghost-button small" :disabled="b.enabled" @click="onEnableBinding(b)">
+                    {{ t("agents.adpReenable") }}
+                  </button>
+                  <button type="button" class="ghost-button small" data-testid="save-binding" @click="onSaveBinding(b)">
+                    <i class="fa-solid fa-check" aria-hidden="true" />
+                    {{ t("common.save") }}
+                  </button>
+                </div>
               </div>
-              <div class="adp-card-actions">
-                <button type="button" class="ghost-button small" :disabled="!b.enabled" @click="onDisable(b)">
-                  {{ t("agents.adpDisable") }}
-                </button>
-                <button
-                  type="button"
-                  class="ghost-button small"
-                  :disabled="b.enabled"
-                  @click="onEnableBinding(b)"
-                >
-                  {{ t("agents.adpReenable") }}
-                </button>
-                <button
-                  type="button"
-                  class="ghost-button small"
-                  data-testid="save-binding"
-                  @click="onSaveBinding(b)"
-                >
-                  <i class="fa-solid fa-check" aria-hidden="true" />
-                  {{ t("common.save") }}
-                </button>
+              <div class="adp-card-fields">
+                <label class="modal-field">
+                  <span>{{ t("agents.adpCallableName") }}</span>
+                  <input v-model="b.callableName" data-testid="edit-binding-callable" />
+                  <small class="adp-help">{{ t("agents.adpCallableNameHelp") }}</small>
+                </label>
+                <label class="modal-field" data-testid="edit-binding-target">
+                  <span>{{ t("agents.adpHelpAgent") }}</span>
+                  <AppSelect
+                    class="adp-select"
+                    :model-value="b.targetAgentId"
+                    :options="targetAgentSelectOptions"
+                    :placeholder="t('agents.adpSelectAgent')"
+                    :aria-label="t('agents.adpHelpAgent')"
+                    @update:model-value="b.targetAgentId = String($event)"
+                  />
+                </label>
+                <label class="modal-field" data-testid="edit-binding-mode">
+                  <span>{{ t("agents.adpExecMode") }}</span>
+                  <AppSelect
+                    class="adp-select"
+                    :model-value="b.mode"
+                    :options="modeSelectOptions"
+                    :placeholder="t('agents.adpSelectExecMode')"
+                    :aria-label="t('agents.adpExecMode')"
+                    @update:model-value="b.mode = asMode($event)"
+                  />
+                  <small class="adp-help">{{ t("agents.adpModeHelp") }}</small>
+                </label>
+                <label class="modal-field">
+                  <span>{{ t("agents.adpContextScope") }}</span>
+                  <input
+                    :value="t('agents.adpTaskContextOnlyValue')"
+                    disabled
+                    :title="t('agents.adpTaskContextOnlyFixedTitle')"
+                  />
+                </label>
+                <label class="modal-field wide">
+                  <span>{{ t("agents.adpUsageNotes") }}</span>
+                  <input
+                    v-model="b.description"
+                    :placeholder="t('agents.adpUsageNotesPh')"
+                    data-testid="edit-binding-desc"
+                  />
+                </label>
               </div>
+            </li>
+          </ul>
+          <div v-else class="adp-empty">
+            <i class="fa-regular fa-folder-open" aria-hidden="true" />
+            <span>{{ t("agents.adpEmptyInternal") }}</span>
+          </div>
+
+          <div class="adp-form">
+            <div class="adp-form-label">
+              <i class="fa-solid fa-plus" aria-hidden="true" />
+              <span>{{ t("agents.adpAddCollabRelation") }}</span>
             </div>
-            <div class="adp-card-fields">
+            <div class="adp-form-grid">
               <label class="modal-field">
-                <span>{{ t("agents.adpCallableName") }}</span>
-                <input v-model="b.callableName" data-testid="edit-binding-callable" />
-                <small class="adp-help">{{ t("agents.adpCallableNameHelp") }}</small>
-              </label>
-              <label class="modal-field" data-testid="edit-binding-target">
                 <span>{{ t("agents.adpHelpAgent") }}</span>
                 <AppSelect
                   class="adp-select"
-                  :model-value="b.targetAgentId"
+                  :model-value="form.targetAgentId"
                   :options="targetAgentSelectOptions"
-                  :placeholder="t('agents.adpSelectAgent')"
+                  :placeholder="t('agents.adpSelectAgentPh')"
                   :aria-label="t('agents.adpHelpAgent')"
-                  @update:model-value="b.targetAgentId = String($event)"
+                  @update:model-value="form.targetAgentId = String($event)"
                 />
               </label>
-              <label class="modal-field" data-testid="edit-binding-mode">
+              <label class="modal-field">
+                <span>{{ t("agents.adpCallableName") }}</span>
+                <input v-model="form.callableName" placeholder="e.g. order_lookup" />
+                <small class="adp-help">{{ t("agents.adpCallableNameHelpStable") }}</small>
+              </label>
+              <label class="modal-field">
                 <span>{{ t("agents.adpExecMode") }}</span>
                 <AppSelect
                   class="adp-select"
-                  :model-value="b.mode"
+                  :model-value="form.mode"
                   :options="modeSelectOptions"
                   :placeholder="t('agents.adpSelectExecMode')"
                   :aria-label="t('agents.adpExecMode')"
-                  @update:model-value="b.mode = asMode($event)"
+                  @update:model-value="form.mode = asMode($event)"
                 />
-                <small class="adp-help">{{ t("agents.adpModeHelp") }}</small>
-              </label>
-              <label class="modal-field">
-                <span>{{ t("agents.adpContextScope") }}</span>
-                <input
-                  :value="t('agents.adpTaskContextOnlyValue')"
-                  disabled
-                  :title="t('agents.adpTaskContextOnlyFixedTitle')"
-                />
+                <small class="adp-help">
+                  {{ t("agents.adpModeHelpDetail") }}
+                </small>
               </label>
               <label class="modal-field wide">
                 <span>{{ t("agents.adpUsageNotes") }}</span>
-                <input
-                  v-model="b.description"
-                  :placeholder="t('agents.adpUsageNotesPh')"
-                  data-testid="edit-binding-desc"
-                />
+                <input v-model="form.description" :placeholder="t('agents.adpUsageNotesFormPh')" />
               </label>
             </div>
-          </li>
-        </ul>
-        <div v-else class="adp-empty">
-          <i class="fa-regular fa-folder-open" aria-hidden="true" />
-          <span>{{ t("agents.adpEmptyInternal") }}</span>
-        </div>
-
-        <div class="adp-form">
-          <div class="adp-form-label">
-            <i class="fa-solid fa-plus" aria-hidden="true" />
-            <span>{{ t("agents.adpAddCollabRelation") }}</span>
+            <div class="adp-form-actions">
+              <button type="button" class="primary-button small" @click="onCreate">
+                <i class="fa-solid fa-plus" aria-hidden="true" />
+                {{ t("agents.adpAddCollab") }}
+              </button>
+            </div>
           </div>
-          <div class="adp-form-grid">
-            <label class="modal-field">
-              <span>{{ t("agents.adpHelpAgent") }}</span>
-              <AppSelect
-                class="adp-select"
-                :model-value="form.targetAgentId"
-                :options="targetAgentSelectOptions"
-                :placeholder="t('agents.adpSelectAgentPh')"
-                :aria-label="t('agents.adpHelpAgent')"
-                @update:model-value="form.targetAgentId = String($event)"
-              />
-            </label>
-            <label class="modal-field">
-              <span>{{ t("agents.adpCallableName") }}</span>
-              <input v-model="form.callableName" placeholder="e.g. order_lookup" />
-              <small class="adp-help">{{ t("agents.adpCallableNameHelpStable") }}</small>
-            </label>
-            <label class="modal-field">
-              <span>{{ t("agents.adpExecMode") }}</span>
-              <AppSelect
-                class="adp-select"
-                :model-value="form.mode"
-                :options="modeSelectOptions"
-                :placeholder="t('agents.adpSelectExecMode')"
-                :aria-label="t('agents.adpExecMode')"
-                @update:model-value="form.mode = asMode($event)"
-              />
-              <small class="adp-help">
-                {{ t("agents.adpModeHelpDetail") }}
-              </small>
-            </label>
-            <label class="modal-field wide">
-              <span>{{ t("agents.adpUsageNotes") }}</span>
-              <input v-model="form.description" :placeholder="t('agents.adpUsageNotesFormPh')" />
-            </label>
-          </div>
-          <div class="adp-form-actions">
-            <button type="button" class="primary-button small" @click="onCreate">
-              <i class="fa-solid fa-plus" aria-hidden="true" />
-              {{ t("agents.adpAddCollab") }}
-            </button>
-          </div>
-        </div>
         </div>
       </section>
 
@@ -604,121 +591,108 @@ onMounted(() => {
         </button>
 
         <div v-show="isBlockOpen('inbound')" id="adp-inbound-body" class="adp-block-body">
-        <p class="adp-hint">
-          {{ t("agents.adpInboundHint") }}
-        </p>
+          <p class="adp-hint">
+            {{ t("agents.adpInboundHint") }}
+          </p>
 
-        <ul v-if="exposures.length" class="adp-list">
-          <li v-for="e in exposures" :key="e.id" class="adp-card" :class="{ disabled: !e.enabled }">
-            <div class="adp-card-top">
-              <div class="adp-card-identity">
-                <strong class="adp-public-name">{{ e.publicName }}</strong>
-                <span class="adp-pill" :title="e.authMode">{{ authModeShort(e.authMode) }}</span>
-                <span class="adp-pill" :class="e.enabled ? 'on' : 'off'">
-                  {{ e.enabled ? t("agents.adpEnabled") : t("agents.adpDisabled") }}
-                </span>
+          <ul v-if="exposures.length" class="adp-list">
+            <li v-for="e in exposures" :key="e.id" class="adp-card" :class="{ disabled: !e.enabled }">
+              <div class="adp-card-top">
+                <div class="adp-card-identity">
+                  <strong class="adp-public-name">{{ e.publicName }}</strong>
+                  <span class="adp-pill" :title="e.authMode">{{ authModeShort(e.authMode) }}</span>
+                  <span class="adp-pill" :class="e.enabled ? 'on' : 'off'">
+                    {{ e.enabled ? t("agents.adpEnabled") : t("agents.adpDisabled") }}
+                  </span>
+                </div>
+                <div class="adp-card-actions">
+                  <button type="button" class="ghost-button small" @click="onPreviewCard(e)">
+                    <i class="fa-solid fa-id-card" aria-hidden="true" />
+                    {{ t("agents.adpViewCard") }}
+                  </button>
+                  <button type="button" class="ghost-button small" :disabled="!e.enabled" @click="onDisableExposure(e)">
+                    {{ t("agents.adpDisable") }}
+                  </button>
+                  <button type="button" class="ghost-button small" :disabled="e.enabled" @click="onEnableExposure(e)">
+                    {{ t("agents.adpReenable") }}
+                  </button>
+                  <button
+                    type="button"
+                    class="ghost-button small"
+                    data-testid="save-exposure"
+                    @click="onSaveExposure(e)"
+                  >
+                    <i class="fa-solid fa-check" aria-hidden="true" />
+                    {{ t("common.save") }}
+                  </button>
+                </div>
               </div>
-              <div class="adp-card-actions">
-                <button type="button" class="ghost-button small" @click="onPreviewCard(e)">
-                  <i class="fa-solid fa-id-card" aria-hidden="true" />
-                  {{ t("agents.adpViewCard") }}
-                </button>
-                <button
-                  type="button"
-                  class="ghost-button small"
-                  :disabled="!e.enabled"
-                  @click="onDisableExposure(e)"
-                >
-                  {{ t("agents.adpDisable") }}
-                </button>
-                <button
-                  type="button"
-                  class="ghost-button small"
-                  :disabled="e.enabled"
-                  @click="onEnableExposure(e)"
-                >
-                  {{ t("agents.adpReenable") }}
-                </button>
-                <button
-                  type="button"
-                  class="ghost-button small"
-                  data-testid="save-exposure"
-                  @click="onSaveExposure(e)"
-                >
-                  <i class="fa-solid fa-check" aria-hidden="true" />
-                  {{ t("common.save") }}
-                </button>
+              <div class="adp-card-fields">
+                <label class="modal-field">
+                  <span>{{ t("agents.adpPublicName") }}</span>
+                  <input v-model="e.publicName" />
+                  <small class="adp-help">{{ t("agents.adpPublicNameHelp") }}</small>
+                </label>
+                <label class="modal-field" data-testid="exposure-auth-mode">
+                  <span>{{ t("agents.adpWhoCanCall") }}</span>
+                  <AppSelect
+                    class="adp-select"
+                    :model-value="e.authMode"
+                    :options="authModeSelectOptions"
+                    :placeholder="t('agents.adpSelectAccessControl')"
+                    :aria-label="t('agents.adpWhoCanCall')"
+                    @update:model-value="e.authMode = asAuthMode($event)"
+                  />
+                </label>
+                <label class="modal-field wide">
+                  <span>{{ t("agents.adpCapabilityBlurb") }}</span>
+                  <input v-model="e.publicDescription" :placeholder="t('agents.adpCapabilityBlurbPh')" />
+                </label>
               </div>
+            </li>
+          </ul>
+          <div v-else class="adp-empty">
+            <i class="fa-solid fa-shield-halved" aria-hidden="true" />
+            <span>{{ t("agents.adpEmptyInbound") }}</span>
+          </div>
+
+          <div class="adp-form">
+            <div class="adp-form-label">
+              <i class="fa-solid fa-globe" aria-hidden="true" />
+              <span>{{ t("agents.adpOpenExternal") }}</span>
             </div>
-            <div class="adp-card-fields">
+            <div class="adp-form-grid">
               <label class="modal-field">
                 <span>{{ t("agents.adpPublicName") }}</span>
-                <input v-model="e.publicName" />
-                <small class="adp-help">{{ t("agents.adpPublicNameHelp") }}</small>
+                <input v-model="exposureForm.publicName" :placeholder="t('agents.adpPublicNamePh')" />
+                <small class="adp-help">{{ t("agents.adpPublicNameHelpShort") }}</small>
               </label>
-              <label class="modal-field" data-testid="exposure-auth-mode">
+              <label class="modal-field" data-testid="new-exposure-auth-mode">
                 <span>{{ t("agents.adpWhoCanCall") }}</span>
                 <AppSelect
                   class="adp-select"
-                  :model-value="e.authMode"
+                  :model-value="exposureForm.authMode"
                   :options="authModeSelectOptions"
                   :placeholder="t('agents.adpSelectAccessControl')"
                   :aria-label="t('agents.adpWhoCanCall')"
-                  @update:model-value="e.authMode = asAuthMode($event)"
+                  @update:model-value="exposureForm.authMode = asAuthMode($event)"
                 />
+                <small class="adp-help">{{ t("agents.adpAuthHelpProd") }}</small>
               </label>
               <label class="modal-field wide">
                 <span>{{ t("agents.adpCapabilityBlurb") }}</span>
-                <input v-model="e.publicDescription" :placeholder="t('agents.adpCapabilityBlurbPh')" />
+                <input v-model="exposureForm.publicDescription" :placeholder="t('agents.adpCapabilityBlurbFormPh')" />
               </label>
             </div>
-          </li>
-        </ul>
-        <div v-else class="adp-empty">
-          <i class="fa-solid fa-shield-halved" aria-hidden="true" />
-          <span>{{ t("agents.adpEmptyInbound") }}</span>
-        </div>
+            <div class="adp-form-actions">
+              <button type="button" class="primary-button small" @click="onCreateExposure">
+                <i class="fa-solid fa-globe" aria-hidden="true" />
+                {{ t("agents.adpOpenExternalBtn") }}
+              </button>
+            </div>
+          </div>
 
-        <div class="adp-form">
-          <div class="adp-form-label">
-            <i class="fa-solid fa-globe" aria-hidden="true" />
-            <span>{{ t("agents.adpOpenExternal") }}</span>
-          </div>
-          <div class="adp-form-grid">
-            <label class="modal-field">
-              <span>{{ t("agents.adpPublicName") }}</span>
-              <input v-model="exposureForm.publicName" :placeholder="t('agents.adpPublicNamePh')" />
-              <small class="adp-help">{{ t("agents.adpPublicNameHelpShort") }}</small>
-            </label>
-            <label class="modal-field" data-testid="new-exposure-auth-mode">
-              <span>{{ t("agents.adpWhoCanCall") }}</span>
-              <AppSelect
-                class="adp-select"
-                :model-value="exposureForm.authMode"
-                :options="authModeSelectOptions"
-                :placeholder="t('agents.adpSelectAccessControl')"
-                :aria-label="t('agents.adpWhoCanCall')"
-                @update:model-value="exposureForm.authMode = asAuthMode($event)"
-              />
-              <small class="adp-help">{{ t("agents.adpAuthHelpProd") }}</small>
-            </label>
-            <label class="modal-field wide">
-              <span>{{ t("agents.adpCapabilityBlurb") }}</span>
-              <input
-                v-model="exposureForm.publicDescription"
-                :placeholder="t('agents.adpCapabilityBlurbFormPh')"
-              />
-            </label>
-          </div>
-          <div class="adp-form-actions">
-            <button type="button" class="primary-button small" @click="onCreateExposure">
-              <i class="fa-solid fa-globe" aria-hidden="true" />
-              {{ t("agents.adpOpenExternalBtn") }}
-            </button>
-          </div>
-        </div>
-
-        <pre v-if="cardPreview" class="adp-card-preview">{{ cardPreview }}</pre>
+          <pre v-if="cardPreview" class="adp-card-preview">{{ cardPreview }}</pre>
         </div>
       </section>
 
@@ -751,170 +725,141 @@ onMounted(() => {
         </button>
 
         <div v-show="isBlockOpen('outbound')" id="adp-outbound-body" class="adp-block-body">
-        <p class="adp-hint">
-          {{ t("agents.adpOutboundHint") }}
-        </p>
+          <p class="adp-hint">
+            {{ t("agents.adpOutboundHint") }}
+          </p>
 
-        <ul v-if="remotes.length" class="adp-list">
-          <li v-for="r in remotes" :key="r.id" class="adp-card" :class="{ disabled: !r.enabled }">
-            <div class="adp-card-top">
-              <div class="adp-card-identity">
-                <code class="adp-callable">{{ r.callableName }}</code>
-                <i class="fa-solid fa-arrow-right adp-arrow" aria-hidden="true" />
-                <span class="adp-endpoint" :title="r.endpointUrl">{{ r.endpointUrl }}</span>
-                <span class="adp-pill muted">{{ t("agents.adpExternal") }}</span>
-                <span v-if="r.agentCardUrl" class="adp-pill muted">{{ t("agents.adpCardConfigured") }}</span>
-                <span v-if="r.authSecretRef" class="adp-pill muted">{{ t("agents.adpSecretConfigured") }}</span>
-                <span class="adp-pill muted">{{
-                  t("agents.adpTimeoutSeconds", { n: Math.round((r.timeoutMs || 0) / 1000) })
-                }}</span>
-                <span class="adp-pill" :class="r.enabled ? 'on' : 'off'">
-                  {{ r.enabled ? t("agents.adpEnabled") : t("agents.adpDisabled") }}
-                </span>
+          <ul v-if="remotes.length" class="adp-list">
+            <li v-for="r in remotes" :key="r.id" class="adp-card" :class="{ disabled: !r.enabled }">
+              <div class="adp-card-top">
+                <div class="adp-card-identity">
+                  <code class="adp-callable">{{ r.callableName }}</code>
+                  <i class="fa-solid fa-arrow-right adp-arrow" aria-hidden="true" />
+                  <span class="adp-endpoint" :title="r.endpointUrl">{{ r.endpointUrl }}</span>
+                  <span class="adp-pill muted">{{ t("agents.adpExternal") }}</span>
+                  <span v-if="r.agentCardUrl" class="adp-pill muted">{{ t("agents.adpCardConfigured") }}</span>
+                  <span v-if="r.authSecretRef" class="adp-pill muted">{{ t("agents.adpSecretConfigured") }}</span>
+                  <span class="adp-pill muted">{{
+                    t("agents.adpTimeoutSeconds", { n: Math.round((r.timeoutMs || 0) / 1000) })
+                  }}</span>
+                  <span class="adp-pill" :class="r.enabled ? 'on' : 'off'">
+                    {{ r.enabled ? t("agents.adpEnabled") : t("agents.adpDisabled") }}
+                  </span>
+                </div>
+                <div class="adp-card-actions">
+                  <button type="button" class="ghost-button small" :disabled="!r.enabled" @click="onDisableRemote(r)">
+                    {{ t("agents.adpDisable") }}
+                  </button>
+                  <button type="button" class="ghost-button small" :disabled="r.enabled" @click="onEnableRemote(r)">
+                    {{ t("agents.adpReenable") }}
+                  </button>
+                  <button type="button" class="ghost-button small" data-testid="save-remote" @click="onSaveRemote(r)">
+                    <i class="fa-solid fa-check" aria-hidden="true" />
+                    {{ t("common.save") }}
+                  </button>
+                </div>
               </div>
-              <div class="adp-card-actions">
-                <button
-                  type="button"
-                  class="ghost-button small"
-                  :disabled="!r.enabled"
-                  @click="onDisableRemote(r)"
-                >
-                  {{ t("agents.adpDisable") }}
-                </button>
-                <button
-                  type="button"
-                  class="ghost-button small"
-                  :disabled="r.enabled"
-                  @click="onEnableRemote(r)"
-                >
-                  {{ t("agents.adpReenable") }}
-                </button>
-                <button
-                  type="button"
-                  class="ghost-button small"
-                  data-testid="save-remote"
-                  @click="onSaveRemote(r)"
-                >
-                  <i class="fa-solid fa-check" aria-hidden="true" />
-                  {{ t("common.save") }}
-                </button>
+              <div class="adp-card-fields">
+                <label class="modal-field">
+                  <span>{{ t("agents.adpCallableName") }}</span>
+                  <input v-model="r.callableName" data-testid="edit-remote-callable" />
+                  <small class="adp-help">{{ t("agents.adpCallableNameHelpShort") }}</small>
+                </label>
+                <label class="modal-field wide">
+                  <span>{{ t("agents.adpServiceUrl") }}</span>
+                  <input v-model="r.endpointUrl" data-testid="edit-remote-endpoint" />
+                  <small class="adp-help">{{ t("agents.adpServiceUrlHelp") }}</small>
+                </label>
+                <label class="modal-field wide">
+                  <span>{{ t("agents.adpCardUrlOptional") }}</span>
+                  <input v-model="r.agentCardUrl" data-testid="edit-remote-card" />
+                  <small class="adp-help">{{ t("agents.adpCardUrlHelp") }}</small>
+                </label>
+                <label class="modal-field wide">
+                  <span>{{ t("agents.adpAllowedHosts") }}</span>
+                  <input
+                    data-testid="edit-remote-hosts"
+                    :value="(r.allowedHosts || []).join(', ')"
+                    @input="
+                      r.allowedHosts = ($event.target as HTMLInputElement).value
+                        .split(',')
+                        .map((s) => s.trim())
+                        .filter(Boolean)
+                    "
+                  />
+                  <small class="adp-help">{{ t("agents.adpAllowedHostsHelp") }}</small>
+                </label>
+                <label class="modal-field">
+                  <span>{{ t("agents.adpSecretRef") }}</span>
+                  <input v-model="r.authSecretRef" autocomplete="off" data-testid="edit-remote-secret" />
+                  <small class="adp-help">{{ t("agents.adpSecretRefHelp") }}</small>
+                </label>
+                <label class="modal-field">
+                  <span>{{ t("agents.adpTimeoutMs") }}</span>
+                  <input v-model.number="r.timeoutMs" type="number" min="1000" data-testid="edit-remote-timeout" />
+                </label>
+                <label class="modal-field wide">
+                  <span>{{ t("agents.adpUsageNotes") }}</span>
+                  <input v-model="r.description" data-testid="edit-remote-desc" />
+                </label>
               </div>
+            </li>
+          </ul>
+          <div v-else class="adp-empty">
+            <i class="fa-solid fa-satellite-dish" aria-hidden="true" />
+            <span>{{ t("agents.adpEmptyOutbound") }}</span>
+          </div>
+
+          <div class="adp-form">
+            <div class="adp-form-label">
+              <i class="fa-solid fa-plus" aria-hidden="true" />
+              <span>{{ t("agents.adpAddExternal") }}</span>
             </div>
-            <div class="adp-card-fields">
+            <div class="adp-form-grid">
               <label class="modal-field">
                 <span>{{ t("agents.adpCallableName") }}</span>
-                <input v-model="r.callableName" data-testid="edit-remote-callable" />
+                <input v-model="remoteForm.callableName" placeholder="e.g. external_analyst" />
                 <small class="adp-help">{{ t("agents.adpCallableNameHelpShort") }}</small>
-              </label>
-              <label class="modal-field wide">
-                <span>{{ t("agents.adpServiceUrl") }}</span>
-                <input v-model="r.endpointUrl" data-testid="edit-remote-endpoint" />
-                <small class="adp-help">{{ t("agents.adpServiceUrlHelp") }}</small>
-              </label>
-              <label class="modal-field wide">
-                <span>{{ t("agents.adpCardUrlOptional") }}</span>
-                <input v-model="r.agentCardUrl" data-testid="edit-remote-card" />
-                <small class="adp-help">{{ t("agents.adpCardUrlHelp") }}</small>
-              </label>
-              <label class="modal-field wide">
-                <span>{{ t("agents.adpAllowedHosts") }}</span>
-                <input
-                  data-testid="edit-remote-hosts"
-                  :value="(r.allowedHosts || []).join(', ')"
-                  @input="
-                    r.allowedHosts = ($event.target as HTMLInputElement).value
-                      .split(',')
-                      .map((s) => s.trim())
-                      .filter(Boolean)
-                  "
-                />
-                <small class="adp-help">{{ t("agents.adpAllowedHostsHelp") }}</small>
-              </label>
-              <label class="modal-field">
-                <span>{{ t("agents.adpSecretRef") }}</span>
-                <input
-                  v-model="r.authSecretRef"
-                  autocomplete="off"
-                  data-testid="edit-remote-secret"
-                />
-                <small class="adp-help">{{ t("agents.adpSecretRefHelp") }}</small>
               </label>
               <label class="modal-field">
                 <span>{{ t("agents.adpTimeoutMs") }}</span>
-                <input
-                  v-model.number="r.timeoutMs"
-                  type="number"
-                  min="1000"
-                  data-testid="edit-remote-timeout"
-                />
+                <input v-model.number="remoteForm.timeoutMs" type="number" min="1000" max="600000" />
+                <small class="adp-help">{{ t("agents.adpTimeoutDefaultHelp") }}</small>
               </label>
               <label class="modal-field wide">
-                <span>{{ t("agents.adpUsageNotes") }}</span>
-                <input v-model="r.description" data-testid="edit-remote-desc" />
+                <span>{{ t("agents.adpServiceUrlHttps") }}</span>
+                <input v-model="remoteForm.endpointUrl" placeholder="https://agent.example.com/a2a" />
+              </label>
+              <label class="modal-field wide">
+                <span>{{ t("agents.adpCardUrlOptional") }}</span>
+                <input
+                  v-model="remoteForm.agentCardUrl"
+                  placeholder="https://agent.example.com/.well-known/agent-card.json"
+                />
+                <small class="adp-help">{{ t("agents.adpCardUrlDiscoverHelp") }}</small>
+              </label>
+              <label class="modal-field wide">
+                <span>{{ t("agents.adpAllowedHosts") }}</span>
+                <input v-model="remoteForm.allowedHosts" placeholder="agent.example.com" />
+                <small class="adp-help">{{ t("agents.adpAllowedHostsStrictHelp") }}</small>
+              </label>
+              <label class="modal-field wide">
+                <span>{{ t("agents.adpSecretRefOptional") }}</span>
+                <input
+                  v-model="remoteForm.authSecretRef"
+                  :placeholder="t('agents.adpSecretRefPh')"
+                  autocomplete="off"
+                />
+                <small class="adp-help">{{ t("agents.adpSecretRefHelpNoPlaintext") }}</small>
               </label>
             </div>
-          </li>
-        </ul>
-        <div v-else class="adp-empty">
-          <i class="fa-solid fa-satellite-dish" aria-hidden="true" />
-          <span>{{ t("agents.adpEmptyOutbound") }}</span>
-        </div>
-
-        <div class="adp-form">
-          <div class="adp-form-label">
-            <i class="fa-solid fa-plus" aria-hidden="true" />
-            <span>{{ t("agents.adpAddExternal") }}</span>
+            <div class="adp-form-actions">
+              <button type="button" class="primary-button small" @click="onCreateRemote">
+                <i class="fa-solid fa-plus" aria-hidden="true" />
+                {{ t("agents.adpAddExternal") }}
+              </button>
+            </div>
           </div>
-          <div class="adp-form-grid">
-            <label class="modal-field">
-              <span>{{ t("agents.adpCallableName") }}</span>
-              <input v-model="remoteForm.callableName" placeholder="e.g. external_analyst" />
-              <small class="adp-help">{{ t("agents.adpCallableNameHelpShort") }}</small>
-            </label>
-            <label class="modal-field">
-              <span>{{ t("agents.adpTimeoutMs") }}</span>
-              <input
-                v-model.number="remoteForm.timeoutMs"
-                type="number"
-                min="1000"
-                max="600000"
-              />
-              <small class="adp-help">{{ t("agents.adpTimeoutDefaultHelp") }}</small>
-            </label>
-            <label class="modal-field wide">
-              <span>{{ t("agents.adpServiceUrlHttps") }}</span>
-              <input v-model="remoteForm.endpointUrl" placeholder="https://agent.example.com/a2a" />
-            </label>
-            <label class="modal-field wide">
-              <span>{{ t("agents.adpCardUrlOptional") }}</span>
-              <input
-                v-model="remoteForm.agentCardUrl"
-                placeholder="https://agent.example.com/.well-known/agent-card.json"
-              />
-              <small class="adp-help">{{ t("agents.adpCardUrlDiscoverHelp") }}</small>
-            </label>
-            <label class="modal-field wide">
-              <span>{{ t("agents.adpAllowedHosts") }}</span>
-              <input v-model="remoteForm.allowedHosts" placeholder="agent.example.com" />
-              <small class="adp-help">{{ t("agents.adpAllowedHostsStrictHelp") }}</small>
-            </label>
-            <label class="modal-field wide">
-              <span>{{ t("agents.adpSecretRefOptional") }}</span>
-              <input
-                v-model="remoteForm.authSecretRef"
-                :placeholder="t('agents.adpSecretRefPh')"
-                autocomplete="off"
-              />
-              <small class="adp-help">{{ t("agents.adpSecretRefHelpNoPlaintext") }}</small>
-            </label>
-          </div>
-          <div class="adp-form-actions">
-            <button type="button" class="primary-button small" @click="onCreateRemote">
-              <i class="fa-solid fa-plus" aria-hidden="true" />
-              {{ t("agents.adpAddExternal") }}
-            </button>
-          </div>
-        </div>
         </div>
       </section>
     </div>
@@ -1028,7 +973,9 @@ onMounted(() => {
 .adp-chevron {
   color: #94a3b8;
   font-size: 11px;
-  transition: transform 0.15s ease, color 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    color 0.15s ease;
 }
 
 .adp-chevron.open {
@@ -1173,7 +1120,9 @@ onMounted(() => {
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .adp-card:hover {
@@ -1346,7 +1295,13 @@ onMounted(() => {
 .adp-help {
   margin: 2px 0 0;
   color: #94a3b8;
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
   font-size: 11px;
   font-weight: 400;
   letter-spacing: 0;

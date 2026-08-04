@@ -211,9 +211,7 @@ void ToolSchemaTreeView;
           <div>
             <i class="fa-solid fa-list-check" />
             <span>
-              <strong>{{
-                t("openapi.detectedEndpoints", { n: selectedOpenAPIFilePreview.endpointCount })
-              }}</strong>
+              <strong>{{ t("openapi.detectedEndpoints", { n: selectedOpenAPIFilePreview.endpointCount }) }}</strong>
               <small>{{ t("openapi.readyEndpointsHint", { n: selectedOpenAPIFilePreview.readyCount }) }}</small>
             </span>
           </div>
@@ -277,7 +275,9 @@ void ToolSchemaTreeView;
       <footer class="openapi-modal-actions">
         <span>{{ t("openapi.importThenDrafts") }}</span>
         <div>
-          <button type="button" :disabled="importingOpenAPI" @click="closeImportModal">{{ t("openapi.cancel") }}</button>
+          <button type="button" :disabled="importingOpenAPI" @click="closeImportModal">
+            {{ t("openapi.cancel") }}
+          </button>
           <button type="button" :disabled="!canImportOpenAPI || importingOpenAPI" @click="importOpenAPI">
             <i v-if="importingOpenAPI" class="fa-solid fa-spinner fa-spin" />
             {{ importingOpenAPI ? t("openapi.parsing") : t("openapi.startImport") }}
@@ -430,9 +430,7 @@ void ToolSchemaTreeView;
             <div class="editable-schema-head openapi-endpoint-list-head">
               <div>
                 <strong>{{ t("openapi.endpointDetails") }}</strong>
-                <span>{{
-                  t("openapi.endpointDetailsHint", { n: selectedImportDetail.endpoints.length })
-                }}</span>
+                <span>{{ t("openapi.endpointDetailsHint", { n: selectedImportDetail.endpoints.length }) }}</span>
               </div>
               <label class="openapi-endpoint-search">
                 <i class="fa-solid fa-magnifying-glass" aria-hidden="true" />
@@ -505,9 +503,7 @@ void ToolSchemaTreeView;
         >
           <i v-if="generatingDraftsByImportId[selectedImport.id]" class="fa-solid fa-spinner fa-spin" />
           {{
-            generatingDraftsByImportId[selectedImport.id]
-              ? t("openapi.generating")
-              : t("openapi.generateToolDrafts")
+            generatingDraftsByImportId[selectedImport.id] ? t("openapi.generating") : t("openapi.generateToolDrafts")
           }}
         </button>
       </div>
