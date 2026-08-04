@@ -31,7 +31,7 @@
   "confirmNameHint": "Type {name} exactly (case-sensitive; leading/trailing spaces ignored).",
   "sessionExpired": "Session expired. Please sign in again.",
   "loadFailed": "Failed to load workspaces. Check network or backend and retry.",
-  "userIdLabel": "@{username} · User ID: {id}",
+  "userIdLabel": "{'@'}{username} · User ID: {id}",
   "candidatesFailed": "Failed to load candidate users. Retry.",
   "bulkStatus": "{action} {n} workspace(s)",
   "enabled": "Enabled",

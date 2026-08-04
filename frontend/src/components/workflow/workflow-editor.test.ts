@@ -711,7 +711,8 @@ describe("workflow inspector typed editors", () => {
 
     expect(wrapper.text()).toContain("子流程");
     expect(wrapper.text()).toContain("并行分支");
-    expect(wrapper.text()).toContain("批量遍历");
+    // zh-CN ForEach palette title (workflow.nodeForEach).
+    expect(wrapper.text()).toContain("循环");
 
     await wrapper.findAll(".workflow-node-library-item")[2].trigger("click");
 

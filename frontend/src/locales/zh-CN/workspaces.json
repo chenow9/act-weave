@@ -31,7 +31,7 @@
   "confirmNameHint": "名称需与 {name} 完全一致，区分大小写并忽略首尾空格。",
   "sessionExpired": "会话已失效，请重新登录。",
   "loadFailed": "业务空间加载失败，请检查网络或后端服务后重试。",
-  "userIdLabel": "@{username} · 用户 ID：{id}",
+  "userIdLabel": "{'@'}{username} · 用户 ID：{id}",
   "candidatesFailed": "候选用户加载失败，请重试。",
   "bulkStatus": "已{action} {n} 个业务空间",
   "enabled": "启用",
