@@ -278,9 +278,27 @@ async function mockApiV1(page: Page, options?: { workspaceRoleForAdmin?: string 
   };
 }
 
+/** Product DEFAULT_LOCALE is en; smoke assertions use zh-CN console copy. */
+async function forceZhLocale(page: Page) {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("actweave.locale", "zh-CN");
+    } catch {
+      // ignore
+    }
+  });
+}
+
 async function expectLoginPage(page: Page) {
+  // Prefer explicit language control when the switcher is visible (overrides navigator).
+  const zh = page.locator('[data-testid="login-lang-zh-CN"]');
+  if (await zh.isVisible().catch(() => false)) {
+    await zh.click();
+  }
   // LoginView: brand "ACTWEAVE 织行" + heading "登录" (not the legacy "登录 ActWeave").
-  await expect(page.getByRole("heading", { name: "登录", exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "登录", exact: true })).toBeVisible({
+    timeout: 15_000,
+  });
   await expect(page.getByText("ACTWEAVE 织行").first()).toBeVisible();
 }
 
@@ -293,6 +311,10 @@ async function loginAs(page: Page, username: string, password = "Password-123456
 }
 
 test.describe("console smoke (mocked API)", () => {
+  test.beforeEach(async ({ page }) => {
+    await forceZhLocale(page);
+  });
+
   test("login page renders core affordances", async ({ page }) => {
     await mockApiV1(page);
     await page.goto("/login");
