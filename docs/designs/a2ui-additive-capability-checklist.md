@@ -131,26 +131,26 @@
 
 依赖：PR-1 + PR-4 + PR-5 已在本分支可用。
 
-- [ ] `a2ui` 包：`SplitTextAndA2UI`、serialize envelope、prompt appendix 模板
-- [ ] **KD-17：** 仅在 `drive()` 当 `EnableA2UIFromSnapshot` 时改 **一次** `instruction`
-- [ ] resume / checkpoint **不**重注（沿用冻结 instruction）
-- [ ] 流式：`text_delta` index **0** 不变；不在 delta 中剥离围栏（S1）
-- [ ] **仅 terminal** `completeRun` / final assistant text 上 extract（禁止中间 tool 轮误抽）
-- [ ] 校验：JSON object、`MaxSurfaceBytes`、版本字段
-- [ ] **预检与 `marshalProjectionItem` 同源：**  
+- [x] `a2ui` 包：`SplitTextAndA2UI`、serialize envelope、prompt appendix 模板
+- [x] **KD-17：** 仅在 `drive()` 当 `EnableA2UIFromSnapshot` 时改 **一次** `instruction`
+- [x] resume / checkpoint **不**重注（沿用冻结 instruction）
+- [x] 流式：`text_delta` index **0** 不变；不在 delta 中剥离围栏（S1）
+- [x] **仅 terminal** `completeRun` / final assistant text 上 extract（禁止中间 tool 轮误抽）
+- [x] 校验：JSON object、`MaxSurfaceBytes`、版本字段
+- [x] **预检与 `marshalProjectionItem` 同源：**  
   `ValidateItem` → `ItemSnapshotData` → `ValidateEventData("item.completed")`  
   （可抽 `ValidateProjectionItem` 共用）
-- [ ] 预检失败 / 坏 JSON / 过大 → **text-only 降级**，run 成功
-- [ ] 合法 a2ui：durable 写 `aap.message-content.v1`；纯 text 仍 plain string（KD-6）
-- [ ] **KD-16：** 合法 a2ui 允许 `text:""`；非法且 strip 后空 → fallback 保留 raw full（保证 `RecordAssistantResult` 非空）
-- [ ] `item.completed` content：`[text, a2ui?]`
-- [ ] 禁止「先 SUCCEEDED 再因 a2ui 投影失败」
-- [ ] 助手历史回灌：`JoinTextPartsFromDurable`，**omit surface**（KD-10）
-- [ ] 指标：`a2ui_extract_ok` / `a2ui_extract_fail` / `a2ui_preflight_fail` / `a2ui_degraded_text`（命名可按仓库惯例调整）
-- [ ] 紧急开关：`AAP_A2UI_PROJECTION=off` → 跳过 extract/persist a2ui，只写剥离后 text
-- [ ] Golden：password surface preflight pass ⇒ CompleteProjected pass
-- [ ] Golden：下一 turn 模型上下文无 raw surface JSON
-- [ ] Golden：空 text + 合法 a2ui；空提取 fallback
+- [x] 预检失败 / 坏 JSON / 过大 → **text-only 降级**，run 成功
+- [x] 合法 a2ui：durable 写 `aap.message-content.v1`；纯 text 仍 plain string（KD-6）
+- [x] **KD-16：** 合法 a2ui 允许 `text:""`；非法且 strip 后空 → fallback 保留 raw full（保证 `RecordAssistantResult` 非空）
+- [x] `item.completed` content：`[text, a2ui?]`
+- [x] 禁止「先 SUCCEEDED 再因 a2ui 投影失败」
+- [x] 助手历史回灌：`JoinTextPartsFromDurable`，**omit surface**（KD-10）
+- [x] 指标：`a2ui_extract_ok` / `a2ui_extract_fail` / `a2ui_preflight_fail` / `a2ui_degraded_text`（命名可按仓库惯例调整）
+- [x] 紧急开关：`AAP_A2UI_PROJECTION=off` → 跳过 extract/persist a2ui，只写剥离后 text
+- [x] Golden：password surface preflight pass ⇒ CompleteProjected pass
+- [x] Golden：下一 turn 模型上下文无 raw surface JSON
+- [x] Golden：空 text + 合法 a2ui；空提取 fallback
 
 **验收：** 开启 Agent 时按需出现 a2ui part；关闭时零行为变化；失败可降级。
 
