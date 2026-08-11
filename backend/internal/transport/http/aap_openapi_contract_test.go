@@ -62,7 +62,7 @@ func TestAAPDataPlaneAcceptanceOpenAPIContract(t *testing.T) {
 	}{
 		"oauth success": {oauthTokenSuccess{}, []string{"access_token", "expires_in", "issued_token_type", "scope", "token_type"}},
 		"profile": {aapAgentProfileDTO{}, []string{
-			"capabilities", "description", "id", "interactionRequirements", "name", "object", "supportedContent", "version",
+			"a2ui", "capabilities", "description", "id", "interactionRequirements", "name", "object", "supportedContent", "version",
 		}},
 		"conversation create": {aapCreateConversationRequest{}, []string{"title"}},
 		"conversation": {aapConversationDTO{}, []string{

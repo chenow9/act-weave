@@ -82,15 +82,16 @@
 
 ### PR-3: AAP Profile 广告（KD-15, Q10）
 
-- [ ] 从 `Summary.ContextPolicy` 读 `enableA2UI`（无新 store）
-- [ ] `supportedContent` parts 顺序：**`text` → `input_file?` → `a2ui?`**
-- [ ] 顶层显式 `a2ui` 对象（OpenAPI **必须声明**；`additionalProperties: false`）：
+- [x] 从 `Summary.ContextPolicy` 读 `enableA2UI`（无新 store）
+- [x] `supportedContent` parts 顺序：**`text` → `input_file?` → `a2ui?`**
+- [x] 顶层显式 `a2ui` 对象（OpenAPI **必须声明**；`additionalProperties: false`）：
   - `enabled`, `delivery: "item_completed"`, `streaming: false`, `actions: false`, `maxSurfaceBytes: 65536`
-- [ ] ETag / version seed 包含 a2ui 元数据稳定子集
-- [ ] `docs/openapi/agent-access-v1.yaml` 显式 `AgentProfile.a2ui`
-- [ ] `aap_openapi_contract_test.go` DTO allowlist 增加 `"a2ui"`
-- [ ] createRun **仍拒绝** 入站 `a2ui`（KD-7）
-- [ ] 单测：files on/off × a2ui on/off 四种 parts 合成；ETag 变化
+  - **disabled 时 omit**（不发 `enabled:false`）
+- [x] ETag / version seed 包含 a2ui 元数据稳定子集
+- [x] `docs/openapi/agent-access-v1.yaml` 显式 `AgentProfile.a2ui`
+- [x] `aap_openapi_contract_test.go` DTO allowlist 增加 `"a2ui"`
+- [x] createRun **仍拒绝** 入站 `a2ui`（KD-7）
+- [x] 单测：files on/off × a2ui on/off 四种 parts 合成；ETag 变化
 
 **验收：** Profile 可探测能力；未开启时无 a2ui 广告。
 

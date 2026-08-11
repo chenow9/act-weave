@@ -2,10 +2,13 @@ package httptransport
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +16,8 @@ import (
 	"actweave/backend/internal/agent"
 	"actweave/backend/internal/agentaccessauth"
 	"actweave/backend/internal/capability"
+	"actweave/backend/internal/config"
+	"actweave/backend/internal/sessioncontext"
 )
 
 const (
@@ -196,6 +201,180 @@ func TestAAPAgentProfile(t *testing.T) {
 	}
 }
 
+// TestAAPAgentProfileA2UIAdvertisement covers KD-15 parts composition and ETag seed.
+func TestAAPAgentProfileA2UIAdvertisement(t *testing.T) {
+	gate := &config.AgentAccessFilesConfig{
+		Enabled: true, AllowAllWorkspaces: true, MaxBytes: 10 << 20,
+		AllowedMediaTypes: []string{"image/png", "application/pdf"},
+	}
+
+	t.Run("parts composition files x a2ui", func(t *testing.T) {
+		cases := []struct {
+			name         string
+			files        bool
+			a2ui         bool
+			wantParts    []string
+			wantA2UIObj  bool
+			wantConstraints bool
+		}{
+			{name: "default", files: false, a2ui: false, wantParts: []string{"text"}},
+			{name: "files only", files: true, a2ui: false, wantParts: []string{"text", "input_file"}, wantConstraints: true},
+			{name: "a2ui only", files: false, a2ui: true, wantParts: []string{"text", "a2ui"}, wantA2UIObj: true},
+			{name: "files + a2ui", files: true, a2ui: true, wantParts: []string{"text", "input_file", "a2ui"}, wantA2UIObj: true, wantConstraints: true},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				summary := aapPublishedAgentSummary()
+				if tc.a2ui {
+					summary.ContextPolicy = aapEnableA2UIPolicyJSON(true)
+				}
+				profile, _, err := projectAAPAgentProfile(summary, aapProfileDescriptors(), tc.files, gate)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(profile.SupportedContent) == 0 || profile.SupportedContent[0].Type != "message" {
+					t.Fatalf("supportedContent=%+v", profile.SupportedContent)
+				}
+				if !reflect.DeepEqual(profile.SupportedContent[0].Parts, tc.wantParts) {
+					t.Fatalf("parts=%v want=%v", profile.SupportedContent[0].Parts, tc.wantParts)
+				}
+				if tc.wantConstraints {
+					if len(profile.SupportedContent) < 2 || profile.SupportedContent[1].Type != "input_file_constraints" {
+						t.Fatalf("expected input_file_constraints: %+v", profile.SupportedContent)
+					}
+				} else if len(profile.SupportedContent) != 1 {
+					t.Fatalf("unexpected extra content entries: %+v", profile.SupportedContent)
+				}
+				if tc.wantA2UIObj {
+					if profile.A2UI == nil || !profile.A2UI.Enabled ||
+						profile.A2UI.Delivery != aapA2UIDelivery ||
+						profile.A2UI.Streaming || profile.A2UI.Actions ||
+						profile.A2UI.MaxSurfaceBytes != aapA2UIMaxSurfaceBytes ||
+						profile.A2UI.SpecHint != aapA2UISpecHint {
+						t.Fatalf("a2ui=%+v", profile.A2UI)
+					}
+				} else if profile.A2UI != nil {
+					t.Fatalf("a2ui must be omitted when disabled: %+v", profile.A2UI)
+				}
+			})
+		}
+	})
+
+	t.Run("enableA2UI flips ETag and omits a2ui when false", func(t *testing.T) {
+		off := aapPublishedAgentSummary()
+		off.ContextPolicy = aapEnableA2UIPolicyJSON(false)
+		on := aapPublishedAgentSummary()
+		on.ContextPolicy = aapEnableA2UIPolicyJSON(true)
+		first, firstETag, err := projectAAPAgentProfile(off, aapProfileDescriptors(), false, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		second, secondETag, err := projectAAPAgentProfile(on, aapProfileDescriptors(), false, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if first.Version == second.Version || firstETag == secondETag {
+			t.Fatalf("enableA2UI must change version first=%q second=%q", first.Version, second.Version)
+		}
+		if first.A2UI != nil {
+			t.Fatalf("disabled profile leaked a2ui: %+v", first.A2UI)
+		}
+		if second.A2UI == nil || !second.A2UI.Enabled {
+			t.Fatalf("enabled profile missing a2ui: %+v", second.A2UI)
+		}
+		if !reflect.DeepEqual(second.SupportedContent[0].Parts, []string{"text", "a2ui"}) {
+			t.Fatalf("parts=%v", second.SupportedContent[0].Parts)
+		}
+	})
+
+	t.Run("a2ui seed metadata alone changes ETag", func(t *testing.T) {
+		// Same supportedContent parts; only a2ui maxSurfaceBytes differs → version must change.
+		base := aapAgentProfileVersionSeed{
+			Schema: "aap.agent-profile.v1", AgentID: aapProfileAgentID,
+			Name: "n", Description: "d", AgentLockVersion: 1,
+			CurrentPromptRevisionID: aapProfilePromptID,
+			SupportedContent: []aapSupportedContentDTO{
+				{Type: "message", Parts: []string{"text", "a2ui"}},
+			},
+			A2UI: aapA2UIAdvertisement(),
+		}
+		alt := base
+		altA2UI := *base.A2UI
+		altA2UI.MaxSurfaceBytes = aapA2UIMaxSurfaceBytes + 1
+		alt.A2UI = &altA2UI
+		hash := func(seed aapAgentProfileVersionSeed) string {
+			raw, err := json.Marshal(seed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sum := sha256.Sum256(raw)
+			return hex.EncodeToString(sum[:])
+		}
+		if hash(base) == hash(alt) {
+			t.Fatal("seed a2ui metadata change must alter hash")
+		}
+	})
+
+	t.Run("HTTP profile advertises a2ui from ContextPolicy", func(t *testing.T) {
+		authorizer := &aapProfileAuthorizer{}
+		store := &aapProfileStore{value: aapPublishedAgentSummary()}
+		store.value.ContextPolicy = aapEnableA2UIPolicyJSON(true)
+		catalog := &aapProfileCatalog{values: aapProfileDescriptors()}
+		routes, err := NewAAPAgentProfileRoutes(authorizer, store, catalog)
+		if err != nil {
+			t.Fatal(err)
+		}
+		router, err := NewRouter(Config{
+			AgentAccessAuthenticator: aapProfileTokenAuthenticator{},
+			AgentAccessRegistrars:    []AgentAccessV1RouteRegistrar{routes},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := "/api/agent-access/v1/workspaces/" + aapProfileWorkspaceID +
+			"/agents/" + aapProfileAgentID + "/profile"
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, aapProfileRequest(path, "aap-profile-token"))
+		if response.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+		}
+		var profile aapAgentProfileDTO
+		if err := json.Unmarshal(response.Body.Bytes(), &profile); err != nil {
+			t.Fatal(err)
+		}
+		if profile.A2UI == nil || !profile.A2UI.Enabled ||
+			!reflect.DeepEqual(profile.SupportedContent[0].Parts, []string{"text", "a2ui"}) {
+			t.Fatalf("profile=%+v", profile)
+		}
+		assertAAPProfileAllowlist(t, response.Body.Bytes())
+		// Ensure raw JSON includes a2ui and no accidental enabled:false when off path is separate.
+		if !strings.Contains(response.Body.String(), `"a2ui"`) {
+			t.Fatalf("body missing a2ui: %s", response.Body.String())
+		}
+	})
+}
+
+func aapEnableA2UIPolicyJSON(enabled bool) json.RawMessage {
+	// Valid agent v2 policy with aap.enableA2UI.
+	doc := map[string]any{
+		"schemaVersion": sessioncontext.PolicySchemaV2,
+		"mode":          sessioncontext.ModeTokenWindow,
+		"aap": map[string]any{
+			"enableA2UI": enabled,
+		},
+	}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		panic(err)
+	}
+	// Round-trip through ParsePolicy so storage shape matches production.
+	_, normalized, err := sessioncontext.ParsePolicy(raw)
+	if err != nil {
+		panic(err)
+	}
+	return normalized
+}
+
 type aapProfileAuthorizer struct {
 	last  agentaccessauth.AAPAuthorizationRequest
 	err   error
@@ -315,16 +494,30 @@ func assertAAPProfileAllowlist(t *testing.T, body []byte) {
 	if err := json.Unmarshal(body, &raw); err != nil {
 		t.Fatal(err)
 	}
-	expected := []string{
+	required := []string{
 		"object", "id", "name", "description", "version", "supportedContent",
 		"capabilities", "interactionRequirements",
 	}
-	if len(raw) != len(expected) {
-		t.Fatalf("profile fields=%v", raw)
-	}
-	for _, field := range expected {
+	// Optional: a2ui is present only when enableA2UI is true (omit when disabled).
+	allowedOptional := map[string]struct{}{"a2ui": {}}
+	for _, field := range required {
 		if _, ok := raw[field]; !ok {
 			t.Fatalf("profile missing field %q", field)
+		}
+	}
+	for field := range raw {
+		found := false
+		for _, req := range required {
+			if field == req {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		if _, ok := allowedOptional[field]; !ok {
+			t.Fatalf("profile unexpected field %q fields=%v", field, raw)
 		}
 	}
 }

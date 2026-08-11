@@ -15,11 +15,20 @@ import (
 	"actweave/backend/internal/agentaccessauth"
 	"actweave/backend/internal/capability"
 	"actweave/backend/internal/config"
+	"actweave/backend/internal/sessioncontext"
 
 	"github.com/gin-gonic/gin"
 )
 
 var ErrAAPAgentProfileUnavailable = errors.New("AAP Agent Profile is unavailable")
+
+// MVP A2UI profile advertisement constants (KD-15 / Q10 / Q11).
+// Centralized a2ui package lands in PR-4; keep literals here until then.
+const (
+	aapA2UIMaxSurfaceBytes = 64 << 10 // 65536
+	aapA2UIDelivery        = "item_completed"
+	aapA2UISpecHint        = "a2ui-surface.v0"
+)
 
 type AAPAgentProfileStore interface {
 	GetSummary(context.Context, string, string) (agent.Summary, error)
@@ -69,6 +78,18 @@ type aapAgentProfileDTO struct {
 	SupportedContent        []aapSupportedContentDTO      `json:"supportedContent"`
 	Capabilities            []aapCapabilitySummaryDTO     `json:"capabilities"`
 	InteractionRequirements aapInteractionRequirementsDTO `json:"interactionRequirements"`
+	// A2UI is present only when agent context_policy.aap.enableA2UI is true (omit when disabled).
+	A2UI *aapA2UIDTO `json:"a2ui,omitempty"`
+}
+
+// aapA2UIDTO advertises assistant outbound A2UI capability (not inbound createRun).
+type aapA2UIDTO struct {
+	Enabled         bool   `json:"enabled"`
+	Delivery        string `json:"delivery"`
+	Streaming       bool   `json:"streaming"`
+	Actions         bool   `json:"actions"`
+	MaxSurfaceBytes int64  `json:"maxSurfaceBytes"`
+	SpecHint        string `json:"specHint"`
 }
 
 type aapSupportedContentDTO struct {
@@ -104,6 +125,8 @@ type aapAgentProfileVersionSeed struct {
 	CurrentPromptRevisionID string                   `json:"currentPromptRevisionId"`
 	Capabilities            []aapCapabilityVersion   `json:"capabilities"`
 	SupportedContent        []aapSupportedContentDTO `json:"supportedContent,omitempty"`
+	// A2UI stable metadata subset must flip ETag when capability knobs change (KD-15).
+	A2UI *aapA2UIDTO `json:"a2ui,omitempty"`
 }
 
 type aapCapabilityVersion struct {
@@ -193,15 +216,23 @@ func projectAAPAgentProfile(
 			capabilities = append(capabilities, *counts[kind])
 		}
 	}
-	supportedContent := aapSupportedContentForFiles(filesEnabled, filesGate)
+	// Read enableA2UI from agent ContextPolicy (no new store). Parse errors fail closed.
+	enableA2UI := aapEnableA2UIFromPolicy(value.ContextPolicy)
+	supportedContent := aapSupportedContentForAgent(filesEnabled, filesGate, enableA2UI)
+	// When disabled: omit top-level a2ui (prefer omit over enabled:false; KD-15).
+	var a2ui *aapA2UIDTO
+	if enableA2UI {
+		a2ui = aapA2UIAdvertisement()
+	}
 	seed := aapAgentProfileVersionSeed{
 		Schema: "aap.agent-profile.v1", AgentID: value.ID,
 		Name: value.Name, Description: value.RoleDescription,
 		AgentLockVersion:        value.LockVersion,
 		CurrentPromptRevisionID: *value.CurrentPromptRevisionID,
 		Capabilities:            versions,
-		// Content support changes must flip ETag (KD-14).
+		// Content support + a2ui metadata changes must flip ETag (KD-14 / KD-15).
 		SupportedContent: supportedContent,
+		A2UI:             a2ui,
 	}
 	canonical, err := json.Marshal(seed)
 	if err != nil {
@@ -214,6 +245,7 @@ func projectAAPAgentProfile(
 		Description: value.RoleDescription, Version: version,
 		SupportedContent: supportedContent,
 		Capabilities:     capabilities,
+		A2UI:             a2ui,
 		InteractionRequirements: aapInteractionRequirementsDTO{
 			Approval: aapApprovalRequirementDTO{
 				Supported: true, MayBeRequired: mayRequireApproval,
@@ -222,6 +254,56 @@ func projectAAPAgentProfile(
 		},
 	}
 	return profile, `"` + version + `"`, nil
+}
+
+// aapEnableA2UIFromPolicy reads context_policy.aap.enableA2UI (default false; fail-closed).
+func aapEnableA2UIFromPolicy(raw json.RawMessage) bool {
+	doc, _, err := sessioncontext.ParsePolicy(raw)
+	if err != nil {
+		return false
+	}
+	return doc.EnableA2UI()
+}
+
+// aapA2UIAdvertisement is the MVP top-level a2ui object when enableA2UI is true.
+func aapA2UIAdvertisement() *aapA2UIDTO {
+	return &aapA2UIDTO{
+		Enabled:         true,
+		Delivery:        aapA2UIDelivery,
+		Streaming:       false,
+		Actions:         false,
+		MaxSurfaceBytes: aapA2UIMaxSurfaceBytes,
+		SpecHint:        aapA2UISpecHint,
+	}
+}
+
+// aapSupportedContentForAgent composes message parts: text → input_file? → a2ui? (KD-15).
+func aapSupportedContentForAgent(
+	filesEnabled bool,
+	filesGate *config.AgentAccessFilesConfig,
+	enableA2UI bool,
+) []aapSupportedContentDTO {
+	content := aapSupportedContentForFiles(filesEnabled, filesGate)
+	if !enableA2UI {
+		return content
+	}
+	for i := range content {
+		if content[i].Type != "message" {
+			continue
+		}
+		already := false
+		for _, part := range content[i].Parts {
+			if part == "a2ui" {
+				already = true
+				break
+			}
+		}
+		if !already {
+			content[i].Parts = append(append([]string(nil), content[i].Parts...), "a2ui")
+		}
+		break
+	}
+	return content
 }
 
 func aapSupportedContentForFiles(

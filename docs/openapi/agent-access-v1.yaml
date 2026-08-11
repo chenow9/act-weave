@@ -434,6 +434,18 @@ components:
         supportedContent: {type: array, items: {type: object}}
         capabilities: {type: array, items: {type: object}}
         interactionRequirements: {type: object}
+        # Optional; present only when agent context_policy.aap.enableA2UI is true (omit when disabled).
+        a2ui:
+          type: object
+          additionalProperties: false
+          required: [enabled, delivery, streaming, actions, maxSurfaceBytes, specHint]
+          properties:
+            enabled: {type: boolean}
+            delivery: {type: string, enum: [item_completed]}
+            streaming: {type: boolean}
+            actions: {type: boolean}
+            maxSurfaceBytes: {type: integer, format: int64, minimum: 1}
+            specHint: {type: string}
     Conversation:
       type: object
       additionalProperties: false
