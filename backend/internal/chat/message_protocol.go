@@ -62,7 +62,9 @@ func (mapper *ProtocolMessageMapper) MapCompleted(
 }
 
 // ParseMessageContentParts projects permanent message body to protocol content parts.
-// aap.message-content.v1 → text + input_file parts (never download URLs).
+// aap.message-content.v1 → text + input_file + optional a2ui parts (never download URLs).
+// a2ui is accepted on durable rehydrate for assistant multi-part (KD-6 / PR-5);
+// inbound createRun / user multimodal paths continue to reject a2ui separately.
 // Legacy non-JSON / missing schemaVersion → single text part (Console/history compat).
 func ParseMessageContentParts(content string) ([]protocolevent.ContentPart, error) {
 	if content == "" {
@@ -93,6 +95,15 @@ func ParseMessageContentParts(content string) ([]protocolevent.ContentPart, erro
 				Type: protocolevent.ContentPartTypeInputFile,
 				FileID: typed.FileID, MediaType: typed.MediaType,
 			})
+		case protocolevent.A2UIContentPart:
+			// Allowlisted keys only; surface is opaque JSON object (size-checked by Decode).
+			surface := append(json.RawMessage(nil), typed.Surface...)
+			parts = append(parts, protocolevent.A2UIContentPart{
+				Type:      protocolevent.ContentPartTypeA2UI,
+				Version:   typed.Version,
+				Surface:   surface,
+				CatalogID: typed.CatalogID,
+			})
 		default:
 			return nil, ErrInvalid
 		}
@@ -101,6 +112,43 @@ func ParseMessageContentParts(content string) ([]protocolevent.ContentPart, erro
 		return nil, ErrInvalid
 	}
 	return parts, nil
+}
+
+// JoinTextPartsFromDurable projects durable chat content to natural-language text only.
+//
+//  1. Non-v1 / plain / legacy bodies → returned unchanged.
+//  2. aap.message-content.v1 → concatenate type=="text" parts only; ignore a2ui,
+//     input_file, and unknown parts (KD-10 / KD-13 / §3.4).
+//  3. v1 with no text parts → "" (callers skip empty history rows).
+//
+// Used by Console messageDTO text-first history and (later) model history reload.
+func JoinTextPartsFromDurable(content string) string {
+	if content == "" {
+		return ""
+	}
+	var envelope struct {
+		SchemaVersion string            `json:"schemaVersion"`
+		Parts         []json.RawMessage `json:"parts"`
+	}
+	if err := json.Unmarshal([]byte(content), &envelope); err != nil ||
+		envelope.SchemaVersion != MessageContentSchemaVersion || len(envelope.Parts) == 0 {
+		return content
+	}
+	var builder strings.Builder
+	for _, raw := range envelope.Parts {
+		var wire struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(raw, &wire); err != nil {
+			continue
+		}
+		if wire.Type != "text" {
+			continue
+		}
+		builder.WriteString(wire.Text)
+	}
+	return builder.String()
 }
 
 func (mapper *ProtocolMessageMapper) MapStarted(

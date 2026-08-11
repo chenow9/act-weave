@@ -2,6 +2,8 @@ package httptransport
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -200,8 +202,18 @@ func (r *ChatExecutionRoutes) messageDTO(
 		}
 		content = loaded
 	}
-	return chatMessageDTO{value.ID, value.Role, content, value.ContentSHA256,
-		value.ContentLength, value.Status, value.RunID, value.ConfirmationID, value.CreatedAt}, nil
+	// KD-13: Console history is text-first. Never return raw aap.message-content.v1
+	// envelope JSON (including a2ui surface) as the markdown body. Display
+	// contentSha256/contentLength must describe the projected content string.
+	content = chat.JoinTextPartsFromDurable(content)
+	digest := sha256.Sum256([]byte(content))
+	return chatMessageDTO{
+		ID: value.ID, Role: value.Role, Content: content,
+		ContentSHA256: hex.EncodeToString(digest[:]),
+		ContentLength:  int64(len([]byte(content))),
+		Status:         value.Status, RunID: value.RunID,
+		ConfirmationID: value.ConfirmationID, CreatedAt: value.CreatedAt,
+	}, nil
 }
 
 func (r *ChatExecutionRoutes) listSessions(c *gin.Context) {

@@ -116,14 +116,14 @@
 
 ### PR-5: Durable parse + Console text projection（KD-6, KD-13）— 读路径先合
 
-- [ ] `ParseMessageContentParts` 识别 `a2ui`（assistant 路径）
-- [ ] User / multimodal 路径 **继续拒绝** 入站 `a2ui`
-- [ ] 共享 helper：`JoinTextPartsFromDurable(content) string`
-- [ ] `messageDTO`：`content` = join text only；**禁止** raw envelope 回给 Console
-- [ ] **`contentSha256` / `contentLength` 对投影后 `content` 重算**（durable hash 仅服务端内部）
-- [ ] `MapCompleted` / 协议投影可读 multi-part（text + a2ui）
-- [ ] 单测：session reload 只见自然语言；hash 与返回 body 一致
-- [ ] 单测：plain text 旧消息无回归
+- [x] `ParseMessageContentParts` 识别 `a2ui`（assistant 路径）
+- [x] User / multimodal 路径 **继续拒绝** 入站 `a2ui`
+- [x] 共享 helper：`JoinTextPartsFromDurable(content) string`
+- [x] `messageDTO`：`content` = join text only；**禁止** raw envelope 回给 Console
+- [x] **`contentSha256` / `contentLength` 对投影后 `content` 重算**（durable hash 仅服务端内部）
+- [x] `MapCompleted` / 协议投影可读 multi-part（text + a2ui）
+- [x] 单测：session reload 只见自然语言；hash 与返回 body 一致
+- [x] 单测：plain text 旧消息无回归
 
 **验收：** 即使手写/测试写入 v1+a2ui envelope，Console 历史仍 text-first。
 
