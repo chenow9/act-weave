@@ -27,6 +27,7 @@ Product overview and local run: root [`README.md`](../README.md) / [`README.zh-C
 4. Follow **Run events** over SSE (`Last-Event-ID` resume)
 5. Decide **Interactions** (human / policy confirmations)
 6. (Optional, **off by default**) Upload **Files**, wait until ready, and reference them from Run input as `input_file` parts
+7. (Optional, **off by default**) Receive additive **A2UI** surfaces on assistant messages when the Agent has `enableA2UI` (display-only in MVP)
 
 AAP is **not** the ActWeave management console API (`/api/v1`). Console user session JWTs are **rejected** on AAP routes. There is **no** Console product UI for AAP files in v1.
 
@@ -65,6 +66,7 @@ Store the Client Secret / private key in **your** secret manager. Secrets never 
 | **Conversation** | Durable dialogue container for one Agent |
 | **Run** | One execution under a Conversation. Default input is **text**; when AAP files is enabled, user messages may also include `input_file` parts that reference a stable `fileId` |
 | **File** | Optional uploaded blob with lifecycle status (`pending_upload` → … → `ready`). GET status is the source of truth (no File SSE in v1) |
+| **A2UI** | Optional declarative UI surface on assistant messages (`type: "a2ui"` content part). Agent-level `enableA2UI`; default off. Text remains first-class |
 | **Protocol Event** | Durable fact on the Run stream (`sequence` is the cursor) |
 | **Interaction** | Run paused for approve / decline / cancel |
 | **External Subject** | End-user identity from your IdP via Token Exchange (optional) |
@@ -488,6 +490,109 @@ Partners should either:
 
 Partners must **not** be required to hold an AAP token and call `:download` themselves. Model-visible / stored tool arguments contain only `fileId` (and metadata) — never live URLs.
 
+### 9.2 A2UI (optional, additive)
+
+Design (normative product locks): [`designs/a2ui-additive-capability.md`](./designs/a2ui-additive-capability.md).  
+Implementation checklist: [`designs/a2ui-additive-capability-checklist.md`](./designs/a2ui-additive-capability-checklist.md).
+
+A2UI is an **optional, additive** capability: **text is always first-class**. Enabling it means the Agent **may** attach a declarative UI surface when useful — it does **not** require every reply to include A2UI. Simple Q&A can remain text-only; the same Conversation may mix pure-text turns and text+a2ui turns.
+
+#### Enable (ActWeave admin / Agents Studio)
+
+| Layer | Field | Default |
+| --- | --- | --- |
+| Agent policy | `context_policy.aap.enableA2UI: boolean` | **`false`** (omit / null → false) |
+| Policy schema | Requires `session-context-policy.v2` when any `aap.*` flag is present | Same pattern as `includeCompactionSummary` |
+| Run freeze | `context_policy_snapshot.aap.enableA2UI` at createRun | Mid-run Agent edits do **not** change an in-flight Run |
+
+Workspace-scoped context policy **rejects** any `aap` fields. Only Agent-level policy applies.
+
+#### Profile advertisement (`GET .../profile`)
+
+When `enableA2UI` is true, the Agent Profile **advertises** assistant outbound capability:
+
+1. `supportedContent` message parts include `"a2ui"` (stable order: `text` → optional `input_file` → optional `a2ui`).
+2. Top-level **`a2ui`** object (present **only** when enabled; **omitted** when disabled — not `enabled: false`):
+
+```json
+"a2ui": {
+  "enabled": true,
+  "delivery": "item_completed",
+  "streaming": false,
+  "actions": false,
+  "maxSurfaceBytes": 65536,
+  "specHint": "a2ui-surface.v0"
+}
+```
+
+| Field | MVP meaning |
+| --- | --- |
+| `delivery: "item_completed"` | Full A2UI part arrives on **`item.completed`** only |
+| `streaming: false` | No A2UI delta / progressive surface in MVP |
+| `actions: false` | **No** action channel; controls are **display-only** |
+| `maxSurfaceBytes` | Raw `surface` JSON size cap (64 KiB) |
+| `specHint` | Envelope / surface version hint for clients |
+
+ETag / profile version includes this object: flipping enable or changing advertised metadata changes ETag.
+
+#### Wire shape (assistant outbound)
+
+On `item.completed`, content is multi-part when A2UI was successfully extracted:
+
+```json
+{
+  "type": "message",
+  "role": "assistant",
+  "status": "completed",
+  "content": [
+    { "type": "text", "text": "Please confirm the booking details:" },
+    {
+      "type": "a2ui",
+      "version": "a2ui-surface.v0",
+      "catalogId": "standard",
+      "surface": { }
+    }
+  ]
+}
+```
+
+| Rule | Detail |
+| --- | --- |
+| **Text first-class** | Schema always has a `text` part; value may be `""` only when a valid `a2ui` part is present |
+| **Optional a2ui** | 0 or 1 `a2ui` part (MVP). Clients that ignore unknown parts still work with text alone |
+| **Inbound** | `createRun` **rejects** user/input `a2ui` (`UNSUPPORTED_CONTENT_TYPE` / 4xx). A2UI is assistant outbound only |
+| **Degrade** | Invalid / oversized / failed projection → text-only success; A2UI never alone fails the Run |
+
+#### Client rules (authoritative completed vs streaming fences)
+
+1. **Stream text as today.** Only `text_delta` streams (index 0). Concatenated deltas are a **live preview**, not final copy.
+2. **While streaming with A2UI enabled**, delta text may still contain raw fence fragments (e.g. `<<<A2UI>>>` … `<<<END_A2UI>>>`). Do **not** treat delta concatenation as authoritative prose or parse fences client-side for production UI.
+3. **`item.completed` is authoritative.** It **replaces** the whole item snapshot. Use its multiparty `content`: cleaned text [+ optional `a2ui`]. Prefer completed over any in-flight delta buffer.
+4. **MVP display-only / client no-op for actions.** Profile advertises `a2ui.actions: false`. Render surfaces with a local catalog if you have one; **do not** submit button clicks, form posts, or other control actions to ActWeave. **Never** reuse `interaction.decide` for A2UI controls (approval Interactions stay separate).
+5. **Ignore unknown parts** if you do not implement A2UI; still advance the SSE sequence cursor.
+
+TypeScript SDK helpers (`@actweave/agent-client`):
+
+```ts
+import { findA2UIPart, joinTextParts, type ProtocolItem } from "@actweave/agent-client";
+
+function renderAssistant(item: ProtocolItem) {
+  const text = joinTextParts(item); // text parts only; ignores a2ui / unknown
+  const a2ui = findA2UIPart(item);  // undefined when text-only
+  // Prefer item.completed snapshot over delta buffers.
+  return { text, surface: a2ui?.surface, version: a2ui?.version };
+}
+```
+
+`RunReducer` already replaces items on `item.completed` so progressive text is overwritten by the authoritative multiparty content.
+
+#### Non-goals (MVP)
+
+- A2UI streaming / progressive surface (future)
+- Component action channel / `a2ui_action` user parts (future)
+- Full Console catalog renderer for every surface
+- Forcing Google A2UI JSON Schema validation server-side beyond object + size
+
 ---
 
 ## 10. SSE event stream
@@ -759,7 +864,7 @@ SDK guarantees:
 - File PUT uses **only** create-returned headers (no AAP Bearer on object storage)
 - `getFileContent` prefers opaque `:download` when `sizeBytes > 4MiB`
 
-Also exported: `StaticTokenProvider`, `RunReducer`, `AAPSESession`, file types / `SDK_PREFER_DOWNLOAD_TOKEN_BYTES`. See `sdk/typescript/README.md`.
+Also exported: `StaticTokenProvider`, `RunReducer`, `AAPSESession`, file types / `SDK_PREFER_DOWNLOAD_TOKEN_BYTES`, and A2UI helpers `joinTextParts` / `findA2UIPart`. See `sdk/typescript/README.md` and [§9.2 A2UI](#92-a2ui-optional-additive).
 
 ---
 
@@ -799,7 +904,8 @@ Unauthorized `Origin` is not reflected. Prefer moving secrets server-side and di
 - [ ] OpenAPI / SDK versions match the ActWeave deployment  
 - [ ] If using files: operator enabled `agentAccess.files` **and** (for model vision/PDF) `RuntimeMultimodal`; Grant includes `file:read` / `file:write`  
 - [ ] If using files: PUT always sends create-returned `Content-Length` / `Content-Type`; never store live download URLs in your long-term logs  
-- [ ] If you implement a processor: verify `X-ActWeave-Signature`, https-only callback URL policy, and late-callback `FILE_PROCESSOR_CALLBACK_LATE` handling 
+- [ ] If you implement a processor: verify `X-ActWeave-Signature`, https-only callback URL policy, and late-callback `FILE_PROCESSOR_CALLBACK_LATE` handling  
+- [ ] If using A2UI: Agent has `context_policy.aap.enableA2UI`; client treats `item.completed` as authoritative; Profile `a2ui.actions: false` → display-only / no-op submits  
 
 ---
 
@@ -811,6 +917,8 @@ Unauthorized `Origin` is not reflected. Prefer moving secrets server-side and di
 | **对接指南（中文）** | `docs/aap-integration-guide.zh-CN.md` | Same content in Chinese |
 | OpenAPI | `docs/openapi/agent-access-v1.yaml` | Machine-readable HTTP contract |
 | TypeScript SDK | `sdk/typescript/` | Client library |
+| A2UI design | `docs/designs/a2ui-additive-capability.md` | Additive A2UI capability (product locks) |
+| A2UI checklist | `docs/designs/a2ui-additive-capability-checklist.md` | Implementation checklist |
 | Product README (EN) | `README.md` | Product overview & local run |
 | Product README (ZH) | `README.zh-CN.md` | 产品说明与本地运行 |
 

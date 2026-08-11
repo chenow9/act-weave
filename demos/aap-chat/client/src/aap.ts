@@ -1,6 +1,8 @@
 import {
   AgentAccessClient,
   MemoryTokenProvider,
+  findA2UIPart,
+  joinTextParts,
   type AccessTokenMaterial,
   type AAPFile,
   type ProtocolItem,
@@ -278,20 +280,36 @@ export function itemRole(item: ProtocolItem): "user" | "assistant" | "tool" | "o
 
 export function extractMessageText(item: ProtocolItem): string {
   if (item.type !== "message") return "";
+  // Prefer SDK helper (ignores a2ui / unknown parts). Fallback for plain string content.
+  const joined = joinTextParts(item);
+  if (joined) return joined;
   const content = (item as { content?: unknown }).content;
   if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  const parts: string[] = [];
-  for (const block of content) {
-    if (!block || typeof block !== "object") continue;
-    const rec = block as Record<string, unknown>;
-    if (rec.type === "text" && typeof rec.text === "string") {
-      parts.push(rec.text);
-    } else if (typeof rec.text === "string") {
-      parts.push(rec.text);
-    }
+  return "";
+}
+
+/**
+ * Pretty-print first a2ui part surface for demo preview (display-only; no actions).
+ * Returns null when the item has no a2ui part.
+ */
+export function extractA2UIPreview(item: ProtocolItem): string | null {
+  if (item.type !== "message") return null;
+  const part = findA2UIPart(item);
+  if (!part) return null;
+  try {
+    return JSON.stringify(
+      {
+        type: part.type,
+        ...(part.version ? { version: part.version } : {}),
+        ...(part.catalogId ? { catalogId: part.catalogId } : {}),
+        surface: part.surface,
+      },
+      null,
+      2,
+    );
+  } catch {
+    return null;
   }
-  return parts.join("");
 }
 
 export function extractToolSummary(item: ProtocolItem): {

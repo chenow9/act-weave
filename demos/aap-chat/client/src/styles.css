@@ -686,6 +686,40 @@ textarea {
   background: #fef2f2;
 }
 
+/* A2UI surface JSON preview (display-only; no interactive catalog) */
+.a2ui-card {
+  margin-top: 10px;
+  border: 1px solid #c7f0e8;
+  border-radius: 12px;
+  background: #f0fdfa;
+  overflow: hidden;
+}
+
+.a2ui-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #ccfbf1;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.a2ui-card pre {
+  margin: 0;
+  padding: 10px 12px;
+  background: transparent;
+  border: 0;
+  color: #334155;
+  font-size: 11.5px;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* Outbound business credential panel */
 .outbound-panel {
   margin-bottom: 12px;

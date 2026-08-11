@@ -24,6 +24,7 @@
 4. 通过 SSE 跟随 **Run 事件**（`Last-Event-ID` 断线续传）  
 5. 对 **Interaction** 做 approve / decline / cancel  
 6. （可选，**默认关闭**）上传 **File**、等待 ready，并在 Run 输入中以 `input_file` 部分引用  
+7. （可选，**默认关闭**）当 Agent 开启 `enableA2UI` 时，在助手消息上接收附加的 **A2UI** 声明式界面（MVP 仅展示、无动作回传）
 
 AAP **不是** ActWeave 管理控制台 API（`/api/v1`）。控制台用户 Session JWT 在 AAP 路由上会被 **拒绝**。v1 **没有**面向 AAP 文件的 Console 产品 UI。
 
@@ -60,6 +61,7 @@ Client Secret / 私钥只应保存在**你方**密钥管理系统中。密钥不
 | **Conversation** | 针对某一 Agent 的对话容器 |
 | **Run** | Conversation 下的一次执行。默认输入为 **text**；在开启 AAP files 后，用户消息还可包含引用稳定 `fileId` 的 `input_file` 部分 |
 | **File** | 可选上传对象，含生命周期状态（`pending_upload` → … → `ready`）。GET 状态为事实源（v1 无 File SSE） |
+| **A2UI** | 助手消息上可选的声明式 UI（`type: "a2ui"` content part）。Agent 级 `enableA2UI`，默认关闭。文本始终一等 |
 | **Protocol Event** | Run 流上的持久事实（`sequence` 为游标） |
 | **Interaction** | Run 因确认而等待 |
 | **External Subject** | 通过 Token Exchange 绑定的终端用户身份（可选） |
@@ -483,6 +485,109 @@ X-ActWeave-Signature: t=<unix>,v1=<hmac_sha256_hex>
 
 **不**要求合作方自持 AAP token 再调 `:download`。模型可见 / 已存储的工具参数**仅**含 `fileId`（及元数据）— 永不含 live URL。
 
+### 9.2 A2UI（可选、附加）
+
+设计（产品锁定规范）：[`designs/a2ui-additive-capability.md`](./designs/a2ui-additive-capability.md)。  
+实现清单：[`designs/a2ui-additive-capability-checklist.md`](./designs/a2ui-additive-capability-checklist.md)。
+
+A2UI 是**可选、附加（additive）**能力：**文本始终是一等公民**。开启仅表示 Agent **可以**在有用时附带声明式 UI，**不**要求每条回复都含 A2UI。简单问答可只有文本；同一 Conversation 内可混有纯 text 轮与 text+a2ui 轮。
+
+#### 启用（ActWeave 管理员 / Agents Studio）
+
+| 层 | 字段 | 默认 |
+| --- | --- | --- |
+| Agent 策略 | `context_policy.aap.enableA2UI: boolean` | **`false`**（缺省 / null → false） |
+| 策略 schema | 存在任一 `aap.*` 时要求 `session-context-policy.v2` | 与 `includeCompactionSummary` 同模式 |
+| Run 冻结 | createRun 时写入 `context_policy_snapshot.aap.enableA2UI` | 进行中 Run **不**随 Agent 中途改配置而变 |
+
+Workspace 作用域的 context policy **拒绝**任何 `aap` 字段；仅 Agent 级策略生效。
+
+#### Profile 广告（`GET .../profile`）
+
+当 `enableA2UI` 为 true 时，Agent Profile **广告**助手出站能力：
+
+1. `supportedContent` 的 message parts 含 `"a2ui"`（稳定顺序：`text` → 可选 `input_file` → 可选 `a2ui`）。
+2. 顶层 **`a2ui`** 对象（**仅**启用时出现；禁用时 **omit**，不发 `enabled: false`）：
+
+```json
+"a2ui": {
+  "enabled": true,
+  "delivery": "item_completed",
+  "streaming": false,
+  "actions": false,
+  "maxSurfaceBytes": 65536,
+  "specHint": "a2ui-surface.v0"
+}
+```
+
+| 字段 | MVP 含义 |
+| --- | --- |
+| `delivery: "item_completed"` | 完整 A2UI part **仅**在 **`item.completed`** 上交付 |
+| `streaming: false` | MVP 无 A2UI delta / 渐进 surface |
+| `actions: false` | **无**动作通道；控件为 **仅展示** |
+| `maxSurfaceBytes` | 原始 `surface` JSON 大小上限（64 KiB） |
+| `specHint` | 信封 / surface 版本提示 |
+
+ETag / profile version 纳入该对象：开关翻转或广告元数据变化会使 ETag 变化。
+
+#### 线上形态（助手出站）
+
+在 `item.completed` 上，成功提取 A2UI 时 content 为多 part：
+
+```json
+{
+  "type": "message",
+  "role": "assistant",
+  "status": "completed",
+  "content": [
+    { "type": "text", "text": "请确认预约信息：" },
+    {
+      "type": "a2ui",
+      "version": "a2ui-surface.v0",
+      "catalogId": "standard",
+      "surface": { }
+    }
+  ]
+}
+```
+
+| 规则 | 说明 |
+| --- | --- |
+| **Text 一等** | schema 上始终有 `text` part；仅在存在合法 `a2ui` 时允许 `text:""` |
+| **可选 a2ui** | MVP 0 或 1 个 `a2ui` part。忽略未知 part 的客户端仍可用纯文本 |
+| **入站** | `createRun` **拒绝**用户/入站 `a2ui`（`UNSUPPORTED_CONTENT_TYPE` / 4xx）。A2UI 仅助手出站 |
+| **降级** | 非法 / 过大 / 投影失败 → 纯 text 成功；A2UI 损坏**不会**单独导致 Run 失败 |
+
+#### 客户端规则（completed 权威 vs 流式围栏）
+
+1. **按今日方式流式文本。** 仅 `text_delta` 流式（index 0）。拼接的 delta 只是**实时预览**，不是终稿。
+2. **A2UI 开启时的流式阶段**，delta 文本中可能仍含原始围栏片段（如 `<<<A2UI>>>` … `<<<END_A2UI>>>`）。**不要**把 delta 拼接当权威正文，也不要在生产 UI 里客户端解析围栏。
+3. **`item.completed` 为权威。** 它会**整项替换** item 快照。使用其多 part `content`：清洗后的 text [+ 可选 `a2ui`]。优先 completed，而非任何在途 delta 缓冲。
+4. **MVP 仅展示 / 客户端对 action 做 no-op。** Profile 广告 `a2ui.actions: false`。若有本地 catalog 可渲染 surface；**不要**把按钮点击、表单提交等控件动作回传到 ActWeave。**禁止**复用 `interaction.decide` 承载 A2UI 控件（审批类 Interaction 保持独立）。
+5. **不实现 A2UI 时可忽略未知 part**；只要出现 `id:` 仍须推进 SSE sequence。
+
+TypeScript SDK 辅助（`@actweave/agent-client`）：
+
+```ts
+import { findA2UIPart, joinTextParts, type ProtocolItem } from "@actweave/agent-client";
+
+function renderAssistant(item: ProtocolItem) {
+  const text = joinTextParts(item); // 仅 text；忽略 a2ui / 未知 part
+  const a2ui = findA2UIPart(item);  // 纯 text 时为 undefined
+  // 优先 item.completed 快照，而非 delta 缓冲
+  return { text, surface: a2ui?.surface, version: a2ui?.version };
+}
+```
+
+`RunReducer` 已在 `item.completed` 时替换整 item，因此渐进 text 会被权威多 part content 覆盖。
+
+#### 非目标（MVP）
+
+- A2UI 流式 / 渐进 surface（后续）
+- 组件 action 通道 / `a2ui_action` user part（后续）
+- Console 完整 catalog 渲染
+- 服务端强制 Google A2UI JSON Schema（除 object + 大小外）
+
 ---
 
 ## 10. SSE 事件流
@@ -754,7 +859,7 @@ SDK 保证：
 - 文件 PUT **仅**使用 create 返回的 headers（对象存储 PUT 不带 AAP Bearer）  
 - `getFileContent` 在 `sizeBytes > 4MiB` 时优先不透明 `:download`  
 
-另有导出：`StaticTokenProvider`、`RunReducer`、`AAPSESession`、文件类型 / `SDK_PREFER_DOWNLOAD_TOKEN_BYTES`。详见 `sdk/typescript/README.md`。
+另有导出：`StaticTokenProvider`、`RunReducer`、`AAPSESession`、文件类型 / `SDK_PREFER_DOWNLOAD_TOKEN_BYTES`，以及 A2UI 辅助 `joinTextParts` / `findA2UIPart`。详见 `sdk/typescript/README.md` 与[§9.2 A2UI](#92-a2ui可选附加)。
 
 ---
 
@@ -795,6 +900,7 @@ SDK 保证：
 - [ ] 若使用文件：运营已启用 `agentAccess.files`，且（模型 vision/PDF 场景）`RuntimeMultimodal`；Grant 含 `file:read` / `file:write`  
 - [ ] 若使用文件：PUT 始终发送 create 返回的 `Content-Length` / `Content-Type`；长期日志不保存 live 下载 URL  
 - [ ] 若实现处理器：校验 `X-ActWeave-Signature`、仅 https 回调 URL 策略，并处理晚到回调 `FILE_PROCESSOR_CALLBACK_LATE`  
+- [ ] 若使用 A2UI：Agent 已设 `context_policy.aap.enableA2UI`；客户端以 `item.completed` 为权威；Profile `a2ui.actions: false` → 仅展示 / 提交 no-op  
 
 ---
 
@@ -806,6 +912,8 @@ SDK 保证：
 | **English guide** | `docs/aap-integration-guide.md` | Same content in English |
 | OpenAPI | `docs/openapi/agent-access-v1.yaml` | HTTP 机器契约 |
 | TypeScript SDK | `sdk/typescript/` | 客户端库 |
+| A2UI 设计 | `docs/designs/a2ui-additive-capability.md` | 附加 A2UI 能力（产品锁定） |
+| A2UI 清单 | `docs/designs/a2ui-additive-capability-checklist.md` | 实现 checklist |
 | 产品 README（中） | `README.zh-CN.md` | 产品与本地运行 |
 | 产品 README（英） | `README.md` | Product overview & local run |
 

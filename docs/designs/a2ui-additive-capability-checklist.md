@@ -6,7 +6,7 @@
 | **Worktree** | `/Users/chen/Documents/act-weave-chat` |
 | **Base** | `main` @ `127dd78` |
 | **Design** | [a2ui-additive-capability.md](./a2ui-additive-capability.md) (Rev 3) |
-| **Status** | Ready to implement |
+| **Status** | P0+P1 implemented (docs PR-8) |
 | **Updated** | 2026-08-11 |
 
 ## Product locks (user-approved 2026-08-11)
@@ -166,10 +166,10 @@
 
 ### PR-8: Docs + demo
 
-- [ ] `docs/aap-integration-guide.md` + `.zh-CN.md`：enable 配置、Profile、按需 part、completed 权威、`actions: false`
-- [ ] 说明：MVP 控件 display-only / client no-op
-- [ ] 可选：`demos/aap-chat` 检测 a2ui part 并 JSON 预览（完整 renderer 非必须）
-- [ ] 本 checklist / 设计文档交叉链接
+- [x] `docs/aap-integration-guide.md` + `.zh-CN.md`：enable 配置、Profile、按需 part、completed 权威、`actions: false`
+- [x] 说明：MVP 控件 display-only / client no-op
+- [x] 可选：`demos/aap-chat` 检测 a2ui part 并 JSON 预览（完整 renderer 非必须）
+- [x] 本 checklist / 设计文档交叉链接（integration guide §9.2 → design + checklist；`integrations/aap*.md` 索引）
 
 **验收：** 第三方按文档可接；明确无 action。
 
@@ -177,14 +177,14 @@
 
 ## Cross-cutting acceptance (P0+P1 done)
 
-- [ ] **默认 off：** 未设置 `enableA2UI` 的 Agent 与改前行为一致（协议、Console、AAP）
-- [ ] **按需：** 开启后简单问答可只有 text；需要 UI 时可 text+a2ui 同 message
-- [ ] **非互斥：** 同一 Conversation 内可混有纯 text 轮与带 a2ui 轮
-- [ ] Profile 与实际产出一致（关则永不产出 a2ui）
-- [ ] createRun 入站 a2ui → 4xx
-- [ ] interaction.decide 语义未变（仍仅 approval）
-- [ ] `go test` 相关包绿；`make generate` 与 protocol-compat 绿
-- [ ] 前端相关 unit 绿
+- [x] **默认 off：** 未设置 `enableA2UI` 的 Agent 与改前行为一致（协议、Console、AAP）
+- [x] **按需：** 开启后简单问答可只有 text；需要 UI 时可 text+a2ui 同 message
+- [x] **非互斥：** 同一 Conversation 内可混有纯 text 轮与带 a2ui 轮
+- [x] Profile 与实际产出一致（关则永不产出 a2ui）
+- [x] createRun 入站 a2ui → 4xx
+- [x] interaction.decide 语义未变（仍仅 approval）
+- [x] `go test` 相关包绿；`make generate` 与 protocol-compat 绿
+- [x] 前端相关 unit 绿
 
 ---
 

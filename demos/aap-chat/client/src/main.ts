@@ -2,6 +2,7 @@ import "./styles.css";
 import {
   attachOutboundCredential,
   clearOutboundCredential,
+  extractA2UIPreview,
   extractMessageText,
   extractToolSummary,
   fetchBffConfig,
@@ -39,6 +40,8 @@ interface UiMessage {
   text: string;
   html?: string;
   tools?: Array<{ name: string; status: string; detail: string }>;
+  /** Pretty JSON of first a2ui part (display-only MVP preview). */
+  a2uiJson?: string;
   attachments?: UiAttachment[];
   pending?: boolean;
   error?: boolean;
@@ -414,6 +417,17 @@ function messageHtml(msg: UiMessage): string {
         </div>`;
       })
       .join("") || "";
+  const a2ui =
+    msg.a2uiJson && msg.a2uiJson.trim()
+      ? `
+        <div class="a2ui-card" title="A2UI surface (display-only; actions not supported in MVP)">
+          <header>
+            <span><i class="fa-solid fa-table-cells"></i> A2UI</span>
+            <span>display-only</span>
+          </header>
+          <pre>${escapeHtml(msg.a2uiJson)}</pre>
+        </div>`
+      : "";
 
   return `
     <div class="msg-row ${roleClass}" data-msg-id="${escapeHtml(msg.id)}">
@@ -425,6 +439,7 @@ function messageHtml(msg: UiMessage): string {
         </div>
         ${messageAttachmentsHtml(msg)}
         ${body ? `<div class="msg-body ${msg.role === "user" ? "" : "md-body"}">${body}</div>` : ""}
+        ${a2ui}
         ${tools}
       </div>
     </div>
@@ -887,12 +902,16 @@ function applySnapshotToAssistant(assistantId: string, items: ProtocolItem[]) {
 
   const texts: string[] = [];
   const tools: Array<{ name: string; status: string; detail: string }> = [];
+  let a2uiJson: string | undefined;
 
   for (const item of items) {
     const role = itemRole(item);
     if (role === "assistant") {
       const t = extractMessageText(item);
       if (t) texts.push(t);
+      // item.completed multiparty may carry optional a2ui (authoritative over delta fences).
+      const preview = extractA2UIPreview(item);
+      if (preview) a2uiJson = preview;
     } else if (role === "tool") {
       tools.push(extractToolSummary(item));
     }
@@ -904,6 +923,9 @@ function applySnapshotToAssistant(assistantId: string, items: ProtocolItem[]) {
     msg.html = renderMarkdown(msg.text);
   }
   msg.tools = tools;
+  if (a2uiJson) {
+    msg.a2uiJson = a2uiJson;
+  }
 }
 
 function patchMessages() {
