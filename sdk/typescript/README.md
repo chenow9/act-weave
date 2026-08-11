@@ -74,6 +74,34 @@ Never put long-lived secrets or refresh tokens in `localStorage` / query strings
 
 Send and expect header `ActWeave-Protocol-Version` (see OpenAPI `docs/openapi/agent-access-v1.yaml`).
 
+## A2UI content (additive)
+
+When an Agent has `enableA2UI`, assistant messages may carry a first-class
+`type: "a2ui"` content part **in addition to** `type: "text"`.
+
+| Concern | Contract |
+| --- | --- |
+| Streaming | Only `text_delta` streams. Concatenated deltas are a live preview only. |
+| Fences | Until `item.completed`, delta text may include raw A2UI fence fragments (e.g. `<<<A2UI>>>` …). Do **not** treat delta concatenation as final copy. |
+| Completed | `item.completed` **replaces** the whole item. Its `content` is authoritative (cleaned text [+ optional `a2ui`]). |
+| Helpers | `joinTextParts(item)` / `findA2UIPart(item)` read text and the first a2ui part from a content array or item. |
+| Actions | MVP Profile advertises `a2ui.actions: false`. UI controls are display-only; client should no-op submits. |
+
+```ts
+import { findA2UIPart, joinTextParts, type ProtocolItem } from "@actweave/agent-client";
+
+function renderAssistant(item: ProtocolItem) {
+  const text = joinTextParts(item); // ignores a2ui / unknown parts
+  const a2ui = findA2UIPart(item);  // undefined when text-only
+  // Prefer completed snapshot over any in-flight delta buffer.
+  return { text, surface: a2ui?.surface, version: a2ui?.version };
+}
+```
+
+`RunReducer` already replaces items on `item.started` / `item.completed` /
+`item.failed`; progressive `text_delta` only mutates the live text part until
+the completed snapshot overwrites it.
+
 ## Development
 
 ```bash

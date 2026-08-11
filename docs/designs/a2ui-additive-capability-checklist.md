@@ -156,11 +156,11 @@
 
 ### PR-7: TypeScript SDK
 
-- [ ] 生成/手写类型包含 `a2ui` content part
-- [ ] reducer：`item.completed` **替换**整 item 为权威 content
-- [ ] 文档：delta 拼接 ≠ final（A2UI 开启时可能含围栏）
-- [ ] helper：`joinTextParts` / `findA2UIPart`（可选）
-- [ ] SDK 单测
+- [x] 生成/手写类型包含 `a2ui` content part
+- [x] reducer：`item.completed` **替换**整 item 为权威 content
+- [x] 文档：delta 拼接 ≠ final（A2UI 开启时可能含围栏）
+- [x] helper：`joinTextParts` / `findA2UIPart`（可选）
+- [x] SDK 单测
 
 **验收：** SDK 消费方能稳定读 text + 可选 a2ui。
 

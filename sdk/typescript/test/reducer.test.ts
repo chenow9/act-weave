@@ -3,7 +3,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { AgentClientError, RunReducer, type ProtocolEventEnvelope } from "../src/index.js";
+import {
+  AgentClientError,
+  findA2UIPart,
+  joinTextParts,
+  RunReducer,
+  type ProtocolEventEnvelope,
+} from "../src/index.js";
 
 const goldenDir = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -93,5 +99,138 @@ describe("RunReducer golden traces", () => {
       workspaceId: "00000000-0000-4000-8000-000000000099",
     };
     expect(() => scoped.apply(bad)).toThrow(/scope/i);
+  });
+
+  it("item.completed replaces progressive text with multiparty text+a2ui content", () => {
+    const base = {
+      specVersion: "1.0",
+      streamId: "run:71000000-0000-4000-8000-0000000000a1",
+      workspaceId: "11000000-0000-4000-8000-000000000001",
+      agentId: "22000000-0000-4000-8000-000000000001",
+      conversationId: "31000000-0000-4000-8000-000000000001",
+      runId: "71000000-0000-4000-8000-0000000000a1",
+      traceId: "a2ui-multiparty",
+    } as const;
+    const itemId = "81000000-0000-4000-8000-0000000000a1";
+    const surface = {
+      root: "form",
+      components: { form: { type: "Column", children: ["password"] } },
+      password: { type: "TextField", label: "Password", name: "password" },
+    };
+
+    const events: ProtocolEventEnvelope[] = [
+      {
+        ...base,
+        type: "run.started",
+        eventId: "a1000000-0000-4000-8000-0000000000a1",
+        sequence: 1,
+        occurredAt: "2026-08-11T01:00:00Z",
+        data: {
+          run: {
+            id: base.runId,
+            conversationId: base.conversationId,
+            agentId: base.agentId,
+            status: "running",
+            trigger: "message",
+            startedAt: "2026-08-11T01:00:00Z",
+          },
+        },
+      },
+      {
+        ...base,
+        type: "item.started",
+        eventId: "a1000000-0000-4000-8000-0000000000a2",
+        sequence: 2,
+        occurredAt: "2026-08-11T01:00:01Z",
+        data: {
+          item: {
+            id: itemId,
+            type: "message",
+            status: "in_progress",
+            role: "assistant",
+            content: [{ type: "text", text: "" }],
+          },
+        },
+      },
+      {
+        ...base,
+        type: "item.delta",
+        eventId: "a1000000-0000-4000-8000-0000000000a3",
+        sequence: 3,
+        occurredAt: "2026-08-11T01:00:02Z",
+        data: {
+          itemId,
+          delta: {
+            type: "text_delta",
+            index: 0,
+            text: "Confirm booking:\n<<<A2UI>>>\n",
+          },
+        },
+      },
+      {
+        ...base,
+        type: "item.delta",
+        eventId: "a1000000-0000-4000-8000-0000000000a4",
+        sequence: 4,
+        occurredAt: "2026-08-11T01:00:03Z",
+        data: {
+          itemId,
+          delta: {
+            type: "text_delta",
+            index: 0,
+            text: '{"surface":{"root":"form"}}\n<<<END_A2UI>>>',
+          },
+        },
+      },
+      {
+        ...base,
+        type: "item.completed",
+        eventId: "a1000000-0000-4000-8000-0000000000a5",
+        sequence: 5,
+        occurredAt: "2026-08-11T01:00:04Z",
+        data: {
+          item: {
+            id: itemId,
+            type: "message",
+            status: "completed",
+            role: "assistant",
+            content: [
+              { type: "text", text: "Confirm booking:" },
+              {
+                type: "a2ui",
+                version: "a2ui-surface.v0",
+                catalogId: "standard",
+                surface,
+              },
+            ],
+          },
+        },
+      },
+    ];
+
+    const reducer = new RunReducer();
+    reducer.applyAll(events.slice(0, 4));
+    const mid = reducer.snapshot();
+    const midText = joinTextParts(mid.items[0]!);
+    expect(midText).toContain("<<<A2UI>>>");
+    expect(findA2UIPart(mid.items[0]!)).toBeUndefined();
+
+    reducer.apply(events[4]!);
+    const final = reducer.snapshot();
+    const item = final.items[0]!;
+    expect(item.status).toBe("completed");
+    expect(joinTextParts(item)).toBe("Confirm booking:");
+    expect(joinTextParts(item)).not.toContain("<<<A2UI>>>");
+
+    const a2ui = findA2UIPart(item);
+    expect(a2ui).toBeDefined();
+    expect(a2ui?.version).toBe("a2ui-surface.v0");
+    expect(a2ui?.catalogId).toBe("standard");
+    expect(a2ui?.surface).toEqual(surface);
+
+    const content = item.content as unknown[];
+    expect(content).toHaveLength(2);
+    expect(content[0]).toMatchObject({ type: "text", text: "Confirm booking:" });
+    expect(content[1]).toMatchObject({ type: "a2ui", version: "a2ui-surface.v0" });
   });
 });
