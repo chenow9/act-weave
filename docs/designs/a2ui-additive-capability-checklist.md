@@ -55,15 +55,15 @@
 
 ### PR-1: Policy + snapshot（KD-1, KD-12）
 
-- [ ] `sessioncontext.AAPPolicy` 增加 `EnableA2UI *bool`
-- [ ] `aapAllowed` allowlist 增加 `enableA2UI`
-- [ ] normalize：缺省 / null → `false`；v2 + aap 时写回
-- [ ] Workspace scope 继续拒绝任何 `aap` 字段
-- [ ] `AAPSnapshot` / `EnableA2UIFromSnapshot` helper
-- [ ] **KD-12：** `enableA2UI=true` 且 compaction gate off → 完整 `session-context.v2` + **platform-default compaction** + `sources.compactionGateEnabled=false`
-- [ ] 不放宽 `ParseResolvedSnapshot`（仍要求 compaction 块）
-- [ ] 单测：gate off + enableA2UI 形状；gate 不变量（不误开 compact）；默认 false；workspace 拒 aap
-- [ ] 单测：run 创建冻结 snapshot 后改 Agent 不影响进行中 run（若已有 snapshot 测试模式则对齐）
+- [x] `sessioncontext.AAPPolicy` 增加 `EnableA2UI *bool`
+- [x] `aapAllowed` allowlist 增加 `enableA2UI`
+- [x] normalize：缺省 / null → `false`；v2 + aap 时写回
+- [x] Workspace scope 继续拒绝任何 `aap` 字段
+- [x] `AAPSnapshot` / `EnableA2UIFromSnapshot` helper
+- [x] **KD-12：** `enableA2UI=true` 且 compaction gate off → 完整 `session-context.v2` + **platform-default compaction** + `sources.compactionGateEnabled=false`
+- [x] 不放宽 `ParseResolvedSnapshot`（仍要求 compaction 块）
+- [x] 单测：gate off + enableA2UI 形状；gate 不变量（不误开 compact）；默认 false；workspace 拒 aap
+- [x] 单测：run 创建冻结 snapshot 后改 Agent 不影响进行中 run（若已有 snapshot 测试模式则对齐）
 
 **验收：** 默认行为与今日一致；仅开启 Agent 时 snapshot 带 `aap.enableA2UI=true`。
 
