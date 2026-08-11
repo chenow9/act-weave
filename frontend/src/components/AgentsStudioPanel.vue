@@ -17,10 +17,10 @@ const {
   agentModelError, agentRoleError, agentPromptError, promptLineCount, promptPreviewText, canSaveAgent, originalPrompt, promptSaveDiff, pendingPromptText, weavePreviewDiff, agentSaveButtonLabel, canEnhanceDraftPrompt, formatSignedDelta, isEnhancing, toggleDraftStatus,
   agentContextMode, agentContextMaxInputTokens, agentContextMaxRecentTurns,
   agentContextSummaryMaxTokens, agentContextSummaryMinEvictedTurns, agentContextSummaryMaxPasses,
-  agentContextIncludeCompactionSummary, agentContextAdvancedOpen, toggleAgentContextAdvanced,
+  agentContextIncludeCompactionSummary, agentContextEnableA2UI, agentContextAdvancedOpen, toggleAgentContextAdvanced,
   setAgentContextMode, setAgentContextMaxInput, setAgentContextMaxTurns,
   setAgentContextSummaryMaxTokens, setAgentContextSummaryMinEvictedTurns, setAgentContextSummaryMaxPasses,
-  setAgentContextIncludeCompactionSummary,
+  setAgentContextIncludeCompactionSummary, setAgentContextEnableA2UI,
   closeStudio,
   requestCloseStudio, trapAgentModalFocus, enhancePrompt, applyWeavePreview, cancelWeavePreview, confirmPromptSaveReview, cancelPromptSaveReview, saveDraftAgent
 } = scp;
@@ -301,6 +301,22 @@ void AgentDelegationPanel;
                       <p class="agent-context-policy-hint agent-context-permanence-warning">
                         {{ t("agents.compactionSummaryPermanenceWarning") }}
                       </p>
+                      <div class="agent-context-aap-toggle">
+                        <div>
+                          <p>{{ t("agents.aapEnableA2UI") }}</p>
+                          <small>{{ t("agents.aapEnableA2UIHint") }}</small>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          :aria-label="t('agents.aapEnableA2UI')"
+                          :aria-checked="agentContextEnableA2UI"
+                          :class="{ active: agentContextEnableA2UI }"
+                          @click="setAgentContextEnableA2UI(!agentContextEnableA2UI)"
+                        >
+                          <span />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </template>

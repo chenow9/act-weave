@@ -85,6 +85,67 @@ export function compactionSummaryPermanenceWarning(): string {
   return tt("agents.compactionSummaryPermanenceWarning");
 }
 
+/** Agent-only AAP flag bag (session-context-policy.v2). Both default false. */
+export type AapFlags = {
+  includeCompactionSummary: boolean;
+  enableA2UI: boolean;
+};
+
+/** Read aap flags with boolean defaults (missing / null → false). */
+export function readAapFlags(
+  aap?: SessionContextPolicy["aap"] | null,
+): AapFlags {
+  return {
+    includeCompactionSummary: Boolean(aap?.includeCompactionSummary),
+    enableA2UI: Boolean(aap?.enableA2UI),
+  };
+}
+
+export function anyAapFlagTrue(flags: AapFlags): boolean {
+  return flags.includeCompactionSummary || flags.enableA2UI;
+}
+
+/**
+ * Merge a partial aap patch onto current flags without clobbering sibling keys.
+ * Used by Agents Studio setters (KD-14).
+ */
+export function mergeAapFlags(
+  current: SessionContextPolicy["aap"] | undefined | null,
+  patch: Partial<{ includeCompactionSummary: boolean; enableA2UI: boolean }>,
+): AapFlags {
+  const base = readAapFlags(current);
+  return {
+    includeCompactionSummary:
+      patch.includeCompactionSummary !== undefined
+        ? Boolean(patch.includeCompactionSummary)
+        : base.includeCompactionSummary,
+    enableA2UI: patch.enableA2UI !== undefined ? Boolean(patch.enableA2UI) : base.enableA2UI,
+  };
+}
+
+/** Emit aap object with both flags (never omit one key when emitting aap). */
+export function aapFlagBag(flags: AapFlags): NonNullable<SessionContextPolicy["aap"]> {
+  return {
+    includeCompactionSummary: flags.includeCompactionSummary,
+    enableA2UI: flags.enableA2UI,
+  };
+}
+
+/**
+ * Whether policy must use session-context-policy.v2.
+ * Any aap flag true, or explicit v2, forces v2. Never emit v1+aap.
+ */
+export function needsSessionContextV2(
+  policy: Pick<SessionContextPolicy, "schemaVersion" | "aap">,
+  flags: AapFlags = readAapFlags(policy.aap),
+): boolean {
+  if (anyAapFlagTrue(flags)) return true;
+  if (policy.schemaVersion === "session-context-policy.v2") return true;
+  // aap object present without flags still cannot pair with v1
+  if (policy.aap != null && typeof policy.aap === "object") return true;
+  return false;
+}
+
 /** Build session-context-policy.v1/v2 for API. Empty / inherit → {}. */
 export function buildContextPolicyPayload(
   policy: SessionContextPolicy | Record<string, unknown> | undefined | null,
@@ -92,29 +153,32 @@ export function buildContextPolicyPayload(
   if (!policy || typeof policy !== "object") return {};
   const p = policy as SessionContextPolicy;
   const mode = String(p.mode || "").trim();
-  const includeSummary = Boolean(p.aap?.includeCompactionSummary);
+  const flags = readAapFlags(p.aap);
+  const hasAapTrue = anyAapFlagTrue(flags);
+  const emitAap = hasAapTrue || (p.schemaVersion === "session-context-policy.v2" && p.aap != null);
+  const useV2 = hasAapTrue || p.schemaVersion === "session-context-policy.v2" || emitAap;
+
   if (!mode || mode === "inherit" || mode === "disabled") {
     // disabled still needs schema for explicit product choice
     if (mode === "disabled") {
-      if (includeSummary) {
+      if (emitAap || hasAapTrue) {
         return {
           schemaVersion: "session-context-policy.v2",
           mode: "disabled",
-          aap: { includeCompactionSummary: true },
+          aap: aapFlagBag(flags),
         };
       }
       return { schemaVersion: "session-context-policy.v1", mode: "disabled" };
     }
-    if (includeSummary) {
+    if (emitAap || hasAapTrue) {
       return {
         schemaVersion: "session-context-policy.v2",
-        aap: { includeCompactionSummary: true },
+        aap: aapFlagBag(flags),
       };
     }
     return {};
   }
   if (mode !== "token_window" && mode !== "rolling_summary") return {};
-  const useV2 = includeSummary || p.schemaVersion === "session-context-policy.v2";
   const out: SessionContextPolicy = {
     schemaVersion: useV2 ? "session-context-policy.v2" : "session-context-policy.v1",
     mode,
@@ -138,11 +202,10 @@ export function buildContextPolicyPayload(
       out.maxRecentTurns = DEFAULT_ROLLING_SUMMARY_MAX_RECENT_TURNS;
     }
   }
-  // Agent-only disclosure; default omit/false — never upgrade v1 save without explicit aap.
-  if (includeSummary) {
-    out.aap = { includeCompactionSummary: true };
-  } else if (p.schemaVersion === "session-context-policy.v2" && p.aap) {
-    out.aap = { includeCompactionSummary: false };
+  // Agent-only flag bag; never emit v1+aap. Emit both flags together when present.
+  if (emitAap) {
+    out.schemaVersion = "session-context-policy.v2";
+    out.aap = aapFlagBag(flags);
   }
   return out;
 }
@@ -155,11 +218,10 @@ export function normalizeContextPolicy(
   }
   const p = policy as SessionContextPolicy;
   const mode = p.mode;
-  const include = Boolean(p.aap?.includeCompactionSummary);
-  const schemaVersion: SessionContextPolicy["schemaVersion"] =
-    include || p.schemaVersion === "session-context-policy.v2"
-      ? "session-context-policy.v2"
-      : "session-context-policy.v1";
+  const flags = readAapFlags(p.aap);
+  const schemaVersion: SessionContextPolicy["schemaVersion"] = needsSessionContextV2(p, flags)
+    ? "session-context-policy.v2"
+    : "session-context-policy.v1";
   if (mode === "token_window" || mode === "rolling_summary" || mode === "disabled") {
     const out: SessionContextPolicy = {
       schemaVersion,
@@ -171,15 +233,15 @@ export function normalizeContextPolicy(
       summary: mode === "rolling_summary" ? defaultRollingSummary(p.summary) : p.summary,
     };
     if (schemaVersion === "session-context-policy.v2") {
-      out.aap = { includeCompactionSummary: include };
+      out.aap = aapFlagBag(flags);
     }
     return out;
   }
-  if (include) {
+  if (anyAapFlagTrue(flags) || (p.aap != null && schemaVersion === "session-context-policy.v2")) {
     return {
       schemaVersion: "session-context-policy.v2",
       mode: undefined,
-      aap: { includeCompactionSummary: true },
+      aap: aapFlagBag(flags),
     };
   }
   return { mode: undefined };

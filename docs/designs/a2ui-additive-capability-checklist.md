@@ -69,14 +69,14 @@
 
 ### PR-2: Console flag bag UI（KD-14）
 
-- [ ] `domain.ts` / SessionContextPolicy 类型增加 `enableA2UI`
-- [ ] `session-context-config.ts`：`aap` 为 **flag bag**（`includeCompactionSummary` + `enableA2UI` 并存）
-- [ ] 任一 aap flag 存在 → 强制 `schemaVersion: session-context-policy.v2`
-- [ ] 禁止 v1 + aap 组合
-- [ ] setters（含 mode/token 等）**保留兄弟 aap flags**，不得 clobber
-- [ ] Agents Studio：独立 toggle「Enable A2UI（additive）」默认关
-- [ ] i18n zh-CN / en
-- [ ] 前端单测：双 flag 矩阵（00/01/10/11）、setter 不丢 flag
+- [x] `domain.ts` / SessionContextPolicy 类型增加 `enableA2UI`
+- [x] `session-context-config.ts`：`aap` 为 **flag bag**（`includeCompactionSummary` + `enableA2UI` 并存）
+- [x] 任一 aap flag 存在 → 强制 `schemaVersion: session-context-policy.v2`
+- [x] 禁止 v1 + aap 组合
+- [x] setters（含 mode/token 等）**保留兄弟 aap flags**，不得 clobber
+- [x] Agents Studio：独立 toggle「Enable A2UI（additive）」默认关
+- [x] i18n zh-CN / en
+- [x] 前端单测：双 flag 矩阵（00/01/10/11）、setter 不丢 flag
 
 **验收：** Console 可开关；与 compaction 披露开关互不覆盖。
 
