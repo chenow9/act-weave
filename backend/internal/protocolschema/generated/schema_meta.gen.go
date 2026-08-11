@@ -7,10 +7,10 @@ package generated
 const SpecVersion = "1.0"
 
 // ProtocolVersion is the frozen protocol date version.
-const ProtocolVersion = "2026-07-20"
+const ProtocolVersion = "2026-08-11"
 
 // SchemaSetSHA256 is SHA-256 of all schema documents concatenated in filename order.
-const SchemaSetSHA256 = "d4f49a3a5a06571be364aeb486af8518feb7d468d04e07a4062110e26f483c67"
+const SchemaSetSHA256 = "dda789039e8a2351d42557a5c2e649be287933ab0d54ae91f4c4526d5b52fccf"
 
 // DocumentNames lists Schema Registry documents in generation order.
 var DocumentNames = []string{
@@ -29,10 +29,10 @@ var DocumentNames = []string{
 // DocumentSHA256 maps document file name → SHA-256 hex of raw bytes.
 var DocumentSHA256 = map[string]string{
 	"common.schema.json": "f47c45bca563d3189817c481fd3023bfb86fefea491673af0e1424300bba66bf",
-	"content-part.schema.json": "f615ccaf07ed0d17bce1e993fdedc0d3092154d67acfac6ecf48d07ffdfcdc4f",
+	"content-part.schema.json": "05ba9244bc1680a6440c95e2bc4bae4646a448d514ce1112e036e67e6241dad9",
 	"delta.schema.json": "dae2fddf795d30b14a352df6e6aae4507892a24c107f7f7b7ca9e76ecc19a3ea",
 	"error.schema.json": "b11932ef8cdbabd04263e1792cce5d67b6a952192c13684b568776eee8cc738f",
-	"event-envelope.schema.json": "b7f2365867fd0add3a5071387b70957e6afa06753d5f386cfef533391751d15f",
+	"event-envelope.schema.json": "c4e4f3114ed984a68585007a9e66ec237e30ca583204ea86e73bb5bab1f1a1d1",
 	"events.schema.json": "934372181ea9a1f32cf4302d54770058273d13346a36bb448a3eff1f2b0ec131",
 	"interaction.schema.json": "49ab73b89f06aceba1afe0ecf14e41b76fdbb0d719f840823a1a871e566b66cd",
 	"item.schema.json": "cd2157bc603749fa76e113849aace1492e9fdfa8e68bb4395332afd8b39fffc0",

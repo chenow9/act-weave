@@ -55,7 +55,7 @@ func run() error {
 
 	meta := genMeta{
 		SpecVersion:     "1.0",
-		ProtocolVersion: "2026-07-20",
+		ProtocolVersion: "2026-08-11",
 		SchemaSetSHA256: setHash,
 		DocumentNames:   names,
 		DocumentSHA256:  docHashes,
@@ -147,7 +147,7 @@ func hashSchemas(dir string, names []string) (setHash string, docHashes map[stri
 
 func writeChecksumFile(path, setHash string, docHashes map[string]string, names []string) error {
 	var b strings.Builder
-	b.WriteString("# AAP 1.0 / protocol date 2026-07-20\n")
+	b.WriteString("# AAP 1.0 / protocol date 2026-08-11\n")
 	b.WriteString("# schema-set (the concatenated bytes of the JSON files below in filename order)\n")
 	b.WriteString(setHash + "  schema-set\n\n")
 	for _, name := range names {

@@ -101,16 +101,16 @@
 
 ### PR-4: Schema + sensitive-scan exemption（KD-2, KD-11, Q4/Q5/Q11/Q12）
 
-- [ ] 新包常量 `backend/internal/a2ui/limits.go`：`MaxSurfaceBytes = 64<<10`，`EnvelopeVersionV0`，围栏常量
-- [ ] `content-part.schema.json` 一等 arm：`type=a2ui`，required `surface` object；optional `version`/`catalogId`
-- [ ] unknown arm 的 `not.enum` 纳入 `a2ui`
-- [ ] Go `ContentPartTypeA2UI` + `A2UIContentPart` decode/validate（object、size）
-- [ ] **KD-11：** `PayloadValidator` / `ScanPublicJSON` 路径上 **豁免 `content[i].surface` 整棵子树**（键 + 值 pattern）
-- [ ] 仍扫描 part 的 `type`/`version`/`catalogId` 与 message 其他字段
-- [ ] `ProtocolVersion` 双点更新：`protocolschema/registry.go` + `cmd/protocolgen/main.go`
-- [ ] `make generate`；`make protocol-compat-check`；必要时 `protocol-baseline-accept`
-- [ ] Golden：`password` / `accessToken` / `apiKey` / `bearerToken` 键名 surface **通过**校验
-- [ ] 单测：超大 surface 拒绝；非 object surface 拒绝
+- [x] 新包常量 `backend/internal/a2ui/limits.go`：`MaxSurfaceBytes = 64<<10`，`EnvelopeVersionV0`，围栏常量
+- [x] `content-part.schema.json` 一等 arm：`type=a2ui`，required `surface` object；optional `version`/`catalogId`
+- [x] unknown arm 的 `not.enum` 纳入 `a2ui`
+- [x] Go `ContentPartTypeA2UI` + `A2UIContentPart` decode/validate（object、size）
+- [x] **KD-11：** `PayloadValidator` / `ScanPublicJSON` 路径上 **豁免 `content[i].surface` 整棵子树**（键 + 值 pattern）
+- [x] 仍扫描 part 的 `type`/`version`/`catalogId` 与 message 其他字段
+- [x] `ProtocolVersion` 双点更新：`protocolschema/registry.go` + `cmd/protocolgen/main.go`
+- [x] `make generate`；`make protocol-compat-check`；必要时 `protocol-baseline-accept`
+- [x] Golden：`password` / `accessToken` / `apiKey` / `bearerToken` 键名 surface **通过**校验
+- [x] 单测：超大 surface 拒绝；非 object surface 拒绝
 
 **验收：** 协议可表达 a2ui；合法表单键名不被敏感扫描误杀。
 
