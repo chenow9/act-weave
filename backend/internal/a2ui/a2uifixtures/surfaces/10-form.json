@@ -1,0 +1,55 @@
+{
+  "name": "form",
+  "title": "Every input component, display-only",
+  "expect": "renders",
+  "note": "Covers all four input components plus Button and Divider. Nothing here submits: the catalog has no action property, so the renderer must show the button disabled and say why.",
+  "surface": {
+    "components": [
+      {
+        "id": "root",
+        "component": "Column",
+        "children": ["heading", "name", "detail", "priority", "due", "urgent", "rule", "actions"]
+      },
+      { "id": "heading", "component": "Text", "text": "新建工单", "variant": "heading" },
+      {
+        "id": "name",
+        "component": "TextField",
+        "label": "标题",
+        "placeholder": "一句话描述问题",
+        "variant": "shortText",
+        "required": true
+      },
+      {
+        "id": "detail",
+        "component": "TextField",
+        "label": "详细说明",
+        "variant": "longText",
+        "value": "调用工具时返回 429，重试三次后仍失败。"
+      },
+      {
+        "id": "priority",
+        "component": "ChoicePicker",
+        "label": "影响范围",
+        "multiple": true,
+        "value": ["api"],
+        "options": [
+          { "value": "api", "label": "API 网关" },
+          { "value": "console", "label": "控制台" },
+          { "value": "runtime", "label": "运行时" }
+        ]
+      },
+      {
+        "id": "due",
+        "component": "DateTimeInput",
+        "label": "期望解决时间",
+        "mode": "datetime",
+        "value": "2026-08-15T18:00"
+      },
+      { "id": "urgent", "component": "CheckBox", "label": "按紧急处理", "value": true },
+      { "id": "rule", "component": "Divider" },
+      { "id": "actions", "component": "Row", "children": ["submit", "cancel"], "justify": "end" },
+      { "id": "submit", "component": "Button", "label": "提交", "variant": "primary" },
+      { "id": "cancel", "component": "Button", "label": "取消", "variant": "borderless" }
+    ]
+  }
+}

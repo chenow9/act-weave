@@ -1,0 +1,27 @@
+{
+  "name": "chart-pie",
+  "title": "Pie chart inside a card",
+  "expect": "renders",
+  "note": "Card holds exactly one child, so a chart in a card is the smallest nesting the renderer must handle.",
+  "surface": {
+    "components": [
+      { "id": "root", "component": "Card", "child": "share", "title": "模型调用占比" },
+      {
+        "id": "share",
+        "component": "Chart",
+        "chartType": "pie",
+        "valueFormat": "percent",
+        "series": [
+          {
+            "points": [
+              { "label": "gpt-5.6", "value": 46.5 },
+              { "label": "claude-opus-5", "value": 31.2 },
+              { "label": "composer-2.5", "value": 14.8 },
+              { "label": "其他", "value": 7.5 }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

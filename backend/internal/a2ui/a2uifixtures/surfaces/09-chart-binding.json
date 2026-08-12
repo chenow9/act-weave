@@ -1,0 +1,58 @@
+{
+  "name": "chart-binding",
+  "title": "Two charts and a title bound into one dataModel",
+  "expect": "renders",
+  "note": "A binding resolves to a whole series array, never to one series object. Both charts and the heading read the same dataModel, so a renderer that resolves pointers correctly shows the production numbers identically in both charts.",
+  "surface": {
+    "components": [
+      { "id": "root", "component": "Column", "children": ["caption", "combined", "prodOnly"] },
+      { "id": "caption", "component": "Text", "text": { "path": "/caption" }, "variant": "heading" },
+      {
+        "id": "combined",
+        "component": "Chart",
+        "chartType": "line",
+        "title": { "path": "/caption" },
+        "valueFormat": "compact",
+        "series": { "path": "/traffic/all" }
+      },
+      {
+        "id": "prodOnly",
+        "component": "Chart",
+        "chartType": "bar",
+        "title": "仅生产",
+        "valueFormat": "compact",
+        "series": { "path": "/traffic/production" }
+      }
+    ],
+    "dataModel": {
+      "caption": "两周请求量",
+      "traffic": {
+        "all": [
+          {
+            "name": "生产",
+            "points": [
+              { "label": "第 1 周", "value": 48200 },
+              { "label": "第 2 周", "value": 51940 }
+            ]
+          },
+          {
+            "name": "预发",
+            "points": [
+              { "label": "第 1 周", "value": 6110 },
+              { "label": "第 2 周", "value": 7325 }
+            ]
+          }
+        ],
+        "production": [
+          {
+            "name": "生产",
+            "points": [
+              { "label": "第 1 周", "value": 48200 },
+              { "label": "第 2 周", "value": 51940 }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
