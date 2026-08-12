@@ -87,16 +87,16 @@ func TestNewCompactModelFromSnapshotRequiresBuilderAndID(t *testing.T) {
 		t.Fatal("expected builder required")
 	}
 	_, err = NewCompactModelFromSnapshot(context.Background(),
-		func(context.Context, modelconfig.Config) (model.BaseChatModel, error) {
+		func(context.Context, modelconfig.Config) (model.AgenticModel, error) {
 			return nil, errors.New("should not build")
 		}, execution.AgentRun{ModelSnapshot: json.RawMessage(`{}`)})
 	if err == nil {
 		t.Fatal("expected missing model id error")
 	}
-	// Valid snapshot id path reaches BuildChatModel.
+	// Valid snapshot id path reaches AgenticModel builder.
 	called := false
 	_, err = NewCompactModelFromSnapshot(context.Background(),
-		func(_ context.Context, cfg modelconfig.Config) (model.BaseChatModel, error) {
+		func(_ context.Context, cfg modelconfig.Config) (model.AgenticModel, error) {
 			called = true
 			if cfg.ID != "model-1" {
 				t.Fatalf("id=%s", cfg.ID)
@@ -107,7 +107,7 @@ func TestNewCompactModelFromSnapshotRequiresBuilderAndID(t *testing.T) {
 			ModelSnapshot: json.RawMessage(`{"id":"model-1","provider":"openai","modelName":"gpt-4o"}`),
 		})
 	if !called {
-		t.Fatal("expected BuildChatModel call")
+		t.Fatal("expected AgenticModel builder call")
 	}
 	if err == nil || !strings.Contains(err.Error(), "build refused") {
 		t.Fatalf("err=%v", err)

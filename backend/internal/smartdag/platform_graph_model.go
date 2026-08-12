@@ -10,22 +10,24 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
+	"actweave/backend/internal/agenticmsg"
 	"actweave/backend/internal/domain"
 	"actweave/backend/internal/modelconfig"
 )
 
-// ChatModel is the minimal Generate surface used by PlatformChatGraphModel.
-// Production ChatModel (eino-ext openai) and test doubles satisfy this interface.
+// ChatModel is the minimal no-tools Generate surface used by PlatformChatGraphModel.
+// Production wires model.AgenticModel (Responses); test doubles satisfy this interface.
 type ChatModel interface {
-	Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error)
+	Generate(ctx context.Context, input []*schema.AgenticMessage, opts ...model.Option) (*schema.AgenticMessage, error)
 }
 
 // ChatModelBuilder constructs a ChatModel for an Agent-bound modelConfig (D2/D3).
-// Production wires modelapi.NewEinoOpenAIChatModel; tests inject fakes.
+// Production wires modelapi.NewOpenAIAgenticModel; tests inject fakes.
 type ChatModelBuilder func(ctx context.Context, cfg modelconfig.Config) (ChatModel, error)
 
-// PlatformChatGraphModel adapts Agent modelConfig → PlatformChatModel → workflow.graph.v1.
+// PlatformChatGraphModel adapts Agent modelConfig → AgenticModel → workflow.graph.v1.
 // It never writes Drafts; TurnService always runs GuardGraph before persist (D3).
+// No tools / deferred tools / tool_search are attached (§7.5).
 type PlatformChatGraphModel struct {
 	models ModelConfigLookup
 	tools  ToolCatalog
@@ -55,7 +57,7 @@ func NewPlatformChatGraphModel(deps PlatformChatGraphModelDeps) (*PlatformChatGr
 	}, nil
 }
 
-// GenerateGraph implements GraphModel via PlatformChatModel (no rules fallback).
+// GenerateGraph implements GraphModel via AgenticModel (no rules fallback).
 func (m *PlatformChatGraphModel) GenerateGraph(ctx context.Context, input GraphModelInput) (domain.WorkflowGraphDraft, error) {
 	if m == nil || m.models == nil || m.build == nil {
 		return domain.WorkflowGraphDraft{}, errors.New("platform chat graph model is not configured")
@@ -94,18 +96,22 @@ func (m *PlatformChatGraphModel) GenerateGraph(ctx context.Context, input GraphM
 	if err != nil {
 		return domain.WorkflowGraphDraft{}, fmt.Errorf("platform chat model generate: %w", err)
 	}
-	if msg == nil || strings.TrimSpace(msg.Content) == "" {
+	text, err := agenticmsg.ExtractAssistantText(msg)
+	if err != nil {
+		return domain.WorkflowGraphDraft{}, fmt.Errorf("platform chat model returned no assistant text: %w", err)
+	}
+	if strings.TrimSpace(text) == "" {
 		return domain.WorkflowGraphDraft{}, errors.New("platform chat model returned empty content")
 	}
 
-	graph, err := ParseGraphFromModelContent(msg.Content)
+	graph, err := ParseGraphFromModelContent(text)
 	if err != nil {
 		return domain.WorkflowGraphDraft{}, fmt.Errorf("parse model graph JSON: %w", err)
 	}
 	return graph, nil
 }
 
-func (m *PlatformChatGraphModel) buildMessages(ctx context.Context, input GraphModelInput) ([]*schema.Message, error) {
+func (m *PlatformChatGraphModel) buildMessages(ctx context.Context, input GraphModelInput) ([]*schema.AgenticMessage, error) {
 	systemContent := strings.TrimSpace(input.SystemPrompt.Content)
 	if systemContent == "" {
 		systemContent = DefaultSystemPrompt().Content
@@ -116,9 +122,9 @@ func (m *PlatformChatGraphModel) buildMessages(ctx context.Context, input GraphM
 		return nil, err
 	}
 
-	messages := []*schema.Message{
-		{Role: schema.System, Content: systemContent},
-		{Role: schema.System, Content: structured},
+	messages := []*schema.AgenticMessage{
+		agenticmsg.System(systemContent),
+		agenticmsg.System(structured),
 	}
 
 	// Prior turns (oldest first); cap to avoid unbounded context.
@@ -135,9 +141,9 @@ func (m *PlatformChatGraphModel) buildMessages(ctx context.Context, input GraphM
 		}
 		switch role {
 		case "assistant":
-			messages = append(messages, &schema.Message{Role: schema.Assistant, Content: content})
+			messages = append(messages, agenticmsg.AssistantText(content))
 		default:
-			messages = append(messages, &schema.Message{Role: schema.User, Content: content})
+			messages = append(messages, agenticmsg.UserText(content))
 		}
 	}
 
@@ -150,7 +156,7 @@ func (m *PlatformChatGraphModel) buildMessages(ctx context.Context, input GraphM
 	if userContent == "" {
 		return nil, ErrInvalid
 	}
-	messages = append(messages, &schema.Message{Role: schema.User, Content: userContent})
+	messages = append(messages, agenticmsg.UserText(userContent))
 	return messages, nil
 }
 

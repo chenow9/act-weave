@@ -801,7 +801,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	var workflowRoutes *httptransport.WorkflowRoutes
 
 	// SmartGenerateSession multi-turn path (D15 / smart-dag.v2). Memory-safe SQL store when DB present.
-	// Production GraphModel is PlatformChatModel only (D2/D3) — no silent CatalogGraphModel rules path.
+	// Production GraphModel is AgenticModel only (D2/D3 / §7.5) — no silent CatalogGraphModel rules path.
 	agentModelGate, err := smartdag.NewAgentModelGate(agentRepository, modelRepository)
 	if err != nil {
 		return nil, err
@@ -812,7 +812,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		Models: modelRepository,
 		Tools:  toolRepository,
 		Build: func(ctx context.Context, cfg modelconfig.Config) (smartdag.ChatModel, error) {
-			return modelapi.NewEinoOpenAIChatModel(ctx, modelHTTP, secretService, cfg)
+			return modelapi.NewOpenAIAgenticModel(ctx, modelHTTP, secretService, cfg)
 		},
 	})
 	if err != nil {
@@ -1221,12 +1221,12 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if summaryBodyErr != nil {
 		return nil, fmt.Errorf("context summary body store: %w", summaryBodyErr)
 	}
-	// Classic Chat Completions builder: resume/HITL (Task 4B), compact, delegation
-	// seams only. Production initial Chat uses BuildAgenticModel below.
+	// Classic Chat Completions builder: classic checkpoint resume (Task 9 removes).
+	// Production Chat / SmartDAG / compact / prompt enhance use BuildAgenticModel.
 	buildChatModel := func(ctx context.Context, cfg modelconfig.Config) (model.BaseChatModel, error) {
 		return modelapi.NewEinoOpenAIChatModel(ctx, modelHTTP, secretService, cfg)
 	}
-	// Task 4A: production initial Chat AgenticModel (Responses; store=false; parallel=false).
+	// Production AgenticModel (Responses; store=false; parallel=false).
 	buildAgenticModel := func(ctx context.Context, cfg modelconfig.Config) (model.AgenticModel, error) {
 		return modelapi.NewOpenAIAgenticModel(ctx, modelHTTP, secretService, cfg)
 	}
@@ -1257,7 +1257,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 			return summaryBodyStore.OpenPlaintext(ctx, workspaceID, objectID, actorType, actorID)
 		},
 		NewCompactModel: func(ctx context.Context, run execution.AgentRun) (contextsummary.CompactModel, error) {
-			return chatruntimebridge.NewCompactModelFromSnapshot(ctx, buildChatModel, run)
+			return chatruntimebridge.NewCompactModelFromSnapshot(ctx, buildAgenticModel, run)
 		},
 	}
 	// IC-08: multimodal model assembly from READY AAP files (RuntimeMultimodal).

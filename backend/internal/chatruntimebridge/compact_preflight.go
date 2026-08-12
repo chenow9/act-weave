@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"actweave/backend/internal/agenticmsg"
 	"actweave/backend/internal/contextsummary"
 	"actweave/backend/internal/contextwindow"
 	"actweave/backend/internal/execution"
@@ -425,42 +426,43 @@ type agentrunJob struct {
 	ActorID       string
 }
 
-// einoCompactModel adapts BaseChatModel.Generate as a no-tools CompactModel.
-type einoCompactModel struct {
-	inner model.BaseChatModel
+// agenticCompactModel adapts model.AgenticModel.Generate as a no-tools CompactModel (§7.5).
+type agenticCompactModel struct {
+	inner model.AgenticModel
 }
 
-func (m *einoCompactModel) Generate(ctx context.Context, system, user string, _ float64, _ int) (string, error) {
+func (m *agenticCompactModel) Generate(ctx context.Context, system, user string, _ float64, _ int) (string, error) {
 	if m == nil || m.inner == nil {
 		return "", contextsummary.ErrCompactorInvalid
 	}
-	out, err := m.inner.Generate(ctx, []*schema.Message{
-		schema.SystemMessage(system),
-		schema.UserMessage(user),
+	out, err := m.inner.Generate(ctx, []*schema.AgenticMessage{
+		agenticmsg.System(system),
+		agenticmsg.UserText(user),
 	})
 	if err != nil {
 		return "", err
 	}
-	if out == nil {
+	text, err := agenticmsg.ExtractAssistantText(out)
+	if err != nil {
 		return "", contextsummary.ErrCompactorModel
 	}
-	return out.Content, nil
+	return text, nil
 }
 
-// NewEinoCompactModel wraps a BaseChatModel for compact (tools must be absent).
-func NewEinoCompactModel(m model.BaseChatModel) contextsummary.CompactModel {
-	return &einoCompactModel{inner: m}
+// NewAgenticCompactModel wraps an AgenticModel for compact (tools must be absent).
+func NewAgenticCompactModel(m model.AgenticModel) contextsummary.CompactModel {
+	return &agenticCompactModel{inner: m}
 }
 
 // NewCompactModelFromSnapshot builds a no-tools CompactModel from the run model snapshot.
 // Used by application DI; tools/approval/streaming are never attached.
 func NewCompactModelFromSnapshot(
 	ctx context.Context,
-	build ChatModelBuilder,
+	build AgenticModelBuilder,
 	run execution.AgentRun,
 ) (contextsummary.CompactModel, error) {
 	if build == nil {
-		return nil, errors.New("chat model builder is required for compact")
+		return nil, errors.New("agentic model builder is required for compact")
 	}
 	cfg, _, err := parseModelSnapshot(run.ModelSnapshot)
 	if err != nil {
@@ -475,10 +477,9 @@ func NewCompactModelFromSnapshot(
 	if cfg.Status == "" {
 		cfg.Status = modelconfig.StatusVerified
 	}
-	// Force no tools at construction: BuildChatModel returns BaseChatModel without tools.
 	m, err := build(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
-	return NewEinoCompactModel(m), nil
+	return NewAgenticCompactModel(m), nil
 }

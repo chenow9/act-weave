@@ -13,6 +13,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
+	"actweave/backend/internal/agenticmsg"
 	"actweave/backend/internal/modelapi"
 	"actweave/backend/internal/modelconfig"
 	"actweave/backend/internal/tool"
@@ -22,16 +23,16 @@ type fakeChatModel struct {
 	content string
 	err     error
 	calls   int
-	last    []*schema.Message
+	last    []*schema.AgenticMessage
 }
 
-func (m *fakeChatModel) Generate(_ context.Context, input []*schema.Message, _ ...model.Option) (*schema.Message, error) {
+func (m *fakeChatModel) Generate(_ context.Context, input []*schema.AgenticMessage, _ ...model.Option) (*schema.AgenticMessage, error) {
 	m.calls++
 	m.last = input
 	if m.err != nil {
 		return nil, m.err
 	}
-	return &schema.Message{Role: schema.Assistant, Content: m.content}, nil
+	return agenticmsg.AssistantText(m.content), nil
 }
 
 type memoryModelLookup map[string]modelconfig.Config // key workspaceID/configID
@@ -131,21 +132,18 @@ func TestPlatformChatGraphModelRejectsMissingModel(t *testing.T) {
 	}
 }
 
-func TestPlatformChatGraphModelUsesRealPlatformChatModelHTTP(t *testing.T) {
+func TestPlatformChatGraphModelUsesRealAgenticHTTP(t *testing.T) {
 	t.Parallel()
 	graph := validD8Graph(testToolID)
 	encoded, _ := json.Marshal(graph)
 	var sawPath atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasSuffix(r.URL.Path, "/chat/completions") {
-			t.Fatalf("path=%s", r.URL.Path)
+		if !strings.Contains(r.URL.Path, "responses") {
+			t.Fatalf("path=%s want responses", r.URL.Path)
 		}
 		sawPath.Store(true)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"choices": []map[string]any{
-				{"finish_reason": "stop", "message": map[string]any{"role": "assistant", "content": string(encoded)}},
-			},
-		})
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(minimalResponsesJSON(string(encoded))))
 	}))
 	defer server.Close()
 
@@ -162,7 +160,7 @@ func TestPlatformChatGraphModelUsesRealPlatformChatModelHTTP(t *testing.T) {
 			ActiveReleaseID: strPtr("rel-1"),
 		}}},
 		Build: func(_ context.Context, cfg modelconfig.Config) (ChatModel, error) {
-			return modelapi.NewPlatformChatModel(server.Client(), secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+			return modelapi.NewOpenAIAgenticModel(context.Background(), server.Client(), secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 				return nil
 			}), cfg)
 		},
@@ -182,11 +180,36 @@ func TestPlatformChatGraphModelUsesRealPlatformChatModelHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !sawPath.Load() {
-		t.Fatal("expected PlatformChatModel HTTP call")
+		t.Fatal("expected Agentic Responses HTTP call")
 	}
 	if got.SchemaVersion != SchemaVersion {
 		t.Fatalf("schema=%s", got.SchemaVersion)
 	}
+}
+
+func minimalResponsesJSON(text string) string {
+	payload := map[string]any{
+		"id":     "resp_smartdag_1",
+		"object": "response",
+		"status": "completed",
+		"model":  "gpt-test",
+		"output": []map[string]any{
+			{
+				"type":   "message",
+				"id":     "msg_1",
+				"status": "completed",
+				"role":   "assistant",
+				"content": []map[string]any{
+					{"type": "output_text", "text": text, "annotations": []any{}},
+				},
+			},
+		},
+		"usage": map[string]any{
+			"input_tokens": 10, "output_tokens": 5, "total_tokens": 15,
+		},
+	}
+	b, _ := json.Marshal(payload)
+	return string(b)
 }
 
 type secretOpenerFunc func(context.Context, string, string, func([]byte) error) error
@@ -254,11 +277,14 @@ func TestPlatformChatGraphModelIncludesHistoryAndFeedback(t *testing.T) {
 	if len(fake.last) < 5 {
 		t.Fatalf("messages=%d", len(fake.last))
 	}
-	last := fake.last[len(fake.last)-1].Content
-	if !strings.Contains(last, "mapping missing") && !strings.Contains(last, "compile") {
-		// FormatRevisionMessage / ContextForModel should enrich user content.
-		if !strings.Contains(last, "加上审批") {
-			t.Fatalf("user content missing intent: %s", last)
+	last := fake.last[len(fake.last)-1]
+	if last == nil || len(last.ContentBlocks) == 0 || last.ContentBlocks[0].UserInputText == nil {
+		t.Fatalf("last message missing user text: %#v", last)
+	}
+	text := last.ContentBlocks[0].UserInputText.Text
+	if !strings.Contains(text, "mapping missing") && !strings.Contains(text, "compile") {
+		if !strings.Contains(text, "加上审批") {
+			t.Fatalf("user content missing intent: %s", text)
 		}
 	}
 }

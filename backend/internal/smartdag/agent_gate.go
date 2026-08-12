@@ -98,7 +98,7 @@ func (g *AgentModelGate) Resolve(
 	return ResolvedAgentModel{Agent: value, ModelConfig: cfg}, nil
 }
 
-// modelConfigUsable is true when PlatformChatModel can be constructed from the config.
+// modelConfigUsable is true when an AgenticModel can be constructed from the config.
 // DISABLED / missing apiBase or modelName / soft-deleted are not usable.
 func modelConfigUsable(cfg modelconfig.Config) bool {
 	if strings.TrimSpace(cfg.ID) == "" {

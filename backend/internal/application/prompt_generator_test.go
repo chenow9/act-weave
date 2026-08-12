@@ -30,10 +30,22 @@ func (stubSecretOpener) WithActiveSecret(
 	return nil
 }
 
-// Drives the shipped promptGenerator.Generate entry point through
-// modelapi.PlatformChatModel (real HTTP path), proving auxiliary LLM no longer
-// hand-rolls chat/completions outside modelapi.
-func TestPromptGeneratorGenerateUsesPlatformChatModel(t *testing.T) {
+func minimalPromptResponsesJSON(text string) string {
+	payload := map[string]any{
+		"id": "resp_prompt_1", "object": "response", "status": "completed", "model": "prompt-model",
+		"output": []map[string]any{{
+			"type": "message", "id": "msg_1", "status": "completed", "role": "assistant",
+			"content": []map[string]any{{"type": "output_text", "text": text, "annotations": []any{}}},
+		}},
+		"usage": map[string]any{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+	}
+	b, _ := json.Marshal(payload)
+	return string(b)
+}
+
+// Drives promptGenerator.Generate through NewOpenAIAgenticModel (Responses),
+// proving auxiliary LLM no longer uses classic Chat Completions (§7.5).
+func TestPromptGeneratorGenerateUsesAgenticModel(t *testing.T) {
 	t.Parallel()
 
 	var sawPath string
@@ -42,7 +54,7 @@ func TestPromptGeneratorGenerateUsesPlatformChatModel(t *testing.T) {
 		sawPath = r.URL.Path
 		_ = json.NewDecoder(r.Body).Decode(&sawBody)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"  Improved system prompt.  "}}]}`))
+		_, _ = w.Write([]byte(minimalPromptResponsesJSON("  Improved system prompt.  ")))
 	}))
 	t.Cleanup(server.Close)
 
@@ -65,13 +77,12 @@ func TestPromptGeneratorGenerateUsesPlatformChatModel(t *testing.T) {
 	if out != "Improved system prompt." {
 		t.Fatalf("output=%q", out)
 	}
-	if !strings.HasSuffix(sawPath, "/chat/completions") {
-		t.Fatalf("PlatformChatModel path = %q, want .../chat/completions", sawPath)
+	if !strings.Contains(sawPath, "responses") {
+		t.Fatalf("Agentic path = %q, want .../responses", sawPath)
 	}
 	if sawBody["model"] != "prompt-model" {
 		t.Fatalf("model field = %#v", sawBody["model"])
 	}
-	// Must be non-stream Generate (auxiliary path).
 	if stream, ok := sawBody["stream"].(bool); ok && stream {
 		t.Fatal("prompt enhance must use non-stream Generate")
 	}
@@ -81,7 +92,7 @@ func TestPromptGeneratorGenerateRejectsEmptyModelContent(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"   "}}]}`))
+		_, _ = w.Write([]byte(minimalPromptResponsesJSON("   ")))
 	}))
 	t.Cleanup(server.Close)
 
