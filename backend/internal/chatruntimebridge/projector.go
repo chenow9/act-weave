@@ -46,8 +46,14 @@ type StreamDeltaRecorder struct {
 	Now func() time.Time
 	// index is the next delta index for TextDeltaEmission.
 	index int
-	// completed is true after successful OnTextComplete (skip FailText).
-	completed bool
+	// completedDeltas is the delta count as of the last OnTextComplete. A turn can
+	// complete more than one assistant message
+	// onto the same item (say text, then a tool call), so a plain "completed" flag
+	// set by the first of them makes FailIncomplete a no-op for the rest of the
+	// turn: text streamed after that point would end with neither a completion nor
+	// a failure. Comparing counts asks the question that matters instead — is any
+	// streamed text still unfinished.
+	completedDeltas int
 	// failed is true after FailIncomplete.
 	failed bool
 	// modelTurns accumulates turns for tests / post-drive inspection.
@@ -97,7 +103,7 @@ func (r *StreamDeltaRecorder) OnTextComplete(ctx context.Context, full string) e
 	r.mu.Lock()
 	sink := r.Sink
 	nowFn := r.Now
-	r.completed = true
+	r.completedDeltas = len(r.deltas)
 	r.mu.Unlock()
 	if sink == nil {
 		return nil
@@ -145,13 +151,15 @@ func (r *StreamDeltaRecorder) FailIncomplete(ctx context.Context, code string, r
 		return nil
 	}
 	r.mu.Lock()
-	if r.completed || r.failed || r.Sink == nil || len(r.deltas) == 0 {
+	if r.failed || r.Sink == nil || len(r.deltas) == 0 || len(r.deltas) == r.completedDeltas {
 		r.mu.Unlock()
 		return nil
 	}
 	sink := r.Sink
 	nowFn := r.Now
-	partial := strings.Join(r.deltas, "")
+	// Only the text that was never completed: anything before the last completion
+	// was already reported as finished under this item.
+	partial := strings.Join(r.deltas[r.completedDeltas:], "")
 	r.failed = true
 	r.mu.Unlock()
 

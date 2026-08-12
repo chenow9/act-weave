@@ -395,6 +395,63 @@ func TestStreamDeltaRecorder_FailIncomplete(t *testing.T) {
 	}
 }
 
+// TestStreamDeltaRecorder_FailsTextStreamedAfterACompletion covers a turn that
+// produces more than one assistant message: the Agentic engine completes each of
+// them onto the same item, so "did this turn already complete" was true from the
+// first one onward and every later interrupt or error silently skipped FailText.
+// A turn that says something, calls a tool, then says more and gets interrupted
+// would leave that trailing text with no terminal marker at all.
+func TestStreamDeltaRecorder_FailsTextStreamedAfterACompletion(t *testing.T) {
+	t.Parallel()
+	sink := &chatruntimebridge.RecordingTextDeltaSink{}
+	rec := &chatruntimebridge.StreamDeltaRecorder{Sink: sink}
+	ctx := context.Background()
+	for _, step := range []func() error{
+		func() error { return rec.OnTextDelta(ctx, "let me check") },
+		func() error { return rec.OnTextComplete(ctx, "let me check") },
+		func() error { return rec.OnTextDelta(ctx, "the transfer needs") },
+	} {
+		if err := step(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := rec.FailIncomplete(ctx, "WAITING_CONFIRMATION", true); err != nil {
+		t.Fatal(err)
+	}
+	if sink.Failure == nil {
+		t.Fatal("text streamed after the first completion was never terminated")
+	}
+	if sink.Failure.Code != "WAITING_CONFIRMATION" {
+		t.Fatalf("failure code = %q, want WAITING_CONFIRMATION", sink.Failure.Code)
+	}
+	// Only the unfinished tail: the earlier text was already reported complete.
+	if sink.Failure.PartialText != "the transfer needs" {
+		t.Fatalf("partial = %q, want only the text that never completed",
+			sink.Failure.PartialText)
+	}
+}
+
+// TestStreamDeltaRecorder_DoesNotFailAFullyCompletedTurn is the other side of the
+// same comparison: a turn whose last word was completed must not also be failed.
+func TestStreamDeltaRecorder_DoesNotFailAFullyCompletedTurn(t *testing.T) {
+	t.Parallel()
+	sink := &chatruntimebridge.RecordingTextDeltaSink{}
+	rec := &chatruntimebridge.StreamDeltaRecorder{Sink: sink}
+	ctx := context.Background()
+	if err := rec.OnTextDelta(ctx, "done"); err != nil {
+		t.Fatal(err)
+	}
+	if err := rec.OnTextComplete(ctx, "done"); err != nil {
+		t.Fatal(err)
+	}
+	if err := rec.FailIncomplete(ctx, "MODEL_STREAM_INTERRUPTED", true); err != nil {
+		t.Fatal(err)
+	}
+	if sink.Failure != nil {
+		t.Fatalf("a completed turn was also failed: %+v", sink.Failure)
+	}
+}
+
 // --- Bridge.ContinueAfterConfirmation drives real buildResumeTargets ---
 
 type bridgeSessions struct {
