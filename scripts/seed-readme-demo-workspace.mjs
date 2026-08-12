@@ -133,7 +133,7 @@ async function main() {
   if (!model) {
     model = await req("POST", `/workspaces/${wid}/model-configs`, token, {
       name: "Acme Demo LLM",
-      provider: "OpenAI Compatible",
+      provider: "openai-compatible",
       apiBase: "https://llm.example-acme.invalid/v1",
       modelName: "acme-demo-mini",
       options: {},

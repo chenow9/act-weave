@@ -14,7 +14,13 @@ import { useWorkspaceStore } from "../stores/workspaces";
 import type { ModelApiConfig, ModelApiConfigListQuery, ModelRuntimeCapabilities } from "../types/domain";
 import { normalizeRuntimeCapabilities } from "../utils/session-context-config";
 
-const OPENAI_COMPATIBLE_PROVIDER = "OpenAI Compatible";
+/**
+ * The wire value must be the canonical provider identity the backend persists and
+ * the Agentic runtime accepts; "OpenAI Compatible" is a presentation label only and
+ * must never reach the API.
+ */
+const OPENAI_COMPATIBLE_PROVIDER = "openai-compatible";
+const OPENAI_COMPATIBLE_PROVIDER_LABEL = "OpenAI Compatible";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const { t } = useI18n();
@@ -127,7 +133,7 @@ const modelConfigColumns = computed<ManagementListColumn<ModelApiConfig>[]>(() =
     hidable: true,
     sortable: true,
     sortKey: "provider",
-    getValue: () => OPENAI_COMPATIBLE_PROVIDER,
+    getValue: () => OPENAI_COMPATIBLE_PROVIDER_LABEL,
   },
   {
     key: "credential",
@@ -846,7 +852,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
             </div>
           </template>
           <template #cell-provider>
-            <span class="model-provider-pill aw-table-pill">{{ OPENAI_COMPATIBLE_PROVIDER }}</span>
+            <span class="model-provider-pill aw-table-pill">{{ OPENAI_COMPATIBLE_PROVIDER_LABEL }}</span>
           </template>
           <template #cell-credential="{ row: item }">
             <span class="model-credential-state aw-table-pill" :class="{ configured: item.credentialConfigured }">
@@ -911,7 +917,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               <dl>
                 <div>
                   <dt>Provider</dt>
-                  <dd>{{ OPENAI_COMPATIBLE_PROVIDER }}</dd>
+                  <dd>{{ OPENAI_COMPATIBLE_PROVIDER_LABEL }}</dd>
                 </div>
                 <div>
                   <dt>{{ t("modelApis.mobileModel") }}</dt>
@@ -1077,7 +1083,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                   :aria-label="t('modelApis.providerLockedTitle')"
                 />
               </span>
-              <input :value="OPENAI_COMPATIBLE_PROVIDER" disabled readonly />
+              <input :value="OPENAI_COMPATIBLE_PROVIDER_LABEL" disabled readonly />
             </label>
             <label class="model-modal-field">
               <span class="model-modal-field-label"

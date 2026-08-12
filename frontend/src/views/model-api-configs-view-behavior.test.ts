@@ -75,7 +75,7 @@ describe("model config v1 behavior", () => {
     await wrapper.get('[data-action="save-model-config"]').trigger("click");
     await flushPromises();
     expect(fixture.store.createModelConfig).toHaveBeenCalledWith(
-      expect.objectContaining({ credentialSecretId: secretID, provider: "OpenAI Compatible" }),
+      expect.objectContaining({ credentialSecretId: secretID, provider: "openai-compatible" }),
     );
     expect(fixture.store.createCredentialSecret).toHaveBeenCalledWith(expect.any(String), "api-key-value");
   });
@@ -117,6 +117,38 @@ describe("model config v1 behavior", () => {
     expect(wrapper.text()).toContain("验证通过");
   });
 
+  it("sends the canonical provider on the wire while showing the human label", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+
+    // The rendered surfaces are labels, so the pretty spelling must appear there
+    // and the canonical wire value must not.
+    const pill = wrapper.get(".model-provider-pill");
+    expect(pill.text()).toBe("OpenAI Compatible");
+    expect(pill.text()).not.toContain("openai-compatible");
+
+    await wrapper.get(".primary-button").trigger("click");
+    const providerInput = wrapper
+      .findAll("input[disabled]")
+      .find((input) => (input.element as HTMLInputElement).value === "OpenAI Compatible");
+    expect(providerInput).toBeDefined();
+
+    await wrapper.get('input[placeholder="粘贴 API Key"]').setValue("api-key-value");
+    await wrapper.get('[data-action="save-model-config"]').trigger("click");
+    await flushPromises();
+
+    const createdDraft = fixture.store.createModelConfig.mock.calls[0][0];
+    expect(createdDraft.provider).toBe("openai-compatible");
+
+    await wrapper.get('button[aria-label="更多操作"]').trigger("click");
+    await wrapper.get('button[aria-label="编辑"]').trigger("click");
+    await wrapper.get('[data-action="save-model-config"]').trigger("click");
+    await flushPromises();
+
+    const updatedDraft = fixture.store.updateModelConfig.mock.calls[0][1];
+    expect(updatedDraft.provider).toBe("openai-compatible");
+  });
+
   it("filters with v1 status values", async () => {
     const wrapper = mountView();
     await flushPromises();
@@ -136,7 +168,7 @@ function modelFixture(overrides: Partial<ModelApiConfig> = {}): ModelApiConfig {
   return {
     id: "model-1",
     name: "Primary",
-    provider: "OpenAI Compatible",
+    provider: "openai-compatible",
     apiBase: "https://models.example/v1",
     modelName: "reasoning-model",
     credentialConfigured: true,

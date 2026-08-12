@@ -70,6 +70,24 @@ export interface ModelRuntimeCapabilities {
   tokenizerVersion?: string;
 }
 
+/**
+ * Verification-owned Agentic capability document (agentic-model.v1).
+ * Read-only on GET/list; create/update must never send this field.
+ * Empty object means unverified.
+ */
+export interface ModelAgenticCapabilities {
+  schemaVersion?: "agentic-model.v1";
+  protocol?: "openai-responses-v1";
+  streaming?: boolean;
+  usage?: boolean;
+  toolSearchModes?: Array<"client">;
+  reasoningReplay?: "encrypted-or-none";
+  verifiedAdapter?: string;
+  verifiedAt?: string;
+  verifiedLockVersion?: number;
+  verifiedConfigDigest?: string;
+}
+
 export interface Workspace {
   id: string;
   name: string;
@@ -173,6 +191,8 @@ export interface ModelApiConfig {
   options: Record<string, unknown>;
   /** Strict runtime capabilities; must not be merged into options. */
   runtimeCapabilities?: ModelRuntimeCapabilities | Record<string, unknown>;
+  /** Read-only Agentic verification capability; never client-writable. */
+  agenticCapabilities?: ModelAgenticCapabilities | Record<string, unknown>;
   status: "UNVERIFIED" | "VERIFIED" | "ERROR" | "DISABLED";
   lastVerifiedAt?: string;
   lastLatencyMs?: number;

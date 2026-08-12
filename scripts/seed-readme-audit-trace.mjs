@@ -397,7 +397,7 @@ INSERT INTO agent_access_grants(
     id: modelId,
     modelName,
     name: "Acme Demo LLM",
-    provider: "OpenAI Compatible",
+    provider: "openai-compatible",
   };
   const capSnap = {
     schemaVersion: "capability-snapshot.v1",
