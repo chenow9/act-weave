@@ -615,11 +615,13 @@ func (b *Bridge) driveAgenticInitial(
 	return b.runAgenticTurn(ctx, job, run, built, func(
 		turnCtx context.Context,
 		agent adk.TypedAgent[*schema.AgenticMessage],
+		projector einoruntime.ProtocolProjector,
 	) (*einoruntime.AgenticRunResult, error) {
 		return b.agenticEngine.Run(turnCtx, agent, einoruntime.AgenticRunInput{
 			WorkspaceID: job.WorkspaceID,
 			RunID:       job.RunID,
 			Messages:    messages,
+			Projector:   projector,
 		})
 	})
 }

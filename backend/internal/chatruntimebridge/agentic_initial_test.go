@@ -102,13 +102,36 @@ func (c *agenticCallCounter) Build(ctx context.Context, cfg modelconfig.Config) 
 	return c.model, nil
 }
 
+// sinkCounter retains every sink it hands out along with the identity it was
+// opened under, so a test can assert what the client actually received and under
+// which assistant message item.
 type sinkCounter struct {
 	opens atomic.Int64
+	mu    sync.Mutex
+	args  []chatruntimebridge.TextSinkArgs
+	sinks []*chatruntimebridge.RecordingTextDeltaSink
 }
 
-func (s *sinkCounter) Factory(context.Context, chatruntimebridge.TextSinkArgs) (chatruntime.TextDeltaSink, error) {
+func (s *sinkCounter) Factory(
+	_ context.Context, args chatruntimebridge.TextSinkArgs,
+) (chatruntime.TextDeltaSink, error) {
 	s.opens.Add(1)
-	return &chatruntimebridge.RecordingTextDeltaSink{}, nil
+	sink := &chatruntimebridge.RecordingTextDeltaSink{}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.args = append(s.args, args)
+	s.sinks = append(s.sinks, sink)
+	return sink, nil
+}
+
+// last returns the most recently opened sink and the identity it carries.
+func (s *sinkCounter) last() (*chatruntimebridge.RecordingTextDeltaSink, chatruntimebridge.TextSinkArgs, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.sinks) == 0 {
+		return nil, chatruntimebridge.TextSinkArgs{}, false
+	}
+	return s.sinks[len(s.sinks)-1], s.args[len(s.args)-1], true
 }
 
 type eventCounter struct {
@@ -354,14 +377,16 @@ func (s *agenticSessions) GetMessage(_ context.Context, _, messageID string) (ch
 }
 
 type agenticResults struct {
-	mu      sync.Mutex
-	content string
+	mu        sync.Mutex
+	content   string
+	messageID string
 }
 
 func (r *agenticResults) RecordAssistantResult(_ context.Context, in chat.RecordAssistantResultInput) (chat.RecordAssistantResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.content = in.Content
+	r.messageID = in.AssistantMessageID
 	return chat.RecordAssistantResult{Message: chat.Message{
 		ID: in.AssistantMessageID, WorkspaceID: in.WorkspaceID, SessionID: in.SessionID,
 		Role: "ASSISTANT", Content: in.Content, Status: "COMPLETED", RunID: in.RunID,
@@ -545,6 +570,10 @@ type agenticFixture struct {
 	delegation *chatruntimebridge.DelegationDeps
 	agents     agenticAgents
 	invoker    *bridgeToolInvoker
+	// steps and modelTurns are opt-in: MODEL audit evidence is only persisted
+	// when both are wired, so tests that do not assert on it leave them nil.
+	steps      *agenticSteps
+	modelTurns *agenticModelTurns
 }
 
 func newAgenticFixture(t *testing.T, mutate func(*agenticFixture)) *agenticFixture {
@@ -601,6 +630,12 @@ func (f *agenticFixture) bridge(t *testing.T) *chatruntimebridge.Bridge {
 		TextSinkFactory:   f.sinks.Factory,
 		Assemblies:        f.assemblies,
 		Delegation:        f.delegation,
+	}
+	if f.steps != nil {
+		deps.Steps = f.steps
+	}
+	if f.modelTurns != nil {
+		deps.ModelTurns = f.modelTurns
 	}
 	if f.invoker != nil {
 		deps.ToolInvoker = f.invoker

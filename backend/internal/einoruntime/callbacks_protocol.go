@@ -39,6 +39,11 @@ type ModelTurn struct {
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
+	// CachedPromptTokens is the prompt prefix the provider served from its KV
+	// cache. Reported by the Agentic path only, where it is the sole evidence
+	// that prompt-cache-stable assembly is actually being rewarded upstream;
+	// the classic projection leaves it zero.
+	CachedPromptTokens int
 	// TokensKnown is true only when the provider reported usage for this turn.
 	TokensKnown bool
 	// HasToolCalls is true when the assistant message requested tool invocation

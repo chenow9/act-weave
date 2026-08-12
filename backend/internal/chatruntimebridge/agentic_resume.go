@@ -65,12 +65,14 @@ func (b *Bridge) driveAgenticResume(
 	return b.runAgenticTurn(ctx, job, run, built, func(
 		turnCtx context.Context,
 		agent adk.TypedAgent[*schema.AgenticMessage],
+		projector einoruntime.ProtocolProjector,
 	) (*einoruntime.AgenticRunResult, error) {
 		return b.agenticEngine.Resume(turnCtx, agent, einoruntime.AgenticResumeInput{
 			WorkspaceID:  job.WorkspaceID,
 			RunID:        job.RunID,
 			CheckpointID: checkpointID,
 			Targets:      targets,
+			Projector:    projector,
 		})
 	})
 }

@@ -54,7 +54,7 @@ func TestAgenticEngine_TextOnly(t *testing.T) {
 func TestAgenticEngine_NilTypedIteratorFailsClosed(t *testing.T) {
 	t.Parallel()
 	engine := NewAgenticEngine(AgenticEngineConfig{})
-	result, err := engine.consumeTypedIterator(context.Background(), "ws/ws/agent_run/r/n1", nil)
+	result, err := engine.consumeTypedIterator(context.Background(), "ws/ws/agent_run/r/n1", nil, nil)
 	if !errors.Is(err, ErrNilTypedEventIterator) {
 		t.Fatalf("err = %v, want ErrNilTypedEventIterator", err)
 	}
@@ -466,7 +466,7 @@ func TestAgenticEngine_MalformedInterruptEventFailsClosed(t *testing.T) {
 					},
 				},
 			})
-			res, err := engine.consumeTypedIterator(context.Background(), "ws/ws/agent_run/r/n1", iter)
+			res, err := engine.consumeTypedIterator(context.Background(), "ws/ws/agent_run/r/n1", iter, nil)
 			if !errors.Is(err, ErrMalformedInterrupt) {
 				t.Fatalf("err=%v want ErrMalformedInterrupt", err)
 			}
@@ -503,7 +503,7 @@ func TestAgenticEngine_ValidInterruptPreservesExactIDs(t *testing.T) {
 			},
 		},
 	})
-	res, err := engine.consumeTypedIterator(context.Background(), "ws/ws/agent_run/r/n1", iter)
+	res, err := engine.consumeTypedIterator(context.Background(), "ws/ws/agent_run/r/n1", iter, nil)
 	if err != nil {
 		t.Fatalf("valid interrupt must not error: %v", err)
 	}
@@ -644,7 +644,7 @@ func TestConsumeTypedIterator_MalformedVariantClosesStreamAndFailsClosed(t *test
 			MessageStream: errStream,
 		}},
 	}})
-	res, err := engine.consumeTypedIterator(context.Background(), "cp", iterErr)
+	res, err := engine.consumeTypedIterator(context.Background(), "cp", iterErr, nil)
 	if err == nil || res.Err == nil {
 		t.Fatal("expected event error")
 	}
@@ -663,7 +663,7 @@ func TestConsumeTypedIterator_MalformedVariantClosesStreamAndFailsClosed(t *test
 			MessageStream: leakStream,
 		}},
 	}})
-	res2, err2 := engine.consumeTypedIterator(context.Background(), "cp", iterLeak)
+	res2, err2 := engine.consumeTypedIterator(context.Background(), "cp", iterLeak, nil)
 	if !errors.Is(err2, ErrMalformedMessageVariant) {
 		t.Fatalf("err=%v want ErrMalformedMessageVariant", err2)
 	}
@@ -681,7 +681,7 @@ func TestConsumeTypedIterator_MalformedVariantClosesStreamAndFailsClosed(t *test
 			MessageStream: bothStream,
 		}},
 	}})
-	res3, err3 := engine.consumeTypedIterator(context.Background(), "cp", iterBoth)
+	res3, err3 := engine.consumeTypedIterator(context.Background(), "cp", iterBoth, nil)
 	if !errors.Is(err3, ErrMalformedMessageVariant) {
 		t.Fatalf("err=%v want ErrMalformedMessageVariant", err3)
 	}
@@ -698,7 +698,7 @@ func TestConsumeTypedIterator_MalformedVariantClosesStreamAndFailsClosed(t *test
 			MessageStream: flagStream,
 		}},
 	}})
-	res4, err4 := engine.consumeTypedIterator(context.Background(), "cp", iterFlag)
+	res4, err4 := engine.consumeTypedIterator(context.Background(), "cp", iterFlag, nil)
 	if !errors.Is(err4, ErrMalformedMessageVariant) {
 		t.Fatalf("err=%v want ErrMalformedMessageVariant", err4)
 	}
@@ -726,7 +726,7 @@ func TestConsumeTypedIterator_MultiEventInterruptAccumulation(t *testing.T) {
 	res, err := engine.consumeTypedIterator(context.Background(), "cp", newSyntheticTypedIterator([]*adk.TypedAgentEvent[*schema.AgenticMessage]{
 		mk("id-1", true),
 		mk("id-2", true),
-	}))
+	}), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -752,7 +752,7 @@ func TestConsumeTypedIterator_MultiEventInterruptAccumulation(t *testing.T) {
 	res2, err2 := engine.consumeTypedIterator(context.Background(), "cp", newSyntheticTypedIterator([]*adk.TypedAgentEvent[*schema.AgenticMessage]{
 		mk("dup", true),
 		mk("dup", true),
-	}))
+	}), nil)
 	if !errors.Is(err2, ErrMalformedInterrupt) || res2.Interrupted {
 		t.Fatalf("err=%v result=%+v; duplicate resume IDs across events must not silently collapse", err2, res2)
 	}
@@ -771,7 +771,7 @@ func TestConsumeTypedIterator_MultiEventInterruptAccumulation(t *testing.T) {
 		},
 		mk("after-msg", true),
 		mk("after-msg-2", false),
-	}))
+	}), nil)
 	if err3 != nil {
 		t.Fatal(err3)
 	}
@@ -800,7 +800,7 @@ func TestConsumeTypedIterator_MultiEventInterruptAccumulation(t *testing.T) {
 			}},
 		},
 		mk("c", true),
-	}))
+	}), nil)
 	if err4 != nil {
 		t.Fatal(err4)
 	}
@@ -830,7 +830,7 @@ func TestConsumeTypedIterator_InterruptThenDuplicateRootAcrossEvents(t *testing.
 				InterruptContexts: []*adk.InterruptCtx{{ID: "root-1", IsRootCause: true}},
 			}},
 		},
-	}))
+	}), nil)
 	if !errors.Is(err, ErrMalformedInterrupt) || res.Interrupted {
 		t.Fatalf("err=%v res=%+v", err, res)
 	}
@@ -840,7 +840,7 @@ func TestDrainAndCloseAgenticMessageStream_SuccessClosesOnce(t *testing.T) {
 	t.Parallel()
 	msg := agenticmsg.AssistantText("hello")
 	sr := pipeAgenticStream(msg)
-	chunks, err := drainAndCloseAgenticMessageStream(sr)
+	chunks, err := drainAndCloseAgenticMessageStream(sr, nil)
 	if err != nil {
 		t.Fatalf("drain: %v", err)
 	}
@@ -857,7 +857,7 @@ func TestDrainAndCloseAgenticMessageStream_NilChunkClosesOnce(t *testing.T) {
 		defer sw.Close()
 		_ = sw.Send(nil, nil)
 	}()
-	_, err := drainAndCloseAgenticMessageStream(sr)
+	_, err := drainAndCloseAgenticMessageStream(sr, nil)
 	if !errors.Is(err, agenticmsg.ErrNilChunk) {
 		t.Fatalf("err=%v want ErrNilChunk", err)
 	}
@@ -873,7 +873,7 @@ func TestDrainAndCloseAgenticMessageStream_ValidationErrorClosesOnce(t *testing.
 		},
 	}
 	sr := pipeAgenticStream(bad)
-	_, err := drainAndCloseAgenticMessageStream(sr)
+	_, err := drainAndCloseAgenticMessageStream(sr, nil)
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
@@ -887,7 +887,7 @@ func TestDrainAndCloseAgenticMessageStream_RecvErrorClosesOnce(t *testing.T) {
 		defer sw.Close()
 		_ = sw.Send(nil, errors.New("decode boom"))
 	}()
-	_, err := drainAndCloseAgenticMessageStream(sr)
+	_, err := drainAndCloseAgenticMessageStream(sr, nil)
 	if err == nil || err.Error() != "decode boom" {
 		t.Fatalf("err=%v", err)
 	}
@@ -910,7 +910,7 @@ func TestConsumeTypedIterator_StreamingSuccessAndEarlyPathsClose(t *testing.T) {
 			},
 		},
 	})
-	res, err := engine.consumeTypedIterator(context.Background(), "ws/ws/agent_run/r/n1", iterOK)
+	res, err := engine.consumeTypedIterator(context.Background(), "ws/ws/agent_run/r/n1", iterOK, nil)
 	if err != nil {
 		t.Fatalf("success path: %v", err)
 	}
@@ -932,7 +932,7 @@ func TestConsumeTypedIterator_StreamingSuccessAndEarlyPathsClose(t *testing.T) {
 			},
 		},
 	})
-	res2, err2 := engine.consumeTypedIterator(context.Background(), "ws/ws/agent_run/r/n2", iterErr)
+	res2, err2 := engine.consumeTypedIterator(context.Background(), "ws/ws/agent_run/r/n2", iterErr, nil)
 	if err2 == nil || res2.Err == nil {
 		t.Fatal("expected event error")
 	}
@@ -955,7 +955,7 @@ func TestConsumeTypedIterator_StreamingSuccessAndEarlyPathsClose(t *testing.T) {
 			},
 		},
 	})
-	res3, err3 := engine.consumeTypedIterator(context.Background(), "ws/ws/agent_run/r/n3", iterInt)
+	res3, err3 := engine.consumeTypedIterator(context.Background(), "ws/ws/agent_run/r/n3", iterInt, nil)
 	if err3 != nil {
 		t.Fatalf("interrupt: %v", err3)
 	}
@@ -982,7 +982,7 @@ func TestConsumeTypedIterator_StreamingSuccessAndEarlyPathsClose(t *testing.T) {
 			},
 		},
 	})
-	res4, err4 := engine.consumeTypedIterator(context.Background(), "ws/ws/agent_run/r/n4", iterVal)
+	res4, err4 := engine.consumeTypedIterator(context.Background(), "ws/ws/agent_run/r/n4", iterVal, nil)
 	if err4 == nil || res4.Err == nil {
 		t.Fatal("expected validation failure")
 	}
@@ -1036,7 +1036,7 @@ func TestConsumeTypedIterator_InterruptMalformedPayloadsFailClosed(t *testing.T)
 				MessageStream: sr,
 			}},
 		}})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		assertFailClosed(t, res, err, ErrMalformedMessageVariant)
 		assertStreamClosedOnce(t, sr)
 	})
@@ -1052,7 +1052,7 @@ func TestConsumeTypedIterator_InterruptMalformedPayloadsFailClosed(t *testing.T)
 				MessageStream: sr,
 			}},
 		}})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		assertFailClosed(t, res, err, ErrMalformedMessageVariant)
 		assertStreamClosedOnce(t, sr)
 	})
@@ -1065,7 +1065,7 @@ func TestConsumeTypedIterator_InterruptMalformedPayloadsFailClosed(t *testing.T)
 				IsStreaming: true,
 			}},
 		}})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		assertFailClosed(t, res, err, ErrNilMessageStream)
 	})
 
@@ -1078,7 +1078,7 @@ func TestConsumeTypedIterator_InterruptMalformedPayloadsFailClosed(t *testing.T)
 				Message:     agenticmsg.AssistantText("side-channel"),
 			}},
 		}})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		assertFailClosed(t, res, err, ErrNilMessageStream)
 	})
 
@@ -1098,7 +1098,7 @@ func TestConsumeTypedIterator_InterruptMalformedPayloadsFailClosed(t *testing.T)
 				MessageStream: sr,
 			}},
 		}})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		if err == nil {
 			t.Fatal("expected stream chunk validation error")
 		}
@@ -1120,7 +1120,7 @@ func TestConsumeTypedIterator_InterruptMalformedPayloadsFailClosed(t *testing.T)
 				MessageStream: sr,
 			}},
 		}})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		assertFailClosed(t, res, err, agenticmsg.ErrNilChunk)
 		assertStreamClosedOnce(t, sr)
 	})
@@ -1140,7 +1140,7 @@ func TestConsumeTypedIterator_InterruptMalformedPayloadsFailClosed(t *testing.T)
 				Message:     bad,
 			}},
 		}})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		assertFailClosed(t, res, err, agenticmsg.ErrInvalidRole)
 	})
 
@@ -1160,7 +1160,7 @@ func TestConsumeTypedIterator_InterruptMalformedPayloadsFailClosed(t *testing.T)
 				Message:     bad,
 			}},
 		}})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		if err == nil {
 			t.Fatal("expected complete-message validation error")
 		}
@@ -1182,7 +1182,7 @@ func TestConsumeTypedIterator_InterruptMalformedPayloadsFailClosed(t *testing.T)
 				Message:     bad,
 			}},
 		}})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		assertFailClosed(t, res, err, agenticmsg.ErrUnsupportedBlock)
 	})
 
@@ -1200,7 +1200,7 @@ func TestConsumeTypedIterator_InterruptMalformedPayloadsFailClosed(t *testing.T)
 				MessageStream: sr,
 			}},
 		}})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		if err == nil {
 			t.Fatal("expected primary event error")
 		}
@@ -1234,7 +1234,7 @@ func TestConsumeTypedIterator_ValidInterruptPayloadsProcessThenInterrupt(t *test
 		iter := newSyntheticTypedIterator([]*adk.TypedAgentEvent[*schema.AgenticMessage]{{
 			Action: validInterruptAction("only-id"),
 		}})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		if err != nil {
 			t.Fatalf("interrupt-only: %v", err)
 		}
@@ -1255,7 +1255,7 @@ func TestConsumeTypedIterator_ValidInterruptPayloadsProcessThenInterrupt(t *test
 				Message:     agenticmsg.AssistantText("pre-interrupt"),
 			}},
 		}})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		if err != nil {
 			t.Fatalf("valid message+interrupt: %v", err)
 		}
@@ -1277,7 +1277,7 @@ func TestConsumeTypedIterator_ValidInterruptPayloadsProcessThenInterrupt(t *test
 				MessageStream: sr,
 			}},
 		}})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		if err != nil {
 			t.Fatalf("valid stream+interrupt: %v", err)
 		}
@@ -1311,7 +1311,7 @@ func TestConsumeTypedIterator_EmptyStreamFailClosed(t *testing.T) {
 				MessageStream: sr,
 			}},
 		}})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		if !errors.Is(err, agenticmsg.ErrEmptyConcat) {
 			t.Fatalf("err=%v want ErrEmptyConcat", err)
 		}
@@ -1337,7 +1337,7 @@ func TestConsumeTypedIterator_EmptyStreamFailClosed(t *testing.T) {
 				MessageStream: sr,
 			}},
 		}})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		if !errors.Is(err, agenticmsg.ErrEmptyConcat) {
 			t.Fatalf("err=%v want ErrEmptyConcat", err)
 		}
@@ -1361,7 +1361,7 @@ func TestConsumeTypedIterator_EmptyStreamFailClosed(t *testing.T) {
 				MessageStream: sr,
 			}},
 		}})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		if !errors.Is(err, agenticmsg.ErrEmptyConcat) {
 			t.Fatalf("err=%v want ErrEmptyConcat", err)
 		}
@@ -1385,7 +1385,7 @@ func TestConsumeTypedIterator_EmptyStreamFailClosed(t *testing.T) {
 				MessageStream: sr,
 			}},
 		}})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		if !errors.Is(err, agenticmsg.ErrEmptyConcat) {
 			t.Fatalf("err=%v want ErrEmptyConcat", err)
 		}
@@ -1445,7 +1445,7 @@ func TestConsumeTypedIterator_HardTerminalClearsPriorInterrupt(t *testing.T) {
 				}},
 			},
 		})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		assertHardExclusiveOfInterrupt(t, res, err, primary)
 		assertStreamClosedOnce(t, sr)
 	})
@@ -1457,7 +1457,7 @@ func TestConsumeTypedIterator_HardTerminalClearsPriorInterrupt(t *testing.T) {
 			{Action: validInterruptAction("prior-id-nil")},
 			nil,
 		})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		assertHardExclusiveOfInterrupt(t, res, err, ErrNilTypedEvent)
 	})
 
@@ -1474,7 +1474,7 @@ func TestConsumeTypedIterator_HardTerminalClearsPriorInterrupt(t *testing.T) {
 				}},
 			},
 		})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		assertHardExclusiveOfInterrupt(t, res, err, ErrMalformedMessageVariant)
 		assertStreamClosedOnce(t, leak)
 	})
@@ -1497,7 +1497,7 @@ func TestConsumeTypedIterator_HardTerminalClearsPriorInterrupt(t *testing.T) {
 				}},
 			},
 		})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		assertHardExclusiveOfInterrupt(t, res, err, recvBoom)
 		assertStreamClosedOnce(t, sr)
 	})
@@ -1508,7 +1508,7 @@ func TestConsumeTypedIterator_HardTerminalClearsPriorInterrupt(t *testing.T) {
 		iter := newSyntheticTypedIterator([]*adk.TypedAgentEvent[*schema.AgenticMessage]{
 			{Action: validInterruptAction("clean-keep")},
 		})
-		res, err := engine.consumeTypedIterator(context.Background(), cp, iter)
+		res, err := engine.consumeTypedIterator(context.Background(), cp, iter, nil)
 		if err != nil {
 			t.Fatalf("clean interrupt end: %v", err)
 		}

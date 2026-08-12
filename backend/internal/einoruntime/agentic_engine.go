@@ -45,6 +45,10 @@ type AgenticRunInput struct {
 	// Messages is the Agentic conversation input. Validated with
 	// agenticmsg.ValidateConversation (complete conversation rules).
 	Messages []*schema.AgenticMessage
+	// Projector receives progressive assistant text and per-turn model
+	// evidence. Optional: a nil Projector runs the agent with no projection,
+	// which is why it must never be nil on a path that owes a client deltas.
+	Projector ProtocolProjector
 }
 
 // AgenticResumeInput continues an interrupted Agentic agent run.
@@ -59,6 +63,10 @@ type AgenticResumeInput struct {
 	// Targets is adk.ResumeParams.Targets (interruptId → tool result).
 	// Empty Targets is rejected so v1 never silent-resume-all without tool results.
 	Targets map[string]any
+	// Projector receives progressive assistant text and per-turn model evidence,
+	// exactly as on an initial turn: a resumed turn produces a fresh assistant
+	// answer and owes the client the same stream.
+	Projector ProtocolProjector
 }
 
 // Sentinel errors for AgenticEngine fail-closed paths (errors.Is).
@@ -135,7 +143,7 @@ func (e *AgenticEngine) Run(
 
 	runner := e.newTypedRunner(ctx, agent)
 	iter := runner.Run(ctx, in.Messages, adk.WithCheckPointID(cpID))
-	return e.consumeTypedIterator(ctx, cpID, iter)
+	return e.consumeTypedIterator(ctx, cpID, iter, in.Projector)
 }
 
 // Resume continues from a checkpoint with explicit Targets.
@@ -177,7 +185,7 @@ func (e *AgenticEngine) Resume(
 	if err != nil {
 		return nil, err
 	}
-	return e.consumeTypedIterator(ctx, cpID, iter)
+	return e.consumeTypedIterator(ctx, cpID, iter, in.Projector)
 }
 
 func (e *AgenticEngine) newTypedRunner(
@@ -230,6 +238,7 @@ func (e *AgenticEngine) consumeTypedIterator(
 	ctx context.Context,
 	cpID string,
 	iter *adk.AsyncIterator[*adk.TypedAgentEvent[*schema.AgenticMessage]],
+	projector ProtocolProjector,
 ) (*AgenticRunResult, error) {
 	result := &AgenticRunResult{CheckpointID: cpID}
 	if iter == nil {
@@ -277,7 +286,7 @@ func (e *AgenticEngine) consumeTypedIterator(
 		// return Interrupted=true, Err=nil. Interrupt-only (no MessageOutput)
 		// skips this block and remains valid.
 		if event.Output != nil && event.Output.MessageOutput != nil {
-			if err := processTypedMessageVariant(event, &textParts); err != nil {
+			if err := processTypedMessageVariant(ctx, event, &textParts, projector); err != nil {
 				return hardTerminal(err)
 			}
 		}
@@ -348,8 +357,10 @@ func clearHardTerminalInterruptState(result *AgenticRunResult) {
 // non-streaming shell (no Message, no stream) as "no message payload"; pure
 // non-interrupt empty MessageOutput still fails closed as ErrNilMessage.
 func processTypedMessageVariant(
+	ctx context.Context,
 	event *adk.TypedAgentEvent[*schema.AgenticMessage],
 	textParts *[]string,
+	projector ProtocolProjector,
 ) error {
 	if event == nil || event.Output == nil || event.Output.MessageOutput == nil {
 		return nil
@@ -369,7 +380,13 @@ func processTypedMessageVariant(
 		// cannot bypass chunk validation. Zero chunks fail closed via
 		// agenticmsg.ConcatStream → ErrEmptyConcat (never success with empty
 		// stream payload), for ordinary events and interrupt-attached streams.
-		chunks, streamErr := drainAndCloseAgenticMessageStream(mv.MessageStream)
+		// Deltas are projected from this single drain, chunk by chunk as the model
+		// produces them: the stream can only be consumed once, and a client that
+		// receives the answer only after the turn ends is not streaming at all.
+		chunks, streamErr := drainAndCloseAgenticMessageStream(mv.MessageStream,
+			func(chunk *schema.AgenticMessage) error {
+				return projectAgenticChunkDelta(ctx, chunk, projector)
+			})
 		// Detach so a later closeTypedEventMessageStream cannot double-Close.
 		mv.MessageStream = nil
 		if streamErr != nil {
@@ -380,6 +397,11 @@ func processTypedMessageVariant(
 		// from a zero-chunk stream (stream already Closed exactly once above).
 		concatenated, err := agenticmsg.ConcatStream(chunks)
 		if err != nil {
+			return err
+		}
+		// The concatenated message, not the chunks, is the authority for the
+		// completed turn: it carries merged usage and the assembled tool calls.
+		if err := projectAgenticModelTurn(ctx, concatenated, projector); err != nil {
 			return err
 		}
 		// Any Validate failure already failed closed in ConcatStream / chunks.
@@ -418,6 +440,11 @@ func processTypedMessageVariant(
 	if err := agenticmsg.Validate(msg); err != nil {
 		return err
 	}
+	// A non-streaming assistant turn owes the client the same item text as a
+	// streamed one, delivered as a single delta plus completion.
+	if err := projectAgenticCompleteMessage(ctx, msg, projector); err != nil {
+		return err
+	}
 	// Valid non-assistant intermediate messages may be ignored for final
 	// text only after validation succeeds.
 	return appendAgenticFinalText(textParts, msg)
@@ -427,7 +454,14 @@ func processTypedMessageVariant(
 // and always Closes the reader exactly once — on EOF, Recv error, nil chunk, or
 // validation error. StreamReader.Close has no error return; the primary drain
 // error is preserved.
-func drainAndCloseAgenticMessageStream(sr *schema.StreamReader[*schema.AgenticMessage]) (chunks []*schema.AgenticMessage, err error) {
+//
+// onChunk, when non-nil, observes each chunk after it validates and before it is
+// retained. Its error aborts the drain (the reader is still Closed exactly once)
+// so a projection failure cannot be reported as a completed turn.
+func drainAndCloseAgenticMessageStream(
+	sr *schema.StreamReader[*schema.AgenticMessage],
+	onChunk func(*schema.AgenticMessage) error,
+) (chunks []*schema.AgenticMessage, err error) {
 	if sr == nil {
 		return nil, ErrNilMessageStream
 	}
@@ -453,6 +487,11 @@ func drainAndCloseAgenticMessageStream(sr *schema.StreamReader[*schema.AgenticMe
 		}
 		if verr := agenticmsg.ValidateStreamChunk(chunk); verr != nil {
 			return chunks, verr
+		}
+		if onChunk != nil {
+			if cerr := onChunk(chunk); cerr != nil {
+				return chunks, cerr
+			}
 		}
 		chunks = append(chunks, chunk)
 	}

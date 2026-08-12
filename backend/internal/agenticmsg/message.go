@@ -1054,7 +1054,41 @@ func ExtractAssistantText(msg *schema.AgenticMessage) (string, error) {
 	if msg.Role != schema.AgenticRoleTypeAssistant {
 		return "", fmt.Errorf("%w: got %q want assistant", ErrWrongRole, msg.Role)
 	}
+	text, err := assistantPublicText(msg)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(text) == "" {
+		return "", ErrNoAssistantText
+	}
+	return text, nil
+}
 
+// ExtractAssistantChunkText is ExtractAssistantText for one streaming chunk.
+//
+// Chunks are validated as chunks (stream provenance, partial reasoning), which
+// the complete-message rules of ExtractAssistantText reject. Unlike a complete
+// message, a chunk carrying no public text is ordinary rather than an error: a
+// turn streams reasoning and tool-call chunks alongside text ones. Callers that
+// project deltas must skip the empty result, not treat it as a failure.
+//
+// It shares assistantPublicText with ExtractAssistantText so there is exactly
+// one definition of which blocks are public: a second walker would be free to
+// drift and start projecting reasoning as user-visible text.
+func ExtractAssistantChunkText(chunk *schema.AgenticMessage) (string, error) {
+	if err := ValidateStreamChunk(chunk); err != nil {
+		return "", err
+	}
+	if chunk.Role != schema.AgenticRoleTypeAssistant {
+		return "", fmt.Errorf("%w: got %q want assistant", ErrWrongRole, chunk.Role)
+	}
+	return assistantPublicText(chunk)
+}
+
+// assistantPublicText concatenates the blocks of an assistant message that are
+// user-visible text. Reasoning and tool calls are valid companions and are
+// deliberately not public.
+func assistantPublicText(msg *schema.AgenticMessage) (string, error) {
 	var parts []string
 	for i, block := range msg.ContentBlocks {
 		switch block.Type {
@@ -1062,20 +1096,14 @@ func ExtractAssistantText(msg *schema.AgenticMessage) (string, error) {
 			parts = append(parts, block.AssistantGenText.Text)
 		case schema.ContentBlockTypeReasoning,
 			schema.ContentBlockTypeFunctionToolCall:
-			// Valid assistant companions; not projected as public text.
 			continue
 		default:
-			// Defensive: Validate should already reject anything outside the
+			// Defensive: validation should already reject anything outside the
 			// narrow assistant matrix.
 			return "", fmt.Errorf("%w: type %q at index %d", ErrUnsupportedBlock, block.Type, i)
 		}
 	}
-
-	text := strings.Join(parts, "")
-	if strings.TrimSpace(text) == "" {
-		return "", ErrNoAssistantText
-	}
-	return text, nil
+	return strings.Join(parts, ""), nil
 }
 
 // ExtractReasoningText concatenates Reasoning block text from an assistant

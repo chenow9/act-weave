@@ -1515,6 +1515,10 @@ func (b *Bridge) recordModelTurn(
 		"reasoningTokens": turn.ReasoningTokens,
 		"hasToolCalls":    turn.HasToolCalls,
 		"tokensKnown":     turn.TokensKnown,
+		// Prompt-cache hits are the only observable proof that the frozen,
+		// cache-stable assembly is being rewarded upstream; nothing else in the
+		// audit trail can be used to reconstruct it after the fact.
+		"cachedPromptTokens": turn.CachedPromptTokens,
 	})
 	modelStep := execution.AppendAgentRunStepInput{
 		ID: stepID, WorkspaceID: job.WorkspaceID, RunID: job.RunID,
@@ -1592,10 +1596,14 @@ func buildModelTurnAuditPayload(turn einoruntime.ModelTurn, ok, agentAuditDebug 
 		payload["toolCallIds"] = turn.ToolCallIDs
 	}
 	if turn.TokensKnown {
-		payload["usage"] = map[string]any{
+		usage := map[string]any{
 			"promptTokens": turn.PromptTokens, "completionTokens": turn.CompletionTokens,
 			"totalTokens": turn.TotalTokens,
 		}
+		if turn.CachedPromptTokens > 0 {
+			usage["cachedPromptTokens"] = turn.CachedPromptTokens
+		}
+		payload["usage"] = usage
 	}
 	if turn.ReasoningTokens > 0 {
 		payload["reasoningTokens"] = turn.ReasoningTokens

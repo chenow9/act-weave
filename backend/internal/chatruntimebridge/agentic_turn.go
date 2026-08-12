@@ -22,6 +22,7 @@ import (
 type agenticTurnFunc func(
 	ctx context.Context,
 	agent adk.TypedAgent[*schema.AgenticMessage],
+	projector einoruntime.ProtocolProjector,
 ) (*einoruntime.AgenticRunResult, error)
 
 // runAgenticTurn executes one Agentic turn and projects its outcome.
@@ -61,7 +62,7 @@ func (b *Bridge) runAgenticTurn(
 		projector.Sink = sink
 	}
 
-	result, err := call(ctx, built)
+	result, err := call(ctx, built, projector)
 	if err != nil {
 		_ = projector.FailIncomplete(ctx, "MODEL_STREAM_INTERRUPTED", true)
 		return "", streamMessageID, err
