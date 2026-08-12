@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cloudwego/eino-ext/components/model/agenticopenai"
@@ -41,6 +42,19 @@ const (
 	agenticProbeResponsesStreamBudget  = 30 * time.Second
 	agenticProbeClientToolSearchBudget = 45 * time.Second
 )
+
+// modelVerificationMinClientTimeout is the shortest overall http.Client.Timeout
+// that can carry a verification probe without becoming the binding deadline.
+// A single probe request never outlives the largest inner budget, so a client at
+// or above it lets the inner budgets and the configurable outer budget decide.
+//
+// The shared application client is 15s (application.Open). Handing it to the
+// verifier caps every probe below both inner budgets AND below the outer
+// configurable budget, so the upstream is failed at 15s and neither budget can
+// ever be reached — the same dead-budget defect the configurable outer timeout
+// was introduced to remove, relocated into the HTTP client. Cold-starting
+// upstreams then fail verification no matter how the operator configures it.
+const modelVerificationMinClientTimeout = agenticProbeClientToolSearchBudget
 
 // modelVerificationTimeout resolves the outer verification budget Open hands to
 // modelconfig.NewVerificationService. Zero (config omitted, or a RuntimeConfig
@@ -86,6 +100,37 @@ func (verificationEchoTool) InvokableRun(_ context.Context, _ string, _ ...tool.
 type modelConfigVerifier struct {
 	client  *http.Client
 	secrets modelapi.SecretOpener
+
+	// Built at most once per verifier; see probeHTTPClient.
+	fallbackOnce   sync.Once
+	fallbackClient *http.Client
+}
+
+// probeHTTPClient returns the client used for every verification probe.
+// An injected client is honoured only when its overall Timeout cannot cut a
+// probe short (0 = context-bound, or at least the largest inner budget);
+// otherwise the stream-safe client is used, whose only deadline is the
+// transport response-header timeout. Mirrors promptGenerator.llmHTTPClient.
+//
+// The fallback is built once and reused. Each modelapi.NewStreamingHTTPClient
+// owns a fresh http.Transport with its own connection pool, so building one per
+// call would stop the probes within a verification from reusing a connection and
+// would leak an idle pool per probe (transports are never closed here). The
+// production path takes the fallback on every call, which is exactly the path
+// that runs several probes back to back against one upstream.
+func (verifier *modelConfigVerifier) probeHTTPClient() *http.Client {
+	if verifier == nil {
+		return modelapi.NewStreamingHTTPClient()
+	}
+	if verifier.client != nil {
+		if verifier.client.Timeout == 0 || verifier.client.Timeout >= modelVerificationMinClientTimeout {
+			return verifier.client
+		}
+	}
+	verifier.fallbackOnce.Do(func() {
+		verifier.fallbackClient = modelapi.NewStreamingHTTPClient()
+	})
+	return verifier.fallbackClient
 }
 
 // Verify implements modelconfig.Verifier.
@@ -125,17 +170,14 @@ func (verifier *modelConfigVerifier) probeAuthConnectivity(ctx context.Context, 
 		if len(token) > 0 {
 			request.Header.Set("Authorization", "Bearer "+string(token))
 		}
-		client := verifier.client
-		if client == nil {
-			client = http.DefaultClient
-		}
-		response, err := client.Do(request)
+		response, err := verifier.probeHTTPClient().Do(request)
 		if err != nil {
 			return mapNetworkError(err)
 		}
 		defer response.Body.Close()
-		// Drain a small prefix only; never retain body for persistence.
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4<<10))
+		// Classify the status line before touching the body: the status is already
+		// available, and a rejected upstream must be reported as a rejection even
+		// when its body never completes.
 		switch response.StatusCode {
 		case http.StatusUnauthorized, http.StatusForbidden:
 			return modelconfig.ErrUpstreamAuthentication
@@ -149,6 +191,14 @@ func (verifier *modelConfigVerifier) probeAuthConnectivity(ctx context.Context, 
 		if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 			return fmt.Errorf("%w: HTTP_STATUS_%d", modelconfig.ErrVerificationUpstream, response.StatusCode)
 		}
+		// Drain a small prefix only; never retain body for persistence. The read
+		// must fail closed: an upstream that returns 200 and then stalls or drops
+		// the body has not demonstrated connectivity, and discarding this error
+		// reported such an upstream as authenticated. The stall is bounded by ctx,
+		// not by the client, so the drain cannot outlive the verification budget.
+		if _, err := io.Copy(io.Discard, io.LimitReader(response.Body, 4<<10)); err != nil {
+			return mapNetworkError(err)
+		}
 		return nil
 	}
 	if config.CredentialSecretID == nil || strings.TrimSpace(*config.CredentialSecretID) == "" {
@@ -161,10 +211,7 @@ func (verifier *modelConfigVerifier) probeAuthConnectivity(ctx context.Context, 
 }
 
 func (verifier *modelConfigVerifier) probeAgenticCapabilities(ctx context.Context, config modelconfig.Config) error {
-	client := verifier.client
-	if client == nil {
-		client = modelapi.NewStreamingHTTPClient()
-	}
+	client := verifier.probeHTTPClient()
 	// Verification-only: wrap with strict raw usage validator around the real
 	// pinned adapter HTTP path. Wrong JSON types classify USAGE_INVALID before
 	// the typed adapter can lose evidence.
