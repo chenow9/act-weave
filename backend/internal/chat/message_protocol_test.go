@@ -1,10 +1,12 @@
 package chat_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -313,6 +315,195 @@ func TestParseMessageContentPartsV1AndLegacy(t *testing.T) {
 	if !ok || text.Text != "legacy plain text body" {
 		t.Fatalf("legacy text=%+v", legacy[0])
 	}
+}
+
+func TestParseMessageContentPartsA2UI(t *testing.T) {
+	// Assistant durable multi-part: text + a2ui must rehydrate for MapCompleted (PR-5).
+	v1 := `{"schemaVersion":"aap.message-content.v1","parts":[` +
+		`{"type":"text","text":"Fill the form."},` +
+		`{"type":"a2ui","version":"a2ui-surface.v0","catalogId":"standard","surface":{"root":"form","password":{"label":"Password"}}}` +
+		`]}`
+	parts, err := chat.ParseMessageContentParts(v1)
+	if err != nil || len(parts) != 2 {
+		t.Fatalf("parts=%+v err=%v", parts, err)
+	}
+	text, ok := parts[0].(protocolevent.TextContentPart)
+	if !ok || text.Text != "Fill the form." {
+		t.Fatalf("text part=%T/%+v", parts[0], parts[0])
+	}
+	a2uiPart, ok := parts[1].(protocolevent.A2UIContentPart)
+	if !ok || a2uiPart.ContentKind() != protocolevent.ContentPartTypeA2UI {
+		t.Fatalf("a2ui part=%T/%+v", parts[1], parts[1])
+	}
+	if a2uiPart.Version != "a2ui-surface.v0" || a2uiPart.CatalogID != "standard" {
+		t.Fatalf("a2ui meta=%+v", a2uiPart)
+	}
+	if !strings.Contains(string(a2uiPart.Surface), `"password"`) {
+		t.Fatalf("surface lost keys: %s", a2uiPart.Surface)
+	}
+
+	// Empty text + valid a2ui is allowed on durable rehydrate (KD-16).
+	emptyText := `{"schemaVersion":"aap.message-content.v1","parts":[` +
+		`{"type":"text","text":""},` +
+		`{"type":"a2ui","surface":{"root":"card"}}` +
+		`]}`
+	parts, err = chat.ParseMessageContentParts(emptyText)
+	if err != nil || len(parts) != 2 {
+		t.Fatalf("empty-text parts=%+v err=%v", parts, err)
+	}
+	if text, ok = parts[0].(protocolevent.TextContentPart); !ok || text.Text != "" {
+		t.Fatalf("empty text part=%+v", parts[0])
+	}
+	if _, ok = parts[1].(protocolevent.A2UIContentPart); !ok {
+		t.Fatalf("expected a2ui part, got %T", parts[1])
+	}
+
+	// Unknown content part types still fail closed.
+	unknown := `{"schemaVersion":"aap.message-content.v1","parts":[{"type":"text","text":"x"},{"type":"future_part","x":1}]}`
+	if _, err := chat.ParseMessageContentParts(unknown); !errors.Is(err, chat.ErrInvalid) {
+		t.Fatalf("unknown part error=%v want ErrInvalid", err)
+	}
+}
+
+func TestJoinTextPartsFromDurable(t *testing.T) {
+	// Plain / legacy unchanged.
+	if got := chat.JoinTextPartsFromDurable("hello plain"); got != "hello plain" {
+		t.Fatalf("plain=%q", got)
+	}
+	// Non-v1 JSON is treated as opaque plain body.
+	if got := chat.JoinTextPartsFromDurable(`{"schemaVersion":"other","parts":[]}`); !strings.Contains(got, "other") {
+		t.Fatalf("non-v1=%q", got)
+	}
+
+	// v1 text + a2ui → natural language only (session reload text-first).
+	v1 := `{"schemaVersion":"aap.message-content.v1","parts":[` +
+		`{"type":"text","text":"Hello "},` +
+		`{"type":"text","text":"world"},` +
+		`{"type":"a2ui","surface":{"root":"x","schemaVersion":"must-not-leak"}},` +
+		`{"type":"input_file","fileId":"d41f1f2e-7b5a-7c3d-8e9f-1234567890f1","mediaType":"image/png"}` +
+		`]}`
+	got := chat.JoinTextPartsFromDurable(v1)
+	if got != "Hello world" {
+		t.Fatalf("joined=%q want %q", got, "Hello world")
+	}
+	if strings.Contains(got, "schemaVersion") || strings.Contains(got, "surface") ||
+		strings.Contains(got, "a2ui") || strings.Contains(got, "input_file") {
+		t.Fatalf("envelope leaked into projected text: %q", got)
+	}
+
+	// Empty text + a2ui → empty string (model history skip).
+	empty := `{"schemaVersion":"aap.message-content.v1","parts":[` +
+		`{"type":"text","text":""},{"type":"a2ui","surface":{"root":"only"}}` +
+		`]}`
+	if got := chat.JoinTextPartsFromDurable(empty); got != "" {
+		t.Fatalf("empty text join=%q", got)
+	}
+}
+
+// A2UISurfacesFromDurable is the read counterpart of JoinTextPartsFromDurable:
+// between them, text and surfaces reach a display client through separate fields
+// and neither can carry the other.
+func TestA2UISurfacesFromDurable(t *testing.T) {
+	const want = "a2ui-surface.v1"
+
+	surfaces := chat.A2UISurfacesFromDurable(
+		`{"schemaVersion":"aap.message-content.v1","parts":[`+
+			`{"type":"text","text":"Two charts."},`+
+			`{"type":"a2ui","version":"`+want+`","surface":{"surfaceId":"one","components":[]}},`+
+			`{"type":"a2ui","version":"`+want+`","surface":{"surfaceId":"two","components":[]}}`+
+			`]}`, want)
+	if len(surfaces) != 2 {
+		t.Fatalf("surfaces=%d want 2, in part order", len(surfaces))
+	}
+	for index, expected := range []string{"one", "two"} {
+		var decoded struct {
+			SurfaceID string `json:"surfaceId"`
+		}
+		if err := json.Unmarshal(surfaces[index], &decoded); err != nil {
+			t.Fatalf("surface %d: %v", index, err)
+		}
+		if decoded.SurfaceID != expected {
+			t.Fatalf("surface %d id=%q want %q", index, decoded.SurfaceID, expected)
+		}
+		if bytes.Contains(surfaces[index], []byte(`"type"`)) ||
+			bytes.Contains(surfaces[index], []byte("schemaVersion")) {
+			t.Fatalf("surface %d carries the envelope: %s", index, surfaces[index])
+		}
+	}
+
+	// Everything that is not a current-version surface stays invisible.
+	for name, content := range map[string]string{
+		"plain body":    "hello",
+		"non-v1 body":   `{"schemaVersion":"other","parts":[{"type":"a2ui","version":"` + want + `","surface":{}}]}`,
+		"no parts":      `{"schemaVersion":"aap.message-content.v1","parts":[]}`,
+		"text only":     `{"schemaVersion":"aap.message-content.v1","parts":[{"type":"text","text":"x"}]}`,
+		"older version": `{"schemaVersion":"aap.message-content.v1","parts":[{"type":"a2ui","version":"a2ui-surface.v0","surface":{"root":"x"}}]}`,
+		"no version":    `{"schemaVersion":"aap.message-content.v1","parts":[{"type":"a2ui","surface":{"root":"x"}}]}`,
+		"empty surface": `{"schemaVersion":"aap.message-content.v1","parts":[{"type":"a2ui","version":"` + want + `"}]}`,
+		"input file":    `{"schemaVersion":"aap.message-content.v1","parts":[{"type":"input_file","fileId":"f","mediaType":"image/png"}]}`,
+	} {
+		if got := chat.A2UISurfacesFromDurable(content, want); len(got) != 0 {
+			t.Fatalf("%s: surfaces=%v want none", name, got)
+		}
+	}
+
+	// A caller that asks for no version gets nothing, rather than everything.
+	both := `{"schemaVersion":"aap.message-content.v1","parts":[` +
+		`{"type":"a2ui","version":"` + want + `","surface":{"components":[]}}]}`
+	if got := chat.A2UISurfacesFromDurable(both, ""); len(got) != 0 {
+		t.Fatalf("empty wantVersion returned %v", got)
+	}
+}
+
+func TestMapCompletedAssistantA2UIMultiPart(t *testing.T) {
+	// Protocol projection holds multi-part text+a2ui for reads (PR-5).
+	workspaceID := uuid.NewString()
+	sessionID := uuid.NewString()
+	runID := uuid.NewString()
+	durable := `{"schemaVersion":"aap.message-content.v1","parts":[` +
+		`{"type":"text","text":"Please confirm."},` +
+		`{"type":"a2ui","version":"a2ui-surface.v0","surface":{"root":"confirm","title":"OK?"}}` +
+		`]}`
+	message := chat.Message{
+		ID: uuid.NewString(), WorkspaceID: workspaceID, SessionID: sessionID, RunID: runID,
+		Role: "ASSISTANT", Content: durable, ContentSHA256: protocolMessageHash(durable),
+		ContentLength: int64(len([]byte(durable))), Status: "EXECUTED",
+		CreatedAt: time.Now().UTC(),
+	}
+
+	mapper := chat.NewProtocolMessageMapper(nil)
+	item, err := mapper.MapCompleted(context.Background(), message, "")
+	if err != nil {
+		t.Fatalf("MapCompleted: %v", err)
+	}
+	if item.Role != protocolevent.MessageRoleAssistant || item.Status != protocolevent.ItemStatusCompleted {
+		t.Fatalf("item role/status=%+v", item)
+	}
+	if len(item.Content) != 2 {
+		t.Fatalf("content parts=%d want 2: %+v", len(item.Content), item.Content)
+	}
+	text, ok := item.Content[0].(protocolevent.TextContentPart)
+	if !ok || text.Text != "Please confirm." {
+		t.Fatalf("text=%T/%+v", item.Content[0], item.Content[0])
+	}
+	a2uiPart, ok := item.Content[1].(protocolevent.A2UIContentPart)
+	if !ok || !strings.Contains(string(a2uiPart.Surface), `"confirm"`) {
+		t.Fatalf("a2ui=%T/%+v", item.Content[1], item.Content[1])
+	}
+
+	// Plain text assistant still maps as single text part (no regression).
+	plain := "Order ready."
+	plainMsg := chat.Message{
+		ID: uuid.NewString(), WorkspaceID: workspaceID, SessionID: sessionID, RunID: runID,
+		Role: "ASSISTANT", Content: plain, ContentSHA256: protocolMessageHash(plain),
+		ContentLength: int64(len([]byte(plain))), Status: "EXECUTED",
+		CreatedAt: time.Now().UTC(),
+	}
+	plainItem, err := mapper.MapCompleted(context.Background(), plainMsg, "")
+	if err != nil {
+		t.Fatalf("plain MapCompleted: %v", err)
+	}
+	assertProtocolMessageText(t, plainItem, protocolevent.MessageRoleAssistant, plain)
 }
 
 func protocolMessageHash(content string) string {

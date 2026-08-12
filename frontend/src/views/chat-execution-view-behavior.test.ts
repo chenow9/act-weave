@@ -165,4 +165,29 @@ describe("chat execution view FE-02 archive busy", () => {
   it("tracks archivingSession in the page model orchestration surface", () => {
     expect(chatModelSource).toContain("archivingSession");
   });
+
+  // A reply that streams no text for a while — the agent thinking, or writing an
+  // A2UI surface, which arrives whole at the end — must not read as finished.
+  it("marks an assistant message still in progress until it completes", async () => {
+    fixture.chat.messages = [
+      { id: "m-1", role: "USER", content: "看下转化率", createdAt: "2026-07-26T00:00:00Z" },
+      {
+        id: "m-2",
+        role: "ASSISTANT",
+        content: "转化率如下。",
+        status: "PROCESSING",
+        createdAt: "2026-07-26T00:00:01Z",
+      },
+    ];
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(wrapper.get(".assistant-working").text()).toBe("正在生成回复");
+
+    fixture.chat.messages[1].status = "EXECUTED";
+    await flushPromises();
+
+    expect(wrapper.find(".assistant-working").exists()).toBe(false);
+    wrapper.unmount();
+  });
 });

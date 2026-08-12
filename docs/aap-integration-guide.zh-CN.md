@@ -24,6 +24,7 @@
 4. 通过 SSE 跟随 **Run 事件**（`Last-Event-ID` 断线续传）  
 5. 对 **Interaction** 做 approve / decline / cancel  
 6. （可选，**默认关闭**）上传 **File**、等待 ready，并在 Run 输入中以 `input_file` 部分引用  
+7. （可选，**默认关闭**）当 Agent 开启 `enableA2UI` 时，在助手消息上接收附加的 **A2UI** 声明式界面（MVP 仅展示、无动作回传）
 
 AAP **不是** ActWeave 管理控制台 API（`/api/v1`）。控制台用户 Session JWT 在 AAP 路由上会被 **拒绝**。v1 **没有**面向 AAP 文件的 Console 产品 UI。
 
@@ -60,6 +61,7 @@ Client Secret / 私钥只应保存在**你方**密钥管理系统中。密钥不
 | **Conversation** | 针对某一 Agent 的对话容器 |
 | **Run** | Conversation 下的一次执行。默认输入为 **text**；在开启 AAP files 后，用户消息还可包含引用稳定 `fileId` 的 `input_file` 部分 |
 | **File** | 可选上传对象，含生命周期状态（`pending_upload` → … → `ready`）。GET 状态为事实源（v1 无 File SSE） |
+| **A2UI** | 助手消息上可选的声明式 UI（`type: "a2ui"` content part）。Agent 级 `enableA2UI`，默认关闭。文本始终一等 |
 | **Protocol Event** | Run 流上的持久事实（`sequence` 为游标） |
 | **Interaction** | Run 因确认而等待 |
 | **External Subject** | 通过 Token Exchange 绑定的终端用户身份（可选） |
@@ -483,6 +485,192 @@ X-ActWeave-Signature: t=<unix>,v1=<hmac_sha256_hex>
 
 **不**要求合作方自持 AAP token 再调 `:download`。模型可见 / 已存储的工具参数**仅**含 `fileId`（及元数据）— 永不含 live URL。
 
+### 9.2 A2UI（可选、附加）
+
+设计（产品锁定规范）：[`designs/a2ui-additive-capability.md`](./designs/a2ui-additive-capability.md)。  
+实现清单：[`designs/a2ui-additive-capability-checklist.md`](./designs/a2ui-additive-capability-checklist.md)。  
+Surface 契约（组件 catalog、图表语义、严格校验）：[`designs/a2ui-catalog-refactor.md`](./designs/a2ui-catalog-refactor.md)。
+
+A2UI 是**可选、附加（additive）**能力：**文本始终是一等公民**。开启仅表示 Agent **可以**在有用时附带声明式 UI，**不**要求每条回复都含 A2UI。简单问答可只有文本；同一 Conversation 内可混有纯 text 轮与 text+a2ui 轮。
+
+#### 启用（ActWeave 管理员 / Agents Studio）
+
+| 层 | 字段 | 默认 |
+| --- | --- | --- |
+| Agent 策略 | `context_policy.aap.enableA2UI: boolean` | **`false`**（缺省 / null → false） |
+| 策略 schema | 存在任一 `aap.*` 时要求 `session-context-policy.v2` | 与 `includeCompactionSummary` 同模式 |
+| Run 冻结 | createRun 时写入 `context_policy_snapshot.aap.enableA2UI` | 进行中 Run **不**随 Agent 中途改配置而变 |
+
+Workspace 作用域的 context policy **拒绝**任何 `aap` 字段；仅 Agent 级策略生效。
+
+#### Profile 广告（`GET .../profile`）
+
+当 `enableA2UI` 为 true 时，Agent Profile **广告**助手出站能力：
+
+1. `supportedContent` 的 message parts 含 `"a2ui"`（稳定顺序：`text` → 可选 `input_file` → 可选 `a2ui`）。
+2. 顶层 **`a2ui`** 对象（**仅**启用时出现；禁用时 **omit**，不发 `enabled: false`）：
+
+```json
+"a2ui": {
+  "enabled": true,
+  "delivery": "item_completed",
+  "streaming": false,
+  "actions": false,
+  "maxSurfaceBytes": 65536,
+  "specHint": "a2ui-surface.v1",
+  "catalogIds": ["https://catalog.actweave.dev/standard/v1/catalog.json"]
+}
+```
+
+| 字段 | MVP 含义 |
+| --- | --- |
+| `delivery: "item_completed"` | 完整 A2UI part **仅**在 **`item.completed`** 上交付 |
+| `streaming: false` | MVP 无 A2UI delta / 渐进 surface |
+| `actions: false` | **无**动作通道；控件为 **仅展示** |
+| `maxSurfaceBytes` | 原始 `surface` JSON 大小上限（64 KiB） |
+| `specHint` | 信封 / surface 版本提示 |
+| `catalogIds` | surface 可声明的组件 catalog。每个 surface 都会带其中之一作为 `catalogId`；都渲染不了的客户端应忽略 `a2ui` part，只用文本 |
+
+ETag / profile version 纳入该对象：开关翻转或广告元数据变化会使 ETag 变化。
+
+#### 线上形态（助手出站）
+
+在 `item.completed` 上，成功提取 A2UI 时 content 为多 part：
+
+```json
+{
+  "type": "message",
+  "role": "assistant",
+  "status": "completed",
+  "content": [
+    { "type": "text", "text": "请确认预约信息：" },
+    {
+      "type": "a2ui",
+      "version": "a2ui-surface.v1",
+      "catalogId": "https://catalog.actweave.dev/standard/v1/catalog.json",
+      "surface": { }
+    }
+  ]
+}
+```
+
+| 规则 | 说明 |
+| --- | --- |
+| **Text 一等** | schema 上始终有 `text` part；仅在存在合法 `a2ui` 时允许 `text:""` |
+| **可选 a2ui** | MVP 0 或 1 个 `a2ui` part。忽略未知 part 的客户端仍可用纯文本 |
+| **入站** | `createRun` **拒绝**用户/入站 `a2ui`（`UNSUPPORTED_CONTENT_TYPE` / 4xx）。A2UI 仅助手出站 |
+| **降级** | 非法 / 过大 / 投影失败 → 纯 text 成功；A2UI 损坏**不会**单独导致 Run 失败 |
+
+#### 客户端规则（completed 权威 vs 流式预览）
+
+1. **按今日方式流式文本。** 仅 `text_delta` 流式（index 0）。拼接的 delta 只是**实时预览**，不是终稿。
+2. **delta 只承载正文。** 围栏（`<<<A2UI>>>` … `<<<END_A2UI>>>`）是平台向模型索取 surface 的编码方式，在 delta 离开服务端之前已被剥离——包括被切分在两个 chunk 之间的标记。客户端不会看到任何围栏片段，因此既不需要剥离也不需要解析。surface 本身不产生任何文本流，所以正文结束到 `item.completed` 之间会有一段停顿：保持你已有的"进行中"提示直到该 item 完成。
+3. **`item.completed` 为权威。** 它会**整项替换** item 快照。使用其多 part `content`：清洗后的 text [+ 可选 `a2ui`]。优先 completed，而非任何在途 delta 缓冲。
+4. **MVP 仅展示 / 客户端对 action 做 no-op。** Profile 广告 `a2ui.actions: false`。若有本地 catalog 可渲染 surface；**不要**把按钮点击、表单提交等控件动作回传到 ActWeave。**禁止**复用 `interaction.decide` 承载 A2UI 控件（审批类 Interaction 保持独立）。
+5. **不实现 A2UI 时可忽略未知 part**；只要出现 `id:` 仍须推进 SSE sequence。
+
+TypeScript SDK 辅助（`@actweave/agent-client`）：
+
+```ts
+import { findA2UIPart, isKnownA2UICatalog, iterCharts, joinTextParts, type ProtocolItem } from "@actweave/agent-client";
+
+function readAssistant(item: ProtocolItem) {
+  const text = joinTextParts(item); // 仅 text；忽略 a2ui / 未知 part
+  const surface = findA2UIPart(item)?.surface; // 纯 text 时为 undefined
+  // catalog 不认识：只显示文本，什么都不画
+  if (!isKnownA2UICatalog(surface)) return { text, charts: [] };
+  return { text, charts: iterCharts(surface) }; // series 已解析，value 仍是数字
+}
+```
+
+`RunReducer` 已在 `item.completed` 时替换整 item，因此渐进 text 会被权威多 part content 覆盖。
+
+#### Surface 契约（catalog `standard/v1`）
+
+`surface` **不是**自由格式：服务端在落库前用组件 catalog 校验每个 surface，
+不合规就整体拒绝（此时消息只带文本到达）。因此你收到的 surface 一定已在下述边界内——
+契约存在的意义就是让渲染器可以依赖这一点，而不必去猜。
+
+设计与理由：[`designs/a2ui-catalog-refactor.md`](./designs/a2ui-catalog-refactor.md)。
+
+**形态。** surface 就是 A2UI `createSurface` 载荷，符合规范的渲染器可以零适配直接消费：
+
+```json
+{
+  "surfaceId": "019ff3f0-bfdd-7b38-9c53-f90bf5812478:item_1",
+  "catalogId": "https://catalog.actweave.dev/standard/v1/catalog.json",
+  "components": [
+    { "id": "root", "component": "Column", "children": ["t1", "c1"] },
+    { "id": "t1", "component": "Text", "text": "2026 Q1 各区域营收", "variant": "heading" },
+    { "id": "c1", "component": "Chart", "chartType": "bar", "unit": "万元", "series": { "path": "/revenue" } }
+  ],
+  "dataModel": {
+    "revenue": [{ "name": "营收", "points": [{ "label": "华东", "value": 1280 }] }]
+  }
+}
+```
+
+组件图是**扁平**的：components 是一个列表，子节点按 id 引用，且恰有一个组件
+`id: "root"`。从 `root` 开始遍历；没有被引用的组件不可达，也不会到你手上。
+
+**组件**（`standard/v1`，共 11 个）：`Column` `Row` `Card` `Text` `Divider`
+`Chart` `TextField` `CheckBox` `ChoicePicker` `DateTimeInput` `Button`。
+名字**精确匹配**——没有别名，不做大小写折叠。
+
+**图表**只承载度量值。没有颜色、尺寸、坐标轴范围、图例或格式化后的字符串可继承，
+这些属于你的设计系统。
+
+| 成员 | 契约 |
+| --- | --- |
+| `chartType` | `bar` `hbar` `line` `area` `pie` `donut`。`hbar` 的存在就是为了长类目标签不必旋转 |
+| `series` | 1–8 条 series，每条 1–64 个 `{label, value}` 点。可内联，也可绑定 |
+| `unit` | 所有值的单位（如 `万元`、`%`），绝不会揉进数字里 |
+| `valueFormat` | `plain` `compact` `percent` `currency`——值应当如何读 |
+| `stacked` | 仅柱状可用；用在其他形状上会被服务端拒绝 |
+| `title` | 可选。图表自己的标题，与兄弟 `Text` 标题无关 |
+
+服务端已经强制的跨字段规则：`pie` / `donut` 恰好一条 series 且无负值；
+多 series 图表共享同一套标签序列。
+
+**数据绑定。** 任何允许写值的位置，成员都可以换成指向 `dataModel` 的
+JSON Pointer（RFC 6901）：`{ "path": "/revenue" }`。所有成员都走同一个解析函数——
+不要靠观察值的形状去判断"这是字面量还是指针"。指针指不到东西**不是错误**，
+按"成员缺失"处理即可。
+
+**限制**（服务端已强制；你镜像同一套，外来 surface 就无法在你的客户端引发无界工作）：
+
+| 限制 | 值 |
+| --- | --- |
+| `surface` JSON 字节 | 65536 |
+| 每个 surface 组件数 | 64 |
+| 树深度 | 16 |
+| 每图 series 数 / 每 series 点数 | 8 / 64 |
+
+**客户端义务。**
+
+1. **先校 `catalogId`**，与 profile 的 `a2ui.catalogIds` 比对再渲染。不认识的 catalog 意味着不认识的组件：回落到文本。
+2. **按组件降级，不要按消息降级。** 遇到没实现的组件，画一个占位并继续渲染它的兄弟节点。悬空子 id、超出你允许深度的树，同样处理。
+3. **绝不执行 surface 里的任何东西。** 文本就是文本，不是标记：用插值渲染。`actions: false` 意味着控件只展示。
+4. **不要从 id 推断语义。** `id` 是图的键，不是语义提示。
+
+**Schema 分发。** 拉取 catalog 与 surface schema（公开、可缓存、带 `ETag`、免 token）：
+
+```
+GET {base}/api/v1/a2ui/catalogs/standard/v1/catalog.json
+GET {base}/api/v1/a2ui/catalogs/standard/v1/surface.schema.json
+```
+
+`catalogId` 是**标识符**：按 A2UI 规范它不必可解析，所以请通过上面的端点取 schema，
+而不是去解引用这个 id。surface schema 通过相对 `$ref` 引用 catalog，
+如果你要镜像这两份文档，请保持它们同目录。
+
+#### 非目标（MVP）
+
+- A2UI 流式 / 渐进 surface（后续）
+- 组件 action 通道 / `a2ui_action` user part（后续）
+- catalog 协商：客户端还不能声明自己能渲染哪些 catalog
+- `standard/v1` 之外的 catalog，以及它未纳入的 Basic Catalog 组件
+
 ---
 
 ## 10. SSE 事件流
@@ -754,7 +942,7 @@ SDK 保证：
 - 文件 PUT **仅**使用 create 返回的 headers（对象存储 PUT 不带 AAP Bearer）  
 - `getFileContent` 在 `sizeBytes > 4MiB` 时优先不透明 `:download`  
 
-另有导出：`StaticTokenProvider`、`RunReducer`、`AAPSESession`、文件类型 / `SDK_PREFER_DOWNLOAD_TOKEN_BYTES`。详见 `sdk/typescript/README.md`。
+另有导出：`StaticTokenProvider`、`RunReducer`、`AAPSESession`、文件类型 / `SDK_PREFER_DOWNLOAD_TOKEN_BYTES`，以及 A2UI 辅助 `joinTextParts` / `findA2UIPart`。详见 `sdk/typescript/README.md` 与[§9.2 A2UI](#92-a2ui可选附加)。
 
 ---
 
@@ -795,6 +983,7 @@ SDK 保证：
 - [ ] 若使用文件：运营已启用 `agentAccess.files`，且（模型 vision/PDF 场景）`RuntimeMultimodal`；Grant 含 `file:read` / `file:write`  
 - [ ] 若使用文件：PUT 始终发送 create 返回的 `Content-Length` / `Content-Type`；长期日志不保存 live 下载 URL  
 - [ ] 若实现处理器：校验 `X-ActWeave-Signature`、仅 https 回调 URL 策略，并处理晚到回调 `FILE_PROCESSOR_CALLBACK_LATE`  
+- [ ] 若使用 A2UI：Agent 已设 `context_policy.aap.enableA2UI`；客户端以 `item.completed` 为权威；Profile `a2ui.actions: false` → 仅展示 / 提交 no-op  
 
 ---
 
@@ -806,6 +995,8 @@ SDK 保证：
 | **English guide** | `docs/aap-integration-guide.md` | Same content in English |
 | OpenAPI | `docs/openapi/agent-access-v1.yaml` | HTTP 机器契约 |
 | TypeScript SDK | `sdk/typescript/` | 客户端库 |
+| A2UI 设计 | `docs/designs/a2ui-additive-capability.md` | 附加 A2UI 能力（产品锁定） |
+| A2UI 清单 | `docs/designs/a2ui-additive-capability-checklist.md` | 实现 checklist |
 | 产品 README（中） | `README.zh-CN.md` | 产品与本地运行 |
 | 产品 README（英） | `README.md` | Product overview & local run |
 

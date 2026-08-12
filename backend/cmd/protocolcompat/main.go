@@ -46,7 +46,7 @@ func run(check, writeBaseline bool, reportPath string) error {
 	if err != nil {
 		return err
 	}
-	current := protocolcompat.ExtractBaseline("2026-07-20", "1.0", setSHA, docs)
+	current := protocolcompat.ExtractBaseline("2026-08-11", "1.0", setSHA, docs)
 
 	if writeBaseline {
 		if err := protocolcompat.WriteBaselineJSON(baselinePath, current); err != nil {

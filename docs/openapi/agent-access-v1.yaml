@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: ActWeave Agent Access Protocol
-  version: '2026-07-20'
+  version: '2026-08-11'
   description: >-
     Workspace- and Agent-scoped API for service principals. Management user JWTs
     are not valid on this surface. Persisted Run events use the AAP v1 Event
@@ -434,6 +434,24 @@ components:
         supportedContent: {type: array, items: {type: object}}
         capabilities: {type: array, items: {type: object}}
         interactionRequirements: {type: object}
+        # Optional; present only when agent context_policy.aap.enableA2UI is true (omit when disabled).
+        a2ui:
+          type: object
+          additionalProperties: false
+          required: [enabled, delivery, streaming, actions, maxSurfaceBytes, specHint, catalogIds]
+          properties:
+            enabled: {type: boolean}
+            delivery: {type: string, enum: [item_completed]}
+            streaming: {type: boolean}
+            actions: {type: boolean}
+            maxSurfaceBytes: {type: integer, format: int64, minimum: 1}
+            specHint: {type: string}
+            # Component catalogs a surface may declare. A client that cannot render
+            # any of these should not rely on a2ui parts.
+            catalogIds:
+              type: array
+              minItems: 1
+              items: {type: string, format: uri}
     Conversation:
       type: object
       additionalProperties: false

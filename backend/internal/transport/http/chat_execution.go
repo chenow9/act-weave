@@ -2,6 +2,8 @@ package httptransport
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -9,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"actweave/backend/internal/a2ui"
 	"actweave/backend/internal/agentaccessauth"
 	"actweave/backend/internal/authz"
 	"actweave/backend/internal/chat"
@@ -176,15 +179,21 @@ func chatSessionDTOFor(value chat.Session) chatSessionDTO {
 }
 
 type chatMessageDTO struct {
-	ID             string    `json:"id"`
-	Role           string    `json:"role"`
-	Content        string    `json:"content"`
-	ContentSHA256  string    `json:"contentSha256"`
-	ContentLength  int64     `json:"contentLength"`
-	Status         string    `json:"status"`
-	RunID          string    `json:"runId,omitempty"`
-	ConfirmationID string    `json:"confirmationId,omitempty"`
-	CreatedAt      time.Time `json:"createdAt"`
+	ID            string `json:"id"`
+	Role          string `json:"role"`
+	Content       string `json:"content"`
+	ContentSHA256 string `json:"contentSha256"`
+	ContentLength int64  `json:"contentLength"`
+	// A2UI carries the renderable surfaces of this message, absent unless the
+	// durable body is an aap.message-content.v1 envelope holding a current-version
+	// a2ui part. It is a separate channel from Content on purpose: Content stays
+	// the text a human wrote or read, and contentSha256/contentLength keep
+	// describing exactly that (KD-13).
+	A2UI           []json.RawMessage `json:"a2ui,omitempty"`
+	Status         string            `json:"status"`
+	RunID          string            `json:"runId,omitempty"`
+	ConfirmationID string            `json:"confirmationId,omitempty"`
+	CreatedAt      time.Time         `json:"createdAt"`
 }
 
 func (r *ChatExecutionRoutes) messageDTO(
@@ -200,8 +209,20 @@ func (r *ChatExecutionRoutes) messageDTO(
 		}
 		content = loaded
 	}
-	return chatMessageDTO{value.ID, value.Role, content, value.ContentSHA256,
-		value.ContentLength, value.Status, value.RunID, value.ConfirmationID, value.CreatedAt}, nil
+	// KD-13: Console history is text-first. Never return raw aap.message-content.v1
+	// envelope JSON (including a2ui surface) as the markdown body. Display
+	// contentSha256/contentLength must describe the projected content string.
+	surfaces := chat.A2UISurfacesFromDurable(content, a2ui.EnvelopeVersionV1)
+	content = chat.JoinTextPartsFromDurable(content)
+	digest := sha256.Sum256([]byte(content))
+	return chatMessageDTO{
+		ID: value.ID, Role: value.Role, Content: content,
+		ContentSHA256: hex.EncodeToString(digest[:]),
+		ContentLength: int64(len([]byte(content))),
+		A2UI:          surfaces,
+		Status:        value.Status, RunID: value.RunID,
+		ConfirmationID: value.ConfirmationID, CreatedAt: value.CreatedAt,
+	}, nil
 }
 
 func (r *ChatExecutionRoutes) listSessions(c *gin.Context) {

@@ -3,6 +3,7 @@
 /** Chat execution page body (ZKL-64 item 15). */
 /* prettier-ignore */
 import { useI18n } from "vue-i18n";
+import A2UISurface from "./a2ui/A2UISurface.vue";
 import DebugOutboundCredentialPanel from "./DebugOutboundCredentialPanel.vue";
 import { useChatExecutionPageContext } from "../composables/useChatExecutionPageContext";
 
@@ -286,7 +287,27 @@ void DebugOutboundCredentialPanel;
                       messageTime(message.createdAt)
                     }}</time>
                   </div>
-                  <div class="assistant-bubble" v-html="renderMessageMarkdown(message.content)" />
+                  <div
+                    v-if="message.content"
+                    class="assistant-bubble"
+                    v-html="renderMessageMarkdown(message.content)"
+                  />
+                  <!--
+                    A reply is still being produced. Without this, a stream that
+                    pauses — the agent thinking, or writing a surface, which is
+                    delivered whole at the end and so streams no text — looks
+                    exactly like a finished answer.
+                  -->
+                  <p v-if="message.status === 'PROCESSING'" class="assistant-working" role="status">
+                    <span class="assistant-working-dots" aria-hidden="true"><span /><span /><span /></span>
+                    <span>{{ t("chat.assistantWorking") }}</span>
+                  </p>
+                  <A2UISurface
+                    v-for="(surface, surfaceIndex) in message.a2ui ?? []"
+                    :key="`${message.id}-a2ui-${surfaceIndex}`"
+                    :surface="surface"
+                    :uid="`${message.id}-${surfaceIndex}`"
+                  />
                 </div>
               </div>
 

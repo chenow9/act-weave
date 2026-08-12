@@ -47,6 +47,7 @@
   "composerAria": "Enter a business instruction or target task",
   "composerShortcut": "Press Enter to send, Shift+Enter for a new line.",
   "sending": "Sending",
+  "assistantWorking": "Generating a reply",
   "send": "Send",
   "historyAria": "Session history",
   "executionRecords": "Execution history",

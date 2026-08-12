@@ -1,0 +1,29 @@
+{
+  "name": "chart-line",
+  "title": "Line chart with a percent value format",
+  "expect": "renders",
+  "note": "valueFormat percent means values are already percentages; the renderer must not multiply by 100.",
+  "surface": {
+    "components": [
+      {
+        "id": "root",
+        "component": "Chart",
+        "chartType": "line",
+        "title": "运行成功率",
+        "valueFormat": "percent",
+        "series": [
+          {
+            "points": [
+              { "label": "01-05", "value": 91.2 },
+              { "label": "01-06", "value": 93.8 },
+              { "label": "01-07", "value": 90.4 },
+              { "label": "01-08", "value": 96.1 },
+              { "label": "01-09", "value": 97.5 },
+              { "label": "01-10", "value": 95.9 }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

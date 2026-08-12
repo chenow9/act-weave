@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"actweave/backend/internal/a2ui"
 	"actweave/backend/internal/agent"
 	"actweave/backend/internal/agentdelegation"
 	"actweave/backend/internal/agentrun"
@@ -470,6 +471,13 @@ func (b *Bridge) drive(
 	if strings.TrimSpace(instruction) == "" {
 		instruction = fallbackInstruction
 	}
+	// KD-17: inject A2UI rules once into instruction only — before BuildChatModelAgent
+	// and buildInitialMessages. Resume (targets != nil) reuses frozen graph instruction
+	// and must not re-append (AppendPromptRules is also idempotent).
+	a2uiEnabled := sessioncontext.EnableA2UIFromSnapshot(run.ContextPolicySnapshot)
+	if a2uiEnabled {
+		instruction = a2ui.AppendPromptRules(instruction)
+	}
 	agentName := "agent-" + strings.TrimSpace(run.AgentID)
 	built, err := einoruntime.BuildChatModelAgent(ctx, einoruntime.AgentBuildConfig{
 		Name:               agentName,
@@ -492,6 +500,11 @@ func (b *Bridge) drive(
 		ModelTurnHook: func(hookCtx context.Context, turn einoruntime.ModelTurn) error {
 			return b.recordModelTurn(hookCtx, job, run, turn)
 		},
+	}
+	if a2uiEnabled {
+		// Only this run's model was told about the fence, so only this run's
+		// preview needs to hide it.
+		projector.Preview = &a2ui.FencePreview{}
 	}
 	openSink := func() error {
 		if b.textSinkFactory == nil || projector.Sink != nil {
@@ -752,7 +765,12 @@ func (b *Bridge) buildMessages(
 			}
 			messages = append(messages, userMsg)
 		case "assistant":
-			// Assistant durable bodies are plain text (not aap.message-content.v1).
+			// KD-10: model history is text-only; omit a2ui surface / raw envelope.
+			content = assistantModelHistoryText(content)
+			content = strings.TrimSpace(content)
+			if content == "" {
+				continue
+			}
 			messages = append(messages, schema.AssistantMessage(content, nil))
 		case "system":
 			// Instruction already injected; skip history system rows.
@@ -863,7 +881,12 @@ func (b *Bridge) buildMessagesTokenWindow(
 			}
 			out = append(out, userMsg)
 		case contextwindow.RoleAssistant:
-			out = append(out, schema.AssistantMessage(m.Content, nil))
+			// KD-10: join text parts only; never feed raw surface JSON to the model.
+			assistantText := strings.TrimSpace(assistantModelHistoryText(m.Content))
+			if assistantText == "" {
+				continue
+			}
+			out = append(out, schema.AssistantMessage(assistantText, nil))
 		}
 	}
 	if len(out) < 2 {
@@ -958,6 +981,11 @@ func (b *Bridge) loadBoundedHistoryForAssembly(
 			content, cErr := b.resolveMessageContent(ctx, job, msg)
 			if cErr != nil {
 				return contextwindow.HistoryMessage{}, nil, cErr
+			}
+			// KD-10: assistant durable multi-part must not inflate the token window
+			// with surface JSON, and must not re-enter the model as raw envelope.
+			if strings.EqualFold(strings.TrimSpace(msg.Role), "ASSISTANT") {
+				content = assistantModelHistoryText(content)
 			}
 			histNewestFirst = append(histNewestFirst, contextwindow.HistoryMessage{
 				ID: msg.ID, SessionID: msg.SessionID, Role: msg.Role, Content: content,
@@ -1072,6 +1100,10 @@ func (b *Bridge) completeRun(
 			return b.failRun(ctx, job, run, err)
 		}
 	}
+	// Terminal extract only (KD-3/4/16): never mid-tool intermediate. Stream
+	// text_delta remains raw (may include fence fragments); item.completed is authoritative.
+	content, _ = materializeAssistantTerminalContent(content, run.ContextPolicySnapshot, assistantID)
+
 	run, err := b.runs.GetAgentRun(ctx, job.WorkspaceID, job.RunID)
 	if err != nil {
 		return b.failRun(ctx, job, run, err)

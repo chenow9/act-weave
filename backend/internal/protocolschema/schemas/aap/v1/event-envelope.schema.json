@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.actweave.dev/aap/v1/event-envelope.schema.json",
   "title": "AAP v1 Protocol Event Envelope",
-  "x-actweave-protocol-version": "2026-07-20",
+  "x-actweave-protocol-version": "2026-08-11",
   "x-actweave-forbidden-property-names": ["authorization", "cookie", "password", "secret", "token", "resumetoken", "signedurl", "chainofthought"],
   "type": "object",
   "required": ["specVersion", "type", "eventId", "streamId", "sequence", "occurredAt", "workspaceId", "agentId", "conversationId", "runId", "traceId", "data"],

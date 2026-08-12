@@ -62,7 +62,9 @@ func (mapper *ProtocolMessageMapper) MapCompleted(
 }
 
 // ParseMessageContentParts projects permanent message body to protocol content parts.
-// aap.message-content.v1 → text + input_file parts (never download URLs).
+// aap.message-content.v1 → text + input_file + optional a2ui parts (never download URLs).
+// a2ui is accepted on durable rehydrate for assistant multi-part (KD-6 / PR-5);
+// inbound createRun / user multimodal paths continue to reject a2ui separately.
 // Legacy non-JSON / missing schemaVersion → single text part (Console/history compat).
 func ParseMessageContentParts(content string) ([]protocolevent.ContentPart, error) {
 	if content == "" {
@@ -93,6 +95,15 @@ func ParseMessageContentParts(content string) ([]protocolevent.ContentPart, erro
 				Type: protocolevent.ContentPartTypeInputFile,
 				FileID: typed.FileID, MediaType: typed.MediaType,
 			})
+		case protocolevent.A2UIContentPart:
+			// Allowlisted keys only; surface is opaque JSON object (size-checked by Decode).
+			surface := append(json.RawMessage(nil), typed.Surface...)
+			parts = append(parts, protocolevent.A2UIContentPart{
+				Type:      protocolevent.ContentPartTypeA2UI,
+				Version:   typed.Version,
+				Surface:   surface,
+				CatalogID: typed.CatalogID,
+			})
 		default:
 			return nil, ErrInvalid
 		}
@@ -101,6 +112,85 @@ func ParseMessageContentParts(content string) ([]protocolevent.ContentPart, erro
 		return nil, ErrInvalid
 	}
 	return parts, nil
+}
+
+// JoinTextPartsFromDurable projects durable chat content to natural-language text only.
+//
+//  1. Non-v1 / plain / legacy bodies → returned unchanged.
+//  2. aap.message-content.v1 → concatenate type=="text" parts only; ignore a2ui,
+//     input_file, and unknown parts (KD-10 / KD-13 / §3.4).
+//  3. v1 with no text parts → "" (callers skip empty history rows).
+//
+// Used by Console messageDTO text-first history and (later) model history reload.
+func JoinTextPartsFromDurable(content string) string {
+	if content == "" {
+		return ""
+	}
+	var envelope struct {
+		SchemaVersion string            `json:"schemaVersion"`
+		Parts         []json.RawMessage `json:"parts"`
+	}
+	if err := json.Unmarshal([]byte(content), &envelope); err != nil ||
+		envelope.SchemaVersion != MessageContentSchemaVersion || len(envelope.Parts) == 0 {
+		return content
+	}
+	var builder strings.Builder
+	for _, raw := range envelope.Parts {
+		var wire struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(raw, &wire); err != nil {
+			continue
+		}
+		if wire.Type != "text" {
+			continue
+		}
+		builder.WriteString(wire.Text)
+	}
+	return builder.String()
+}
+
+// A2UISurfacesFromDurable projects durable chat content to the A2UI surfaces a
+// display client may render, in part order.
+//
+// This is the read counterpart of JoinTextPartsFromDurable: text goes to the
+// message body, surfaces go to their own channel, and neither can reach the
+// other. Only parts declaring wantVersion are returned, so a row written by an
+// older surface version stays invisible instead of reaching a renderer built
+// for a contract it does not satisfy.
+//
+// The result is the surface object alone. The envelope around it is a storage
+// detail and never leaves the server.
+func A2UISurfacesFromDurable(content, wantVersion string) []json.RawMessage {
+	if content == "" || wantVersion == "" {
+		return nil
+	}
+	var envelope struct {
+		SchemaVersion string            `json:"schemaVersion"`
+		Parts         []json.RawMessage `json:"parts"`
+	}
+	if err := json.Unmarshal([]byte(content), &envelope); err != nil ||
+		envelope.SchemaVersion != MessageContentSchemaVersion || len(envelope.Parts) == 0 {
+		return nil
+	}
+	var surfaces []json.RawMessage
+	for _, raw := range envelope.Parts {
+		var wire struct {
+			Type    string          `json:"type"`
+			Version string          `json:"version"`
+			Surface json.RawMessage `json:"surface"`
+		}
+		if err := json.Unmarshal(raw, &wire); err != nil {
+			continue
+		}
+		if wire.Type != string(protocolevent.ContentPartTypeA2UI) ||
+			wire.Version != wantVersion || len(wire.Surface) == 0 {
+			continue
+		}
+		surfaces = append(surfaces, append(json.RawMessage(nil), wire.Surface...))
+	}
+	return surfaces
 }
 
 func (mapper *ProtocolMessageMapper) MapStarted(

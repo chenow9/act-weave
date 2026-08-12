@@ -3,6 +3,7 @@ frontend/dist/
 # Local / heavy browser acceptance scripts (CI only tracks smoke + fixtures)
 frontend/e2e/**
 !frontend/e2e/smoke.spec.ts
+!frontend/e2e/a2ui-enable.spec.ts
 !frontend/e2e/fixtures/
 !frontend/e2e/fixtures/**
 frontend/e2e/**/*-snapshots/**

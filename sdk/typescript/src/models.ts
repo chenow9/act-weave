@@ -49,6 +49,113 @@ export interface ProtocolItem {
   [key: string]: unknown;
 }
 
+// --- Message content parts (assistant / protocol snapshots) -----------------
+
+/** Text content part (always present on assistant messages; may be ""). */
+export interface TextContentPart {
+  type: "text";
+  text: string;
+  [key: string]: unknown;
+}
+
+/**
+ * First-class A2UI surface part (assistant outbound only).
+ * Attached on item.completed when enableA2UI; not streamed via text_delta.
+ */
+export interface A2UIContentPart {
+  type: "a2ui";
+  /** Declarative A2UI surface object (opaque to the SDK beyond type/size). */
+  surface: Record<string, unknown>;
+  version?: string;
+  catalogId?: string;
+  [key: string]: unknown;
+}
+
+/** File reference part (user createRun / inbound; may appear in snapshots). */
+export interface InputFileContentPart {
+  type: "input_file";
+  fileId: string;
+  mediaType?: string;
+  [key: string]: unknown;
+}
+
+/** Known message content part arms + additive unknown parts. */
+export type MessageContentPart =
+  | TextContentPart
+  | A2UIContentPart
+  | InputFileContentPart
+  | { type: string; [key: string]: unknown };
+
+export function isTextContentPart(part: unknown): part is TextContentPart {
+  return (
+    isPlainObject(part) &&
+    part.type === "text" &&
+    typeof part.text === "string"
+  );
+}
+
+export function isA2UIContentPart(part: unknown): part is A2UIContentPart {
+  return (
+    isPlainObject(part) &&
+    part.type === "a2ui" &&
+    isPlainObject(part.surface)
+  );
+}
+
+export function isInputFileContentPart(part: unknown): part is InputFileContentPart {
+  return (
+    isPlainObject(part) &&
+    part.type === "input_file" &&
+    typeof part.fileId === "string"
+  );
+}
+
+/**
+ * Resolve a message content array from either a content value or a ProtocolItem.
+ */
+function resolveMessageContent(contentOrItem: unknown): unknown[] {
+  if (Array.isArray(contentOrItem)) {
+    return contentOrItem;
+  }
+  if (isPlainObject(contentOrItem) && Array.isArray(contentOrItem.content)) {
+    return contentOrItem.content;
+  }
+  return [];
+}
+
+/**
+ * Join all `type: "text"` parts in order. Ignores a2ui / input_file / unknown parts.
+ * Accepts a content array or a ProtocolItem with `content`.
+ */
+export function joinTextParts(contentOrItem: unknown): string {
+  const parts = resolveMessageContent(contentOrItem);
+  let out = "";
+  for (const part of parts) {
+    if (isTextContentPart(part)) {
+      out += part.text;
+    }
+  }
+  return out;
+}
+
+/**
+ * Return the first `type: "a2ui"` part, if any. MVP allows at most one a2ui part.
+ * Accepts a content array or a ProtocolItem with `content`.
+ */
+export function findA2UIPart(contentOrItem: unknown): A2UIContentPart | undefined {
+  const parts = resolveMessageContent(contentOrItem);
+  for (const part of parts) {
+    if (isA2UIContentPart(part)) {
+      return part;
+    }
+  }
+  return undefined;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /** AAP context_compaction item (ZKL-81). Additive; old clients ignore unknown type. */
 export interface ContextCompactionItem extends ProtocolItem {
   type: "context_compaction";

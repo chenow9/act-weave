@@ -230,3 +230,33 @@ func TestHasInputFileInContent(t *testing.T) {
 		t.Fatal("text only")
 	}
 }
+
+func TestAssembleUserMessage_RejectsA2UI(t *testing.T) {
+	// PR-5 / KD-7: user multimodal path must reject a2ui (assistant-outbound only).
+	a := &chatruntime.MultimodalAssembler{RuntimeMultimodal: true}
+	// text + a2ui without input_file
+	body := `{"schemaVersion":"aap.message-content.v1","parts":[` +
+		`{"type":"text","text":"hi"},` +
+		`{"type":"a2ui","surface":{"root":"x"}}` +
+		`]}`
+	msg, err := a.AssembleUserMessage(context.Background(), mmWorkspace, mmAgent, body)
+	if err == nil || msg != nil {
+		t.Fatalf("expected reject a2ui, got msg=%+v err=%v", msg, err)
+	}
+	if !errors.Is(err, chatruntime.ErrModelContentUnsupported) {
+		t.Fatalf("want ErrModelContentUnsupported, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "a2ui") {
+		t.Fatalf("error should mention a2ui: %v", err)
+	}
+
+	// a2ui alongside input_file also rejected before assembly.
+	withFile := `{"schemaVersion":"aap.message-content.v1","parts":[` +
+		`{"type":"text","text":"see"},` +
+		`{"type":"input_file","fileId":"` + mmFileID + `","mediaType":"image/png"},` +
+		`{"type":"a2ui","surface":{"root":"x"}}` +
+		`]}`
+	if _, err := a.AssembleUserMessage(context.Background(), mmWorkspace, mmAgent, withFile); !errors.Is(err, chatruntime.ErrModelContentUnsupported) {
+		t.Fatalf("a2ui+file err=%v", err)
+	}
+}

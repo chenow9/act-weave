@@ -1,0 +1,26 @@
+{
+  "name": "chart-hbar",
+  "title": "Horizontal bar chart with long category labels",
+  "expect": "renders",
+  "note": "Labels are long on purpose: hbar exists so the renderer never has to rotate or clip them.",
+  "surface": {
+    "components": [
+      {
+        "id": "root",
+        "component": "Chart",
+        "chartType": "hbar",
+        "title": "工单来源分布",
+        "series": [
+          {
+            "points": [
+              { "label": "企业微信客服机器人", "value": 412 },
+              { "label": "官网工单表单", "value": 318 },
+              { "label": "电话热线转写", "value": 197 },
+              { "label": "邮件自动归类", "value": 88 }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

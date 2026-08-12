@@ -19,7 +19,9 @@
     "bundle:check": "node ./scripts/bundle-check.mjs",
     "e2e:workflow": "playwright test e2e/workflow.spec.ts --reporter=line",
     "e2e:workflow:update": "playwright test e2e/workflow.spec.ts --update-snapshots --reporter=line",
-    "e2e:smoke": "playwright test e2e/smoke.spec.ts --reporter=line"
+    "e2e:smoke": "playwright test e2e/smoke.spec.ts --reporter=line",
+    "e2e:a2ui": "playwright test e2e/a2ui-enable.spec.ts --reporter=line",
+    "e2e": "playwright test e2e/smoke.spec.ts e2e/a2ui-enable.spec.ts --reporter=line"
   },
   "dependencies": {
     "@codemirror/language": "6.11.3",

@@ -1,0 +1,27 @@
+{
+  "name": "chart-donut",
+  "title": "Donut chart with a zero slice",
+  "expect": "renders",
+  "note": "Zero is non-negative and therefore legal; the renderer must skip the slice without leaving a gap in the ring.",
+  "surface": {
+    "components": [
+      {
+        "id": "root",
+        "component": "Chart",
+        "chartType": "donut",
+        "title": "存储占用",
+        "unit": "GB",
+        "series": [
+          {
+            "points": [
+              { "label": "会话记录", "value": 128 },
+              { "label": "审计轨迹", "value": 64 },
+              { "label": "附件", "value": 32 },
+              { "label": "冷备", "value": 0 }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

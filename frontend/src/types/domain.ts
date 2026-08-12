@@ -51,12 +51,15 @@ export interface SessionContextPolicy {
     maxGenerationPasses?: number;
   };
   /**
-   * Agent-only (policy v2). When true, successful compact summary body is permanently
-   * dual-written as PostgreSQL plaintext protocol projection (T4-B). Closing only affects new runs.
-   * Default false. Workspace policy must not set this field.
+   * Agent-only (policy v2) flag bag. Workspace policy must not set this field.
+   * - includeCompactionSummary: successful compact summary body is permanently dual-written
+   *   as PostgreSQL plaintext protocol projection (T4-B). Closing only affects new runs.
+   * - enableA2UI: agent may attach additive A2UI surfaces on assistant messages (default false).
+   * Any aap flag requires schemaVersion session-context-policy.v2 (never v1+aap).
    */
   aap?: {
     includeCompactionSummary?: boolean;
+    enableA2UI?: boolean;
   };
 }
 
@@ -1190,6 +1193,12 @@ export interface ChatMessage {
   content: string;
   contentSha256: string;
   contentLength: number;
+  /**
+   * A2UI surfaces to render beside the text, absent unless the message carries
+   * one. Separate from content on purpose: content stays the text a human reads,
+   * and contentSha256/contentLength keep describing exactly that.
+   */
+  a2ui?: unknown[];
   status: ChatMessageStatus;
   confirmationId?: string;
   runId?: string;

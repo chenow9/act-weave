@@ -6,6 +6,7 @@ on:
       - "backend/**"
       - "sdk/typescript/**"
       - "frontend/**"
+      - "demos/aap-chat/**"
       - "docs/openapi/**"
       - "docs/verification/**"
       - "Makefile"
@@ -16,6 +17,7 @@ on:
       - "backend/**"
       - "sdk/typescript/**"
       - "frontend/**"
+      - "demos/aap-chat/**"
       - "docs/openapi/**"
       - "docs/verification/**"
       - "Makefile"
@@ -172,6 +174,27 @@ jobs:
             frontend/playwright-report/
           if-no-files-found: ignore
 
+  # The demo is the reference A2UI renderer: it renders the shared fixtures and
+  # nothing else, so a break here is a break in the rendering contract.
+  demo-aap-chat:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: demos/aap-chat
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.3"
+          cache: npm
+          cache-dependency-path: demos/aap-chat/package-lock.json
+      - name: install
+        run: npm ci
+      - name: renderer unit + type-check + build
+        run: |
+          npm test
+          npm run type-check
+          npm run build
 
   protocol-compat:
     runs-on: ubuntu-latest
@@ -186,3 +209,10 @@ jobs:
           cd ..
           make generate && git diff --exit-code
           make protocol-compat-check
+      # Both renderers and the SDK carry a generated copy of the A2UI catalog
+      # contract and the shared fixtures; this keeps every copy equal to the catalog.
+      - name: a2ui catalog contract clean
+        run: |
+          cd backend && go test ./internal/a2ui/... -count=1
+          cd ..
+          make a2ui-check

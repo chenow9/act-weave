@@ -1,6 +1,8 @@
 import {
   AgentAccessClient,
   MemoryTokenProvider,
+  findA2UIPart,
+  joinTextParts,
   type AccessTokenMaterial,
   type AAPFile,
   type ProtocolItem,
@@ -278,20 +280,57 @@ export function itemRole(item: ProtocolItem): "user" | "assistant" | "tool" | "o
 
 export function extractMessageText(item: ProtocolItem): string {
   if (item.type !== "message") return "";
+  // Prefer SDK helper (ignores a2ui / unknown parts). Fallback for plain string content.
+  const joined = joinTextParts(item);
+  if (joined) return joined;
   const content = (item as { content?: unknown }).content;
   if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  const parts: string[] = [];
-  for (const block of content) {
-    if (!block || typeof block !== "object") continue;
-    const rec = block as Record<string, unknown>;
-    if (rec.type === "text" && typeof rec.text === "string") {
-      parts.push(rec.text);
-    } else if (typeof rec.text === "string") {
-      parts.push(rec.text);
-    }
+  return "";
+}
+
+export interface A2UIPartExtract {
+  version?: string;
+  catalogId?: string;
+  surface: unknown;
+  /** Pretty JSON of the a2ui part (for debug / raw panel). */
+  rawJson: string;
+}
+
+/**
+ * Extract first a2ui part for real surface rendering (display-only; no actions).
+ * Returns null when the item has no a2ui part.
+ */
+export function extractA2UIPart(item: ProtocolItem): A2UIPartExtract | null {
+  if (item.type !== "message") return null;
+  const part = findA2UIPart(item);
+  if (!part) return null;
+  try {
+    const version = part.version ? String(part.version) : undefined;
+    const catalogId = part.catalogId ? String(part.catalogId) : undefined;
+    const surface = part.surface ?? null;
+    const rawJson = JSON.stringify(
+      {
+        type: part.type,
+        ...(version ? { version } : {}),
+        ...(catalogId ? { catalogId } : {}),
+        surface,
+      },
+      null,
+      2,
+    );
+    return { version, catalogId, surface, rawJson };
+  } catch {
+    return null;
   }
-  return parts.join("");
+}
+
+/**
+ * @deprecated Prefer extractA2UIPart + a2ui-render for real UI.
+ * Pretty-print first a2ui part surface (legacy JSON preview).
+ */
+export function extractA2UIPreview(item: ProtocolItem): string | null {
+  const part = extractA2UIPart(item);
+  return part?.rawJson ?? null;
 }
 
 export function extractToolSummary(item: ProtocolItem): {

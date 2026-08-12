@@ -24,9 +24,31 @@
     },
     {
       "type": "object",
+      "required": ["type", "surface"],
+      "properties": {
+        "type": {"const": "a2ui"},
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "surface": {
+          "type": "object",
+          "description": "Declarative A2UI surface (opaque beyond size/type; sensitive-key scan exempt — KD-11)"
+        },
+        "catalogId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "additionalProperties": true
+    },
+    {
+      "type": "object",
       "required": ["type"],
       "properties": {
-        "type": {"type": "string", "not": {"enum": ["text", "input_file"]}}
+        "type": {"type": "string", "not": {"enum": ["text", "input_file", "a2ui"]}}
       },
       "additionalProperties": true
     }

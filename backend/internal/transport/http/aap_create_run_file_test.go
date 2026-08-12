@@ -3,6 +3,7 @@ package httptransport
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -162,6 +163,47 @@ func TestAAPCreateRunInputFile(t *testing.T) {
 			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 		}
 	})
+
+	// KD-7 / PR-3: profile may advertise a2ui for assistant outbound, but createRun
+	// inbound a2ui remains rejected as an unknown content type (no full a2ui part support yet).
+	t.Run("inbound a2ui content part is rejected", func(t *testing.T) {
+		router, _, _ := newCreateRunFileRouter(t, filesGateRuntimeOn(), nil)
+		response := requestAAPRun(t, router, http.MethodPost, createRunFileBase(), map[string]any{
+			"conversationId": aapRunConversationID,
+			"input": []any{map[string]any{
+				"type": "message", "role": "user",
+				"content": []any{
+					map[string]any{"type": "text", "text": "with ui"},
+					map[string]any{
+						"type": "a2ui",
+						"surface": map[string]any{"components": []any{}},
+					},
+				},
+			}},
+			"stream": false,
+		}, "subject-a", aapRunFileIDKey, "application/json", "")
+		if response.Code != http.StatusUnprocessableEntity ||
+			!strings.Contains(response.Body.String(), "UNSUPPORTED_CONTENT_TYPE") {
+			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+		}
+	})
+}
+
+// Unit-level guarantee: validateCreateRunRequest rejects type=a2ui without HTTP stack.
+func TestValidateCreateRunRequestRejectsA2UI(t *testing.T) {
+	err := validateCreateRunRequest(AAPCreateRunRequest{
+		ConversationID: aapRunConversationID,
+		Input: []AAPRunInputItem{{
+			Type: "message", Role: "user",
+			Content: []AAPRunContentPart{
+				{Type: "text", Text: "hello"},
+				{Type: "a2ui"},
+			},
+		}},
+	})
+	if !errors.Is(err, ErrAAPUnsupportedContentType) {
+		t.Fatalf("err=%v want=%v", err, ErrAAPUnsupportedContentType)
+	}
 }
 
 func TestAAPAgentProfileInputFileParts(t *testing.T) {

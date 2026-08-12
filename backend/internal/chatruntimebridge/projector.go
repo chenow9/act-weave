@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"actweave/backend/internal/a2ui"
 	"actweave/backend/internal/agentrun"
 	"actweave/backend/internal/chatruntime"
 	"actweave/backend/internal/einoruntime"
@@ -42,6 +43,10 @@ type StreamDeltaRecorder struct {
 	// ModelTurnHook is optional; called once per assistant model turn with
 	// aggregated content + reasoning (eino → agent audit MODEL step path).
 	ModelTurnHook func(ctx context.Context, turn einoruntime.ModelTurn) error
+	// Preview is optional; when set, A2UI fence spans are kept out of emitted
+	// deltas. Recorded deltas stay raw either way, because they are the terminal
+	// text's fallback source and extraction must see the fence.
+	Preview *a2ui.FencePreview
 	// Now overrides time for tests.
 	Now func() time.Time
 	// index is the next delta index for TextDeltaEmission.
@@ -73,11 +78,17 @@ func (r *StreamDeltaRecorder) OnTextDelta(ctx context.Context, delta string) err
 	r.mu.Lock()
 	r.deltas = append(r.deltas, delta)
 	r.index++ // stream emission count only (observability / tests)
+	visible := delta
+	if r.Preview != nil {
+		visible = r.Preview.Feed(delta)
+	}
 	sink := r.Sink
 	nowFn := r.Now
 	r.mu.Unlock()
 
-	if sink == nil {
+	// A chunk that was entirely fence produces no delta at all: a preview shows
+	// prose or nothing, never a marker.
+	if sink == nil || visible == "" {
 		return nil
 	}
 	occurred := time.Now().UTC()
@@ -85,7 +96,7 @@ func (r *StreamDeltaRecorder) OnTextDelta(ctx context.Context, delta string) err
 		occurred = nowFn().UTC()
 	}
 	return sink.EmitTextDelta(ctx, chatruntime.TextDeltaEmission{
-		Index: 0, Text: delta, OccurredAt: occurred,
+		Index: 0, Text: visible, OccurredAt: occurred,
 	})
 }
 
@@ -152,6 +163,11 @@ func (r *StreamDeltaRecorder) FailIncomplete(ctx context.Context, code string, r
 	sink := r.Sink
 	nowFn := r.Now
 	partial := strings.Join(r.deltas, "")
+	if r.Preview != nil {
+		// Partial text is shown, not parsed, so it follows the same rule as a
+		// delta: an interrupt mid-surface leaves the prose, not half a fence.
+		partial = a2ui.MaskFences(partial)
+	}
 	r.failed = true
 	r.mu.Unlock()
 

@@ -9,6 +9,9 @@ playwright-report/
 # Lockfiles and generated package artifacts
 package-lock.json
 
+# Written by backend/cmd/a2uigen; `make a2ui-check` owns their contents
+src/components/a2ui/generated/
+
 # E2E ad-hoc scripts, snapshots, and acceptance artifacts (not production source)
 e2e/**/*.mjs
 e2e/**/*.json

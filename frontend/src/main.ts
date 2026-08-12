@@ -6,6 +6,7 @@ import "@fortawesome/fontawesome-free/css/solid.min.css";
 import "@fortawesome/fontawesome-free/css/regular.min.css";
 import "./styles/app.css";
 import "./styles/page-misc.css";
+import "./styles/a2ui.css";
 
 import { ElLoading } from "element-plus";
 import { createPinia } from "pinia";

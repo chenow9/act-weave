@@ -128,6 +128,8 @@
   "aapCompactSummary": "Return Compact summary body via AAP",
   "aapCompactSummaryHint": "Off by default. Affects only new runs for this agent; turning off does not remove protocol plaintext already written to existing runs.",
   "compactionSummaryPermanenceWarning": "When enabled, successful Compact summary bodies are retained permanently as PostgreSQL plaintext protocol projections and backups. Turning off only affects subsequent new runs and does not delete existing run bodies.",
+  "aapEnableA2UI": "Enable A2UI (additive)",
+  "aapEnableA2UIHint": "Off by default. When on, this agent may attach A2UI surfaces to assistant messages when useful; text remains first-class. Only affects new runs.",
   "defaultRunName": "After-sales Agent",
   "defaultRoleDescription": "Handle after-sales notices, refund pre-checks, and exception escalation",
   "defaultSystemPrompt": "Handle after-sales issues in the current workspace; call authorized tools or workflows when needed.",

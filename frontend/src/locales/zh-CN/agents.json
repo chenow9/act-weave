@@ -128,6 +128,8 @@
   "aapCompactSummary": "AAP 返回 Compact 摘要正文",
   "aapCompactSummaryHint": "默认关闭。仅影响本 Agent 新 run 快照；关闭后不会删除既有 run 中已写入的协议明文。",
   "compactionSummaryPermanenceWarning": "开启后，成功的 Compact 摘要正文会作为 PostgreSQL 协议明文投影与备份永久保留。关闭仅影响后续新 run，不会删除既有 run 正文。",
+  "aapEnableA2UI": "启用 A2UI（附加）",
+  "aapEnableA2UIHint": "默认关闭。开启后，本 Agent 可在有用时为助手消息附加 A2UI 界面；文本仍是一等公民。仅影响新 run。",
   "defaultRunName": "售后处理 Agent",
   "defaultRoleDescription": "处理售后通知、退款前置校验与异常升级",
   "defaultSystemPrompt": "负责处理当前业务空间内的售后问题，必要时调用已授权的 Tool 或 Workflow。",

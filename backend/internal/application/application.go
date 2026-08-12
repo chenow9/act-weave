@@ -1506,6 +1506,10 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if err != nil {
 		return nil, err
 	}
+	a2uiCatalogRoutes, err := httptransport.NewA2UICatalogRoutes()
+	if err != nil {
+		return nil, err
+	}
 
 	// Exact CORS backed by per-Client allowedCorsOrigins (no global Origin union).
 	// Authenticated responses reflect Origin only for the token azp; workspace
@@ -1544,7 +1548,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 			authRoutes, workspaceRoutes, agentAccessRoutes, configurationRoutes, agentRoutes,
 			delegationRoutes,
 			toolRoutes, workflowRoutes, generateSessionRoutes, chatRoutes, auditRoutes, agentAuditRoutes,
-			overviewRoutes,
+			overviewRoutes, a2uiCatalogRoutes,
 		},
 		AgentAccessRegistrars: []httptransport.AgentAccessV1RouteRegistrar{
 			agentAccessJWKSRoutes, agentAccessTokenRoutes, aapAgentProfileRoutes,
