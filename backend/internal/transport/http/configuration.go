@@ -1,9 +1,11 @@
 package httptransport
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -206,23 +208,27 @@ func deleteLock(c *gin.Context) (int64, error) {
 }
 
 type modelConfigDTO struct {
-	ID                   string             `json:"id"`
-	Name                 string             `json:"name"`
-	Provider             string             `json:"provider"`
-	APIBase              string             `json:"apiBase"`
-	ModelName            string             `json:"modelName"`
-	CredentialConfigured bool               `json:"credentialConfigured"`
-	Options              json.RawMessage    `json:"options"`
-	RuntimeCapabilities  json.RawMessage    `json:"runtimeCapabilities"`
-	Status               modelconfig.Status `json:"status"`
-	LastVerifiedAt       *time.Time         `json:"lastVerifiedAt,omitempty"`
-	LastLatencyMS        *int               `json:"lastLatencyMs,omitempty"`
-	LastErrorCode        *string            `json:"lastErrorCode,omitempty"`
-	CreatedBy            string             `json:"createdBy"`
-	UpdatedBy            string             `json:"updatedBy"`
-	CreatedAt            time.Time          `json:"createdAt"`
-	UpdatedAt            time.Time          `json:"updatedAt"`
-	LockVersion          int64              `json:"lockVersion"`
+	ID                   string          `json:"id"`
+	Name                 string          `json:"name"`
+	Provider             string          `json:"provider"`
+	APIBase              string          `json:"apiBase"`
+	ModelName            string          `json:"modelName"`
+	CredentialConfigured bool            `json:"credentialConfigured"`
+	Options              json.RawMessage `json:"options"`
+	RuntimeCapabilities  json.RawMessage `json:"runtimeCapabilities"`
+	// AgenticCapabilities is verification-owned and read-only on the wire.
+	// Create/update request DTOs intentionally omit this field so DisallowUnknownFields
+	// rejects any client write attempt (including {}, null, or nonempty data).
+	AgenticCapabilities json.RawMessage    `json:"agenticCapabilities"`
+	Status              modelconfig.Status `json:"status"`
+	LastVerifiedAt      *time.Time         `json:"lastVerifiedAt,omitempty"`
+	LastLatencyMS       *int               `json:"lastLatencyMs,omitempty"`
+	LastErrorCode       *string            `json:"lastErrorCode,omitempty"`
+	CreatedBy           string             `json:"createdBy"`
+	UpdatedBy           string             `json:"updatedBy"`
+	CreatedAt           time.Time          `json:"createdAt"`
+	UpdatedAt           time.Time          `json:"updatedAt"`
+	LockVersion         int64              `json:"lockVersion"`
 }
 
 func modelDTO(v modelconfig.Config) modelConfigDTO {
@@ -230,7 +236,17 @@ func modelDTO(v modelconfig.Config) modelConfigDTO {
 	if len(caps) == 0 {
 		caps = json.RawMessage(`{}`)
 	}
-	return modelConfigDTO{v.ID, v.Name, v.Provider, v.APIBase, v.ModelName, v.CredentialConfigured, v.Options, caps, v.Status, v.LastVerifiedAt, v.LastLatencyMS, v.LastErrorCode, v.CreatedBy, v.UpdatedBy, v.CreatedAt, v.UpdatedAt, v.LockVersion}
+	agentic := v.AgenticCapabilities
+	if len(agentic) == 0 {
+		agentic = json.RawMessage(`{}`)
+	}
+	return modelConfigDTO{
+		ID: v.ID, Name: v.Name, Provider: v.Provider, APIBase: v.APIBase, ModelName: v.ModelName,
+		CredentialConfigured: v.CredentialConfigured, Options: v.Options, RuntimeCapabilities: caps,
+		AgenticCapabilities: agentic, Status: v.Status, LastVerifiedAt: v.LastVerifiedAt,
+		LastLatencyMS: v.LastLatencyMS, LastErrorCode: v.LastErrorCode, CreatedBy: v.CreatedBy,
+		UpdatedBy: v.UpdatedBy, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, LockVersion: v.LockVersion,
+	}
 }
 
 type createModelRequest struct {
@@ -253,6 +269,68 @@ type updateModelRequest struct {
 	LockVersion         int64           `json:"lockVersion"`
 }
 
+// decodeModelConfigWriteJSON decodes create/update model bodies. Any presence of
+// the read-only field agenticCapabilities (null, {}, or data) returns
+// ErrAgenticCapabilitiesReadOnly → HTTP 400. Other unknown fields still fail
+// as validation (422) via DisallowUnknownFields.
+func decodeModelConfigWriteJSON(c *gin.Context, target any) error {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20)
+	raw, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		return err
+	}
+	if hasJSONObjectKey(raw, "agenticCapabilities") {
+		return modelconfig.ErrAgenticCapabilitiesReadOnly
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("request body must contain one JSON value")
+		}
+		return err
+	}
+	return nil
+}
+
+// hasJSONObjectKey reports whether a top-level JSON object contains key (any value
+// including null). Uses a streaming decoder so duplicate-key detection is not
+// required here; unknown-field decoding still applies after.
+func hasJSONObjectKey(raw []byte, key string) bool {
+	dec := json.NewDecoder(bytes.NewReader(bytes.TrimSpace(raw)))
+	tok, err := dec.Token()
+	if err != nil {
+		return false
+	}
+	delim, ok := tok.(json.Delim)
+	if !ok || delim != '{' {
+		return false
+	}
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return false
+		}
+		k, ok := keyTok.(string)
+		if !ok {
+			return false
+		}
+		if k == key {
+			return true
+		}
+		// Skip value.
+		var skip json.RawMessage
+		if err := dec.Decode(&skip); err != nil {
+			return false
+		}
+	}
+	return false
+}
+
 func (r *ConfigurationRoutes) listModels(c *gin.Context) {
 	if !r.authorize(c, authz.ActionView) {
 		return
@@ -273,7 +351,11 @@ func (r *ConfigurationRoutes) createModel(c *gin.Context) {
 		return
 	}
 	var q createModelRequest
-	if decodeJSON(c, &q) != nil {
+	if err := decodeModelConfigWriteJSON(c, &q); err != nil {
+		if errors.Is(err, modelconfig.ErrAgenticCapabilitiesReadOnly) {
+			RespondError(c, err)
+			return
+		}
 		RespondError(c, modelconfig.ErrInvalid)
 		return
 	}
@@ -309,7 +391,11 @@ func (r *ConfigurationRoutes) updateModel(c *gin.Context) {
 		return
 	}
 	var q updateModelRequest
-	if decodeJSON(c, &q) != nil {
+	if err := decodeModelConfigWriteJSON(c, &q); err != nil {
+		if errors.Is(err, modelconfig.ErrAgenticCapabilitiesReadOnly) {
+			RespondError(c, err)
+			return
+		}
 		RespondError(c, modelconfig.ErrInvalid)
 		return
 	}

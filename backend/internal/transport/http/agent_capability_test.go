@@ -194,7 +194,7 @@ func newAgentCapabilityFixture(t *testing.T) *agentCapabilityFixture {
 		t.Fatal(err)
 	}
 	modelConfigID := uuid.NewString()
-	if _, err = models.Create(ctx, modelconfig.NewConfig{ID: modelConfigID, WorkspaceID: workspaceID, Name: "agent model", Provider: "test", APIBase: "https://models.example/v1", ModelName: "agent-model", Options: json.RawMessage(`{}`), CreatedBy: v1AdminUserID}); err != nil {
+	if _, err = models.Create(ctx, modelconfig.NewConfig{ID: modelConfigID, WorkspaceID: workspaceID, Name: "agent model", Provider: modelconfig.ProviderOpenAICompatible, APIBase: "https://models.example/v1", ModelName: "agent-model", Options: json.RawMessage(`{}`), CreatedBy: v1AdminUserID}); err != nil {
 		t.Fatal(err)
 	}
 	agents, err := agent.NewRepository(authFixture.db)

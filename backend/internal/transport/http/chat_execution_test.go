@@ -366,7 +366,7 @@ func newChatExecutionAPIFixture(t *testing.T) *chatExecutionAPIFixture {
 	}
 	modelID := uuid.NewString()
 	if _, err = models.Create(ctx, modelconfig.NewConfig{ID: modelID, WorkspaceID: workspaceID,
-		Name: "Chat Model", Provider: "test", APIBase: "https://models.example/v1",
+		Name: "Chat Model", Provider: modelconfig.ProviderOpenAICompatible, APIBase: "https://models.example/v1",
 		ModelName: "chat-model", Options: json.RawMessage(`{}`), CreatedBy: v1AdminUserID}); err != nil {
 		t.Fatal(err)
 	}

@@ -107,6 +107,13 @@ runtime:
   eino:
     maxIterations: 8
     maxToolInvocations: 16
+  # Outer budget for one model config verification attempt. Must stay at or above
+  # the sum of the inner probe budgets (Responses stream 30s + client tool_search
+  # 45s) or those probes can never reach their own deadlines. Omitted → 90s;
+  # accepted range 1..600; env override
+  # ACTWEAVE_RUNTIME_MODEL_VERIFICATION_TIMEOUT_SECONDS.
+  modelVerification:
+    timeoutSeconds: 90
   # ZKL-74 platform kill-switch only. Product knobs: Model API + Agent in Console.
   # enabled=false → new runs fall back to legacy full history.
   # Gray: allowAllWorkspaces=false and workspaceIds: [uuid, ...].

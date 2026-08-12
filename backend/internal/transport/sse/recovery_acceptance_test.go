@@ -40,7 +40,7 @@ func TestAAPSSERecoveryAcceptance(t *testing.T) {
 	startedAt := time.Now()
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 18 || version.Dirty {
+	if !version.Applied || version.Number != 20 || version.Dirty {
 		t.Fatalf("expected clean recovery schema version 2, got %+v", version)
 	}
 	db := testDatabase.Open(t)

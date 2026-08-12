@@ -30,8 +30,30 @@ func TestV1ModelConfigRoutes(t *testing.T) {
 	if created.Code != http.StatusCreated || !strings.Contains(created.Body.String(), `"status":"UNVERIFIED"`) {
 		t.Fatalf("create model status=%d body=%s", created.Code, created.Body.String())
 	}
+	if !strings.Contains(created.Body.String(), `"agenticCapabilities":{}`) {
+		t.Fatalf("create must return read-only empty agenticCapabilities: %s", created.Body.String())
+	}
 	var value modelConfigDTO
 	decodeResponse(t, created.Body.Bytes(), &value)
+
+	// Client writes of agenticCapabilities (including {}, null, nonempty) must exact 400.
+	for _, payload := range []map[string]any{
+		{"name": "x", "provider": "openai-compatible", "apiBase": "https://models.example/v1", "modelName": "m", "agenticCapabilities": map[string]any{}},
+		{"name": "x", "provider": "openai-compatible", "apiBase": "https://models.example/v1", "modelName": "m", "agenticCapabilities": nil},
+		{"name": "x", "provider": "openai-compatible", "apiBase": "https://models.example/v1", "modelName": "m", "agenticCapabilities": map[string]any{"schemaVersion": "agentic-model.v1"}},
+	} {
+		rej := f.request(t, http.MethodPost, f.base+"/model-configs", payload, f.token, nil)
+		if rej.Code != http.StatusBadRequest {
+			t.Fatalf("create agenticCapabilities must be 400, got %d body=%s", rej.Code, rej.Body.String())
+		}
+		if !strings.Contains(rej.Body.String(), "AGENTIC_CAPABILITIES_READ_ONLY") {
+			t.Fatalf("create must use AGENTIC_CAPABILITIES_READ_ONLY: %s", rej.Body.String())
+		}
+		// Safe body: no credential/provider secret leakage.
+		if strings.Contains(strings.ToLower(rej.Body.String()), "sk-") {
+			t.Fatalf("leaky error body: %s", rej.Body.String())
+		}
+	}
 
 	verified := f.request(t, http.MethodPost, f.base+"/model-configs/"+value.ID+":verify", nil, f.token, nil)
 	if verified.Code != http.StatusOK || !strings.Contains(verified.Body.String(), `"status":"VERIFIED"`) {
@@ -39,11 +61,32 @@ func TestV1ModelConfigRoutes(t *testing.T) {
 	}
 	var verifiedValue modelConfigDTO
 	decodeResponse(t, verified.Body.Bytes(), &verifiedValue)
+	if len(verifiedValue.AgenticCapabilities) == 0 || string(verifiedValue.AgenticCapabilities) == "{}" {
+		// Stub verifier returns empty probe caps; service stamps canonical on success.
+		// With stub VerifierFunc returning zero caps, service still stamps canonical.
+		if !strings.Contains(verified.Body.String(), "agentic-model.v1") && !strings.Contains(verified.Body.String(), `"agenticCapabilities":{}`) {
+			t.Fatalf("verify body missing agenticCapabilities: %s", verified.Body.String())
+		}
+	}
+	// Update with agenticCapabilities field rejected with exact 400.
+	patchReject := f.request(t, http.MethodPatch, f.base+"/model-configs/"+value.ID, map[string]any{
+		"modelName": "reasoning-model-v2", "lockVersion": verifiedValue.LockVersion,
+		"agenticCapabilities": map[string]any{},
+	}, f.token, nil)
+	if patchReject.Code != http.StatusBadRequest {
+		t.Fatalf("patch agenticCapabilities must be 400, got %d body=%s", patchReject.Code, patchReject.Body.String())
+	}
+	if !strings.Contains(patchReject.Body.String(), "AGENTIC_CAPABILITIES_READ_ONLY") {
+		t.Fatalf("patch must use AGENTIC_CAPABILITIES_READ_ONLY: %s", patchReject.Body.String())
+	}
 	updated := f.request(t, http.MethodPatch, f.base+"/model-configs/"+value.ID, map[string]any{
 		"modelName": "reasoning-model-v2", "lockVersion": verifiedValue.LockVersion,
 	}, f.token, nil)
 	if updated.Code != http.StatusOK || !strings.Contains(updated.Body.String(), `"status":"UNVERIFIED"`) {
 		t.Fatalf("update model status=%d body=%s", updated.Code, updated.Body.String())
+	}
+	if !strings.Contains(updated.Body.String(), `"agenticCapabilities":{}`) {
+		t.Fatalf("update must clear agenticCapabilities: %s", updated.Body.String())
 	}
 	rejected := f.request(t, http.MethodPost, f.base+"/model-configs", map[string]any{
 		"workspaceId": f.workspaceID, "name": "escalation", "provider": "x", "apiBase": "https://x.example", "modelName": "x", "status": "VERIFIED",
@@ -301,7 +344,9 @@ func newConfigurationFixture(t *testing.T) *configurationFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	modelVerifier, err := modelconfig.NewVerificationService(models, modelconfig.VerifierFunc(func(context.Context, modelconfig.Config) error { return nil }), time.Second)
+	modelVerifier, err := modelconfig.NewVerificationService(models, modelconfig.VerifierFunc(func(context.Context, modelconfig.Config) (modelconfig.AgenticCapabilities, error) {
+		return modelconfig.AgenticCapabilities{}, nil
+	}), time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

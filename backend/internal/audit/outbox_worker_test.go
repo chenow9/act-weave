@@ -17,7 +17,7 @@ import (
 func TestOutboxWorkerClaimsPublishesRetriesAndStops(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 18 || version.Dirty {
+	if !version.Applied || version.Number != 20 || version.Dirty {
 		t.Fatalf("outbox worker migration = %+v", version)
 	}
 	db := testDatabase.Open(t)

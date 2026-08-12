@@ -474,6 +474,11 @@ func mapError(err error) mappedError {
 	case errors.Is(err, tool.ErrNoPassingTest):
 		return mappedError{http.StatusConflict, "TOOL_TEST_REQUIRED",
 			"tool must pass test before publish"}
+	case errors.Is(err, modelconfig.ErrAgenticCapabilitiesReadOnly):
+		// Dedicated 400 for any client write of read-only agenticCapabilities.
+		// Do not fold into general model validation (422).
+		return mappedError{http.StatusBadRequest, "AGENTIC_CAPABILITIES_READ_ONLY",
+			"agenticCapabilities is verification-owned and read-only on create/update."}
 	case isNotFound(err):
 		return mappedError{http.StatusNotFound, "NOT_FOUND", "The requested resource was not found."}
 	case isConflict(err):

@@ -17,7 +17,7 @@ import (
 func TestService_TimelineJoinsDelegationTable(t *testing.T) {
 	harness := dbtest.New(t)
 	version := harness.MigrateToLatest(t)
-	if !version.Applied || version.Number != 18 || version.Dirty {
+	if !version.Applied || version.Number != 20 || version.Dirty {
 		t.Fatalf("migration = %+v", version)
 	}
 	db := harness.Open(t)

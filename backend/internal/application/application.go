@@ -460,7 +460,8 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		return nil, err
 	}
 	modelVerifier, err := modelconfig.NewVerificationService(modelRepository,
-		&modelConfigVerifier{client: client, secrets: secretService}, 20*time.Second)
+		&modelConfigVerifier{client: client, secrets: secretService},
+		modelVerificationTimeout(config.Runtime))
 	if err != nil {
 		return nil, err
 	}
@@ -1155,6 +1156,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	}
 	einoCheckpoints := einoCheckpointDeleter(checkpointStore)
 	einoEngine := einoruntime.NewEngine(einoruntime.EngineConfig{Store: checkpointStore})
+	agenticEngine := einoruntime.NewAgenticEngine(einoruntime.AgenticEngineConfig{Store: checkpointStore})
 	// modelHTTP is constructed earlier for smart-dag PlatformChatGraphModel (shared).
 	// D14: ProtocolMessageTextSink path for true Stream → item.delta.
 	messageProjector, projectorErr := chat.NewProtocolMessageProjector(
@@ -1219,8 +1221,14 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if summaryBodyErr != nil {
 		return nil, fmt.Errorf("context summary body store: %w", summaryBodyErr)
 	}
+	// Classic Chat Completions builder: resume/HITL (Task 4B), compact, delegation
+	// seams only. Production initial Chat uses BuildAgenticModel below.
 	buildChatModel := func(ctx context.Context, cfg modelconfig.Config) (model.BaseChatModel, error) {
 		return modelapi.NewEinoOpenAIChatModel(ctx, modelHTTP, secretService, cfg)
+	}
+	// Task 4A: production initial Chat AgenticModel (Responses; store=false; parallel=false).
+	buildAgenticModel := func(ctx context.Context, cfg modelconfig.Config) (model.AgenticModel, error) {
+		return modelapi.NewOpenAIAgenticModel(ctx, modelHTTP, secretService, cfg)
 	}
 	// Compact DI (ZKL-81): full Coordinator + lifecycle + T4-B projector path.
 	// Production compaction gate remains default-off via runtime.sessionContext.compaction.
@@ -1282,6 +1290,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		ToolInvoker:        chatInvoker,
 		Confirmations:      chatConfirmations,
 		Engine:             einoEngine,
+		AgenticEngine:      agenticEngine,
 		CheckpointTTL:      checkpointStore,
 		TextSinkFactory:    textSinkFactory,
 		MaxIterations:      runtimeCfg.Eino.MaxIterations,
@@ -1289,6 +1298,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		AgentAuditDebug:    config.AgentAuditDebug,
 		Assemblies:         assemblyRepo,
 		Compact:            compactDeps,
+		BuildAgenticModel:  buildAgenticModel,
 		BuildChatModel:     buildChatModel,
 		Multimodal:         multimodalAssembler,
 		Delegation: &chatruntimebridge.DelegationDeps{

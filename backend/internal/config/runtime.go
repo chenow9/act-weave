@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -13,6 +14,22 @@ import (
 const (
 	DefaultEinoMaxIterations      = 8
 	DefaultEinoMaxToolInvocations = 16
+
+	// DefaultModelVerificationTimeoutSeconds is the outer budget for one model
+	// config verification attempt (modelconfig.VerificationService.Verify wraps
+	// the whole upstream call in it). It must stay at or above the sum of the
+	// inner Task 3 probe budgets — Responses streaming 30s plus client
+	// tool_search 45s — so those budgets remain reachable rather than dead code,
+	// with the remaining 15s covering the GET /models auth probe.
+	// application.TestModelVerificationOuterBudgetCoversInnerProbeBudgets pins
+	// that relation against the real probe constants.
+	DefaultModelVerificationTimeoutSeconds = 90
+
+	// MaxModelVerificationTimeoutSeconds bounds the operator-configurable outer
+	// budget. A larger value would hold an HTTP verification request (and its
+	// upstream connection) open long enough to be an availability problem, so it
+	// fails closed instead of being clamped.
+	MaxModelVerificationTimeoutSeconds = 600
 
 	// Workflow engine modes. After Load/applyRuntimeDefaults (P0 / no-reinvent):
 	// omitted engine stages "eino" (compose CoreGraphRunner). Explicit
@@ -211,20 +228,105 @@ func (cfg WorkflowRuntimeConfig) Normalized() WorkflowRuntimeConfig {
 type EinoRuntimeTuning struct {
 	// MaxIterations caps model rounds (adk MaxIterations). Default 8.
 	MaxIterations int `yaml:"maxIterations"`
-	// MaxToolInvocations hard-caps total tool calls per run. Default 16.
+	// MaxToolInvocations hard-caps total tool calls per run.
+	// Contract (production-wide, no silent clamp):
+	//   - 0 → DefaultEinoMaxToolInvocations (16) via Normalized / applyRuntimeDefaults
+	//   - 1..16 accepted as-is
+	//   - negative or >16 fail closed (Validate / validateRuntimeConfig / bridge)
 	MaxToolInvocations int `yaml:"maxToolInvocations"`
 }
 
 // Normalized applies zero-value defaults for eino budgets.
+//
+// MaxToolInvocations: exactly 0 maps to DefaultEinoMaxToolInvocations (16).
+// Negative and >16 values are left unchanged so Validate/validateRuntimeConfig
+// and production boundaries can fail closed — never silently defaulted or clamped.
 func (tuning EinoRuntimeTuning) Normalized() EinoRuntimeTuning {
 	out := tuning
 	if out.MaxIterations <= 0 {
 		out.MaxIterations = DefaultEinoMaxIterations
 	}
-	if out.MaxToolInvocations <= 0 {
+	if out.MaxToolInvocations == 0 {
 		out.MaxToolInvocations = DefaultEinoMaxToolInvocations
 	}
 	return out
+}
+
+// Validate reports whether MaxToolInvocations is within the production contract.
+// Accepts 0 (meaning default 16 before normalize) and 1..DefaultEinoMaxToolInvocations.
+// Negative and >16 fail closed.
+func (tuning EinoRuntimeTuning) Validate() error {
+	if err := validateEinoMaxToolInvocations(tuning.MaxToolInvocations); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateEinoMaxToolInvocations enforces 0 (default 16) or 1..DefaultEinoMaxToolInvocations.
+func validateEinoMaxToolInvocations(max int) error {
+	if max == 0 {
+		return nil
+	}
+	if max < 0 || max > DefaultEinoMaxToolInvocations {
+		return fmt.Errorf(
+			"runtime.eino.maxToolInvocations must be 0 (default %d) or 1..%d, got %d",
+			DefaultEinoMaxToolInvocations, DefaultEinoMaxToolInvocations, max,
+		)
+	}
+	return nil
+}
+
+// ModelVerificationTuning holds the outer budget for one model config
+// verification attempt.
+//
+// Contract (no silent clamp, mirroring EinoRuntimeTuning):
+//   - 0 → DefaultModelVerificationTimeoutSeconds (90) via Normalized /
+//     applyRuntimeDefaults
+//   - 1..MaxModelVerificationTimeoutSeconds accepted as-is
+//   - negative or above the maximum fail closed (Validate /
+//     validateRuntimeConfig), and application.Open additionally refuses a
+//     non-positive duration through modelconfig.NewVerificationService
+type ModelVerificationTuning struct {
+	TimeoutSeconds int `yaml:"timeoutSeconds"`
+}
+
+// Normalized applies the zero-value default. Negative and above-maximum values
+// are left unchanged so Validate/validateRuntimeConfig can fail closed instead
+// of a hostile or mistyped value being silently defaulted or clamped.
+func (tuning ModelVerificationTuning) Normalized() ModelVerificationTuning {
+	out := tuning
+	if out.TimeoutSeconds == 0 {
+		out.TimeoutSeconds = DefaultModelVerificationTimeoutSeconds
+	}
+	return out
+}
+
+// Timeout returns the configured outer budget as a duration. It does not apply
+// the zero-value default: call Normalized() first. Out-of-contract values are
+// returned as-is (including non-positive) so the consuming boundary rejects them.
+func (tuning ModelVerificationTuning) Timeout() time.Duration {
+	return time.Duration(tuning.TimeoutSeconds) * time.Second
+}
+
+// Validate accepts 0 (meaning the default is applied later) or
+// 1..MaxModelVerificationTimeoutSeconds. Negative and larger values fail closed.
+func (tuning ModelVerificationTuning) Validate() error {
+	return validateModelVerificationTimeoutSeconds(tuning.TimeoutSeconds)
+}
+
+// validateModelVerificationTimeoutSeconds enforces 0 (default 90) or
+// 1..MaxModelVerificationTimeoutSeconds.
+func validateModelVerificationTimeoutSeconds(seconds int) error {
+	if seconds == 0 {
+		return nil
+	}
+	if seconds < 0 || seconds > MaxModelVerificationTimeoutSeconds {
+		return fmt.Errorf(
+			"runtime.modelVerification.timeoutSeconds must be 0 (default %d) or 1..%d, got %d",
+			DefaultModelVerificationTimeoutSeconds, MaxModelVerificationTimeoutSeconds, seconds,
+		)
+	}
+	return nil
 }
 
 // RuntimeConfig is the process-level execution-engine configuration.
@@ -237,9 +339,12 @@ func (tuning EinoRuntimeTuning) Normalized() EinoRuntimeTuning {
 // empty (Normalized → wrapper) for fail-closed unit tests.
 // No dual-run fields by design.
 type RuntimeConfig struct {
-	Agent          RuntimeFeatureRollout `yaml:"agent"`
-	Workflow       WorkflowRuntimeConfig `yaml:"workflow"`
-	Eino           EinoRuntimeTuning     `yaml:"eino"`
+	Agent    RuntimeFeatureRollout `yaml:"agent"`
+	Workflow WorkflowRuntimeConfig `yaml:"workflow"`
+	Eino     EinoRuntimeTuning     `yaml:"eino"`
+	// ModelVerification is the outer budget for model config verification.
+	// Omitted / zero maps to DefaultModelVerificationTimeoutSeconds (90s).
+	ModelVerification ModelVerificationTuning `yaml:"modelVerification"`
 	// SessionContext is the fail-closed gate for session context window management
 	// (ZKL-74). Default remains disabled unless explicitly enabled + allowlisted.
 	// Nested Compaction is the independent LLM compact gate (ZKL-81 / T6-A),
@@ -391,10 +496,11 @@ func (feature CompactionRollout) Normalized() CompactionRollout {
 // during Load so explicit construction stays under caller control.
 func (cfg RuntimeConfig) Normalized() RuntimeConfig {
 	return RuntimeConfig{
-		Agent:          cfg.Agent.Normalized(),
-		Workflow:       cfg.Workflow.Normalized(),
-		Eino:           cfg.Eino.Normalized(),
-		SessionContext: cfg.SessionContext.Normalized(),
+		Agent:             cfg.Agent.Normalized(),
+		Workflow:          cfg.Workflow.Normalized(),
+		Eino:              cfg.Eino.Normalized(),
+		ModelVerification: cfg.ModelVerification.Normalized(),
+		SessionContext:    cfg.SessionContext.Normalized(),
 	}
 }
 
@@ -430,8 +536,15 @@ func (config *Config) applyRuntimeDefaults() {
 	if config.Runtime.Eino.MaxIterations <= 0 {
 		config.Runtime.Eino.MaxIterations = DefaultEinoMaxIterations
 	}
-	if config.Runtime.Eino.MaxToolInvocations <= 0 {
+	// Exactly 0 → default 16. Negative and >16 are left for validateRuntimeConfig
+	// to reject (no silent clamp/default of invalid values).
+	if config.Runtime.Eino.MaxToolInvocations == 0 {
 		config.Runtime.Eino.MaxToolInvocations = DefaultEinoMaxToolInvocations
+	}
+	// Exactly 0 → default 90s. Negative and above-maximum values are left for
+	// validateRuntimeConfig to reject.
+	if config.Runtime.ModelVerification.TimeoutSeconds == 0 {
+		config.Runtime.ModelVerification.TimeoutSeconds = DefaultModelVerificationTimeoutSeconds
 	}
 
 	// Stage agent engine=eino when the operator did not set the field.
@@ -518,6 +631,13 @@ func (config *Config) applyRuntimeEnvironment(lookup LookupEnv) error {
 		}
 		config.Runtime.Eino.MaxToolInvocations = value
 	}
+	if raw, ok := lookup("ACTWEAVE_RUNTIME_MODEL_VERIFICATION_TIMEOUT_SECONDS"); ok {
+		value, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err != nil {
+			return errors.New("ACTWEAVE_RUNTIME_MODEL_VERIFICATION_TIMEOUT_SECONDS must be an integer")
+		}
+		config.Runtime.ModelVerification.TimeoutSeconds = value
+	}
 	return nil
 }
 
@@ -531,8 +651,20 @@ func validateRuntimeConfig(cfg RuntimeConfig) error {
 	if cfg.Eino.MaxIterations <= 0 {
 		return errors.New("runtime.eino.maxIterations must be a positive integer")
 	}
-	if cfg.Eino.MaxToolInvocations <= 0 {
-		return errors.New("runtime.eino.maxToolInvocations must be a positive integer")
+	// After applyRuntimeDefaults, 0 has already become 16. Reject negative and >16
+	// (and any residual 0 if defaults were bypassed) — 1..16 only at this boundary.
+	if cfg.Eino.MaxToolInvocations < 1 || cfg.Eino.MaxToolInvocations > DefaultEinoMaxToolInvocations {
+		return fmt.Errorf(
+			"runtime.eino.maxToolInvocations must be 1..%d (0 defaults to %d at load), got %d",
+			DefaultEinoMaxToolInvocations, DefaultEinoMaxToolInvocations, cfg.Eino.MaxToolInvocations,
+		)
+	}
+	// After applyRuntimeDefaults 0 has already become 90. A residual 0 can only
+	// come from a struct built without Load, where application.Open applies
+	// Normalized() before handing the duration to NewVerificationService, so 0
+	// stays accepted here. Negative and above-maximum always fail closed.
+	if err := validateModelVerificationTimeoutSeconds(cfg.ModelVerification.TimeoutSeconds); err != nil {
+		return err
 	}
 	return nil
 }

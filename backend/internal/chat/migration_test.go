@@ -30,8 +30,8 @@ func TestChatMigration(t *testing.T) {
 	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 18 || version.Dirty {
-		t.Fatalf("expected clean chat migration version 18, got %+v", version)
+	if !version.Applied || version.Number != 20 || version.Dirty {
+		t.Fatalf("expected clean chat migration version 20, got %+v", version)
 	}
 	db := testDatabase.Open(t)
 	insertChatMigrationFixtures(t, db)
