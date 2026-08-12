@@ -36,63 +36,95 @@ func TestParseSnapshot_SemanticDomainContract(t *testing.T) {
 	type mut struct {
 		name string
 		raw  string
+		// wantReason is a substring of the real ParseSnapshot error. It is
+		// mandatory: asserting only "some error was returned" is what let a
+		// fixture with a non-hex UUID be rejected by an earlier gate while the
+		// cell kept claiming to cover a later invariant.
+		wantReason string
 	}
 	mutations := []mut{
 		// Topology
-		{"root_depth_nonzero", setNodeDepth(t, base, 0, 1)},
-		{"child_depth_mismatch", setNodeDepth(t, edgeBase, 1, 0)},
-		{"orphan_node", injectOrphanNode(t, base)},
-		{"cycle_ab", injectCycle(t, edgeBase)},
-		{"self_edge", injectSelfEdge(t, base)},
-		{"depth_exceeds_max", setNodeDepth(t, edgeBase, 1, 99)},
+		{"root_depth_nonzero", setNodeDepth(t, base, 0, 1),
+			"root node depth must be 0"},
+		{"child_depth_mismatch", setNodeDepth(t, edgeBase, 1, 0),
+			"depth 0 != shortest-path depth 1"},
+		{"orphan_node", injectOrphanNode(t, base),
+			"not reachable from root"},
+		{"cycle_ab", injectCycle(t, edgeBase),
+			"graph cycle detected"},
+		{"self_edge", injectSelfEdge(t, base),
+			"edges[0] self-edge forbidden"},
+		// The BFS in validateTopologySemantics never hands out a distance above
+		// maxDepth, so an over-deep node is always caught by the shortest-path
+		// equality check first; the separate n.Depth > maxDepth branch cannot
+		// be reached from a fixture. Pin the reason that really fires.
+		{"depth_exceeds_max", setNodeDepth(t, edgeBase, 1, 99),
+			"depth 99 != shortest-path depth 1"},
 		// Identity
 		{"model_config_id_uppercase", mutateNodeField(t, base, "modelConfigId",
-			`"`+strings.ToUpper("c08f1f2e-7b5a-7c3d-8e9f-1234567890a1")+`"`)},
-		{"empty_api_base", mutateNodeNestedKey(t, base, "modelSnapshot", "apiBase", `""`, false)},
+			`"`+strings.ToUpper("c08f1f2e-7b5a-7c3d-8e9f-1234567890a1")+`"`),
+			"nodes[0].modelConfigId must be canonical UUID"},
+		{"empty_api_base", mutateNodeNestedKey(t, base, "modelSnapshot", "apiBase", `""`, false),
+			"nodes[0].modelSnapshot.apiBase invalid"},
 		// Internal edge enums — remote-only values forbidden on edges
-		{"edge_protocol_a2a", mutateEdgeField(t, edgeBase, "protocol", `"A2A"`)},
-		{"edge_context_summary", mutateEdgeField(t, edgeBase, "contextPolicy", `"SUMMARY"`)},
-		{"edge_context_selected", mutateEdgeField(t, edgeBase, "contextPolicy", `"SELECTED_MESSAGES"`)},
-		{"edge_mode_forged", mutateEdgeField(t, edgeBase, "mode", `"PARALLEL"`)},
+		{"edge_protocol_a2a", mutateEdgeField(t, edgeBase, "protocol", `"A2A"`),
+			`edges[0].protocol "A2A" not in closed enum`},
+		{"edge_context_summary", mutateEdgeField(t, edgeBase, "contextPolicy", `"SUMMARY"`),
+			`edges[0].contextPolicy "SUMMARY" not in closed enum`},
+		{"edge_context_selected", mutateEdgeField(t, edgeBase, "contextPolicy", `"SELECTED_MESSAGES"`),
+			`edges[0].contextPolicy "SELECTED_MESSAGES" not in closed enum`},
+		{"edge_mode_forged", mutateEdgeField(t, edgeBase, "mode", `"PARALLEL"`),
+			`edges[0].mode "PARALLEL" not in closed enum`},
 		// Remote policy (reviewer variants)
-		{"remote_http_scheme", mutateRemoteField(t, remoteBase, "endpointUrl", `"http://1.1.1.1/a2a"`)},
-		{"remote_file_scheme", mutateRemoteField(t, remoteBase, "endpointUrl", `"file:///etc/passwd"`)},
-		{"remote_userinfo", mutateRemoteField(t, remoteBase, "endpointUrl", `"https://user:pass@1.1.1.1/a2a"`)},
-		{"remote_empty_allowlist", mutateRemoteField(t, remoteBase, "allowedHosts", `[]`)},
-		{"remote_mismatched_allowlist", mutateRemoteField(t, remoteBase, "allowedHosts", `["8.8.8.8"]`)},
-		{"remote_agent_card_file", mutateRemoteField(t, remoteBase, "agentCardUrl", `"file:///tmp/card"`)},
-		{"remote_bad_secret_ref", mutateRemoteField(t, remoteBase, "authSecretRef", `"not-a-secret-ref"`)},
+		{"remote_http_scheme", mutateRemoteField(t, remoteBase, "endpointUrl", `"http://1.1.1.1/a2a"`),
+			"remote policy: egressguard: ssrf denied: http only allowed for loopback"},
+		{"remote_file_scheme", mutateRemoteField(t, remoteBase, "endpointUrl", `"file:///etc/passwd"`),
+			"remote policy: egressguard: invalid"},
+		{"remote_userinfo", mutateRemoteField(t, remoteBase, "endpointUrl", `"https://user:pass@1.1.1.1/a2a"`),
+			"remote policy: egressguard: ssrf denied: userinfo not allowed"},
+		{"remote_empty_allowlist", mutateRemoteField(t, remoteBase, "allowedHosts", `[]`),
+			"remote policy: egressguard: invalid: allowedHosts must be non-empty"},
+		{"remote_mismatched_allowlist", mutateRemoteField(t, remoteBase, "allowedHosts", `["8.8.8.8"]`),
+			`remote policy: egressguard: ssrf denied: host "1.1.1.1" not in allowlist`},
+		{"remote_agent_card_file", mutateRemoteField(t, remoteBase, "agentCardUrl", `"file:///tmp/card"`),
+			"remote policy: agentCardURL: egressguard: invalid"},
+		{"remote_bad_secret_ref", mutateRemoteField(t, remoteBase, "authSecretRef", `"not-a-secret-ref"`),
+			"authSecretRef must be secret:<workspaceId>:<secretId>"},
 		{"remote_secret_bad_uuid", mutateRemoteField(t, remoteBase, "authSecretRef",
-			`"secret:not-uuid:also-bad"`)},
-		// Capability forged enums/IDs
+			`"secret:not-uuid:also-bad"`),
+			"authSecretRef workspace/secret must be UUIDs"},
+		// Capability forged enums/IDs. capabilityId and releaseId are checked
+		// before the closed-domain enums, so both must be canonical here or the
+		// enum check under test never runs.
 		{"cap_forged_kind", injectCapRelease(t, base, map[string]any{
 			"capabilityId": "c33ce000-0000-4000-8000-0000000000c1",
-			"releaseId":    "c33ce000-0000-4000-8000-0000000000r1",
+			"releaseId":    "c33ce000-0000-4000-8000-0000000000e1",
 			"kind":         "FORGED_KIND", "callableName": "x", "callableDescription": "",
 			"inputSchema": map[string]any{}, "outputSchema": map[string]any{},
 			"riskLevel": "LOW", "sideEffectLevel": "NONE", "requiresConfirmation": false,
-		})},
+		}), `releases[0].kind "FORGED_KIND" not in closed domain`},
 		{"cap_forged_risk", injectCapRelease(t, base, map[string]any{
 			"capabilityId": "c33ce000-0000-4000-8000-0000000000c1",
-			"releaseId":    "c33ce000-0000-4000-8000-0000000000r1",
+			"releaseId":    "c33ce000-0000-4000-8000-0000000000e1",
 			"kind":         "TOOL", "callableName": "x", "callableDescription": "",
 			"inputSchema": map[string]any{}, "outputSchema": map[string]any{},
 			"riskLevel": "SUPER", "sideEffectLevel": "NONE", "requiresConfirmation": false,
-		})},
+		}), `releases[0].riskLevel "SUPER" not in closed domain`},
 		{"cap_forged_side_effect", injectCapRelease(t, base, map[string]any{
 			"capabilityId": "c33ce000-0000-4000-8000-0000000000c1",
-			"releaseId":    "c33ce000-0000-4000-8000-0000000000r1",
+			"releaseId":    "c33ce000-0000-4000-8000-0000000000e1",
 			"kind":         "TOOL", "callableName": "x", "callableDescription": "",
 			"inputSchema": map[string]any{}, "outputSchema": map[string]any{},
 			"riskLevel": "LOW", "sideEffectLevel": "DESTROY", "requiresConfirmation": false,
-		})},
+		}), `releases[0].sideEffectLevel "DESTROY" not in closed domain`},
 		{"cap_noncanonical_id", injectCapRelease(t, base, map[string]any{
+			// non-canonical UUID fixture: uppercase is the invariant under test.
 			"capabilityId": "C33CE000-0000-4000-8000-0000000000C1",
-			"releaseId":    "c33ce000-0000-4000-8000-0000000000r1",
+			"releaseId":    "c33ce000-0000-4000-8000-0000000000e1",
 			"kind":         "TOOL", "callableName": "x", "callableDescription": "",
 			"inputSchema": map[string]any{}, "outputSchema": map[string]any{},
 			"riskLevel": "LOW", "sideEffectLevel": "NONE", "requiresConfirmation": false,
-		})},
+		}), "releases[0].capabilityId must be canonical UUID"},
 	}
 
 	for _, tc := range mutations {
@@ -101,9 +133,16 @@ func TestParseSnapshot_SemanticDomainContract(t *testing.T) {
 			if tc.raw == string(base) || tc.raw == string(edgeBase) || tc.raw == string(remoteBase) {
 				t.Fatal("mutation did not change raw")
 			}
+			if tc.wantReason == "" {
+				t.Fatal("every cell must name the invariant it expects to fire")
+			}
 			_, err := agentdelegation.ParseSnapshot(testFreezeWorkspaceID, json.RawMessage(tc.raw))
 			if err == nil {
 				t.Fatalf("expected semantic reject for %s", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.wantReason) {
+				t.Fatalf("%s was rejected for the wrong invariant:\n got: %v\nwant substring: %q",
+					tc.name, err, tc.wantReason)
 			}
 		})
 	}
@@ -261,7 +300,7 @@ func injectSelfEdge(t *testing.T, base json.RawMessage) string {
 	t.Helper()
 	agentID := "d44ce000-0000-4000-8000-000000000004"
 	return setKey(t, base, "edges", `[{
-		"bindingId":"a11ce000-0000-4000-8000-0000000000s1",
+		"bindingId":"a11ce000-0000-4000-8000-0000000000e5",
 		"callerAgentId":"`+agentID+`","targetAgentId":"`+agentID+`",
 		"callableName":"self","mode":"TASK","contextPolicy":"TASK_ONLY",
 		"version":1,"protocol":"INTERNAL"

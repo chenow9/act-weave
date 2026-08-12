@@ -397,6 +397,7 @@ func TestAgenticInitial_StrictRawSnapshotMatrix(t *testing.T) {
 		{
 			name: "semantic_cap_noncanonical_id",
 			mutate: func(f *agenticFixture) {
+				// non-canonical UUID fixture: uppercase is the invariant under test.
 				f.run.AgentGraphSnapshot = json.RawMessage(injectGraphCapRelease(t, goodGraph, "TOOL", "LOW", "NONE",
 					"C33CE000-0000-4000-8000-0000000000C1"))
 			},
@@ -1096,7 +1097,7 @@ func injectHostileRemoteSecret(t *testing.T, graphJSON, secretRef string) string
 func injectGraphSelfEdge(t *testing.T, graphJSON string) string {
 	t.Helper()
 	return setGraphKey(t, graphJSON, "edges", `[{
-		"bindingId":"a11ce000-0000-4000-8000-0000000000s1",
+		"bindingId":"a11ce000-0000-4000-8000-0000000000e5",
 		"callerAgentId":"`+testAgentUUID+`","targetAgentId":"`+testAgentUUID+`",
 		"callableName":"self","mode":"TASK","contextPolicy":"TASK_ONLY",
 		"version":1,"protocol":"INTERNAL"
@@ -1114,11 +1115,14 @@ func injectGraphOrphan(t *testing.T, graphJSON string) string {
 	if err := json.Unmarshal(m["nodes"], &nodes); err != nil {
 		t.Fatal(err)
 	}
+	// The lock must agree with producerNodeModelSnap/producerNodeAgentSnap or
+	// the node is rejected by the lock cross-bind check and the reachability
+	// invariant this fixture exists for never runs.
 	extra := map[string]json.RawMessage{
 		"agentId":                json.RawMessage(`"` + orphan + `"`),
 		"depth":                  json.RawMessage(`0`),
 		"modelConfigId":          json.RawMessage(`"` + testModelUUID + `"`),
-		"modelConfigLockVersion": json.RawMessage(`1`),
+		"modelConfigLockVersion": json.RawMessage(itoa(testModelLockVersion)),
 		"modelSnapshot":          producerNodeModelSnap(testModelUUID),
 		"agentSnapshot":          producerNodeAgentSnap(orphan, testModelUUID),
 		"capabilitySnapshot":     emptyCapSnap(),

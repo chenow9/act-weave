@@ -17,7 +17,7 @@ const (
 	mmWorkspace = "d41f1f2e-7b5a-7c3d-8e9f-123456789001"
 	mmAgent     = "d41f1f2e-7b5a-7c3d-8e9f-123456789002"
 	mmFileID    = "d41f1f2e-7b5a-7c3d-8e9f-1234567890f1"
-	mmObjectID  = "d41f1f2e-7b5a-7c3d-8e9f-1234567890o1"
+	mmObjectID  = "d41f1f2e-7b5a-7c3d-8e9f-1234567890b1"
 )
 
 // tinyPNG is a minimal valid 1x1 PNG.

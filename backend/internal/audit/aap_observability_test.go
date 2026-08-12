@@ -179,7 +179,7 @@ func testAAPAuditOpsSignals(t *testing.T) {
 			"runId":         "a38f1f2e-7b5a-7c3d-8e9f-1234567890d3",
 			"clientId":      "a38f1f2e-7b5a-7c3d-8e9f-1234567890e1",
 			"agentId":       "a38f1f2e-7b5a-7c3d-8e9f-1234567890f1",
-			"interactionId": "a38f1f2e-7b5a-7c3d-8e9f-1234567890i1",
+			"interactionId": "a38f1f2e-7b5a-7c3d-8e9f-1234567890c2",
 			"waitingAgeMs":  3_600_000,
 			"errorCode":     "NONE",
 			// Free-text content keys must be redacted (rawContentKey).

@@ -56,6 +56,7 @@ func TestFileCommandRequestHashExcludesUploadURL(t *testing.T) {
 	}
 
 	completeHash, err := FileCompleteCommandRequestHash(FileCompleteRequestHashInput{
+		// non-canonical UUID fixture: casing must be canonicalized by the hash.
 		FileID: "A68F1F2E-7B5A-7C3D-8E9F-1234567890F1",
 		SHA256: "DEADBEEF",
 	})

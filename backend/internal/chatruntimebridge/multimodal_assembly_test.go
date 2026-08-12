@@ -16,7 +16,7 @@ const (
 	mmTestWS     = "d41f1f2e-7b5a-7c3d-8e9f-123456789001"
 	mmTestAgent  = "d41f1f2e-7b5a-7c3d-8e9f-123456789002"
 	mmTestFileID = "d41f1f2e-7b5a-7c3d-8e9f-1234567890f1"
-	mmTestObjID  = "d41f1f2e-7b5a-7c3d-8e9f-1234567890o1"
+	mmTestObjID  = "d41f1f2e-7b5a-7c3d-8e9f-1234567890b1"
 )
 
 type bridgeFakeFiles struct {
