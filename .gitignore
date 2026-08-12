@@ -1,3 +1,6 @@
+/node_modules/
+/package-lock.json
+.run-logs/
 frontend/node_modules/
 frontend/dist/
 # Local / heavy browser acceptance scripts (CI only tracks smoke + fixtures)
