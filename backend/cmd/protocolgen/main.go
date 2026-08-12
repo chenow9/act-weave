@@ -14,6 +14,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"go/format"
 	"os"
 	"path/filepath"
 	"sort"
@@ -490,5 +491,17 @@ func renderTemplate(path, tmpl string, data any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, buf.Bytes(), 0o644)
+	payload := buf.Bytes()
+	if filepath.Ext(path) == ".go" {
+		// Generated Go has to be gofmt-clean as written. A template can only
+		// guess at alignment, so without this a formatting pass over the repo
+		// edits the file and "generate must be clean" then fails on whitespace
+		// no one chose.
+		formatted, err := format.Source(payload)
+		if err != nil {
+			return fmt.Errorf("format %s: %w", path, err)
+		}
+		payload = formatted
+	}
+	return os.WriteFile(path, payload, 0o644)
 }
