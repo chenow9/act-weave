@@ -1,0 +1,28 @@
+{
+  "label": "A2UI",
+  "displayOnly": "Display only",
+  "rawSurface": "Raw surface JSON",
+  "emptySurface": "This message carries no renderable surface",
+  "missingRoot": "The surface has no root component with id {id}",
+  "foreignCatalog": "This surface declares another component catalog ({catalogId})",
+  "unsupportedComponent": "This version does not support the component {component}",
+  "missingChild": "Referenced a component that does not exist: {id}",
+  "missingChildren": "This container has no renderable children",
+  "cycle": "Component {id} forms a reference cycle",
+  "tooDeep": "Nested deeper than {depth} levels; the rest is omitted",
+  "chartWithoutType": "The chart has no recognizable chartType",
+  "chartNoData": "The chart has no usable data",
+  "chartNoPositive": "No positive values to show",
+  "seriesFallback": "Series {index}",
+  "choosePlaceholder": "Select…",
+  "noOptions": "(no options)",
+  "actionDisabled": "This surface is display only and wires up no UI action",
+  "chartTypes": {
+    "bar": "Bar",
+    "hbar": "Horizontal bar",
+    "line": "Line",
+    "area": "Area",
+    "pie": "Pie",
+    "donut": "Donut"
+  }
+}

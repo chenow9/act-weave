@@ -1193,6 +1193,12 @@ export interface ChatMessage {
   content: string;
   contentSha256: string;
   contentLength: number;
+  /**
+   * A2UI surfaces to render beside the text, absent unless the message carries
+   * one. Separate from content on purpose: content stays the text a human reads,
+   * and contentSha256/contentLength keep describing exactly that.
+   */
+  a2ui?: unknown[];
   status: ChatMessageStatus;
   confirmationId?: string;
   runId?: string;

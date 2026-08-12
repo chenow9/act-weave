@@ -11,6 +11,7 @@
  * See: docs/runbooks/protocol-event-console-vs-aap-entrypoints.md
  */
 
+import { A2UI_SURFACE_VERSION } from "../components/a2ui/generated/catalog.gen";
 import type {
   AgentRun,
   AgentRunStatus,
@@ -99,6 +100,8 @@ export interface ConsoleStreamEffects {
     status: ChatMessage["status"];
     runId?: string;
     finalized: boolean;
+    /** Surfaces of a completed message; absent while text is still streaming. */
+    a2ui?: unknown[];
   }>;
   /** True when this frame is a known terminal run status. */
   terminal: boolean;
@@ -371,6 +374,7 @@ function applyProtocolFrame(state: ConsoleRunProjectionState, frame: StreamFrame
       if (!item || typeof item.id !== "string") return;
       if (item.type === "message" && (item.role === "assistant" || state.assistantByItemId[item.id])) {
         const content = extractMessageText(item) || state.assistantByItemId[item.id]?.content || "";
+        const surfaces = extractMessageSurfaces(item);
         ensureAssistant(state, item.id, content, true);
         effects.assistantMessages.push({
           id: item.id,
@@ -378,6 +382,7 @@ function applyProtocolFrame(state: ConsoleRunProjectionState, frame: StreamFrame
           status: "EXECUTED",
           runId,
           finalized: true,
+          ...(surfaces.length ? { a2ui: surfaces } : {}),
         });
       }
       return;
@@ -482,6 +487,24 @@ function extractMessageText(item: Record<string, unknown>): string {
   return parts.join("");
 }
 
+/**
+ * A2UI surfaces of a completed message, so a chart appears as the turn ends
+ * rather than only after a reload.
+ *
+ * Only parts declaring the version this build renders are taken: a surface
+ * written against an older contract stays invisible instead of being drawn by a
+ * renderer that does not match it.
+ */
+function extractMessageSurfaces(item: Record<string, unknown>): unknown[] {
+  if (!Array.isArray(item.content)) return [];
+  const surfaces: unknown[] = [];
+  for (const part of item.content) {
+    if (!isRecord(part) || part.type !== "a2ui" || part.version !== A2UI_SURFACE_VERSION) continue;
+    if (isRecord(part.surface)) surfaces.push(part.surface);
+  }
+  return surfaces;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -534,6 +557,7 @@ export function toAssistantChatMessage(patch: ConsoleStreamEffects["assistantMes
     content: patch.content,
     contentSha256: "",
     contentLength: new TextEncoder().encode(patch.content).byteLength,
+    ...(patch.a2ui?.length ? { a2ui: patch.a2ui } : {}),
     status: patch.status,
     runId: patch.runId,
     createdAt: new Date().toISOString(),

@@ -3,6 +3,7 @@
 /** Chat execution page body (ZKL-64 item 15). */
 /* prettier-ignore */
 import { useI18n } from "vue-i18n";
+import A2UISurface from "./a2ui/A2UISurface.vue";
 import DebugOutboundCredentialPanel from "./DebugOutboundCredentialPanel.vue";
 import { useChatExecutionPageContext } from "../composables/useChatExecutionPageContext";
 
@@ -286,7 +287,17 @@ void DebugOutboundCredentialPanel;
                       messageTime(message.createdAt)
                     }}</time>
                   </div>
-                  <div class="assistant-bubble" v-html="renderMessageMarkdown(message.content)" />
+                  <div
+                    v-if="message.content"
+                    class="assistant-bubble"
+                    v-html="renderMessageMarkdown(message.content)"
+                  />
+                  <A2UISurface
+                    v-for="(surface, surfaceIndex) in message.a2ui ?? []"
+                    :key="`${message.id}-a2ui-${surfaceIndex}`"
+                    :surface="surface"
+                    :uid="`${message.id}-${surfaceIndex}`"
+                  />
                 </div>
               </div>
 
