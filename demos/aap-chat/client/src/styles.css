@@ -997,12 +997,124 @@ textarea.a2ui-input {
 }
 
 .a2ui-chart-body {
+  position: relative;
   width: 100%;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   padding: 8px 6px 4px;
   overflow: hidden;
+}
+
+.a2ui-chart-hit {
+  fill: transparent;
+  stroke: none;
+  cursor: crosshair;
+}
+
+.a2ui-chart-bar {
+  opacity: 0.92;
+}
+
+/* While a category is hovered the rest recede, so the tooltip's numbers and the
+   shapes they describe are read together. */
+.a2ui-chart-body.is-hovering .a2ui-chart-bar {
+  opacity: 0.32;
+}
+
+.a2ui-chart-body.is-hovering .a2ui-chart-bar.is-active {
+  opacity: 0.92;
+}
+
+.a2ui-chart-body.is-hovering .a2ui-chart-slice {
+  opacity: 0.45;
+}
+
+.a2ui-chart-body.is-hovering .a2ui-chart-slice.is-active {
+  opacity: 1;
+}
+
+.a2ui-chart-dot.is-active {
+  stroke: #fff;
+  stroke-width: 2.5;
+}
+
+/* Band, guide and tooltip cards are all present from the start; hover only
+   reveals the one that answers where the cursor is. */
+.a2ui-chart-band,
+.a2ui-chart-guide,
+.a2ui-chart-tip {
+  display: none;
+}
+
+.a2ui-chart-band.is-active,
+.a2ui-chart-guide.is-active {
+  display: block;
+}
+
+.a2ui-chart-band {
+  fill: #0f172a;
+  opacity: 0.05;
+}
+
+.a2ui-chart-guide {
+  stroke: #94a3b8;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+/* Rides along the top of the plot: it follows the cursor sideways only, so it can
+   never cover the reading it describes or spill out of the card. */
+.a2ui-chart-tip.is-active {
+  position: absolute;
+  top: 6px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 220px;
+  padding: 7px 9px;
+  transform: translateX(12px);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #f1f5f9;
+  font-size: 12px;
+  line-height: 16px;
+  pointer-events: none;
+}
+
+.a2ui-chart-tip.is-flipped {
+  transform: translateX(calc(-100% - 12px));
+}
+
+.a2ui-chart-tip > strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.a2ui-chart-tip-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.a2ui-chart-tip-name {
+  color: #cbd5e1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.a2ui-chart-tip-row strong {
+  margin-left: auto;
+  font-weight: 600;
+  color: #fff;
+}
+
+.a2ui-chart-tip-row em {
+  color: #94a3b8;
+  font-style: normal;
 }
 
 .a2ui-chart-svg {

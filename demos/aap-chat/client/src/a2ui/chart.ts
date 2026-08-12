@@ -7,6 +7,7 @@
 import type { A2UIChartType, A2UIComponentNode, A2UIRenderCtx, A2UIValueFormat } from "./generated/catalog.gen";
 import { A2UI_LIMITS, A2UI_VALUE_FORMATS, isA2UIChartType } from "./generated/catalog.gen";
 import { ChartDrawing, drawChart, formatValue, renderLegend, unionLabels } from "./chart-svg";
+import { installChartHover } from "./chart-hover";
 import { escapeAttr, escapeHtml } from "./html";
 
 const CHART_LABELS: Record<A2UIChartType, string> = {
@@ -48,6 +49,11 @@ export function renderChart(node: A2UIComponentNode, ctx: A2UIRenderCtx<string>)
     format,
   };
 
+  // Charts are rendered as markup, so hover is wired once, by delegation, rather
+  // than per figure.
+  installChartHover();
+  const chart = drawChart(chartType, drawing);
+
   return `
     <figure class="a2ui-chart" data-a2ui-chart="${escapeAttr(chartType)}"${drawing.stacked ? ' data-a2ui-stacked="true"' : ""}>
       <div class="a2ui-chart-head">
@@ -55,7 +61,8 @@ export function renderChart(node: A2UIComponentNode, ctx: A2UIRenderCtx<string>)
         <span class="a2ui-chart-badge">${escapeHtml(badge)}</span>
       </div>
       <div class="a2ui-chart-body" role="img" aria-label="${escapeAttr(title || badge)}">
-        ${drawChart(chartType, drawing)}
+        ${chart.svg}
+        ${chart.tips}
       </div>
       ${renderLegend(chartType, drawing)}
     </figure>

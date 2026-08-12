@@ -4,7 +4,7 @@
  * labels, values, a unit and a value format — and every visual decision is
  * Console's own, which is what lets the same surface look native in two clients.
  */
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import { chartGeometry, formatValue, radialCenter, type ChartGeometry } from "../chart-geometry";
@@ -59,6 +59,7 @@ const geometry = computed<ChartGeometry | undefined>(() => {
     stacked: stacked.value,
     format,
     seriesName: (index, name) => name ?? t("a2ui.seriesFallback", { index: index + 1 }),
+    totalName: t("a2ui.chartTotal"),
   });
 });
 
@@ -68,6 +69,26 @@ const badge = computed(() => {
   const kind = t(`a2ui.chartTypes.${type}`);
   return unit.value ? `${kind} · ${unit.value}` : kind;
 });
+
+/** Widest tooltip plus its gap, per the stylesheet. */
+const TIP_SPACE = 232;
+
+const body = ref<HTMLElement | null>(null);
+const active = ref<number | null>(null);
+/** Cursor offset inside the plot, and which side of it the tooltip may use. */
+const cursor = ref({ x: 0, flip: false });
+
+const activeHit = computed(() => (active.value === null ? undefined : geometry.value?.hits[active.value]));
+
+function trackCursor(index: number, event: MouseEvent): void {
+  active.value = index;
+  const box = body.value?.getBoundingClientRect();
+  if (!box || box.width === 0) return;
+  const x = event.clientX - box.left;
+  // Where the card would run out of room the tooltip changes sides rather than
+  // being clamped, which would make it stop tracking the cursor.
+  cursor.value = { x, flip: x + TIP_SPACE > box.width };
+}
 </script>
 
 <template>
@@ -81,7 +102,14 @@ const badge = computed(() => {
     <p v-if="!geometry" class="a2ui-empty">{{ t("a2ui.chartNoData") }}</p>
 
     <template v-else>
-      <div class="a2ui-chart-body" role="img" :aria-label="title || badge">
+      <div
+        ref="body"
+        class="a2ui-chart-body"
+        :class="{ 'is-hovering': active !== null }"
+        role="img"
+        :aria-label="title || badge"
+        @mouseleave="active = null"
+      >
         <svg
           :class="['a2ui-chart-svg', { 'a2ui-chart-svg-pie': geometry.radial }]"
           :viewBox="`0 0 ${geometry.width} ${geometry.height}`"
@@ -108,18 +136,34 @@ const badge = computed(() => {
           </text>
 
           <rect
+            v-if="activeHit?.rect"
+            class="a2ui-chart-band"
+            :x="activeHit.rect.x"
+            :y="activeHit.rect.y"
+            :width="activeHit.rect.width"
+            :height="activeHit.rect.height"
+          />
+          <line
+            v-if="activeHit?.guide"
+            class="a2ui-chart-guide"
+            :x1="activeHit.guide.x1"
+            :y1="activeHit.guide.y1"
+            :x2="activeHit.guide.x2"
+            :y2="activeHit.guide.y2"
+          />
+
+          <rect
             v-for="bar in geometry.bars"
             :key="bar.key"
+            class="a2ui-chart-bar"
+            :class="{ 'is-active': bar.hit === active }"
             :x="bar.x"
             :y="bar.y"
             :width="bar.width"
             :height="bar.height"
             rx="3"
             :fill="bar.color"
-            opacity="0.92"
-          >
-            <title>{{ bar.title }}</title>
-          </rect>
+          />
 
           <template v-for="line in geometry.lines" :key="line.key">
             <path v-if="line.area" :d="line.area" :fill="line.color" opacity="0.18" />
@@ -131,21 +175,28 @@ const badge = computed(() => {
               stroke-linejoin="round"
               stroke-linecap="round"
             />
-            <circle v-for="dot in line.dots" :key="dot.key" :cx="dot.cx" :cy="dot.cy" r="3.5" :fill="line.color">
-              <title>{{ dot.title }}</title>
-            </circle>
+            <circle
+              v-for="dot in line.dots"
+              :key="dot.key"
+              class="a2ui-chart-dot"
+              :class="{ 'is-active': dot.hit === active }"
+              :cx="dot.cx"
+              :cy="dot.cy"
+              r="3.5"
+              :fill="line.color"
+            />
           </template>
 
           <path
             v-for="slice in geometry.slices"
             :key="slice.key"
+            class="a2ui-chart-slice"
+            :class="{ 'is-active': slice.hit === active }"
             :d="slice.path"
             :fill="slice.color"
             stroke="#fff"
             stroke-width="1.5"
-          >
-            <title>{{ slice.title }}</title>
-          </path>
+          />
           <text
             v-if="geometry.radial && !geometry.slices.length"
             class="a2ui-chart-axis"
@@ -175,7 +226,36 @@ const badge = computed(() => {
           >
             {{ label.text }}
           </text>
+
+          <!-- Targets come last so they sit above the drawing and receive the cursor. -->
+          <template v-for="(hit, hitIndex) in geometry.hits" :key="hit.key">
+            <rect
+              v-if="hit.rect"
+              class="a2ui-chart-hit"
+              :x="hit.rect.x"
+              :y="hit.rect.y"
+              :width="hit.rect.width"
+              :height="hit.rect.height"
+              @mousemove="trackCursor(hitIndex, $event)"
+            />
+            <path v-else class="a2ui-chart-hit" :d="hit.path" @mousemove="trackCursor(hitIndex, $event)" />
+          </template>
         </svg>
+
+        <div
+          v-if="activeHit"
+          class="a2ui-chart-tip"
+          :class="{ 'is-flipped': cursor.flip }"
+          :style="{ left: `${cursor.x}px` }"
+        >
+          <strong>{{ activeHit.label }}</strong>
+          <span v-for="row in activeHit.rows" :key="row.key" class="a2ui-chart-tip-row">
+            <span v-if="row.color" class="a2ui-chart-swatch" :style="{ background: row.color }" aria-hidden="true" />
+            <span v-if="row.name" class="a2ui-chart-tip-name">{{ row.name }}</span>
+            <strong>{{ row.value }}</strong>
+            <em v-if="row.share">{{ row.share }}</em>
+          </span>
+        </div>
       </div>
 
       <ul

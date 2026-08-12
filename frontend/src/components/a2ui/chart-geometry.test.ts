@@ -10,6 +10,7 @@ function input(chartType: A2UIChartType, series: A2UIChartSeries[], stacked = fa
     stacked,
     format: (value) => String(value),
     seriesName: (index, name) => name ?? `series ${index + 1}`,
+    totalName: "total",
   };
 }
 
@@ -70,7 +71,7 @@ describe("bars", () => {
 
   it("stacks segments so a category's total is the sum of its series", () => {
     const stacked = chartGeometry(input("bar", twoSeries, true));
-    const january = stacked.bars.filter((bar) => bar.title.includes("一月"));
+    const january = stacked.bars.filter((bar) => stacked.hits[bar.hit]?.label === "一月");
     expect(january).toHaveLength(2);
     // Stacked segments share the same band, so they overlap in x and differ in y.
     expect(january[0]?.x).toBe(january[1]?.x);
@@ -156,6 +157,98 @@ describe("pie and donut", () => {
   it("ignores series past the first, which the catalog does not allow here", () => {
     const geometry = chartGeometry(input("pie", twoSeries));
     expect(geometry.slices).toHaveLength(2);
+  });
+});
+
+/**
+ * Hover targets are what a reader aims at, so they are geometry rather than a
+ * detail of the template: a band per category, and the readings to report there.
+ */
+describe("hover targets", () => {
+  it("tiles the plot with one band per category, whatever a bar's height", () => {
+    const geometry = chartGeometry(input("bar", twoSeries));
+    expect(geometry.hits.map((hit) => hit.label)).toEqual(["一月", "二月", "三月"]);
+    const bands = geometry.hits.map((hit) => hit.rect!);
+    // Bands are equal, adjacent and span the whole value axis, so a category can
+    // be found by aiming at its column rather than at its bar.
+    for (const [index, band] of bands.entries()) {
+      expect(band.height).toBe(bands[0]?.height);
+      if (index > 0) expect(band.x).toBeCloseTo((bands[index - 1]?.x ?? 0) + band.width, 1);
+    }
+    // Bars are emitted category by category, each carrying its band's index.
+    expect(geometry.bars.map((bar) => bar.hit)).toEqual([0, 0, 1, 1, 2, 2]);
+  });
+
+  it("turns bands sideways for horizontal bars", () => {
+    const bands = chartGeometry(input("hbar", twoSeries)).hits.map((hit) => hit.rect!);
+    expect(new Set(bands.map((band) => band.x)).size).toBe(1);
+    expect(bands[1]?.y).toBeCloseTo((bands[0]?.y ?? 0) + (bands[0]?.height ?? 0), 1);
+  });
+
+  it("reports every series at a category, counting a gap as zero", () => {
+    const rows = chartGeometry(input("bar", twoSeries)).hits[2]?.rows ?? [];
+    expect(rows.map((row) => [row.name, row.value])).toEqual([
+      ["生产", "0"],
+      ["预发", "15"],
+    ]);
+  });
+
+  it("adds the total a stacked chart draws but never labels", () => {
+    const rows = chartGeometry(input("bar", twoSeries, true)).hits[0]?.rows ?? [];
+    expect(rows.at(-1)).toMatchObject({ name: "total", value: "15", color: "" });
+    // Grouped bars stack nothing, so a total would be a number the chart never drew.
+    expect(chartGeometry(input("bar", twoSeries)).hits[0]?.rows).toHaveLength(2);
+  });
+
+  it("leaves a lone unnamed series unnamed, rather than inventing a label", () => {
+    const rows = chartGeometry(input("bar", [{ points: [{ label: "a", value: 7 }] }])).hits[0]?.rows ?? [];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.name).toBe("");
+    expect(rows[0]?.value).toBe("7");
+  });
+
+  it("splits line bands halfway between neighbours and marks the guide", () => {
+    const geometry = chartGeometry(input("line", twoSeries));
+    const [first, middle] = geometry.hits;
+    // An end band is half as wide, because it has a neighbour on one side only.
+    expect(middle!.rect!.width).toBeCloseTo(first!.rect!.width * 2, 1);
+    expect(first?.guide?.x1).toBe(first?.guide?.x2);
+    expect(first?.guide?.x1).toBe(geometry.lines[0]?.dots[0]?.cx);
+    expect(geometry.lines[0]?.dots.map((dot) => dot.hit)).toEqual([0, 1, 2]);
+  });
+
+  it("targets a slice by its own shape, and says what share it is", () => {
+    const geometry = chartGeometry(
+      input("pie", [
+        {
+          points: [
+            { label: "API", value: 60 },
+            { label: "Console", value: 40 },
+          ],
+        },
+      ]),
+    );
+    expect(geometry.hits.map((hit) => hit.path)).toEqual(geometry.slices.map((slice) => slice.path));
+    expect(geometry.hits.map((hit) => hit.label)).toEqual(["API", "Console"]);
+    expect(geometry.hits[0]?.rows[0]).toMatchObject({ value: "60", share: "60.0%", name: "" });
+  });
+
+  it("says a share once when the values are already percentages", () => {
+    const percentages = input("pie", [
+      {
+        points: [
+          { label: "API", value: 60 },
+          { label: "Console", value: 40 },
+        ],
+      },
+    ]);
+    const geometry = chartGeometry({ ...percentages, format: (value) => `${value}.0%` });
+    expect(geometry.hits[0]?.rows[0]?.value).toBe("60.0%");
+    expect(geometry.hits[0]?.rows[0]?.share).toBeUndefined();
+    expect(geometry.legend[0]?.share).toBeUndefined();
+    // A wedge is already a target, so it needs no band or guide behind it.
+    expect(geometry.hits[0]?.rect).toBeUndefined();
+    expect(geometry.hits[0]?.guide).toBeUndefined();
   });
 });
 

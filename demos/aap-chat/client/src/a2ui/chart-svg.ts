@@ -37,21 +37,132 @@ export interface ChartDrawing {
   format(value: number): string;
 }
 
-export function drawChart(chartType: A2UIChartType, drawing: ChartDrawing): string {
-  switch (chartType) {
-    case "bar":
-      return drawBars(drawing, false);
-    case "hbar":
-      return drawBars(drawing, true);
-    case "line":
-      return drawLine(drawing, false);
-    case "area":
-      return drawLine(drawing, true);
-    case "pie":
-      return drawPie(drawing, false);
-    case "donut":
-      return drawPie(drawing, true);
+/** One series' reading at the hovered category, as a tooltip shows it. */
+interface TooltipRow {
+  /** Empty for a stacked total, which belongs to no single series. */
+  color: string;
+  /** Empty when a lone unnamed series would only repeat the chart title. */
+  name: string;
+  value: string;
+  /** Radial charts only, where a slice's share is the reading. */
+  share?: string;
+}
+
+/**
+ * A cursor target and what to say about it.
+ *
+ * Axis charts are hit by category band rather than by drawn shape: a reader aims
+ * at a column of the chart, not at a 7px dot, and every series at that category
+ * belongs in one tooltip.
+ */
+interface Hit {
+  /** Band for axis charts. */
+  rect?: { x: number; y: number; width: number; height: number };
+  /** The slice itself for radial charts, where the shape is already the target. */
+  path?: string;
+  /** Where the guide line stands, for charts whose bands read ambiguously. */
+  guideX?: number;
+  label: string;
+  rows: TooltipRow[];
+}
+
+interface Drawn {
+  body: string;
+  width: number;
+  height: number;
+  pieClass?: boolean;
+  hits: Hit[];
+}
+
+export interface ChartRender {
+  svg: string;
+  /** One tooltip card per hit, ready for the hover module to reveal. */
+  tips: string;
+}
+
+export function drawChart(chartType: A2UIChartType, drawing: ChartDrawing): ChartRender {
+  const drawn = (() => {
+    switch (chartType) {
+      case "bar":
+        return drawBars(drawing, false);
+      case "hbar":
+        return drawBars(drawing, true);
+      case "line":
+        return drawLine(drawing, false);
+      case "area":
+        return drawLine(drawing, true);
+      case "pie":
+        return drawPie(drawing, false);
+      case "donut":
+        return drawPie(drawing, true);
+    }
+  })();
+  const overlay = drawn.hits.length
+    ? `<rect class="a2ui-chart-band" /><line class="a2ui-chart-guide" />${hitLayer(drawn.hits)}`
+    : "";
+  return {
+    svg: svg(drawn.width, drawn.height, `${drawn.body}${overlay}`, drawn.pieClass ? "a2ui-chart-svg-pie" : ""),
+    tips: drawn.hits.map(tipCard).join(""),
+  };
+}
+
+/**
+ * Targets are written last so they sit above the drawing and receive the cursor.
+ * The band and guide read their geometry from the hovered target, which is why
+ * only the guide's own x has to be carried.
+ */
+function hitLayer(hits: Hit[]): string {
+  return hits
+    .map((hit, index) => {
+      const guide = hit.guideX === undefined ? "" : ` data-a2ui-guide="${hit.guideX.toFixed(1)}"`;
+      return hit.rect
+        ? `<rect class="a2ui-chart-hit" data-a2ui-hit="${index}"${guide} x="${hit.rect.x.toFixed(1)}" ` +
+            `y="${hit.rect.y.toFixed(1)}" width="${hit.rect.width.toFixed(1)}" height="${hit.rect.height.toFixed(1)}" />`
+        : `<path class="a2ui-chart-hit" data-a2ui-hit="${index}" d="${hit.path ?? ""}" />`;
+    })
+    .join("");
+}
+
+function tipCard(hit: Hit, index: number): string {
+  const rows = hit.rows
+    .map(
+      (row) =>
+        `<span class="a2ui-chart-tip-row">` +
+        (row.color ? `<span class="a2ui-chart-swatch" style="background:${escapeAttr(row.color)}"></span>` : "") +
+        (row.name ? `<span class="a2ui-chart-tip-name">${escapeHtml(row.name)}</span>` : "") +
+        `<strong>${escapeHtml(row.value)}</strong>` +
+        (row.share ? `<em>${escapeHtml(row.share)}</em>` : "") +
+        `</span>`,
+    )
+    .join("");
+  return (
+    `<div class="a2ui-chart-tip" data-a2ui-tip="${index}">` + `<strong>${escapeHtml(hit.label)}</strong>${rows}</div>`
+  );
+}
+
+/**
+ * Every series' reading at one category, plus the stacked total, which is the
+ * number a stacked chart draws but never labels.
+ */
+function categoryRows(drawing: ChartDrawing, label: string): TooltipRow[] {
+  const rows: TooltipRow[] = drawing.series.map((entry, index) => ({
+    color: colorFor(index),
+    name: entry.name ?? (drawing.series.length > 1 ? seriesFallback(index) : ""),
+    value: drawing.format(valueAt(entry, label)),
+  }));
+  if (drawing.stacked && drawing.series.length > 1) {
+    const total = drawing.series.reduce((sum, entry) => sum + valueAt(entry, label), 0);
+    rows.push({ color: "", name: "合计", value: drawing.format(total) });
   }
+  return rows;
+}
+
+function seriesFallback(index: number): string {
+  return `系列 ${index + 1}`;
+}
+
+function shareText(value: number, total: number): string {
+  return `${((value / total) * 100).toFixed(1)}%`;
 }
 
 /** Category labels in first-seen order, which is the order a model listed them. */
@@ -158,7 +269,7 @@ function truncate(text: string, limit: number): string {
 }
 
 /** Bars, vertical or horizontal, grouped or stacked. */
-function drawBars(drawing: ChartDrawing, horizontal: boolean): string {
+function drawBars(drawing: ChartDrawing, horizontal: boolean): Drawn {
   const { labels, series, stacked } = drawing;
   const span = valueSpan(drawing);
   const pad = horizontal ? HBAR_PAD : PAD;
@@ -213,13 +324,32 @@ function drawBars(drawing: ChartDrawing, horizontal: boolean): string {
         else negativeTop = to;
       }
       const box = rect(start, size, from, to);
-      const name = entry.name ? `${entry.name} · ` : "";
       bars +=
-        `<rect x="${box.x.toFixed(1)}" y="${box.y.toFixed(1)}" width="${box.width.toFixed(1)}" ` +
-        `height="${box.height.toFixed(1)}" rx="3" fill="${colorFor(seriesIndex)}" opacity="0.92">` +
-        `<title>${escapeHtml(`${name}${label} = ${drawing.format(value)}`)}</title></rect>`;
+        `<rect class="a2ui-chart-bar" data-a2ui-cat="${categoryIndex}" x="${box.x.toFixed(1)}" ` +
+        `y="${box.y.toFixed(1)}" width="${box.width.toFixed(1)}" height="${box.height.toFixed(1)}" ` +
+        `rx="3" fill="${colorFor(seriesIndex)}" />`;
     });
   });
+
+  // The band spans the whole value axis so the cursor finds a category even when
+  // its bar is short, or zero.
+  const hits: Hit[] = labels.map((label, index) => ({
+    rect: horizontal
+      ? {
+          x: pad.left,
+          y: pad.top + index * slot,
+          width: valueExtent,
+          height: slot,
+        }
+      : {
+          x: pad.left + index * slot,
+          y: pad.top,
+          width: slot,
+          height: valueExtent,
+        },
+    label,
+    rows: categoryRows(drawing, label),
+  }));
 
   const categoryLabels = labels
     .map((label, index) => {
@@ -242,10 +372,15 @@ function drawBars(drawing: ChartDrawing, horizontal: boolean): string {
         .join("")
     : horizontalGrid(span, drawing, height);
 
-  return svg(width, Math.max(height, 80), `${grid}${bars}${categoryLabels}`);
+  return {
+    body: `${grid}${bars}${categoryLabels}`,
+    width,
+    height: Math.max(height, 80),
+    hits,
+  };
 }
 
-function drawLine(drawing: ChartDrawing, area: boolean): string {
+function drawLine(drawing: ChartDrawing, area: boolean): Drawn {
   const { labels, series, stacked } = drawing;
   const span = valueSpan(drawing);
   const plotWidth = WIDTH - PAD.left - PAD.right;
@@ -274,12 +409,24 @@ function drawLine(drawing: ChartDrawing, area: boolean): string {
       paths += `<path d="${line} ${back} Z" fill="${color}" opacity="0.18" />`;
     }
     paths += `<path d="${line}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />`;
-    for (const point of points) {
-      const name = entry.name ? `${entry.name} · ` : "";
+    points.forEach((point, index) => {
       paths +=
-        `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3.5" fill="${color}">` +
-        `<title>${escapeHtml(`${name}${point.label} = ${drawing.format(point.value)}`)}</title></circle>`;
-    }
+        `<circle class="a2ui-chart-dot" data-a2ui-cat="${index}" cx="${point.x.toFixed(1)}" ` +
+        `cy="${point.y.toFixed(1)}" r="3.5" fill="${color}" />`;
+    });
+  });
+
+  // Bands meet halfway between neighbours, so the nearest category wins wherever
+  // the cursor is; a guide line then says which one that was.
+  const hits: Hit[] = labels.map((label, index) => {
+    const left = index === 0 ? PAD.left : (toX(index - 1) + toX(index)) / 2;
+    const right = index === labels.length - 1 ? WIDTH - PAD.right : (toX(index) + toX(index + 1)) / 2;
+    return {
+      rect: { x: left, y: PAD.top, width: right - left, height: plotHeight },
+      guideX: toX(index),
+      label,
+      rows: categoryRows(drawing, label),
+    };
   });
 
   const categoryLabels = labels
@@ -289,10 +436,15 @@ function drawLine(drawing: ChartDrawing, area: boolean): string {
     )
     .join("");
 
-  return svg(WIDTH, HEIGHT, `${horizontalGrid(span, drawing, HEIGHT)}${paths}${categoryLabels}`);
+  return {
+    body: `${horizontalGrid(span, drawing, HEIGHT)}${paths}${categoryLabels}`,
+    width: WIDTH,
+    height: HEIGHT,
+    hits,
+  };
 }
 
-function drawPie(drawing: ChartDrawing, donut: boolean): string {
+function drawPie(drawing: ChartDrawing, donut: boolean): Drawn {
   const points = (drawing.series[0]?.points ?? []).filter((point) => point.value > 0);
   const total = points.reduce((sum, point) => sum + point.value, 0);
   const width = 280;
@@ -302,13 +454,16 @@ function drawPie(drawing: ChartDrawing, donut: boolean): string {
   const inner = donut ? 48 : 0;
 
   if (!points.length || total <= 0) {
-    return svg(
+    return {
+      body: `<text x="${center.x}" y="${center.y}" text-anchor="middle" class="a2ui-chart-axis">${escapeHtml("无正值可展示")}</text>`,
       width,
       height,
-      `<text x="${center.x}" y="${center.y}" text-anchor="middle" class="a2ui-chart-axis">${escapeHtml("无正值可展示")}</text>`,
-    );
+      pieClass: true,
+      hits: [],
+    };
   }
 
+  const hits: Hit[] = [];
   let angle = -Math.PI / 2;
   let slices = "";
   points.forEach((point, index) => {
@@ -322,17 +477,32 @@ function drawPie(drawing: ChartDrawing, donut: boolean): string {
     const path = inner
       ? `M${outerStart} A${radius},${radius} 0 ${large} 1 ${outerEnd} L${onCircle(center, inner, end)} A${inner},${inner} 0 ${large} 0 ${onCircle(center, inner, start)} Z`
       : `M${center.x},${center.y} L${outerStart} A${radius},${radius} 0 ${large} 1 ${outerEnd} Z`;
-    const share = ((point.value / total) * 100).toFixed(1);
     slices +=
-      `<path d="${path}" fill="${colorFor(index)}" stroke="#fff" stroke-width="1.5">` +
-      `<title>${escapeHtml(`${point.label} = ${drawing.format(point.value)}（${share}%）`)}</title></path>`;
+      `<path class="a2ui-chart-slice" data-a2ui-cat="${index}" d="${path}" fill="${colorFor(index)}" ` +
+      `stroke="#fff" stroke-width="1.5" />`;
+    const value = drawing.format(point.value);
+    const share = shareText(point.value, total);
+    hits.push({
+      path,
+      label: point.label,
+      // Percentage data formats to its own share, and printing it twice reads as
+      // two different readings.
+      rows: [
+        {
+          color: colorFor(index),
+          name: "",
+          value,
+          ...(share === value ? {} : { share }),
+        },
+      ],
+    });
   });
 
   const middle = donut
     ? `<text x="${center.x}" y="${center.y + 4}" text-anchor="middle" class="a2ui-chart-center">${escapeHtml(drawing.format(total))}</text>`
     : "";
 
-  return svg(width, height, `${slices}${middle}`, "a2ui-chart-svg-pie");
+  return { body: `${slices}${middle}`, width, height, pieClass: true, hits };
 }
 
 function onCircle(center: { x: number; y: number }, radius: number, angle: number): string {
@@ -374,11 +544,13 @@ export function renderLegend(chartType: A2UIChartType, drawing: ChartDrawing): s
     if (!points.length) return "";
     const items = points
       .map((point, index) => {
-        const share = ((Math.abs(point.value) / total) * 100).toFixed(1);
+        const value = drawing.format(point.value);
+        const share = shareText(Math.abs(point.value), total);
         return (
           `<li><span class="a2ui-chart-swatch" style="background:${escapeAttr(colorFor(index))}"></span>` +
-          `<span>${escapeHtml(point.label)}</span><strong>${escapeHtml(drawing.format(point.value))}</strong>` +
-          `<em>${escapeHtml(share)}%</em></li>`
+          `<span>${escapeHtml(point.label)}</span><strong>${escapeHtml(value)}</strong>` +
+          (share === value ? "" : `<em>${escapeHtml(share)}</em>`) +
+          `</li>`
         );
       })
       .join("");
@@ -389,7 +561,7 @@ export function renderLegend(chartType: A2UIChartType, drawing: ChartDrawing): s
     .map(
       (entry, index) =>
         `<li><span class="a2ui-chart-swatch" style="background:${escapeAttr(colorFor(index))}"></span>` +
-        `<span>${escapeHtml(entry.name ?? `系列 ${index + 1}`)}</span></li>`,
+        `<span>${escapeHtml(entry.name ?? seriesFallback(index))}</span></li>`,
     )
     .join("");
   return `<ul class="a2ui-chart-legend a2ui-chart-legend-series">${items}</ul>`;

@@ -167,13 +167,13 @@ describe("charts", () => {
     const html = render("chart-stacked");
     expect(html).toContain('data-a2ui-stacked="true"');
     // 3 series × 3 months.
-    expect(count(html, /<rect /g)).toBe(9);
+    expect(count(html, /class="a2ui-chart-bar"/g)).toBe(9);
   });
 
   it("groups rather than stacks by default", () => {
     const html = render("chart-bar");
     expect(html).not.toContain("data-a2ui-stacked");
-    expect(count(html, /<rect /g)).toBe(4);
+    expect(count(html, /class="a2ui-chart-bar"/g)).toBe(4);
   });
 
   it("names every series in the legend of a multi-series chart", () => {
@@ -185,7 +185,7 @@ describe("charts", () => {
   it("omits a zero slice from a donut without leaving a gap", () => {
     const html = render("chart-donut");
     // 4 points, one of them zero.
-    expect(count(html, /<path /g)).toBe(3);
+    expect(count(html, /class="a2ui-chart-slice"/g)).toBe(3);
     expect(html).toContain("a2ui-chart-center");
   });
 
@@ -212,6 +212,77 @@ describe("charts", () => {
       components: [{ id: "root", component: "Chart", chartType: "radar", series: [{ points: [{ label: "a", value: 1 }] }] }],
     });
     expect(html).toContain(PLACEHOLDER);
+  });
+});
+
+/**
+ * Hover detail is markup, not script: a target and a tooltip card per category,
+ * which the hover module only reveals. Asserting the markup therefore covers what
+ * a reader can find with the cursor.
+ */
+describe("hover detail", () => {
+  it("gives every category a target and a tooltip card that names it", () => {
+    const html = render("chart-bar");
+    // 4 quarters in the fixture.
+    expect(count(html, /data-a2ui-hit="/g)).toBe(4);
+    expect(count(html, /data-a2ui-tip="/g)).toBe(4);
+    for (const [index, label] of ["Q1", "Q2", "Q3", "Q4"].entries()) {
+      expect(html).toContain(`data-a2ui-tip="${index}"><strong>${label}</strong>`);
+    }
+  });
+
+  it("puts every series of a category in one tooltip, and the stacked total", () => {
+    const cards = render("chart-stacked").match(/<div class="a2ui-chart-tip"[\s\S]*?<\/div>/g) ?? [];
+    expect(cards).toHaveLength(3);
+    const may = cards[0] ?? "";
+    for (const series of ["推理", "嵌入", "存储"]) expect(may).toContain(series);
+    // 1820 + 320 + 96, a number the stack draws but never labels.
+    expect(may).toContain("合计");
+    expect(may).toContain("2,236 USD");
+  });
+
+  it("leaves a lone series unnamed, because the title already says what it is", () => {
+    const card = (render("chart-bar").match(/<div class="a2ui-chart-tip"[\s\S]*?<\/div>/) ?? [""])[0];
+    expect(card).not.toContain("a2ui-chart-tip-name");
+    // The axis tick is compact; a tooltip reads the same way, unit included.
+    expect(card).toContain("1.3k 万元");
+  });
+
+  it("marks where the guide line stands on a line chart, but not on bars", () => {
+    expect(render("chart-line")).toContain("data-a2ui-guide=");
+    expect(render("chart-bar")).not.toContain("data-a2ui-guide=");
+  });
+
+  it("targets a slice by its own shape and reports its share", () => {
+    const html = render("chart-donut");
+    expect(html).toMatch(/<path class="a2ui-chart-hit" data-a2ui-hit="0" d="M/);
+    // 128 of 224 GB.
+    expect(html).toContain("<strong>128 GB</strong><em>57.1%</em>");
+  });
+
+  it("says a share once when the values are already percentages", () => {
+    const card = (render("chart-pie").match(/<div class="a2ui-chart-tip"[\s\S]*?<\/div>/) ?? [""])[0];
+    expect(card).toMatch(/46\.5%/);
+    expect(card.match(/46\.5%/g)).toHaveLength(1);
+    expect(card).not.toContain("<em>");
+  });
+
+  /**
+   * The native SVG tooltip is what this replaced. Leaving one behind would pop a
+   * second, differently styled detail over the first after a delay.
+   */
+  it("draws no native svg tooltip anywhere", () => {
+    for (const name of ["chart-bar", "chart-hbar", "chart-line", "chart-area", "chart-pie", "chart-donut"]) {
+      expect(render(name), name).not.toContain("<title>");
+    }
+  });
+
+  it("escapes a category label on its way into a tooltip", () => {
+    const html = renderSurface({
+      components: [{ id: "root", component: "Chart", chartType: "bar", series: [{ points: [{ label: `<img src=x onerror="alert(1)">`, value: 1 }] }] }],
+    });
+    expect(html).not.toContain("<img");
+    expect(html).toContain("&lt;img");
   });
 });
 

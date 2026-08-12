@@ -14,6 +14,7 @@
   "chartNoData": "The chart has no usable data",
   "chartNoPositive": "No positive values to show",
   "seriesFallback": "Series {index}",
+  "chartTotal": "Total",
   "choosePlaceholder": "Select…",
   "noOptions": "(no options)",
   "actionDisabled": "This surface is display only and wires up no UI action",

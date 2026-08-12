@@ -39,6 +39,8 @@ export interface ChartInput {
   format: (value: number) => string;
   /** Names a series in tooltips and the legend when the surface left it unnamed. */
   seriesName: (index: number, name?: string) => string;
+  /** Names the stacked total row in a tooltip. */
+  totalName: string;
 }
 
 export interface ChartBar {
@@ -48,14 +50,16 @@ export interface ChartBar {
   width: number;
   height: number;
   color: string;
-  title: string;
+  /** Index into hits, so hovering a category can emphasise its bars. */
+  hit: number;
 }
 
 export interface ChartDot {
   key: string;
   cx: number;
   cy: number;
-  title: string;
+  /** Index into hits, so hovering a category can emphasise its points. */
+  hit: number;
 }
 
 export interface ChartLine {
@@ -71,7 +75,39 @@ export interface ChartSlice {
   key: string;
   path: string;
   color: string;
-  title: string;
+  /** Index into hits, so hovering a slice can emphasise it. */
+  hit: number;
+}
+
+/** One series' reading at the hovered category, as a tooltip shows it. */
+export interface ChartTooltipRow {
+  key: string;
+  /** Empty for a stacked total, which belongs to no single series. */
+  color: string;
+  /** Empty when a lone unnamed series would only repeat the chart title. */
+  name: string;
+  value: string;
+  /** Radial charts only, where a slice's share is the reading. */
+  share?: string;
+}
+
+/**
+ * A cursor target and what to say about it.
+ *
+ * Axis charts are hit by category band rather than by drawn shape: a reader aims
+ * at a column of the chart, not at a 7px dot, and every series at that category
+ * belongs in one tooltip.
+ */
+export interface ChartHit {
+  key: string;
+  /** Band for axis charts. */
+  rect?: { x: number; y: number; width: number; height: number };
+  /** The slice itself for radial charts, where the shape is already the target. */
+  path?: string;
+  /** Drawn at the hovered category where bands alone read ambiguously. */
+  guide?: { x1: number; y1: number; x2: number; y2: number };
+  label: string;
+  rows: ChartTooltipRow[];
 }
 
 export interface ChartGridLine {
@@ -107,6 +143,7 @@ export interface ChartGeometry {
   bars: ChartBar[];
   lines: ChartLine[];
   slices: ChartSlice[];
+  hits: ChartHit[];
   grid: ChartGridLine[];
   valueLabels: ChartAxisLabel[];
   categoryLabels: ChartAxisLabel[];
@@ -227,6 +264,24 @@ function valueAt(entry: A2UIChartSeries, label: string): number {
   return entry.points.find((point) => point.label === label)?.value ?? 0;
 }
 
+/**
+ * Every series' reading at one category, plus the stacked total, which is the
+ * number a stacked chart draws but never labels.
+ */
+function categoryRows(input: ChartInput, label: string): ChartTooltipRow[] {
+  const rows: ChartTooltipRow[] = input.series.map((entry, index) => ({
+    key: `s${index}`,
+    color: colorFor(index),
+    name: entry.name ?? (input.series.length > 1 ? input.seriesName(index) : ""),
+    value: input.format(valueAt(entry, label)),
+  }));
+  if (input.stacked && input.series.length > 1) {
+    const total = input.series.reduce((sum, entry) => sum + valueAt(entry, label), 0);
+    rows.push({ key: "total", color: "", name: input.totalName, value: input.format(total) });
+  }
+  return rows;
+}
+
 function colorFor(index: number): string {
   return PALETTE[index % PALETTE.length] as string;
 }
@@ -280,7 +335,6 @@ function barGeometry(input: ChartInput, horizontal: boolean): ChartGeometry {
       }
       const near = Math.min(valueToOffset(from), valueToOffset(to));
       const thickness = Math.abs(valueToOffset(from) - valueToOffset(to));
-      const named = entry.name ? `${entry.name} · ` : "";
       bars.push({
         key: `${categoryIndex}-${seriesIndex}`,
         x: round(horizontal ? pad.left + near : pad.left + start),
@@ -288,10 +342,21 @@ function barGeometry(input: ChartInput, horizontal: boolean): ChartGeometry {
         width: round(horizontal ? Math.max(thickness, 0) : Math.max(size, 1)),
         height: round(horizontal ? Math.max(size, 1) : Math.max(thickness, 0)),
         color: colorFor(seriesIndex),
-        title: `${named}${label} = ${input.format(value)}`,
+        hit: categoryIndex,
       });
     });
   });
+
+  // The band spans the whole value axis so the cursor finds a category even when
+  // its bar is short, or zero.
+  const hits: ChartHit[] = labels.map((label, index) => ({
+    key: `h${index}`,
+    rect: horizontal
+      ? { x: pad.left, y: round(pad.top + index * slot), width: round(valueExtent), height: round(slot) }
+      : { x: round(pad.left + index * slot), y: pad.top, width: round(slot), height: round(valueExtent) },
+    label,
+    rows: categoryRows(input, label),
+  }));
 
   const categoryLabels: ChartAxisLabel[] = labels.map((label, index) => {
     const center = pad.top + index * slot + slot / 2;
@@ -329,6 +394,7 @@ function barGeometry(input: ChartInput, horizontal: boolean): ChartGeometry {
     bars,
     lines: [],
     slices: [],
+    hits,
     grid,
     valueLabels,
     categoryLabels,
@@ -355,7 +421,6 @@ function lineGeometry(input: ChartInput, area: boolean): ChartGeometry {
       return { x: toX(index), y: toY(top), baseY: toY(base), value, label };
     });
     const line = points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x},${point.y}`).join(" ");
-    const named = entry.name ? `${entry.name} · ` : "";
     return {
       key: `s${seriesIndex}`,
       color: colorFor(seriesIndex),
@@ -372,8 +437,22 @@ function lineGeometry(input: ChartInput, area: boolean): ChartGeometry {
         key: `d${index}`,
         cx: point.x,
         cy: point.y,
-        title: `${named}${point.label} = ${input.format(point.value)}`,
+        hit: index,
       })),
+    };
+  });
+
+  // Bands meet halfway between neighbours, so the nearest category wins wherever
+  // the cursor is; a guide line then says which one that was.
+  const hits: ChartHit[] = labels.map((label, index) => {
+    const left = index === 0 ? PAD.left : (toX(index - 1) + toX(index)) / 2;
+    const right = index === labels.length - 1 ? WIDTH - PAD.right : (toX(index) + toX(index + 1)) / 2;
+    return {
+      key: `h${index}`,
+      rect: { x: round(left), y: PAD.top, width: round(right - left), height: round(plotHeight) },
+      guide: { x1: toX(index), y1: PAD.top, x2: toX(index), y2: round(PAD.top + plotHeight) },
+      label,
+      rows: categoryRows(input, label),
     };
   });
 
@@ -392,6 +471,7 @@ function lineGeometry(input: ChartInput, area: boolean): ChartGeometry {
     bars: [],
     lines,
     slices: [],
+    hits,
     grid,
     valueLabels,
     categoryLabels: labels.map((label, index) => ({
@@ -412,6 +492,7 @@ function radialGeometry(input: ChartInput, donut: boolean): ChartGeometry {
   const inner = donut ? RADIAL.inner : 0;
 
   const slices: ChartSlice[] = [];
+  const hits: ChartHit[] = [];
   let angle = -Math.PI / 2;
   if (total > 0) {
     points.forEach((point, index) => {
@@ -426,12 +507,24 @@ function radialGeometry(input: ChartInput, donut: boolean): ChartGeometry {
         ? `M${outerStart} A${RADIAL.radius},${RADIAL.radius} 0 ${large} 1 ${outerEnd} ` +
           `L${onCircle(inner, end)} A${inner},${inner} 0 ${large} 0 ${onCircle(inner, start)} Z`
         : `M${RADIAL.cx},${RADIAL.cy} L${outerStart} A${RADIAL.radius},${RADIAL.radius} 0 ${large} 1 ${outerEnd} Z`;
-      const share = ((point.value / total) * 100).toFixed(1);
-      slices.push({
-        key: `p${index}`,
+      slices.push({ key: `p${index}`, path, color: colorFor(index), hit: index });
+      const value = input.format(point.value);
+      const share = shareText(point.value, total);
+      hits.push({
+        key: `h${index}`,
         path,
-        color: colorFor(index),
-        title: `${point.label} = ${input.format(point.value)} (${share}%)`,
+        label: point.label,
+        rows: [
+          {
+            key: `p${index}`,
+            color: colorFor(index),
+            name: "",
+            value,
+            // Percentage data formats to its own share, and printing it twice
+            // reads as two different readings.
+            ...(share === value ? {} : { share }),
+          },
+        ],
       });
     });
   }
@@ -443,6 +536,7 @@ function radialGeometry(input: ChartInput, donut: boolean): ChartGeometry {
     bars: [],
     lines: [],
     slices,
+    hits,
     grid: [],
     valueLabels: [],
     categoryLabels: [],
@@ -471,13 +565,21 @@ function seriesLegend(input: ChartInput): ChartLegendItem[] {
 function pointLegend(input: ChartInput): ChartLegendItem[] {
   const points = input.series[0]?.points ?? [];
   const total = points.reduce((sum, point) => sum + Math.abs(point.value), 0) || 1;
-  return points.map((point, index) => ({
-    key: `p${index}`,
-    color: colorFor(index),
-    label: point.label,
-    value: input.format(point.value),
-    share: `${((Math.abs(point.value) / total) * 100).toFixed(1)}%`,
-  }));
+  return points.map((point, index) => {
+    const value = input.format(point.value);
+    const share = shareText(Math.abs(point.value), total);
+    return {
+      key: `p${index}`,
+      color: colorFor(index),
+      label: point.label,
+      value,
+      ...(share === value ? {} : { share }),
+    };
+  });
+}
+
+function shareText(value: number, total: number): string {
+  return `${((value / total) * 100).toFixed(1)}%`;
 }
 
 export const chartPalette = PALETTE;

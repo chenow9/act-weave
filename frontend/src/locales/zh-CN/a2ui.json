@@ -14,6 +14,7 @@
   "chartNoData": "统计图无有效数据",
   "chartNoPositive": "无正值可展示",
   "seriesFallback": "系列 {index}",
+  "chartTotal": "合计",
   "choosePlaceholder": "请选择…",
   "noOptions": "（无选项）",
   "actionDisabled": "此界面为展示态，未接入 UI 动作",

@@ -174,13 +174,13 @@ describe("layout", () => {
 });
 
 describe("data binding", () => {
-  it("resolves a bound heading, title and series from one dataModel", () => {
+  it("resolves a bound heading, title and series from one dataModel", async () => {
     const wrapper = renderFixture("chart-binding");
-    const text = wrapper.text();
     // The heading Text and the first chart's title both bind to /caption.
-    expect(text.match(/两周请求量/g)?.length).toBe(2);
-    // Production week 1 is 48200, shown compact on a tick or a tooltip.
-    expect(wrapper.html()).toContain("48.2k");
+    expect(wrapper.text().match(/两周请求量/g)?.length).toBe(2);
+    // Production week 1 is 48200, which the bound series reports compact.
+    await wrapper.findAll(".a2ui-chart-hit")[0]?.trigger("mousemove");
+    expect(wrapper.find(".a2ui-chart-tip").text()).toContain("48.2k");
   });
 
   it("renders nothing for a binding that does not resolve", () => {
@@ -212,13 +212,13 @@ describe("charts", () => {
     const wrapper = renderFixture("chart-stacked");
     expect(wrapper.find('[data-a2ui-stacked="true"]').exists()).toBe(true);
     // 3 series × 3 months.
-    expect(wrapper.findAll("rect")).toHaveLength(9);
+    expect(wrapper.findAll(".a2ui-chart-bar")).toHaveLength(9);
   });
 
   it("groups rather than stacks by default", () => {
     const wrapper = renderFixture("chart-bar");
     expect(wrapper.find("[data-a2ui-stacked]").exists()).toBe(false);
-    expect(wrapper.findAll("rect")).toHaveLength(4);
+    expect(wrapper.findAll(".a2ui-chart-bar")).toHaveLength(4);
   });
 
   it("names every series in the legend of a multi-series chart", () => {
@@ -231,7 +231,7 @@ describe("charts", () => {
   it("omits a zero slice from a donut and labels the total", () => {
     const wrapper = renderFixture("chart-donut");
     // 4 points, one of them zero.
-    expect(wrapper.findAll("path")).toHaveLength(3);
+    expect(wrapper.findAll(".a2ui-chart-slice")).toHaveLength(3);
     expect(wrapper.find(".a2ui-chart-center").exists()).toBe(true);
   });
 
@@ -241,12 +241,18 @@ describe("charts", () => {
     expect(legend.text()).toMatch(/%/);
   });
 
-  it("keeps the percent symbol and drops a duplicate unit", () => {
-    expect(renderFixture("chart-line").html()).toContain("96.1%");
+  it("keeps the percent symbol and drops a duplicate unit", async () => {
+    const wrapper = renderFixture("chart-line");
+    // The fourth day of the fixture reads 96.1.
+    await wrapper.findAll(".a2ui-chart-hit")[3]?.trigger("mousemove");
+    expect(wrapper.find(".a2ui-chart-tip").text()).toContain("96.1%");
   });
 
-  it("formats currency with grouping and the unit", () => {
-    expect(renderFixture("chart-stacked").html()).toContain("2,605 USD");
+  it("formats currency with grouping and the unit", async () => {
+    const wrapper = renderFixture("chart-stacked");
+    // 推理 peaks at 2605 in the third month.
+    await wrapper.findAll(".a2ui-chart-hit")[2]?.trigger("mousemove");
+    expect(wrapper.find(".a2ui-chart-tip").text()).toContain("2,605 USD");
   });
 
   it("reports a chart whose series resolve to nothing", () => {
@@ -277,7 +283,74 @@ describe("charts", () => {
     }));
     const wrapper = render({ components: [{ id: "root", component: "Chart", chartType: "bar", series }] });
     expect(wrapper.findAll(".a2ui-chart-legend-series li")).toHaveLength(A2UI_LIMITS.maxChartSeries);
-    expect(wrapper.findAll("rect")).toHaveLength(A2UI_LIMITS.maxChartSeries * A2UI_LIMITS.maxChartPoints);
+    expect(wrapper.findAll(".a2ui-chart-bar")).toHaveLength(A2UI_LIMITS.maxChartSeries * A2UI_LIMITS.maxChartPoints);
+  });
+});
+
+describe("hover detail", () => {
+  async function hover(wrapper: ReturnType<typeof render>, index: number) {
+    const targets = wrapper.findAll(".a2ui-chart-hit");
+    await targets[index]?.trigger("mousemove");
+    return wrapper.find(".a2ui-chart-tip");
+  }
+
+  it("names the hovered category and every series reading there", async () => {
+    const wrapper = renderFixture("chart-stacked");
+    expect(wrapper.findAll(".a2ui-chart-hit")).toHaveLength(3);
+    expect(wrapper.find(".a2ui-chart-tip").exists()).toBe(false);
+
+    const tip = await hover(wrapper, 0);
+    expect(tip.text()).toContain("5月");
+    for (const series of ["推理", "嵌入", "存储"]) expect(tip.text()).toContain(series);
+    // 1820 + 320 + 96, a number the stack draws but never labels.
+    expect(tip.text()).toContain("合计");
+    expect(tip.text()).toContain("2,236 USD");
+  });
+
+  it("follows the cursor to another category and clears when it leaves", async () => {
+    const wrapper = renderFixture("chart-bar");
+    expect((await hover(wrapper, 0)).text()).toContain("Q1");
+    expect((await hover(wrapper, 3)).text()).toContain("Q4");
+
+    await wrapper.find(".a2ui-chart-body").trigger("mouseleave");
+    expect(wrapper.find(".a2ui-chart-tip").exists()).toBe(false);
+  });
+
+  it("emphasises the hovered category and lets the rest recede", async () => {
+    const wrapper = renderFixture("chart-bar");
+    await hover(wrapper, 1);
+    expect(wrapper.find(".a2ui-chart-body").classes()).toContain("is-hovering");
+    const active = wrapper.findAll(".a2ui-chart-bar").filter((bar) => bar.classes().includes("is-active"));
+    expect(active).toHaveLength(1);
+    expect(wrapper.find(".a2ui-chart-band").exists()).toBe(true);
+  });
+
+  it("stands a guide line at the hovered point of a line chart", async () => {
+    const wrapper = renderFixture("chart-line");
+    await hover(wrapper, 2);
+    const guide = wrapper.find(".a2ui-chart-guide");
+    expect(guide.exists()).toBe(true);
+    expect(guide.attributes("x1")).toBe(guide.attributes("x2"));
+    const dots = wrapper.findAll(".a2ui-chart-dot");
+    expect(dots.filter((dot) => dot.classes().includes("is-active"))).toHaveLength(1);
+  });
+
+  it("reports a slice's share when its own shape is hovered", async () => {
+    const wrapper = renderFixture("chart-pie");
+    const tip = await hover(wrapper, 0);
+    expect(tip.text()).toMatch(/%/);
+    // A wedge is already a target, so nothing is drawn behind it.
+    expect(wrapper.find(".a2ui-chart-band").exists()).toBe(false);
+  });
+
+  /**
+   * The native SVG tooltip is what this replaced. Leaving one behind would pop a
+   * second, differently styled detail over the first after a delay.
+   */
+  it("draws no native svg tooltip anywhere", () => {
+    for (const name of ["chart-bar", "chart-hbar", "chart-line", "chart-area", "chart-pie", "chart-donut"]) {
+      expect(renderFixture(name).findAll("title"), name).toHaveLength(0);
+    }
   });
 });
 

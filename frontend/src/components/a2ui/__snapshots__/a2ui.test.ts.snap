@@ -14,26 +14,25 @@ exports[`charts > draws chart-area as an svg tagged area 1`] = `
           <line class="a2ui-chart-grid" x1="44" y1="98" x2="386" y2="98"></line>
           <line class="a2ui-chart-grid" x1="44" y1="57" x2="386" y2="57"></line>
           <line class="a2ui-chart-grid" x1="44" y1="16" x2="386" y2="16"></line><text class="a2ui-chart-axis" x="38" y="183" text-anchor="end">-20 万元</text><text class="a2ui-chart-axis" x="38" y="142" text-anchor="end">10 万元</text><text class="a2ui-chart-axis" x="38" y="101" text-anchor="end">40 万元</text><text class="a2ui-chart-axis" x="38" y="60" text-anchor="end">70 万元</text><text class="a2ui-chart-axis" x="38" y="19" text-anchor="end">100 万元</text>
+          <!--v-if-->
+          <!--v-if-->
           <path d="M44,95.3 L129.5,177.3 L215,143.1 L300.5,66.6 L386,32.4 L386,152.7 L300.5,152.7 L215,152.7 L129.5,152.7 L44,152.7 Z" fill="#0d9488" opacity="0.18"></path>
           <path d="M44,95.3 L129.5,177.3 L215,143.1 L300.5,66.6 L386,32.4" fill="none" stroke="#0d9488" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"></path>
-          <circle cx="44" cy="95.3" r="3.5" fill="#0d9488">
-            <title>1月 = 42 万元</title>
-          </circle>
-          <circle cx="129.5" cy="177.3" r="3.5" fill="#0d9488">
-            <title>2月 = -18 万元</title>
-          </circle>
-          <circle cx="215" cy="143.1" r="3.5" fill="#0d9488">
-            <title>3月 = 7 万元</title>
-          </circle>
-          <circle cx="300.5" cy="66.6" r="3.5" fill="#0d9488">
-            <title>4月 = 63 万元</title>
-          </circle>
-          <circle cx="386" cy="32.4" r="3.5" fill="#0d9488">
-            <title>5月 = 88 万元</title>
-          </circle>
+          <circle class="a2ui-chart-dot" cx="44" cy="95.3" r="3.5" fill="#0d9488"></circle>
+          <circle class="a2ui-chart-dot" cx="129.5" cy="177.3" r="3.5" fill="#0d9488"></circle>
+          <circle class="a2ui-chart-dot" cx="215" cy="143.1" r="3.5" fill="#0d9488"></circle>
+          <circle class="a2ui-chart-dot" cx="300.5" cy="66.6" r="3.5" fill="#0d9488"></circle>
+          <circle class="a2ui-chart-dot" cx="386" cy="32.4" r="3.5" fill="#0d9488"></circle>
           <!--v-if-->
-          <!--v-if--><text class="a2ui-chart-axis" x="44" y="208" text-anchor="middle">1月</text><text class="a2ui-chart-axis" x="129.5" y="208" text-anchor="middle">2月</text><text class="a2ui-chart-axis" x="215" y="208" text-anchor="middle">3月</text><text class="a2ui-chart-axis" x="300.5" y="208" text-anchor="middle">4月</text><text class="a2ui-chart-axis" x="386" y="208" text-anchor="middle">5月</text>
-        </svg></div>
+          <!--v-if--><text class="a2ui-chart-axis" x="44" y="208" text-anchor="middle">1月</text><text class="a2ui-chart-axis" x="129.5" y="208" text-anchor="middle">2月</text><text class="a2ui-chart-axis" x="215" y="208" text-anchor="middle">3月</text><text class="a2ui-chart-axis" x="300.5" y="208" text-anchor="middle">4月</text><text class="a2ui-chart-axis" x="386" y="208" text-anchor="middle">5月</text><!-- Targets come last so they sit above the drawing and receive the cursor. -->
+          <rect class="a2ui-chart-hit" x="44" y="16" width="42.8" height="164"></rect>
+          <rect class="a2ui-chart-hit" x="86.8" y="16" width="85.5" height="164"></rect>
+          <rect class="a2ui-chart-hit" x="172.3" y="16" width="85.5" height="164"></rect>
+          <rect class="a2ui-chart-hit" x="257.8" y="16" width="85.5" height="164"></rect>
+          <rect class="a2ui-chart-hit" x="343.3" y="16" width="42.8" height="164"></rect>
+        </svg>
+        <!--v-if-->
+      </div>
       <!--v-if-->
     </figure>
   </div>
@@ -57,21 +56,21 @@ exports[`charts > draws chart-bar as an svg tagged bar 1`] = `
             <line class="a2ui-chart-grid" x1="44" y1="98" x2="386" y2="98"></line>
             <line class="a2ui-chart-grid" x1="44" y1="57" x2="386" y2="57"></line>
             <line class="a2ui-chart-grid" x1="44" y1="16" x2="386" y2="16"></line><text class="a2ui-chart-axis" x="38" y="183" text-anchor="end">0 万元</text><text class="a2ui-chart-axis" x="38" y="142" text-anchor="end">500 万元</text><text class="a2ui-chart-axis" x="38" y="101" text-anchor="end">1k 万元</text><text class="a2ui-chart-axis" x="38" y="60" text-anchor="end">1.5k 万元</text><text class="a2ui-chart-axis" x="38" y="19" text-anchor="end">2k 万元</text>
-            <rect x="52.6" y="75" width="68.4" height="105" rx="3" fill="#0d9488" opacity="0.92">
-              <title>Q1 = 1.3k 万元</title>
-            </rect>
-            <rect x="138.1" y="53.4" width="68.4" height="126.6" rx="3" fill="#0d9488" opacity="0.92">
-              <title>Q2 = 1.5k 万元</title>
-            </rect>
-            <rect x="223.6" y="66" width="68.4" height="114" rx="3" fill="#0d9488" opacity="0.92">
-              <title>Q3 = 1.4k 万元</title>
-            </rect>
-            <rect x="309.1" y="31.4" width="68.4" height="148.6" rx="3" fill="#0d9488" opacity="0.92">
-              <title>Q4 = 1.8k 万元</title>
-            </rect>
             <!--v-if-->
-            <!--v-if--><text class="a2ui-chart-axis" x="86.8" y="208" text-anchor="middle">Q1</text><text class="a2ui-chart-axis" x="172.3" y="208" text-anchor="middle">Q2</text><text class="a2ui-chart-axis" x="257.8" y="208" text-anchor="middle">Q3</text><text class="a2ui-chart-axis" x="343.3" y="208" text-anchor="middle">Q4</text>
-          </svg></div>
+            <!--v-if-->
+            <rect class="a2ui-chart-bar" x="52.6" y="75" width="68.4" height="105" rx="3" fill="#0d9488"></rect>
+            <rect class="a2ui-chart-bar" x="138.1" y="53.4" width="68.4" height="126.6" rx="3" fill="#0d9488"></rect>
+            <rect class="a2ui-chart-bar" x="223.6" y="66" width="68.4" height="114" rx="3" fill="#0d9488"></rect>
+            <rect class="a2ui-chart-bar" x="309.1" y="31.4" width="68.4" height="148.6" rx="3" fill="#0d9488"></rect>
+            <!--v-if-->
+            <!--v-if--><text class="a2ui-chart-axis" x="86.8" y="208" text-anchor="middle">Q1</text><text class="a2ui-chart-axis" x="172.3" y="208" text-anchor="middle">Q2</text><text class="a2ui-chart-axis" x="257.8" y="208" text-anchor="middle">Q3</text><text class="a2ui-chart-axis" x="343.3" y="208" text-anchor="middle">Q4</text><!-- Targets come last so they sit above the drawing and receive the cursor. -->
+            <rect class="a2ui-chart-hit" x="44" y="16" width="85.5" height="164"></rect>
+            <rect class="a2ui-chart-hit" x="129.5" y="16" width="85.5" height="164"></rect>
+            <rect class="a2ui-chart-hit" x="215" y="16" width="85.5" height="164"></rect>
+            <rect class="a2ui-chart-hit" x="300.5" y="16" width="85.5" height="164"></rect>
+          </svg>
+          <!--v-if-->
+        </div>
         <!--v-if-->
       </figure>
     </div>
@@ -88,17 +87,18 @@ exports[`charts > draws chart-donut as an svg tagged donut 1`] = `
         <h3 class="a2ui-title">存储占用</h3><span class="a2ui-chart-badge">环图 · GB</span>
       </div>
       <div class="a2ui-chart-body" role="img" aria-label="存储占用"><svg class="a2ui-chart-svg a2ui-chart-svg-pie" viewBox="0 0 280 220" preserveAspectRatio="xMidYMid meet">
-          <path d="M110,22 A88,88 0 1 1 71.8,189.3 L89.2,153.2 A48,48 0 1 0 110,62 Z" fill="#0d9488" stroke="#fff" stroke-width="1.5">
-            <title>会话记录 = 128 GB (57.1%)</title>
-          </path>
-          <path d="M71.8,189.3 A88,88 0 0 1 41.2,55.1 L72.5,80.1 A48,48 0 0 0 89.2,153.2 Z" fill="#2563eb" stroke="#fff" stroke-width="1.5">
-            <title>审计轨迹 = 64 GB (28.6%)</title>
-          </path>
-          <path d="M41.2,55.1 A88,88 0 0 1 110,22 L110,62 A48,48 0 0 0 72.5,80.1 Z" fill="#d97706" stroke="#fff" stroke-width="1.5">
-            <title>附件 = 32 GB (14.3%)</title>
-          </path>
-          <!--v-if--><text class="a2ui-chart-center" x="110" y="114" text-anchor="middle">224 GB</text>
-        </svg></div>
+          <!--v-if-->
+          <!--v-if-->
+          <path class="a2ui-chart-slice" d="M110,22 A88,88 0 1 1 71.8,189.3 L89.2,153.2 A48,48 0 1 0 110,62 Z" fill="#0d9488" stroke="#fff" stroke-width="1.5"></path>
+          <path class="a2ui-chart-slice" d="M71.8,189.3 A88,88 0 0 1 41.2,55.1 L72.5,80.1 A48,48 0 0 0 89.2,153.2 Z" fill="#2563eb" stroke="#fff" stroke-width="1.5"></path>
+          <path class="a2ui-chart-slice" d="M41.2,55.1 A88,88 0 0 1 110,22 L110,62 A48,48 0 0 0 72.5,80.1 Z" fill="#d97706" stroke="#fff" stroke-width="1.5"></path>
+          <!--v-if--><text class="a2ui-chart-center" x="110" y="114" text-anchor="middle">224 GB</text><!-- Targets come last so they sit above the drawing and receive the cursor. -->
+          <path class="a2ui-chart-hit" d="M110,22 A88,88 0 1 1 71.8,189.3 L89.2,153.2 A48,48 0 1 0 110,62 Z"></path>
+          <path class="a2ui-chart-hit" d="M71.8,189.3 A88,88 0 0 1 41.2,55.1 L72.5,80.1 A48,48 0 0 0 89.2,153.2 Z"></path>
+          <path class="a2ui-chart-hit" d="M41.2,55.1 A88,88 0 0 1 110,22 L110,62 A48,48 0 0 0 72.5,80.1 Z"></path>
+        </svg>
+        <!--v-if-->
+      </div>
       <ul class="a2ui-chart-legend">
         <li><span class="a2ui-chart-swatch" style="background: rgb(13, 148, 136);" aria-hidden="true"></span><span>会话记录</span><strong>128 GB</strong><em>57.1%</em></li>
         <li><span class="a2ui-chart-swatch" style="background: rgb(37, 99, 235);" aria-hidden="true"></span><span>审计轨迹</span><strong>64 GB</strong><em>28.6%</em></li>
@@ -124,21 +124,21 @@ exports[`charts > draws chart-hbar as an svg tagged hbar 1`] = `
           <line class="a2ui-chart-grid" x1="222" y1="8" x2="222" y2="120"></line>
           <line class="a2ui-chart-grid" x1="285" y1="8" x2="285" y2="120"></line>
           <line class="a2ui-chart-grid" x1="348" y1="8" x2="348" y2="120"></line><text class="a2ui-chart-axis" x="96" y="126" text-anchor="middle">0</text><text class="a2ui-chart-axis" x="159" y="126" text-anchor="middle">125</text><text class="a2ui-chart-axis" x="222" y="126" text-anchor="middle">250</text><text class="a2ui-chart-axis" x="285" y="126" text-anchor="middle">375</text><text class="a2ui-chart-axis" x="348" y="126" text-anchor="middle">500</text>
-          <rect x="96" y="10.8" width="207.6" height="22.4" rx="3" fill="#0d9488" opacity="0.92">
-            <title>企业微信客服机器人 = 412</title>
-          </rect>
-          <rect x="96" y="38.8" width="160.3" height="22.4" rx="3" fill="#0d9488" opacity="0.92">
-            <title>官网工单表单 = 318</title>
-          </rect>
-          <rect x="96" y="66.8" width="99.3" height="22.4" rx="3" fill="#0d9488" opacity="0.92">
-            <title>电话热线转写 = 197</title>
-          </rect>
-          <rect x="96" y="94.8" width="44.4" height="22.4" rx="3" fill="#0d9488" opacity="0.92">
-            <title>邮件自动归类 = 88</title>
-          </rect>
           <!--v-if-->
-          <!--v-if--><text class="a2ui-chart-axis" x="88" y="26" text-anchor="end">企业微信客服机器人</text><text class="a2ui-chart-axis" x="88" y="54" text-anchor="end">官网工单表单</text><text class="a2ui-chart-axis" x="88" y="82" text-anchor="end">电话热线转写</text><text class="a2ui-chart-axis" x="88" y="110" text-anchor="end">邮件自动归类</text>
-        </svg></div>
+          <!--v-if-->
+          <rect class="a2ui-chart-bar" x="96" y="10.8" width="207.6" height="22.4" rx="3" fill="#0d9488"></rect>
+          <rect class="a2ui-chart-bar" x="96" y="38.8" width="160.3" height="22.4" rx="3" fill="#0d9488"></rect>
+          <rect class="a2ui-chart-bar" x="96" y="66.8" width="99.3" height="22.4" rx="3" fill="#0d9488"></rect>
+          <rect class="a2ui-chart-bar" x="96" y="94.8" width="44.4" height="22.4" rx="3" fill="#0d9488"></rect>
+          <!--v-if-->
+          <!--v-if--><text class="a2ui-chart-axis" x="88" y="26" text-anchor="end">企业微信客服机器人</text><text class="a2ui-chart-axis" x="88" y="54" text-anchor="end">官网工单表单</text><text class="a2ui-chart-axis" x="88" y="82" text-anchor="end">电话热线转写</text><text class="a2ui-chart-axis" x="88" y="110" text-anchor="end">邮件自动归类</text><!-- Targets come last so they sit above the drawing and receive the cursor. -->
+          <rect class="a2ui-chart-hit" x="96" y="8" width="252" height="28"></rect>
+          <rect class="a2ui-chart-hit" x="96" y="36" width="252" height="28"></rect>
+          <rect class="a2ui-chart-hit" x="96" y="64" width="252" height="28"></rect>
+          <rect class="a2ui-chart-hit" x="96" y="92" width="252" height="28"></rect>
+        </svg>
+        <!--v-if-->
+      </div>
       <!--v-if-->
     </figure>
   </div>
@@ -160,28 +160,26 @@ exports[`charts > draws chart-line as an svg tagged line 1`] = `
           <line class="a2ui-chart-grid" x1="44" y1="57" x2="386" y2="57"></line>
           <line class="a2ui-chart-grid" x1="44" y1="16" x2="386" y2="16"></line><text class="a2ui-chart-axis" x="38" y="183" text-anchor="end">0%</text><text class="a2ui-chart-axis" x="38" y="142" text-anchor="end">25%</text><text class="a2ui-chart-axis" x="38" y="101" text-anchor="end">50%</text><text class="a2ui-chart-axis" x="38" y="60" text-anchor="end">75%</text><text class="a2ui-chart-axis" x="38" y="19" text-anchor="end">100%</text>
           <!--v-if-->
-          <path d="M44,30.4 L112.4,26.2 L180.8,31.7 L249.2,22.4 L317.6,20.1 L386,22.7" fill="none" stroke="#0d9488" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"></path>
-          <circle cx="44" cy="30.4" r="3.5" fill="#0d9488">
-            <title>01-05 = 91.2%</title>
-          </circle>
-          <circle cx="112.4" cy="26.2" r="3.5" fill="#0d9488">
-            <title>01-06 = 93.8%</title>
-          </circle>
-          <circle cx="180.8" cy="31.7" r="3.5" fill="#0d9488">
-            <title>01-07 = 90.4%</title>
-          </circle>
-          <circle cx="249.2" cy="22.4" r="3.5" fill="#0d9488">
-            <title>01-08 = 96.1%</title>
-          </circle>
-          <circle cx="317.6" cy="20.1" r="3.5" fill="#0d9488">
-            <title>01-09 = 97.5%</title>
-          </circle>
-          <circle cx="386" cy="22.7" r="3.5" fill="#0d9488">
-            <title>01-10 = 95.9%</title>
-          </circle>
           <!--v-if-->
-          <!--v-if--><text class="a2ui-chart-axis" x="44" y="208" text-anchor="middle">01-05</text><text class="a2ui-chart-axis" x="112.4" y="208" text-anchor="middle">01-06</text><text class="a2ui-chart-axis" x="180.8" y="208" text-anchor="middle">01-07</text><text class="a2ui-chart-axis" x="249.2" y="208" text-anchor="middle">01-08</text><text class="a2ui-chart-axis" x="317.6" y="208" text-anchor="middle">01-09</text><text class="a2ui-chart-axis" x="386" y="208" text-anchor="middle">01-10</text>
-        </svg></div>
+          <!--v-if-->
+          <path d="M44,30.4 L112.4,26.2 L180.8,31.7 L249.2,22.4 L317.6,20.1 L386,22.7" fill="none" stroke="#0d9488" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"></path>
+          <circle class="a2ui-chart-dot" cx="44" cy="30.4" r="3.5" fill="#0d9488"></circle>
+          <circle class="a2ui-chart-dot" cx="112.4" cy="26.2" r="3.5" fill="#0d9488"></circle>
+          <circle class="a2ui-chart-dot" cx="180.8" cy="31.7" r="3.5" fill="#0d9488"></circle>
+          <circle class="a2ui-chart-dot" cx="249.2" cy="22.4" r="3.5" fill="#0d9488"></circle>
+          <circle class="a2ui-chart-dot" cx="317.6" cy="20.1" r="3.5" fill="#0d9488"></circle>
+          <circle class="a2ui-chart-dot" cx="386" cy="22.7" r="3.5" fill="#0d9488"></circle>
+          <!--v-if-->
+          <!--v-if--><text class="a2ui-chart-axis" x="44" y="208" text-anchor="middle">01-05</text><text class="a2ui-chart-axis" x="112.4" y="208" text-anchor="middle">01-06</text><text class="a2ui-chart-axis" x="180.8" y="208" text-anchor="middle">01-07</text><text class="a2ui-chart-axis" x="249.2" y="208" text-anchor="middle">01-08</text><text class="a2ui-chart-axis" x="317.6" y="208" text-anchor="middle">01-09</text><text class="a2ui-chart-axis" x="386" y="208" text-anchor="middle">01-10</text><!-- Targets come last so they sit above the drawing and receive the cursor. -->
+          <rect class="a2ui-chart-hit" x="44" y="16" width="34.2" height="164"></rect>
+          <rect class="a2ui-chart-hit" x="78.2" y="16" width="68.4" height="164"></rect>
+          <rect class="a2ui-chart-hit" x="146.6" y="16" width="68.4" height="164"></rect>
+          <rect class="a2ui-chart-hit" x="215" y="16" width="68.4" height="164"></rect>
+          <rect class="a2ui-chart-hit" x="283.4" y="16" width="68.4" height="164"></rect>
+          <rect class="a2ui-chart-hit" x="351.8" y="16" width="34.2" height="164"></rect>
+        </svg>
+        <!--v-if-->
+      </div>
       <!--v-if-->
     </figure>
   </div>
@@ -200,26 +198,35 @@ exports[`charts > draws chart-pie as an svg tagged pie 1`] = `
           <!--v-if--><span class="a2ui-chart-badge">饼图</span>
         </div>
         <div class="a2ui-chart-body" role="img" aria-label="饼图"><svg class="a2ui-chart-svg a2ui-chart-svg-pie" viewBox="0 0 280 220" preserveAspectRatio="xMidYMid meet">
-            <path d="M110,110 L110,22 A88,88 0 0 1 129.2,195.9 Z" fill="#0d9488" stroke="#fff" stroke-width="1.5">
-              <title>gpt-5.6 = 46.5% (46.5%)</title>
-            </path>
-            <path d="M110,110 L129.2,195.9 A88,88 0 0 1 23.3,95.1 Z" fill="#2563eb" stroke="#fff" stroke-width="1.5">
-              <title>claude-opus-5 = 31.2% (31.2%)</title>
-            </path>
-            <path d="M110,110 L23.3,95.1 A88,88 0 0 1 70,31.6 Z" fill="#d97706" stroke="#fff" stroke-width="1.5">
-              <title>composer-2.5 = 14.8% (14.8%)</title>
-            </path>
-            <path d="M110,110 L70,31.6 A88,88 0 0 1 110,22 Z" fill="#7c3aed" stroke="#fff" stroke-width="1.5">
-              <title>其他 = 7.5% (7.5%)</title>
-            </path>
             <!--v-if-->
             <!--v-if-->
-          </svg></div>
+            <path class="a2ui-chart-slice" d="M110,110 L110,22 A88,88 0 0 1 129.2,195.9 Z" fill="#0d9488" stroke="#fff" stroke-width="1.5"></path>
+            <path class="a2ui-chart-slice" d="M110,110 L129.2,195.9 A88,88 0 0 1 23.3,95.1 Z" fill="#2563eb" stroke="#fff" stroke-width="1.5"></path>
+            <path class="a2ui-chart-slice" d="M110,110 L23.3,95.1 A88,88 0 0 1 70,31.6 Z" fill="#d97706" stroke="#fff" stroke-width="1.5"></path>
+            <path class="a2ui-chart-slice" d="M110,110 L70,31.6 A88,88 0 0 1 110,22 Z" fill="#7c3aed" stroke="#fff" stroke-width="1.5"></path>
+            <!--v-if-->
+            <!--v-if-->
+            <!-- Targets come last so they sit above the drawing and receive the cursor. -->
+            <path class="a2ui-chart-hit" d="M110,110 L110,22 A88,88 0 0 1 129.2,195.9 Z"></path>
+            <path class="a2ui-chart-hit" d="M110,110 L129.2,195.9 A88,88 0 0 1 23.3,95.1 Z"></path>
+            <path class="a2ui-chart-hit" d="M110,110 L23.3,95.1 A88,88 0 0 1 70,31.6 Z"></path>
+            <path class="a2ui-chart-hit" d="M110,110 L70,31.6 A88,88 0 0 1 110,22 Z"></path>
+          </svg>
+          <!--v-if-->
+        </div>
         <ul class="a2ui-chart-legend">
-          <li><span class="a2ui-chart-swatch" style="background: rgb(13, 148, 136);" aria-hidden="true"></span><span>gpt-5.6</span><strong>46.5%</strong><em>46.5%</em></li>
-          <li><span class="a2ui-chart-swatch" style="background: rgb(37, 99, 235);" aria-hidden="true"></span><span>claude-opus-5</span><strong>31.2%</strong><em>31.2%</em></li>
-          <li><span class="a2ui-chart-swatch" style="background: rgb(217, 119, 6);" aria-hidden="true"></span><span>composer-2.5</span><strong>14.8%</strong><em>14.8%</em></li>
-          <li><span class="a2ui-chart-swatch" style="background: rgb(124, 58, 237);" aria-hidden="true"></span><span>其他</span><strong>7.5%</strong><em>7.5%</em></li>
+          <li><span class="a2ui-chart-swatch" style="background: rgb(13, 148, 136);" aria-hidden="true"></span><span>gpt-5.6</span><strong>46.5%</strong>
+            <!--v-if-->
+          </li>
+          <li><span class="a2ui-chart-swatch" style="background: rgb(37, 99, 235);" aria-hidden="true"></span><span>claude-opus-5</span><strong>31.2%</strong>
+            <!--v-if-->
+          </li>
+          <li><span class="a2ui-chart-swatch" style="background: rgb(217, 119, 6);" aria-hidden="true"></span><span>composer-2.5</span><strong>14.8%</strong>
+            <!--v-if-->
+          </li>
+          <li><span class="a2ui-chart-swatch" style="background: rgb(124, 58, 237);" aria-hidden="true"></span><span>其他</span><strong>7.5%</strong>
+            <!--v-if-->
+          </li>
         </ul>
       </figure>
     </div>
