@@ -83,12 +83,16 @@ func (b *Bridge) runAgenticTurn(
 	}
 	if result.Interrupted {
 		_ = projector.FailIncomplete(ctx, "WAITING_CONFIRMATION", true)
+		// FinalAssistantText is deliberately not carried over: pauseForInterrupt
+		// does not read it, and passing it would read as though the text spoken
+		// before the gated tool call were being persisted here. It is not — that
+		// text reached the client as deltas and its item is terminated by
+		// FailIncomplete above, since completeRun is skipped on a pause.
 		if err := b.pauseForInterrupt(ctx, job, run, &einoruntime.RunResult{
 			CheckpointID:          result.CheckpointID,
 			Interrupted:           true,
 			InterruptContextIDs:   result.InterruptContextIDs,
 			RootCauseInterruptIDs: result.RootCauseInterruptIDs,
-			FinalAssistantText:    result.FinalAssistantText,
 		}, RuntimeGenerationAgentic); err != nil {
 			return "", streamMessageID, err
 		}

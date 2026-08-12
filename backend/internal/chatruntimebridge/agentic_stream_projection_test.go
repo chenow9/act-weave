@@ -241,9 +241,17 @@ func TestAgenticEngineCallSitesPassAProjector(t *testing.T) {
 					end++
 				}
 				found++
-				if !strings.Contains(text[start:end], "Projector:") {
+				body := text[start:end]
+				if !strings.Contains(body, "Projector:") {
 					t.Errorf("%s: %s built without a Projector, so this turn streams nothing:\n%s",
-						name, literal, text[start:end])
+						name, literal, body)
+				}
+				// A named nil satisfies "has a Projector field" while streaming
+				// exactly as little as omitting it, so the guard has to reject it
+				// too — otherwise it only catches the typo, not the defect.
+				if strings.Contains(strings.ReplaceAll(body, " ", ""), "Projector:nil") {
+					t.Errorf("%s: %s passes a nil Projector, which is the same "+
+						"no-projection run as omitting it:\n%s", name, literal, body)
 				}
 				offset = end
 			}
