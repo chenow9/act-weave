@@ -186,7 +186,7 @@ func TestPauseForInterrupt_EmbedsEinoChatResumeAndTouchesTTL(t *testing.T) {
 		WorkspaceID: pauseWorkspaceID, SessionID: pauseSessionID, RunID: pauseRunID,
 		UserMessageID: pauseMsgID, ActorID: pauseUserID,
 	}
-	if err := b.pauseForInterrupt(context.Background(), job, runs.run, result); err != nil {
+	if err := b.pauseForInterrupt(context.Background(), job, runs.run, result, RuntimeGenerationClassic); err != nil {
 		t.Fatalf("pauseForInterrupt: %v", err)
 	}
 

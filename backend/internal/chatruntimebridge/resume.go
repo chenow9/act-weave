@@ -2,14 +2,36 @@ package chatruntimebridge
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 )
+
+// ErrAgenticResumeGenerationMismatch is returned when the recorded runtime
+// generation is not one this build knows. Guessing a runtime for an
+// unidentifiable checkpoint is what produces adk's opaque
+// "no child agents leading to interrupted agent were found".
+var ErrAgenticResumeGenerationMismatch = errors.New("AGENTIC_RESUME_GENERATION_MISMATCH")
 
 // EinoChatResumeSchemaVersion is the nested resume payload version (design §3.6.2).
 const EinoChatResumeSchemaVersion = "eino-chat-resume.v1"
 
 // InterruptKindToolConfirmation is the only v1 interrupt kind for agent tools.
 const InterruptKindToolConfirmation = "tool_confirmation"
+
+// Runtime generation that produced the checkpoint behind a confirmation.
+//
+// A checkpoint written by one runtime cannot be restored by the other: the
+// classic runner persists schema.Message state while the Agentic runner persists
+// *schema.AgenticMessage state, and adk resolves the interrupted agent out of
+// whatever it restores. Handing an Agentic checkpoint to a classic agent fails
+// deep inside adk with "no child agents leading to interrupted agent were
+// found", which says nothing about the real cause. Both runtimes share one
+// CheckPointStore (application.Open), so the ID alone cannot distinguish them —
+// the runtime that paused stamps itself here and resume routes on that.
+const (
+	RuntimeGenerationClassic = "classic"
+	RuntimeGenerationAgentic = "agentic"
+)
 
 // EinoChatResume is the nested recovery payload embedded inside
 // tool-resume-request.v1 (NOT a replacement outer schema).
@@ -29,6 +51,24 @@ type EinoChatResume struct {
 	GatedToolCallID     string   `json:"gatedToolCallId"`
 	GatedStepID         string   `json:"gatedStepId"`
 	InterruptKind       string   `json:"interruptKind"`
+	// RuntimeGeneration names the runtime that paused the run. Absent on
+	// payloads written before the Agentic path existed; see
+	// EffectiveRuntimeGeneration.
+	RuntimeGeneration string `json:"runtimeGeneration,omitempty"`
+}
+
+// EffectiveRuntimeGeneration reports which runtime must carry the resume.
+//
+// An absent marker means classic: confirmations written before the Agentic
+// initial path existed carry no marker, and the classic runtime was the only
+// writer that could have produced them. Any other value is returned verbatim so
+// the resume path rejects an unrecognised generation instead of guessing a
+// runtime for a checkpoint it cannot identify.
+func (m EinoChatResume) EffectiveRuntimeGeneration() string {
+	if generation := strings.TrimSpace(m.RuntimeGeneration); generation != "" {
+		return generation
+	}
+	return RuntimeGenerationClassic
 }
 
 // Valid reports whether the payload is a usable v1 einoChatResume.

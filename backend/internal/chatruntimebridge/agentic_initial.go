@@ -18,6 +18,7 @@ import (
 	"actweave/backend/internal/modelconfig"
 	"actweave/backend/internal/sessioncontext"
 
+	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
@@ -400,9 +401,30 @@ func requireAgenticContextPolicy(run execution.AgentRun) (sessioncontext.Resolve
 	return resolved, nil
 }
 
-// driveAgenticInitial is the Task 4A production initial Chat path: AgenticModel +
-// Typed Agent + frozen catalog + deferred-aware assembly + deterministic cache key.
-// Resume/HITL remains on the classic drive path until Task 4B.
+// agenticFrozenPlan is everything the Agentic runtime derives from a run's
+// frozen documents, before any turn-specific work.
+//
+// It exists so the initial turn and a resume produce the identical agent by
+// construction. A resume restores adk state that the paused agent wrote, so a
+// rebuild that differs — a different catalog, a different prompt cache key, an
+// Instruction on one side only — changes the wire and the cache identity of a
+// conversation that is already half-executed. Two hand-maintained copies of this
+// sequence would drift on the first edit; one function cannot.
+type agenticFrozenPlan struct {
+	configuredAgent   agent.Agent
+	cfg               modelconfig.Config
+	binding           runAgentBinding
+	frozenCaps        []chatruntime.SnapshotCapability
+	policy            sessioncontext.ResolvedSnapshot
+	tools             []tool.BaseTool
+	catalog           *einoruntime.ToolCatalogSnapshot
+	instruction       string
+	promptCacheKey    string
+	hasToolsOrCatalog bool
+}
+
+// planAgenticRun performs the frozen-identity validation shared by every Agentic
+// turn, in a fixed order, and derives the executable tools/catalog/instruction.
 //
 // Side-effect order (fail closed) — frozen identity before any live model read:
 //  1. load agent (status/binding id only)
@@ -410,8 +432,152 @@ func requireAgenticContextPolicy(run execution.AgentRun) (sessioncontext.Resolve
 //  3. frozen agent_graph_snapshot.v1 (authoritative empty/nonempty; no live edges)
 //  4. optional same-id DISABLED kill-switch via models.Get (never supplies identity)
 //  5. frozen context policy + pipeline tools/catalog from capability snapshot
-//  6. EstimateAgenticRequest + PreflightAgenticMandatory + assembly manifest
-//  7. BuildAgenticModel / BuildAgenticAgent / sink / provider
+//
+// Nothing here builds a model, an agent, a sink or a manifest: callers decide
+// what to do between validation and construction (the initial turn must persist
+// its assembly manifest first; a resume has no assembly).
+func (b *Bridge) planAgenticRun(
+	ctx context.Context,
+	job agentrun.Job,
+	run execution.AgentRun,
+) (*agenticFrozenPlan, error) {
+	// Agent status + binding id only (not model config identity).
+	configuredAgent, err := b.agents.Get(ctx, job.WorkspaceID, run.AgentID)
+	if err != nil {
+		return nil, fmt.Errorf("load agent: %w", err)
+	}
+	if configuredAgent.Status != agent.StatusActive {
+		return nil, errors.New("agent is not active")
+	}
+
+	// 1–2) Frozen model snapshot + full Agentic provider tuple (no live models.Get yet).
+	cfg, err := requireFrozenModelConfig(run.ModelSnapshot, job.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	// Cross-config: snapshot model id must match the agent-bound model when both present.
+	if mid := strings.TrimSpace(configuredAgent.ModelConfigID); mid != "" && mid != cfg.ID {
+		return nil, fmt.Errorf("%w: model snapshot id does not match agent binding", ErrAgenticModelSnapshotRequired)
+	}
+	if err := requireVerifiedAgenticSnapshot(run.ModelSnapshot, cfg); err != nil {
+		return nil, err
+	}
+
+	// 2b) Frozen agent binding (run.AgentSnapshot) cross-bound to run agent and to
+	// the frozen model snapshot. Nothing downstream may read this document loosely.
+	binding, err := requireFrozenAgentBinding(run, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3) Frozen agent graph is the only topology authority (no ListEnabledEdges),
+	// and its root node must agree with the frozen model identity.
+	if err := requireFrozenAgentGraphForInitial(job.WorkspaceID, run, cfg); err != nil {
+		return nil, err
+	}
+
+	// 3b) Frozen capability snapshot must satisfy the producer contract exactly
+	// before any PipelineTool / catalog digest is derived from it.
+	frozenCaps, err := parseRunCapabilitySnapshotStrict(run.CapabilitySnapshot)
+	if err != nil {
+		return nil, err
+	}
+
+	// 4) Same-identity DISABLED kill-switch only. Get errors / other statuses never
+	// alter frozen identity or invent capabilities.
+	if err := b.checkLiveModelDisabledKillSwitch(ctx, job.WorkspaceID, cfg.ID); err != nil {
+		return nil, err
+	}
+
+	// Context policy required for hard preflight (no legacy bypass). A resume has
+	// no assembly to preflight, but the document is still validated here so both
+	// turns agree on which frozen document is authoritative and so the order of
+	// rejections cannot depend on which turn is running.
+	policy, err := requireAgenticContextPolicy(run)
+	if err != nil {
+		return nil, err
+	}
+
+	// 5) Executable tools only from immutable capability snapshot — never attachDelegationTools.
+	pendingKey := pendingConfirmKey(job.WorkspaceID, job.RunID)
+	b.clearPending(pendingKey)
+	tools, err := b.buildPipelineToolsFrom(ctx, job, run, pendingKey, frozenCaps)
+	if err != nil {
+		return nil, err
+	}
+
+	catalog, err := buildFrozenToolCatalogStrict(ctx, tools, frozenCaps)
+	if err != nil {
+		return nil, err
+	}
+
+	// Instruction comes from the frozen prompt revision only (never live
+	// CurrentPromptRevisionID), and only after its content hash matches the freeze.
+	instruction, err := b.requireFrozenInstruction(ctx, job.WorkspaceID, run.AgentID, binding)
+	if err != nil {
+		return nil, err
+	}
+
+	promptCacheKey, err := buildRunPromptCacheKey(cfg, instruction, catalog)
+	if err != nil {
+		return nil, execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
+	}
+
+	return &agenticFrozenPlan{
+		configuredAgent:   configuredAgent,
+		cfg:               cfg,
+		binding:           binding,
+		frozenCaps:        frozenCaps,
+		policy:            policy,
+		tools:             tools,
+		catalog:           catalog,
+		instruction:       instruction,
+		promptCacheKey:    promptCacheKey,
+		hasToolsOrCatalog: len(tools) > 0 || (catalog != nil && catalog.Len() > 0),
+	}, nil
+}
+
+// buildAgenticAgentFromPlan builds the model and the typed agent from a plan.
+//
+// Both turns go through here so the agent a resume restores into is the agent
+// that paused. Instruction is deliberately empty: the frozen system prompt is
+// already the leading message of the assembled list, which is the audited
+// description of the wire (SystemPromptHash plus a single out-of-band system term
+// in EstimateAgenticRequest). adk prepends a non-empty Instruction on top of the
+// input messages, so setting it here would put the system prompt on the wire
+// twice while the manifest and the preflight estimate still count one.
+func (b *Bridge) buildAgenticAgentFromPlan(
+	ctx context.Context,
+	run execution.AgentRun,
+	plan *agenticFrozenPlan,
+) (adk.TypedAgent[*schema.AgenticMessage], error) {
+	agenticModel, err := b.buildAgenticModel(ctx, plan.cfg)
+	if err != nil {
+		return nil, fmt.Errorf("build agentic model: %w", err)
+	}
+	built, err := einoruntime.BuildAgenticAgent(ctx, einoruntime.AgenticAgentBuildConfig{
+		Name:                     "agent-" + strings.TrimSpace(run.AgentID),
+		Model:                    agenticModel,
+		Tools:                    plan.tools,
+		Catalog:                  plan.catalog,
+		MaxIterations:            einoruntime.DefaultMaxIterations,
+		MaxToolInvocations:       b.maxTools,
+		ToolSearchMode:           einoruntime.ToolSearchModeClientBounded,
+		ClientToolSearchVerified: plan.hasToolsOrCatalog,
+		PromptCacheKey:           plan.promptCacheKey,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build agentic agent: %w", err)
+	}
+	return built, nil
+}
+
+// driveAgenticInitial is the Task 4A production initial Chat path: AgenticModel +
+// Typed Agent + frozen catalog + deferred-aware assembly + deterministic cache key.
+//
+// Validation and derivation happen in planAgenticRun; this function adds the
+// initial-turn work: assemble + estimate + hard preflight + persist the manifest,
+// all of it before the model, the agent, the sink or the provider exist.
 func (b *Bridge) driveAgenticInitial(
 	ctx context.Context,
 	job agentrun.Job,
@@ -428,177 +594,34 @@ func (b *Bridge) driveAgenticInitial(
 		return "", "", execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
 	}
 
-	// Agent status + binding id only (not model config identity).
-	configuredAgent, err := b.agents.Get(ctx, job.WorkspaceID, run.AgentID)
-	if err != nil {
-		return "", "", fmt.Errorf("load agent: %w", err)
-	}
-	if configuredAgent.Status != agent.StatusActive {
-		return "", "", errors.New("agent is not active")
-	}
-
-	// 1–2) Frozen model snapshot + full Agentic provider tuple (no live models.Get yet).
-	cfg, err := requireFrozenModelConfig(run.ModelSnapshot, job.WorkspaceID)
+	plan, err := b.planAgenticRun(ctx, job, run)
 	if err != nil {
 		return "", "", err
-	}
-	// Cross-config: snapshot model id must match the agent-bound model when both present.
-	if mid := strings.TrimSpace(configuredAgent.ModelConfigID); mid != "" && mid != cfg.ID {
-		return "", "", fmt.Errorf("%w: model snapshot id does not match agent binding", ErrAgenticModelSnapshotRequired)
-	}
-	if err := requireVerifiedAgenticSnapshot(run.ModelSnapshot, cfg); err != nil {
-		return "", "", err
-	}
-
-	// 2b) Frozen agent binding (run.AgentSnapshot) cross-bound to run agent and to
-	// the frozen model snapshot. Nothing downstream may read this document loosely.
-	binding, err := requireFrozenAgentBinding(run, cfg)
-	if err != nil {
-		return "", "", err
-	}
-
-	// 3) Frozen agent graph is the only topology authority (no ListEnabledEdges),
-	// and its root node must agree with the frozen model identity.
-	if err := requireFrozenAgentGraphForInitial(job.WorkspaceID, run, cfg); err != nil {
-		return "", "", err
-	}
-
-	// 3b) Frozen capability snapshot must satisfy the producer contract exactly
-	// before any PipelineTool / catalog digest is derived from it.
-	frozenCaps, err := parseRunCapabilitySnapshotStrict(run.CapabilitySnapshot)
-	if err != nil {
-		return "", "", err
-	}
-
-	// 4) Same-identity DISABLED kill-switch only. Get errors / other statuses never
-	// alter frozen identity or invent capabilities.
-	if err := b.checkLiveModelDisabledKillSwitch(ctx, job.WorkspaceID, cfg.ID); err != nil {
-		return "", "", err
-	}
-
-	// Context policy required for hard preflight (no legacy bypass).
-	policy, err := requireAgenticContextPolicy(run)
-	if err != nil {
-		return "", "", err
-	}
-
-	// 5) Executable tools only from immutable capability snapshot — never attachDelegationTools.
-	pendingKey := pendingConfirmKey(job.WorkspaceID, job.RunID)
-	b.clearPending(pendingKey)
-	tools, err := b.buildPipelineToolsFrom(ctx, job, run, pendingKey, frozenCaps)
-	if err != nil {
-		return "", "", err
-	}
-
-	catalog, err := buildFrozenToolCatalogStrict(ctx, tools, frozenCaps)
-	if err != nil {
-		return "", "", err
-	}
-
-	// Instruction comes from the frozen prompt revision only (never live
-	// CurrentPromptRevisionID), and only after its content hash matches the freeze.
-	instruction, err := b.requireFrozenInstruction(ctx, job.WorkspaceID, run.AgentID, binding)
-	if err != nil {
-		return "", "", err
-	}
-
-	promptCacheKey, err := buildRunPromptCacheKey(cfg, instruction, catalog)
-	if err != nil {
-		return "", "", execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
 	}
 
 	// 6) Assemble + estimate + hard preflight + persist agentic manifest BEFORE model/sink/provider.
-	messages, msgErr := b.buildInitialAgenticMessages(ctx, job, run, configuredAgent, instruction, catalog, policy)
+	messages, msgErr := b.buildInitialAgenticMessages(
+		ctx, job, run, plan.configuredAgent, plan.instruction, plan.catalog, plan.policy)
 	if msgErr != nil {
 		return "", "", msgErr
 	}
 
 	// 7) Model + agent + sink only after preflight/manifest succeeded.
-	agenticModel, err := b.buildAgenticModel(ctx, cfg)
+	built, err := b.buildAgenticAgentFromPlan(ctx, run, plan)
 	if err != nil {
-		return "", "", fmt.Errorf("build agentic model: %w", err)
+		return "", "", err
 	}
 
-	agentName := "agent-" + strings.TrimSpace(run.AgentID)
-	hasToolsOrCatalog := len(tools) > 0 || (catalog != nil && catalog.Len() > 0)
-	// Instruction is deliberately empty: the frozen system prompt is already the
-	// leading message of the assembled list, which is the audited description of
-	// the wire (SystemPromptHash plus a single out-of-band system term in
-	// EstimateAgenticRequest). adk prepends a non-empty Instruction on top of the
-	// input messages, so setting it here would put the system prompt on the wire
-	// twice while the manifest and the preflight estimate still count one.
-	built, err := einoruntime.BuildAgenticAgent(ctx, einoruntime.AgenticAgentBuildConfig{
-		Name:                     agentName,
-		Model:                    agenticModel,
-		Tools:                    tools,
-		Catalog:                  catalog,
-		MaxIterations:            einoruntime.DefaultMaxIterations,
-		MaxToolInvocations:       b.maxTools,
-		ToolSearchMode:           einoruntime.ToolSearchModeClientBounded,
-		ClientToolSearchVerified: hasToolsOrCatalog,
-		PromptCacheKey:           promptCacheKey,
-	})
-	if err != nil {
-		return "", "", fmt.Errorf("build agentic agent: %w", err)
-	}
-
-	projector := &StreamDeltaRecorder{
-		Now: b.now,
-		ModelTurnHook: func(hookCtx context.Context, turn einoruntime.ModelTurn) error {
-			return b.recordModelTurn(hookCtx, job, run, turn)
-		},
-	}
-	if b.textSinkFactory != nil {
-		messageID, idErr := newRuntimeID()
-		if idErr != nil {
-			return "", "", idErr
-		}
-		streamMessageID = messageID
-		sink, sinkErr := b.textSinkFactory(ctx, TextSinkArgs{
-			Job: job, Run: run, MessageID: messageID,
+	return b.runAgenticTurn(ctx, job, run, built, func(
+		turnCtx context.Context,
+		agent adk.TypedAgent[*schema.AgenticMessage],
+	) (*einoruntime.AgenticRunResult, error) {
+		return b.agenticEngine.Run(turnCtx, agent, einoruntime.AgenticRunInput{
+			WorkspaceID: job.WorkspaceID,
+			RunID:       job.RunID,
+			Messages:    messages,
 		})
-		if sinkErr != nil {
-			return "", streamMessageID, fmt.Errorf("open stream text sink: %w", sinkErr)
-		}
-		projector.Sink = sink
-	}
-
-	result, err := b.agenticEngine.Run(ctx, built, einoruntime.AgenticRunInput{
-		WorkspaceID: job.WorkspaceID,
-		RunID:       job.RunID,
-		Messages:    messages,
 	})
-	if err != nil {
-		_ = projector.FailIncomplete(ctx, "MODEL_STREAM_INTERRUPTED", true)
-		return "", streamMessageID, err
-	}
-	if result == nil {
-		_ = projector.FailIncomplete(ctx, "MODEL_STREAM_INTERRUPTED", true)
-		return "", streamMessageID, errors.New("einoruntime agentic engine returned nil result")
-	}
-	if result.Err != nil {
-		_ = projector.FailIncomplete(ctx, "MODEL_STREAM_INTERRUPTED", true)
-		return "", streamMessageID, result.Err
-	}
-	if result.Interrupted {
-		_ = projector.FailIncomplete(ctx, "WAITING_CONFIRMATION", true)
-		classicResult := &einoruntime.RunResult{
-			CheckpointID:          result.CheckpointID,
-			Interrupted:           true,
-			InterruptContextIDs:   result.InterruptContextIDs,
-			RootCauseInterruptIDs: result.RootCauseInterruptIDs,
-			FinalAssistantText:    result.FinalAssistantText,
-		}
-		if err := b.pauseForInterrupt(ctx, job, run, classicResult); err != nil {
-			return "", streamMessageID, err
-		}
-		return "", streamMessageID, ErrWaitingConfirmation
-	}
-	text = strings.TrimSpace(result.FinalAssistantText)
-	if text == "" {
-		text = strings.TrimSpace(projector.Joined())
-	}
-	return text, streamMessageID, nil
 }
 
 // buildFrozenToolCatalog freezes an immutable ToolCatalog from executable tools

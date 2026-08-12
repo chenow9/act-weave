@@ -16,17 +16,28 @@ import (
 // pauseForInterrupt prepares a platform confirmation with outer
 // tool-resume-request.v1 + nested einoChatResume, then aligns checkpoint TTL
 // to confirmation.ExpiresAt (D15).
+// generation is the runtime that produced result.CheckpointID. It is an explicit
+// parameter rather than something inferred here so that a new pausing path
+// cannot compile without declaring which runtime has to resume it.
 func (b *Bridge) pauseForInterrupt(
 	ctx context.Context,
 	job agentrun.Job,
 	run execution.AgentRun,
 	result *einoruntime.RunResult,
+	generation string,
 ) error {
 	if b.confirmations == nil {
 		return fmt.Errorf("confirmation is required but not configured")
 	}
 	if result == nil || !result.Interrupted {
 		return fmt.Errorf("pauseForInterrupt requires Interrupted result")
+	}
+	switch generation {
+	case RuntimeGenerationClassic, RuntimeGenerationAgentic:
+	default:
+		// Never persist a confirmation whose checkpoint cannot be routed back to
+		// a runtime: it would be unresumable for the whole life of the run.
+		return fmt.Errorf("pauseForInterrupt requires a known runtime generation, got %q", generation)
 	}
 	if strings.TrimSpace(result.CheckpointID) == "" {
 		return fmt.Errorf("interrupted run missing checkpoint id")
@@ -117,6 +128,7 @@ func (b *Bridge) pauseForInterrupt(
 		GatedToolCallID:     gatedToolCallID,
 		GatedStepID:         confirm.StepID,
 		InterruptKind:       InterruptKindToolConfirmation,
+		RuntimeGeneration:   generation,
 	}
 	requestSnapshot, err = EmbedEinoChatResume(requestSnapshot, meta)
 	if err != nil {

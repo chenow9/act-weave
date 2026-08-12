@@ -385,6 +385,18 @@ func (b *Bridge) ContinueAfterConfirmation(
 	if !ok {
 		return errors.New("einoChatResume missing from confirmation checkpoint")
 	}
+	// The two runtimes share one CheckPointStore, so this marker is the only thing
+	// that distinguishes a checkpoint the classic seam can restore from one only
+	// the Agentic runtime can. An unrecognised marker is refused before anything is
+	// loaded: guessing is what produces adk's opaque "no child agents leading to
+	// interrupted agent were found" after the user has already approved.
+	generation := meta.EffectiveRuntimeGeneration()
+	switch generation {
+	case RuntimeGenerationClassic, RuntimeGenerationAgentic:
+	default:
+		return fmt.Errorf("%w: %q", ErrAgenticResumeGenerationMismatch, generation)
+	}
+
 	run, err := b.runs.GetAgentRun(ctx, job.WorkspaceID, job.RunID)
 	if err != nil {
 		return err
@@ -398,7 +410,17 @@ func (b *Bridge) ContinueAfterConfirmation(
 		return err
 	}
 
-	content, streamMessageID, runErr := b.drive(ctx, job, run, meta.EinoCheckpointID, targets)
+	var (
+		content         string
+		streamMessageID string
+		runErr          error
+	)
+	if generation == RuntimeGenerationAgentic {
+		content, streamMessageID, runErr = b.driveAgenticResume(
+			ctx, job, run, meta.EinoCheckpointID, targets)
+	} else {
+		content, streamMessageID, runErr = b.drive(ctx, job, run, meta.EinoCheckpointID, targets)
+	}
 	persistCtx := context.WithoutCancel(ctx)
 	if runErr != nil {
 		if errors.Is(runErr, ErrWaitingConfirmation) {
@@ -582,7 +604,7 @@ func (b *Bridge) drive(
 	if result.Interrupted {
 		// A.5: interrupt flushes FailText for any incomplete assistant text item.
 		_ = projector.FailIncomplete(ctx, "WAITING_CONFIRMATION", true)
-		if err := b.pauseForInterrupt(ctx, job, run, result); err != nil {
+		if err := b.pauseForInterrupt(ctx, job, run, result, RuntimeGenerationClassic); err != nil {
 			return "", streamMessageID, err
 		}
 		return "", streamMessageID, ErrWaitingConfirmation
@@ -1672,6 +1694,9 @@ func executionErrorCode(err error) string {
 	if errors.Is(err, ErrAgenticPromptRevisionMismatch) {
 		return "AGENTIC_PROMPT_REVISION_MISMATCH"
 	}
+	if errors.Is(err, ErrAgenticResumeGenerationMismatch) {
+		return "AGENTIC_RESUME_GENERATION_MISMATCH"
+	}
 	var ctxErr *execution.ContextError
 	if errors.As(err, &ctxErr) && ctxErr != nil && strings.TrimSpace(ctxErr.Code) != "" {
 		return ctxErr.Code
@@ -1692,6 +1717,7 @@ func executionErrorCode(err error) string {
 		"AGENTIC_AGENT_SNAPSHOT_REQUIRED",
 		"AGENTIC_CAPABILITY_SNAPSHOT_REQUIRED",
 		"AGENTIC_PROMPT_REVISION_MISMATCH",
+		"AGENTIC_RESUME_GENERATION_MISMATCH",
 	} {
 		if strings.Contains(msg, code) {
 			return code
