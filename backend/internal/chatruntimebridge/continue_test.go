@@ -559,9 +559,27 @@ func (bridgeEvents) Record(context.Context, chatruntime.ProtocolRecord) error { 
 
 type bridgeToolInvoker struct {
 	spy *spyInvoker
+	// free means the tool runs without HITL. Zero value keeps the historical
+	// confirm-gated behaviour that the continue tests rely on.
+	free bool
 }
 
 func (t *bridgeToolInvoker) ResolveInvocation(_ context.Context, req execution.ResolveRequest) (execution.ResolvedInvocation, error) {
+	if t.free {
+		return execution.ResolvedInvocation{
+			Snapshot: execution.ReleaseSnapshot{
+				WorkspaceID: req.WorkspaceID, CapabilityID: req.CapabilityID,
+				ReleaseID: req.ReleaseID, ProviderID: testResumeProviderUUID,
+			},
+			Connection: execution.ConnectionSnapshot{
+				ID: testConnUUID, WorkspaceID: req.WorkspaceID, Environment: "TEST",
+				ProviderID: testResumeProviderUUID,
+			},
+			RequiresConfirmation: false,
+			RiskLevel:            "LOW",
+			SideEffectLevel:      "NONE",
+		}, nil
+	}
 	return execution.ResolvedInvocation{
 		Snapshot: execution.ReleaseSnapshot{
 			WorkspaceID: req.WorkspaceID, CapabilityID: req.CapabilityID, ReleaseID: req.ReleaseID,

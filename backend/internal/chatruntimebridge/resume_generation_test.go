@@ -268,6 +268,7 @@ func TestExecutionErrorCode_ResumeGenerationErrors(t *testing.T) {
 		want string
 	}{
 		{ErrAgenticResumeGenerationMismatch, "AGENTIC_RESUME_GENERATION_MISMATCH"},
+		{ErrAgenticResumeClassicOnFrozenRun, "AGENTIC_RESUME_CLASSIC_ON_FROZEN_RUN"},
 	} {
 		if got := executionErrorCode(test.err); got != test.want {
 			t.Fatalf("executionErrorCode(%v) = %q, want %q", test.err, got, test.want)

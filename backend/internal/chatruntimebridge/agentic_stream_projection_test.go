@@ -262,6 +262,78 @@ func TestAgenticEngineCallSitesPassAProjector(t *testing.T) {
 	}
 }
 
+// agenticTextAndToolCall is one assistant message that both speaks and calls a
+// tool — the shape that produces two completions onto the same item in one turn
+// once the tool returns and the model speaks again.
+func agenticTextAndToolCall(text, callID, name, args string) *schema.AgenticMessage {
+	return &schema.AgenticMessage{
+		Role: schema.AgenticRoleTypeAssistant,
+		ContentBlocks: []*schema.ContentBlock{
+			schema.NewContentBlock(&schema.AssistantGenText{Text: text}),
+			schema.NewContentBlock(&schema.FunctionToolCall{
+				CallID: callID, Name: name, Arguments: args,
+			}),
+		},
+	}
+}
+
+// TestAgenticInitial_MultiAssistantTurnCompletesEachSegmentOnOneItem pins the
+// item lifecycle that a single-assistant-message fixture cannot see: the model
+// speaks, calls a free tool, then speaks again — all under one sink identity.
+// Each assistant message must complete (so FailIncomplete after a later interrupt
+// only fails unfinished text), the deltas must concatenate in order, and the
+// stored message must match what the client streamed.
+func TestAgenticInitial_MultiAssistantTurnCompletesEachSegmentOnOneItem(t *testing.T) {
+	const (
+		pre  = "Checking the order…"
+		post = "It shipped yesterday."
+	)
+	f := newAgenticFixture(t, func(f *agenticFixture) {
+		f.run.CapabilitySnapshot = toolCapSnap("lookup_order", "find order",
+			`{"type":"object","properties":{"q":{"type":"string"}}}`)
+		f.invoker = &bridgeToolInvoker{spy: &spyInvoker{}, free: true}
+		f.mdl.responses = []*schema.AgenticMessage{
+			agenticTextAndToolCall(pre, "call_1", "lookup_order", `{"q":"1"}`),
+			agenticmsg.AssistantText(post),
+		}
+	})
+	if err := f.bridge(t).Execute(context.Background(), f.job()); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if got := f.sinks.opens.Load(); got != 1 {
+		t.Fatalf("sink opens = %d, want 1 item for the whole multi-assistant turn", got)
+	}
+	sink, args, ok := f.sinks.last()
+	if !ok {
+		t.Fatal("no text sink was opened")
+	}
+	if len(sink.Completions) != 2 {
+		t.Fatalf("CompleteText called %d times, want 2 (once per assistant message): %v",
+			len(sink.Completions), sink.Completions)
+	}
+	if sink.Completions[0].Text != pre {
+		t.Fatalf("first completion = %q, want %q", sink.Completions[0].Text, pre)
+	}
+	if sink.Completions[1].Text != post {
+		t.Fatalf("second completion = %q, want %q", sink.Completions[1].Text, post)
+	}
+	if sink.Failure != nil {
+		t.Fatalf("a fully completed multi-assistant turn was also failed: %+v", sink.Failure)
+	}
+	want := pre + post
+	if got := joinedDeltas(sink); got != want {
+		t.Fatalf("streamed %q, want %q", got, want)
+	}
+	if got := f.results.lastContent(); got != want {
+		t.Fatalf("recorded %q, want %q; stream and stored message disagree", got, want)
+	}
+	if args.MessageID == "" || f.results.lastMessageID() != args.MessageID {
+		t.Fatalf("deltas under %q but recorded message %q",
+			args.MessageID, f.results.lastMessageID())
+	}
+}
+
 // TestAgenticResume_StreamsDeltasOnTheResumedTurn covers the path with no
 // assembly phase. A resumed turn produces a fresh answer and owes the client the
 // same stream as an initial one; because the resume was built separately from

@@ -473,6 +473,15 @@ func (b *Bridge) driveClassicResume(
 	if len(targets) == 0 {
 		return "", "", errors.New("chatruntimebridge: resume targets are required for classic resume")
 	}
+	// A frozen graph means this run was created after root-chat freeze landed.
+	// The classic seam exists only for confirmations that predate frozen
+	// identity. An unmarked Agentic pause (written before generation stamping)
+	// still EffectiveRuntimeGeneration→classic, so without this check it would
+	// reach live config reads and then fail inside adk after approval.
+	if runCarriesFrozenAgentGraph(run) {
+		return "", "", fmt.Errorf("%w: classic seam cannot restore a run that already has a frozen agent graph",
+			ErrAgenticResumeClassicOnFrozenRun)
+	}
 
 	// Live model reads are permitted on this seam and are the reason it is
 	// isolated: it must not silently mix AgenticMessage with schema.Message on
@@ -1724,6 +1733,9 @@ func executionErrorCode(err error) string {
 	if errors.Is(err, ErrAgenticResumeGenerationMismatch) {
 		return "AGENTIC_RESUME_GENERATION_MISMATCH"
 	}
+	if errors.Is(err, ErrAgenticResumeClassicOnFrozenRun) {
+		return "AGENTIC_RESUME_CLASSIC_ON_FROZEN_RUN"
+	}
 	var ctxErr *execution.ContextError
 	if errors.As(err, &ctxErr) && ctxErr != nil && strings.TrimSpace(ctxErr.Code) != "" {
 		return ctxErr.Code
@@ -1745,6 +1757,7 @@ func executionErrorCode(err error) string {
 		"AGENTIC_CAPABILITY_SNAPSHOT_REQUIRED",
 		"AGENTIC_PROMPT_REVISION_MISMATCH",
 		"AGENTIC_RESUME_GENERATION_MISMATCH",
+		"AGENTIC_RESUME_CLASSIC_ON_FROZEN_RUN",
 	} {
 		if strings.Contains(msg, code) {
 			return code

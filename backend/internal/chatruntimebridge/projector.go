@@ -241,10 +241,14 @@ func (NopTextDeltaSink) FailText(context.Context, chatruntime.TextStreamFailure)
 
 // RecordingTextDeltaSink captures TextDeltaSink calls for unit/integration tests.
 type RecordingTextDeltaSink struct {
-	mu         sync.Mutex
-	Emissions  []chatruntime.TextDeltaEmission
-	Completion *chatruntime.TextStreamCompletion
-	Failure    *chatruntime.TextStreamFailure
+	mu        sync.Mutex
+	Emissions []chatruntime.TextDeltaEmission
+	// Completions retains every CompleteText call in order. A multi-assistant
+	// turn (text, then a tool, then more text) completes onto the same item
+	// more than once; Completion alone only keeps the last one.
+	Completions []chatruntime.TextStreamCompletion
+	Completion  *chatruntime.TextStreamCompletion
+	Failure     *chatruntime.TextStreamFailure
 }
 
 // EmitTextDelta records one delta emission.
@@ -266,6 +270,7 @@ func (s *RecordingTextDeltaSink) CompleteText(_ context.Context, completion chat
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c := completion
+	s.Completions = append(s.Completions, c)
 	s.Completion = &c
 	return nil
 }

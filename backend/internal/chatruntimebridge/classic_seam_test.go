@@ -2,6 +2,8 @@ package chatruntimebridge
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,6 +71,71 @@ func TestClassicSeam_RefusesATurnWithoutResumeTargets(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), test.wantContains) {
 				t.Fatalf("err = %v, want it to mention %q", err, test.wantContains)
+			}
+		})
+	}
+}
+
+// TestClassicSeam_RefusesAFrozenRunBeforeLiveReads closes the gap left by an
+// absent RuntimeGeneration marker. EffectiveRuntimeGeneration still defaults
+// unmarked confirmations to classic (pre-Agentic in-flight must keep working),
+// but Agentic pauses written before generation stamping also omit the marker —
+// and those runs carry a frozen agent_graph_snapshot. Without this refusal the
+// seam would load live config and then die inside adk after the user approved.
+func TestClassicSeam_RefusesAFrozenRunBeforeLiveReads(t *testing.T) {
+	t.Parallel()
+	bridge := &Bridge{agents: resumeDispatchAgents{}}
+	run := execution.AgentRun{
+		ID: pauseRunID, WorkspaceID: pauseWorkspaceID, Status: "RUNNING",
+		// Any non-empty freeze blob counts: root chat writes a full
+		// agent_graph_snapshot.v1, never {} / null.
+		AgentGraphSnapshot: json.RawMessage(`{"schemaVersion":"agent-graph-snapshot.v1"}`),
+	}
+	_, _, err := bridge.driveClassicResume(
+		context.Background(),
+		agentrun.Job{WorkspaceID: pauseWorkspaceID, RunID: pauseRunID},
+		run,
+		"ws/"+pauseWorkspaceID+"/agent_run/"+pauseRunID+"/nonce",
+		map[string]any{"interrupt-1": map[string]any{"ok": true}},
+	)
+	if !errors.Is(err, ErrAgenticResumeClassicOnFrozenRun) {
+		t.Fatalf("err = %v, want ErrAgenticResumeClassicOnFrozenRun", err)
+	}
+	if errors.Is(err, errResumeDispatchClassicSeam) {
+		t.Fatal("the classic seam read live agent config before refusing the frozen run")
+	}
+	if got := executionErrorCode(err); got != "AGENTIC_RESUME_CLASSIC_ON_FROZEN_RUN" {
+		t.Fatalf("executionErrorCode = %q", got)
+	}
+}
+
+// TestClassicSeam_StillServesRunsWithoutAFrozenGraph is the other side: a true
+// pre-Agentic confirmation has no freeze document, and the seam must still
+// reach its live reads for that population until Task 9 removes it.
+func TestClassicSeam_StillServesRunsWithoutAFrozenGraph(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"missing", "null", "{}"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			bridge := &Bridge{agents: resumeDispatchAgents{}}
+			run := execution.AgentRun{
+				ID: pauseRunID, WorkspaceID: pauseWorkspaceID, Status: "RUNNING",
+			}
+			switch name {
+			case "null":
+				run.AgentGraphSnapshot = json.RawMessage(`null`)
+			case "{}":
+				run.AgentGraphSnapshot = json.RawMessage(`{}`)
+			}
+			_, _, err := bridge.driveClassicResume(
+				context.Background(),
+				agentrun.Job{WorkspaceID: pauseWorkspaceID, RunID: pauseRunID},
+				run,
+				"ws/"+pauseWorkspaceID+"/agent_run/"+pauseRunID+"/nonce",
+				map[string]any{"interrupt-1": map[string]any{"ok": true}},
+			)
+			if !errors.Is(err, errResumeDispatchClassicSeam) {
+				t.Fatalf("err = %v, want the live-agent probe so the seam still serves classic runs", err)
 			}
 		})
 	}
