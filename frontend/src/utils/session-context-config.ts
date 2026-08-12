@@ -92,9 +92,7 @@ export type AapFlags = {
 };
 
 /** Read aap flags with boolean defaults (missing / null → false). */
-export function readAapFlags(
-  aap?: SessionContextPolicy["aap"] | null,
-): AapFlags {
+export function readAapFlags(aap?: SessionContextPolicy["aap"] | null): AapFlags {
   return {
     includeCompactionSummary: Boolean(aap?.includeCompactionSummary),
     enableA2UI: Boolean(aap?.enableA2UI),

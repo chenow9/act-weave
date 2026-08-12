@@ -28,15 +28,15 @@ var DocumentNames = []string{
 
 // DocumentSHA256 maps document file name → SHA-256 hex of raw bytes.
 var DocumentSHA256 = map[string]string{
-	"common.schema.json": "f47c45bca563d3189817c481fd3023bfb86fefea491673af0e1424300bba66bf",
-	"content-part.schema.json": "05ba9244bc1680a6440c95e2bc4bae4646a448d514ce1112e036e67e6241dad9",
-	"delta.schema.json": "dae2fddf795d30b14a352df6e6aae4507892a24c107f7f7b7ca9e76ecc19a3ea",
-	"error.schema.json": "b11932ef8cdbabd04263e1792cce5d67b6a952192c13684b568776eee8cc738f",
-	"event-envelope.schema.json": "c4e4f3114ed984a68585007a9e66ec237e30ca583204ea86e73bb5bab1f1a1d1",
-	"events.schema.json": "934372181ea9a1f32cf4302d54770058273d13346a36bb448a3eff1f2b0ec131",
-	"interaction.schema.json": "49ab73b89f06aceba1afe0ecf14e41b76fdbb0d719f840823a1a871e566b66cd",
-	"item.schema.json": "cd2157bc603749fa76e113849aace1492e9fdfa8e68bb4395332afd8b39fffc0",
-	"run.schema.json": "d18782d680c83dc44d89178de848f4f436fb4816095a78288e774768a10f3e33",
+	"common.schema.json":           "f47c45bca563d3189817c481fd3023bfb86fefea491673af0e1424300bba66bf",
+	"content-part.schema.json":     "05ba9244bc1680a6440c95e2bc4bae4646a448d514ce1112e036e67e6241dad9",
+	"delta.schema.json":            "dae2fddf795d30b14a352df6e6aae4507892a24c107f7f7b7ca9e76ecc19a3ea",
+	"error.schema.json":            "b11932ef8cdbabd04263e1792cce5d67b6a952192c13684b568776eee8cc738f",
+	"event-envelope.schema.json":   "c4e4f3114ed984a68585007a9e66ec237e30ca583204ea86e73bb5bab1f1a1d1",
+	"events.schema.json":           "934372181ea9a1f32cf4302d54770058273d13346a36bb448a3eff1f2b0ec131",
+	"interaction.schema.json":      "49ab73b89f06aceba1afe0ecf14e41b76fdbb0d719f840823a1a871e566b66cd",
+	"item.schema.json":             "cd2157bc603749fa76e113849aace1492e9fdfa8e68bb4395332afd8b39fffc0",
+	"run.schema.json":              "d18782d680c83dc44d89178de848f4f436fb4816095a78288e774768a10f3e33",
 	"transport-signal.schema.json": "5217d93ddd08ebd48c9781ec66a9d523715c0e99907cdbaeb3458a85d85d4964",
 }
 

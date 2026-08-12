@@ -112,13 +112,17 @@ async function mockA2UIConsoleApi(page: Page) {
       json(status, { error: { code, message, requestId: "req-a2ui-e2e" } });
 
     if (method === "POST" && path === "/auth/login") {
-      return json(200, {
-        accessToken: "a2ui-e2e-token",
-        accessTokenExpires: "2099-01-01T00:00:00Z",
-        sessionId: "sess-a2ui",
-        mustChangePassword: false,
-        user: smokeUser(),
-      }, { "Set-Cookie": `${SMOKE_COOKIE}; Path=/` });
+      return json(
+        200,
+        {
+          accessToken: "a2ui-e2e-token",
+          accessTokenExpires: "2099-01-01T00:00:00Z",
+          sessionId: "sess-a2ui",
+          mustChangePassword: false,
+          user: smokeUser(),
+        },
+        { "Set-Cookie": `${SMOKE_COOKIE}; Path=/` },
+      );
     }
     if (method === "POST" && path === "/auth/refresh") {
       const cookie = req.headers()["cookie"] || "";
@@ -215,8 +219,7 @@ async function mockA2UIConsoleApi(page: Page) {
       agent = {
         ...agent,
         name: typeof body.name === "string" ? body.name : agent.name,
-        roleDescription:
-          typeof body.roleDescription === "string" ? body.roleDescription : agent.roleDescription,
+        roleDescription: typeof body.roleDescription === "string" ? body.roleDescription : agent.roleDescription,
         modelConfigId: typeof body.modelConfigId === "string" ? body.modelConfigId : agent.modelConfigId,
         status: typeof body.status === "string" ? body.status : agent.status,
         contextPolicy: nextPolicy,
@@ -279,9 +282,7 @@ test.describe("A2UI enable toggle (mocked API, Chromium)", () => {
 
     await studio.getByRole("button", { name: "保存 Agent", exact: true }).click();
 
-    await expect
-      .poll(() => api.patches.length, { timeout: 15_000 })
-      .toBeGreaterThanOrEqual(1);
+    await expect.poll(() => api.patches.length, { timeout: 15_000 }).toBeGreaterThanOrEqual(1);
 
     const patch = api.lastPatch();
     expect(patch).toBeTruthy();

@@ -58,10 +58,7 @@ describe("aap flag bag helpers", () => {
   });
 
   it("mergeAapFlags does not clobber the sibling flag", () => {
-    const withInclude = mergeAapFlags(
-      { includeCompactionSummary: true, enableA2UI: false },
-      { enableA2UI: true },
-    );
+    const withInclude = mergeAapFlags({ includeCompactionSummary: true, enableA2UI: false }, { enableA2UI: true });
     expect(withInclude).toEqual({
       includeCompactionSummary: true,
       enableA2UI: true,
@@ -191,19 +188,14 @@ describe("buildContextPolicyPayload aap flag matrix", () => {
 });
 
 describe("normalizeContextPolicy aap flag matrix", () => {
-  it.each(FLAG_MATRIX)(
-    "matrix $label round-trip via normalize",
-    ({ includeCompactionSummary, enableA2UI }) => {
-      const normalized = normalizeContextPolicy(
-        policyWithFlags(includeCompactionSummary, enableA2UI),
-      );
-      expect(normalized.schemaVersion).toBe("session-context-policy.v2");
-      expect(normalized.aap).toEqual({
-        includeCompactionSummary,
-        enableA2UI,
-      });
-    },
-  );
+  it.each(FLAG_MATRIX)("matrix $label round-trip via normalize", ({ includeCompactionSummary, enableA2UI }) => {
+    const normalized = normalizeContextPolicy(policyWithFlags(includeCompactionSummary, enableA2UI));
+    expect(normalized.schemaVersion).toBe("session-context-policy.v2");
+    expect(normalized.aap).toEqual({
+      includeCompactionSummary,
+      enableA2UI,
+    });
+  });
 
   it("defaults both flags false when v2 has empty aap", () => {
     const normalized = normalizeContextPolicy({
@@ -246,10 +238,7 @@ describe("build + normalize matrix 00/01/10/11", () => {
         enableA2UI,
       });
       // sibling keys both present on emitted aap bag
-      expect(Object.keys(built.aap || {}).sort()).toEqual([
-        "enableA2UI",
-        "includeCompactionSummary",
-      ]);
+      expect(Object.keys(built.aap || {}).sort()).toEqual(["enableA2UI", "includeCompactionSummary"]);
     },
   );
 });

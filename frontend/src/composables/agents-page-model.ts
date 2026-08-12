@@ -479,10 +479,7 @@ export function createAgentsPageModel() {
   }
 
   /** Preserve aap flag bag + force v2 when any flag/aap requires it (never v1+aap). */
-  function withPreservedAap(
-    current: SessionContextPolicy,
-    patch: Partial<SessionContextPolicy>,
-  ): SessionContextPolicy {
+  function withPreservedAap(current: SessionContextPolicy, patch: Partial<SessionContextPolicy>): SessionContextPolicy {
     const flags = readAapFlags(current.aap);
     const next: SessionContextPolicy = { ...current, ...patch };
     if (needsSessionContextV2(current, flags) || needsSessionContextV2(next, flags)) {
@@ -522,9 +519,7 @@ export function createAgentsPageModel() {
     }
     if (value !== "token_window" && value !== "rolling_summary") return;
     const current = draftContextPolicy();
-    const schemaVersion = anyAapFlagTrue(flags)
-      ? "session-context-policy.v2"
-      : "session-context-policy.v1";
+    const schemaVersion = anyAapFlagTrue(flags) ? "session-context-policy.v2" : "session-context-policy.v1";
     if (value === "token_window") {
       draftAgent.value.contextPolicy = {
         schemaVersion,
