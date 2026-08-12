@@ -223,7 +223,8 @@ type GraphSnapshotV1 struct {
 	Edges         []GraphEdgeSnapshot `json:"edges"`
 	BuiltAt       time.Time           `json:"builtAt"`
 	// FrozenRemotesByCaller maps caller agent id → full remote binding configs.
-	FrozenRemotesByCaller map[string][]FrozenRemoteBinding `json:"frozenRemotesByCaller,omitempty"`
+	// Always emitted by SnapshotJSON (not omitempty) so freeze is explicit-empty safe.
+	FrozenRemotesByCaller map[string][]FrozenRemoteBinding `json:"frozenRemotesByCaller"`
 	// RemotesFrozen marks that remotes were evaluated at freeze time for every
 	// reachable caller (including explicit empty lists).
 	RemotesFrozen bool           `json:"remotesFrozen"`
@@ -251,7 +252,9 @@ type GraphNodeSnapshot struct {
 	PromptRevisionID   string `json:"promptRevisionId,omitempty"`
 	PromptRevisionHash string `json:"promptRevisionHash,omitempty"`
 	ModelConfigID      string `json:"modelConfigId,omitempty"`
-	ModelConfigLockVer int64  `json:"modelConfigLockVersion,omitempty"`
+	// ModelConfigLockVer is always emitted by snapshotAgentNode (lock ≥ 1).
+	// Not omitempty: freeze parse requires the field present and equal to nested locks.
+	ModelConfigLockVer int64 `json:"modelConfigLockVersion"`
 	// ModelSnapshot is the frozen model config document for this node (TASK child runs).
 	ModelSnapshot json.RawMessage `json:"modelSnapshot,omitempty"`
 	// AgentSnapshot is the frozen agent-binding document for this node.

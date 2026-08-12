@@ -22,6 +22,7 @@ import (
 	"actweave/backend/internal/agent"
 	"actweave/backend/internal/agentaccess"
 	"actweave/backend/internal/agentaccessauth"
+	"actweave/backend/internal/agentdelegation"
 	"actweave/backend/internal/agentrun"
 	"actweave/backend/internal/authz"
 	"actweave/backend/internal/capability"
@@ -36,22 +37,16 @@ import (
 	"actweave/backend/internal/modelconfig"
 	"actweave/backend/internal/openapiimport"
 	"actweave/backend/internal/provider"
-	"actweave/backend/internal/secret"
 	"actweave/backend/internal/serviceendpoint"
 	"actweave/backend/internal/sessioncontext"
 	"actweave/backend/internal/storedobject"
-	"actweave/backend/internal/workspace"
 	"actweave/backend/internal/tool"
 	"actweave/backend/internal/workflowruntime"
+	"actweave/backend/internal/workspace"
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
 )
-
-type modelConfigVerifier struct {
-	client  *http.Client
-	secrets *secret.Service
-}
 
 type aapRunDispatcher struct {
 	runtime agentrun.Runtime
@@ -570,40 +565,8 @@ func (publisher agentAccessSecurityPublisher) PublishAgentAccessSecurityChange(
 	return publisher.source.Publish(change)
 }
 
-func (verifier *modelConfigVerifier) Verify(ctx context.Context, config modelconfig.Config) error {
-	target, err := modelEndpoint(config.APIBase, "models")
-	if err != nil {
-		return err
-	}
-	invoke := func(token []byte) error {
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-		if err != nil {
-			return err
-		}
-		request.Header.Set("Accept", "application/json")
-		if len(token) > 0 {
-			request.Header.Set("Authorization", "Bearer "+string(token))
-		}
-		response, err := verifier.client.Do(request)
-		if err != nil {
-			return err
-		}
-		defer response.Body.Close()
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4<<10))
-		switch response.StatusCode {
-		case http.StatusUnauthorized, http.StatusForbidden:
-			return modelconfig.ErrUpstreamAuthentication
-		}
-		if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-			return fmt.Errorf("model verification returned HTTP_STATUS_%d", response.StatusCode)
-		}
-		return nil
-	}
-	if config.CredentialSecretID == nil {
-		return invoke(nil)
-	}
-	return verifier.secrets.WithActiveSecret(ctx, config.WorkspaceID, *config.CredentialSecretID, invoke)
-}
+// modelConfigVerifier.Verify is implemented in model_agentic_verifier.go
+// (Task 3 Agentic Responses / client tool-search probes).
 
 func modelEndpoint(base, suffix string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(base))
@@ -1078,11 +1041,33 @@ func (source *modelSnapshotSource) AvailableSnapshot(
 }
 
 func marshalModelSnapshot(config modelconfig.Config) (json.RawMessage, error) {
-	return json.Marshal(map[string]any{
+	agentic := json.RawMessage(config.AgenticCapabilities)
+	if len(agentic) == 0 {
+		agentic = json.RawMessage(`{}`)
+	}
+	runtime := json.RawMessage(config.RuntimeCapabilities)
+	if len(runtime) == 0 {
+		runtime = json.RawMessage(`{}`)
+	}
+	options := json.RawMessage(config.Options)
+	if len(options) == 0 {
+		options = json.RawMessage(`{}`)
+	}
+	// Include credential secret id binding (id only, never plaintext) so
+	// WireConfigDigest of the frozen snapshot matches verification evidence.
+	doc := map[string]any{
 		"id": config.ID, "provider": config.Provider, "apiBase": config.APIBase,
-		"modelName": config.ModelName, "options": json.RawMessage(config.Options),
+		"modelName": config.ModelName, "options": options,
 		"status": config.Status, "lockVersion": config.LockVersion,
-	})
+		// Freeze verified Agentic capability for Task 4A initial construction.
+		// Empty object means unverified and fails closed at bridge preflight.
+		"agenticCapabilities": agentic,
+		"runtimeCapabilities": runtime,
+	}
+	if config.CredentialSecretID != nil {
+		doc["credentialSecretId"] = *config.CredentialSecretID
+	}
+	return json.Marshal(doc)
 }
 
 // modelConfigReader loads a workspace model config for auxiliary LLM calls.
@@ -1489,9 +1474,19 @@ func (source *agentRunSnapshots) SnapshotAgentRun(
 			if agentErr != nil {
 				return execution.AgentRunSnapshots{}, agentErr
 			}
-			modelJSON, modelErr := json.Marshal(modelPayload)
+			// run.v2 uses the canonical model freeze shape (marshalModelSnapshot):
+			// the inline modelPayload above omits status and agenticCapabilities,
+			// which the Agentic initial strict boundary requires. Sharing one
+			// producer keeps run.ModelSnapshot parseable by its own consumer.
+			modelJSON, modelErr := marshalModelSnapshot(model)
 			if modelErr != nil {
 				return execution.AgentRunSnapshots{}, modelErr
+			}
+			graphJSON, graphErr := freezeRootChatGraphSnapshot(
+				workspaceID, configuredAgent, model, revision, capabilities,
+			)
+			if graphErr != nil {
+				return execution.AgentRunSnapshots{}, graphErr
 			}
 			return execution.AgentRunSnapshots{
 				SchemaVersion: execution.RunSnapshotSchemaV2,
@@ -1499,6 +1494,7 @@ func (source *agentRunSnapshots) SnapshotAgentRun(
 				Capabilities:  capabilitiesJSON,
 				ContextPolicy: contextJSON,
 				Agent:         agentSnap,
+				Graph:         graphJSON,
 			}, nil
 		}
 		// Incomplete policy/model combination → fall back to legacy (do not fail create).
@@ -1510,6 +1506,129 @@ func (source *agentRunSnapshots) SnapshotAgentRun(
 	}
 	legacy.Model = modelJSON
 	return legacy, nil
+}
+
+// freezeRootChatGraphSnapshot produces the explicitly empty agent_graph_snapshot.v1
+// for a root chat run: exactly one node (the run's own agent, depth 0), zero
+// edges, and an empty frozen remotes list keyed by that agent.
+//
+// Without this the Agentic initial path has no topology authority at all —
+// agent_runs.agent_graph_snapshot defaults to {} and the consumer fail-closes
+// with AGENTIC_GRAPH_SNAPSHOT_REQUIRED, so every new chat session's first turn
+// dies. The three nested snapshots use the node producer shapes from
+// chatruntimebridge.snapshotAgentNode (which is a different, narrower schema
+// than the root run.ModelSnapshot / run.AgentSnapshot documents).
+//
+// Root identity is taken from the same model/revision values that build the
+// root run.ModelSnapshot and run.AgentSnapshot, so the consumer's cross-snapshot
+// assertions (root node modelConfigId / lockVersion / agentId) hold by
+// construction. The producer self-checks against ParseSnapshot and fails run
+// creation rather than persisting a freeze the consumer would reject.
+func freezeRootChatGraphSnapshot(
+	workspaceID string,
+	configuredAgent agent.Agent,
+	model modelconfig.Config,
+	revision agent.PromptRevision,
+	capabilities []capability.Descriptor,
+) (json.RawMessage, error) {
+	options := json.RawMessage(model.Options)
+	if len(options) == 0 || string(options) == "null" {
+		options = json.RawMessage(`{}`)
+	}
+	nodeModel, err := json.Marshal(map[string]any{
+		"id": model.ID, "provider": model.Provider, "apiBase": model.APIBase,
+		"modelName": model.ModelName, "options": options,
+		"credentialSecretId": model.CredentialSecretID, "lockVersion": model.LockVersion,
+	})
+	if err != nil {
+		return nil, err
+	}
+	nodeAgent, err := json.Marshal(map[string]any{
+		"schemaVersion": "agent-binding.v1",
+		"agentId":       configuredAgent.ID,
+		"name":          configuredAgent.Name,
+		// Trimmed to satisfy the freeze's exact-string contract (no padding).
+		"roleDescription":    strings.TrimSpace(configuredAgent.RoleDescription),
+		"promptRevisionId":   revision.ID,
+		"promptRevisionHash": revision.ContentSHA256,
+		"modelConfigId":      model.ID,
+		"modelConfigLockVer": model.LockVersion,
+	})
+	if err != nil {
+		return nil, err
+	}
+	nodeCaps, err := marshalNodeCapabilitySnapshot(capabilities)
+	if err != nil {
+		return nil, err
+	}
+
+	raw, err := agentdelegation.SnapshotJSON(agentdelegation.GraphSnapshotV1{
+		SchemaVersion: agentdelegation.GraphSnapshotSchemaV1,
+		RootAgentID:   configuredAgent.ID,
+		MaxDepth:      agentdelegation.DefaultMaxDepth,
+		MaxTotal:      agentdelegation.DefaultMaxTotalDelegations,
+		MaxPerBinding: agentdelegation.DefaultMaxPerBinding,
+		Nodes: []agentdelegation.GraphNodeSnapshot{{
+			AgentID:            configuredAgent.ID,
+			Name:               configuredAgent.Name,
+			Depth:              0,
+			PromptRevisionID:   revision.ID,
+			PromptRevisionHash: revision.ContentSHA256,
+			ModelConfigID:      model.ID,
+			ModelConfigLockVer: model.LockVersion,
+			ModelSnapshot:      nodeModel,
+			AgentSnapshot:      nodeAgent,
+			CapabilitySnapshot: nodeCaps,
+		}},
+		Edges: []agentdelegation.GraphEdgeSnapshot{},
+		FrozenRemotesByCaller: map[string][]agentdelegation.FrozenRemoteBinding{
+			configuredAgent.ID: {},
+		},
+		RemotesFrozen: true,
+		BuiltAt:       time.Now().UTC(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	// Producer/consumer closure: never persist a freeze ParseSnapshot rejects.
+	parsed, err := agentdelegation.ParseSnapshot(workspaceID, raw)
+	if err != nil {
+		return nil, fmt.Errorf("root chat graph freeze failed its own parse contract: %w", err)
+	}
+	if parsed == nil {
+		return nil, errors.New("root chat graph freeze parsed as absent")
+	}
+	return raw, nil
+}
+
+// marshalNodeCapabilitySnapshot mirrors chatruntimebridge.capabilitySnapshotJSON
+// (the node-local capability shape used inside graph nodes).
+func marshalNodeCapabilitySnapshot(capabilities []capability.Descriptor) (json.RawMessage, error) {
+	releases := make([]map[string]any, 0, len(capabilities))
+	for _, item := range capabilities {
+		inSchema := json.RawMessage(item.InputSchema)
+		if len(inSchema) == 0 || string(inSchema) == "null" {
+			inSchema = json.RawMessage(`{}`)
+		}
+		outSchema := json.RawMessage(item.OutputSchema)
+		if len(outSchema) == 0 || string(outSchema) == "null" {
+			outSchema = json.RawMessage(`{}`)
+		}
+		entry := map[string]any{
+			"capabilityId": item.CapabilityID, "releaseId": item.ReleaseID, "kind": item.Kind,
+			"callableName": item.CallableName, "callableDescription": item.CallableDescription,
+			"inputSchema": inSchema, "outputSchema": outSchema,
+			"riskLevel": item.RiskLevel, "sideEffectLevel": item.SideEffectLevel,
+			"requiresConfirmation": item.RequiresConfirmation,
+		}
+		if item.ConnectionID != "" {
+			entry["connectionId"] = item.ConnectionID
+		}
+		releases = append(releases, entry)
+	}
+	return json.Marshal(map[string]any{
+		"schemaVersion": "capability-snapshot.v1", "releases": releases,
+	})
 }
 
 type runAuthorizer struct {

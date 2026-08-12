@@ -43,20 +43,22 @@ func TestAgentTool_TASK_CancelAndTimeout_ThreeObjectTerminal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	modelFrozen := json.RawMessage(`{"id":"` + fx.model + `","provider":"openai","apiBase":"https://example.test","modelName":"m","lockVersion":1}`)
-	agentFrozen := json.RawMessage(`{"schemaVersion":"agent-binding.v1","agentId":"` + fx.agentB + `","modelConfigId":"` + fx.model + `","modelConfigLockVer":1}`)
-	capFrozen := json.RawMessage(`{"schemaVersion":"capability-snapshot.v1","releases":[]}`)
+	modelFrozen := producerNodeModel(fx.model, 1, "m", "https://example.test")
+	agentASnap := producerNodeAgent(fx.agentA, fx.model, 1, "A", "")
+	agentFrozen := producerNodeAgent(fx.agentB, fx.model, 1, "B", "")
+	capFrozen := producerNodeCap()
 	graph, _ := json.Marshal(map[string]any{
 		"schemaVersion": "agent_graph_snapshot.v1",
 		"rootAgentId":   fx.agentA,
 		"maxDepth":      4, "maxTotalDelegations": 20, "maxPerBinding": 5,
+		"builtAt": "2026-08-10T12:00:00Z",
 		"nodes": []map[string]any{
 			{
-				"agentId": fx.agentA, "depth": 0, "modelConfigId": fx.model,
-				"modelSnapshot": modelFrozen, "agentSnapshot": agentFrozen, "capabilitySnapshot": capFrozen,
+				"agentId": fx.agentA, "depth": 0, "modelConfigId": fx.model, "modelConfigLockVersion": 1,
+				"modelSnapshot": modelFrozen, "agentSnapshot": agentASnap, "capabilitySnapshot": capFrozen,
 			},
 			{
-				"agentId": fx.agentB, "depth": 1, "modelConfigId": fx.model,
+				"agentId": fx.agentB, "depth": 1, "modelConfigId": fx.model, "modelConfigLockVersion": 1,
 				"modelSnapshot": modelFrozen, "agentSnapshot": agentFrozen, "capabilitySnapshot": capFrozen,
 			},
 		},
@@ -67,6 +69,9 @@ func TestAgentTool_TASK_CancelAndTimeout_ThreeObjectTerminal(t *testing.T) {
 		"remotesFrozen":         true,
 		"frozenRemotesByCaller": map[string]any{fx.agentA: []any{}, fx.agentB: []any{}},
 	})
+	if _, err := agentdelegation.ParseSnapshot(fx.ws, graph); err != nil {
+		t.Fatalf("fixture graph: %v", err)
+	}
 
 	parentID := uuid.Must(uuid.NewV7()).String()
 	if _, err := runRepo.StartAgentRun(ctx, execution.StartAgentRunInput{

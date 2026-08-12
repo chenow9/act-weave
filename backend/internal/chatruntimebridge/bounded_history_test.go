@@ -17,9 +17,9 @@ import (
 
 // countingSessions tracks ListMessages vs reverse-page usage for D-01.
 type countingSessions struct {
-	messages       []chat.Message
-	listAllCalls   atomic.Int64
-	reverseCalls   atomic.Int64
+	messages        []chat.Message
+	listAllCalls    atomic.Int64
+	reverseCalls    atomic.Int64
 	getMessageCalls atomic.Int64
 }
 
@@ -208,7 +208,7 @@ func TestBuildMessagesTokenWindowUsesBoundedHistory(t *testing.T) {
 			ID: fmt.Sprintf("hist-%02d", i), WorkspaceID: ws, SessionID: session,
 			Role: "USER", Content: fmt.Sprintf("history %d", i),
 			ContentSHA256: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-			Status: "RECEIVED", CreatedAt: base.Add(time.Duration(i) * time.Minute),
+			Status:        "RECEIVED", CreatedAt: base.Add(time.Duration(i) * time.Minute),
 		})
 	}
 	currentID := "hist-current"

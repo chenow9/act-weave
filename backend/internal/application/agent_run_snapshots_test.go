@@ -286,7 +286,7 @@ func TestAgentRunSnapshotsV2WhenGateAndCapabilitiesReady(t *testing.T) {
 	// Gate off → legacy.
 	legacySource := &agentRunSnapshots{
 		agents: agentRepository, models: modelRepository, catalog: catalog,
-		workspaces: workspaceRepository,
+		workspaces:     workspaceRepository,
 		sessionContext: config.SessionContextRollout{Enabled: false, Mode: "disabled"},
 	}
 	legacy, err := legacySource.SnapshotAgentRun(context.Background(), snapshotWorkspaceID, snapshotAgentID)

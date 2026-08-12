@@ -44,7 +44,7 @@ func runBridgeABModes(t *testing.T, mode string) {
 	t.Helper()
 	harness := dbtest.New(t)
 	version := harness.MigrateToLatest(t)
-	if !version.Applied || version.Number != 18 || version.Dirty {
+	if !version.Applied || version.Number != 20 || version.Dirty {
 		t.Fatalf("migration = %+v", version)
 	}
 	db := harness.Open(t)
@@ -328,7 +328,7 @@ func runBridgeABModes(t *testing.T, mode string) {
 func TestBridge_NewSession_EmptyGraphFreezeNoRunStateConflict(t *testing.T) {
 	harness := dbtest.New(t)
 	version := harness.MigrateToLatest(t)
-	if !version.Applied || version.Number != 18 || version.Dirty {
+	if !version.Applied || version.Number != 20 || version.Dirty {
 		t.Fatalf("migration = %+v", version)
 	}
 	db := harness.Open(t)

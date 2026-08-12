@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"actweave/backend/internal/egressguard"
 )
 
 // EgressPolicy controls outbound A2A URL validation.
@@ -32,17 +35,38 @@ type resolvedDial struct {
 
 // ValidateOutboundURL enforces HTTPS (or http only for loopback when AllowHTTP),
 // host allowlist, DNS resolution of private/link-local/metadata addresses (SSRF).
+// Delegates to egressguard (shared with agent_graph_snapshot freeze parse).
+//
+// Request-scoped callers must use ValidateOutboundURLCtx: this convenience form
+// has no cancellation and is not used on any production egress path.
 func ValidateOutboundURL(raw string, allowedHosts []string) error {
 	return ValidateOutboundURLCtx(context.Background(), raw, allowedHosts, EgressPolicy{})
 }
 
 func ValidateOutboundURLCtx(ctx context.Context, raw string, allowedHosts []string, policy EgressPolicy) error {
-	_, err := resolveOutboundURL(ctx, raw, allowedHosts, policy)
+	return mapEgressErr(egressguard.ValidateOutboundURLCtx(ctx, raw, allowedHosts, toEgressPolicy(policy)))
+}
+
+func toEgressPolicy(p EgressPolicy) egressguard.EgressPolicy {
+	return egressguard.EgressPolicy{AllowHTTP: p.AllowHTTP, Resolver: p.Resolver}
+}
+
+func mapEgressErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, egressguard.ErrInvalid) {
+		return fmt.Errorf("%w: %s", ErrInvalid, strings.TrimPrefix(err.Error(), egressguard.ErrInvalid.Error()+": "))
+	}
+	if errors.Is(err, egressguard.ErrSSRFDenied) {
+		return fmt.Errorf("%w: %s", ErrSSRFDenied, strings.TrimPrefix(err.Error(), egressguard.ErrSSRFDenied.Error()+": "))
+	}
 	return err
 }
 
-// resolveOutboundURL validates and returns the allowed IPs for dialing (empty for literal IP already dialable).
+// resolveOutboundURL validates and returns the allowed IPs for dialing.
 func resolveOutboundURL(ctx context.Context, raw string, allowedHosts []string, policy EgressPolicy) (*resolvedDial, error) {
+	// Keep dial-time validation local (SecureHTTPClient); re-use host/private helpers.
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, ErrInvalid
@@ -74,14 +98,12 @@ func resolveOutboundURL(ctx context.Context, raw string, allowedHosts []string, 
 	if len(allowedHosts) > 0 && !hostAllowed(host, allowedHosts) {
 		return nil, fmt.Errorf("%w: host %q not in allowlist", ErrSSRFDenied, host)
 	}
-	// Literal IP
 	if ip := net.ParseIP(host); ip != nil {
 		if isPrivateOrSpecialIP(ip) && !(policy.AllowHTTP && ip.IsLoopback()) {
 			return nil, fmt.Errorf("%w: private/special IP", ErrSSRFDenied)
 		}
 		return &resolvedDial{host: host, addrs: []net.IP{ip}}, nil
 	}
-	// DNS resolve and re-check every address (prevent DNS rebinding to private IPs).
 	addrs, err := lookupIPs(ctx, host, policy)
 	if err != nil {
 		return nil, err

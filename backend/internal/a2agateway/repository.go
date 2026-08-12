@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"actweave/backend/internal/egressguard"
+
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -367,46 +369,30 @@ func (r *Repository) UpdateRemote(ctx context.Context, in UpdateRemoteInput) (Re
 
 // validateAuthSecretRef enforces secret:<workspaceUUID>:<secretUUID> and that the
 // embedded workspace matches the binding workspace (fail-closed cross-tenant).
-// Empty ref is allowed (no outbound auth).
+// Empty ref is allowed (no outbound auth). Reuses egressguard (shared with freeze parse).
 func validateAuthSecretRef(bindingWorkspaceID, ref string) error {
-	ref = strings.TrimSpace(ref)
-	if ref == "" {
-		return nil
-	}
-	parts := strings.Split(ref, ":")
-	if len(parts) != 3 || parts[0] != "secret" {
-		return fmt.Errorf("%w: authSecretRef must be secret:<workspaceId>:<secretId>", ErrInvalid)
-	}
-	refWS, secretID := strings.TrimSpace(parts[1]), strings.TrimSpace(parts[2])
-	if !validUUID(refWS) || !validUUID(secretID) {
-		return fmt.Errorf("%w: authSecretRef workspace/secret must be UUIDs", ErrInvalid)
-	}
-	if !strings.EqualFold(refWS, strings.TrimSpace(bindingWorkspaceID)) {
-		return fmt.Errorf("%w: authSecretRef workspace must match binding workspace", ErrInvalid)
+	if err := egressguard.ValidateAuthSecretRef(bindingWorkspaceID, ref); err != nil {
+		if errors.Is(err, egressguard.ErrInvalid) {
+			return fmt.Errorf("%w: %s", ErrInvalid, strings.TrimPrefix(err.Error(), egressguard.ErrInvalid.Error()+": "))
+		}
+		return err
 	}
 	return nil
 }
 
 // validateRemoteAllowlist requires non-empty allowedHosts and that both endpoint
 // and optional agentCardURL pass SSRF + explicit host allowlist coverage.
+// Reuses egressguard (same policy as agent_graph_snapshot remote members).
 func validateRemoteAllowlist(ctx context.Context, endpointURL, agentCardURL string, allowedHosts []string) error {
-	hosts := make([]string, 0, len(allowedHosts))
-	for _, h := range allowedHosts {
-		h = strings.ToLower(strings.TrimSpace(h))
-		if h != "" {
-			hosts = append(hosts, h)
+	if err := egressguard.ValidateRemoteAllowlist(ctx, endpointURL, agentCardURL, allowedHosts); err != nil {
+		// Preserve a2agateway sentinel types for callers using errors.Is.
+		if errors.Is(err, egressguard.ErrInvalid) {
+			return fmt.Errorf("%w: %s", ErrInvalid, strings.TrimPrefix(err.Error(), egressguard.ErrInvalid.Error()+": "))
 		}
-	}
-	if len(hosts) == 0 {
-		return fmt.Errorf("%w: allowedHosts must be non-empty", ErrInvalid)
-	}
-	if err := ValidateOutboundURLCtx(ctx, endpointURL, hosts, EgressPolicy{}); err != nil {
+		if errors.Is(err, egressguard.ErrSSRFDenied) {
+			return fmt.Errorf("%w: %s", ErrSSRFDenied, strings.TrimPrefix(err.Error(), egressguard.ErrSSRFDenied.Error()+": "))
+		}
 		return err
-	}
-	if card := strings.TrimSpace(agentCardURL); card != "" {
-		if err := ValidateOutboundURLCtx(ctx, card, hosts, EgressPolicy{}); err != nil {
-			return fmt.Errorf("agentCardURL: %w", err)
-		}
 	}
 	return nil
 }

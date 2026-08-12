@@ -68,7 +68,7 @@ func (b *Bridge) attachDelegationTools(
 	rawSnap := run.AgentGraphSnapshot
 	emptySnap := len(rawSnap) == 0 || string(rawSnap) == "{}" || string(rawSnap) == "null"
 	if !emptySnap {
-		parsed, perr := agentdelegation.ParseSnapshot(rawSnap)
+		parsed, perr := agentdelegation.ParseSnapshot(job.WorkspaceID, rawSnap)
 		if perr != nil || parsed == nil {
 			// Non-empty but malformed/unsupported: never live-rebuild.
 			return nil, nil, nil, fmt.Errorf("agent_graph_snapshot parse failed (fail-closed): %v", perr)
@@ -180,9 +180,9 @@ func (b *Bridge) attachDelegationTools(
 		}
 		// Prefer frozen remotes from parent graph snapshot (execute freeze-only).
 		// v1 with RemotesFrozen must never live-fallback; legacy may list live fail-closed.
-		remotes := frozenRemotesForAgent(run.AgentGraphSnapshot, agentID)
+		remotes := frozenRemotesForAgent(job.WorkspaceID, run.AgentGraphSnapshot, agentID)
 		if remotes == nil && b.delegation != nil && b.delegation.RemoteBindings != nil {
-			if hasFrozenRemotesKey(run.AgentGraphSnapshot) {
+			if hasFrozenRemotesKey(job.WorkspaceID, run.AgentGraphSnapshot) {
 				return nil, fmt.Errorf("frozen remotes required for agent %s (no live fallback)", agentID)
 			}
 			live, rerr := b.delegation.RemoteBindings.ListEnabledRemotesForCaller(ctx, job.WorkspaceID, agentID)
@@ -289,8 +289,8 @@ func (b *Bridge) attachDelegationTools(
 		}
 		out = append(out, audited)
 	}
-	remotes := frozenRemotesForAgent(snapRaw, run.AgentID)
-	if remotes == nil && b.delegation != nil && b.delegation.RemoteBindings != nil && !hasFrozenRemotesKey(snapRaw) {
+	remotes := frozenRemotesForAgent(job.WorkspaceID, snapRaw, run.AgentID)
+	if remotes == nil && b.delegation != nil && b.delegation.RemoteBindings != nil && !hasFrozenRemotesKey(job.WorkspaceID, snapRaw) {
 		// Legacy only: live remotes when freeze key absent.
 		live, rerr := b.delegation.RemoteBindings.ListEnabledRemotesForCaller(ctx, job.WorkspaceID, run.AgentID)
 		if rerr != nil {
@@ -421,8 +421,8 @@ func assertReachableCallableNamespaces(
 				}
 			}
 		}
-		remotes := frozenRemotesForAgent(graphSnap, agentID)
-		if remotes == nil && b != nil && b.delegation != nil && b.delegation.RemoteBindings != nil && !hasFrozenRemotesKey(graphSnap) {
+		remotes := frozenRemotesForAgent(workspaceID, graphSnap, agentID)
+		if remotes == nil && b != nil && b.delegation != nil && b.delegation.RemoteBindings != nil && !hasFrozenRemotesKey(workspaceID, graphSnap) {
 			live, err := b.delegation.RemoteBindings.ListEnabledRemotesForCaller(ctx, workspaceID, agentID)
 			if err != nil {
 				return fmt.Errorf("agent %s list remotes: %w", agentID, err)
@@ -439,8 +439,8 @@ func assertReachableCallableNamespaces(
 	return nil
 }
 
-func hasFrozenRemotesKey(raw json.RawMessage) bool {
-	snap, err := agentdelegation.ParseSnapshot(raw)
+func hasFrozenRemotesKey(workspaceID string, raw json.RawMessage) bool {
+	snap, err := agentdelegation.ParseSnapshot(workspaceID, raw)
 	if err == nil && snap != nil && snap.RemotesFrozen {
 		return true
 	}
@@ -459,8 +459,8 @@ func hasFrozenRemotesKey(raw json.RawMessage) bool {
 // frozenRemotesForAgent returns frozen remotes for caller. When RemotesFrozen,
 // empty slice means "no remotes" (do not live-fallback). Returns nil only for
 // legacy snapshots without freeze so callers may fall back carefully.
-func frozenRemotesForAgent(raw json.RawMessage, agentID string) []a2agateway.RemoteBinding {
-	snap, err := agentdelegation.ParseSnapshot(raw)
+func frozenRemotesForAgent(workspaceID string, raw json.RawMessage, agentID string) []a2agateway.RemoteBinding {
+	snap, err := agentdelegation.ParseSnapshot(workspaceID, raw)
 	if err == nil && snap != nil && snap.RemotesFrozen {
 		list := snap.FrozenRemotesByCaller[agentID]
 		out := make([]a2agateway.RemoteBinding, 0, len(list))
@@ -587,7 +587,7 @@ func (b *Bridge) freezeGraphSnapshot(
 		}
 		return nodes[i].Depth < nodes[j].Depth
 	})
-	return &agentdelegation.GraphSnapshotV1{
+	snap := &agentdelegation.GraphSnapshotV1{
 		SchemaVersion:         agentdelegation.GraphSnapshotSchemaV1,
 		RootAgentID:           run.AgentID,
 		MaxDepth:              agentdelegation.DefaultMaxDepth,
@@ -598,7 +598,17 @@ func (b *Bridge) freezeGraphSnapshot(
 		BuiltAt:               builtAt,
 		FrozenRemotesByCaller: remotesByCaller,
 		RemotesFrozen:         true,
-	}, nil
+	}
+	// Producer self-check: freeze output must satisfy the same strict+semantic
+	// contract that ParseSnapshot enforces (fail closed, do not persist invalid).
+	raw, err := agentdelegation.SnapshotJSON(*snap)
+	if err != nil {
+		return nil, fmt.Errorf("marshal frozen graph: %w", err)
+	}
+	if _, err := agentdelegation.ParseSnapshot(job.WorkspaceID, raw); err != nil {
+		return nil, fmt.Errorf("producer freeze failed semantic contract: %w", err)
+	}
+	return snap, nil
 }
 
 func (b *Bridge) snapshotAgentNode(ctx context.Context, workspaceID, agentID string, depth int) (agentdelegation.GraphNodeSnapshot, error) {
@@ -644,15 +654,23 @@ func (b *Bridge) snapshotAgentNode(ctx context.Context, workspaceID, agentID str
 			return agentdelegation.GraphNodeSnapshot{}, fmt.Errorf("prompt revision %s not found for agent %s", promptRev, agentID)
 		}
 	}
+	// Node model shape is intentionally narrower than root run.ModelSnapshot
+	// (no status/agenticCapabilities/runtimeCapabilities). options is always an
+	// object; credentialSecretId is always present and may be JSON null.
+	options := liveCfg.Options
+	if len(options) == 0 || string(options) == "null" {
+		options = json.RawMessage(`{}`)
+	}
 	modelSnap, merr := json.Marshal(map[string]any{
 		"id": liveCfg.ID, "provider": liveCfg.Provider, "apiBase": liveCfg.APIBase,
-		"modelName": liveCfg.ModelName, "options": liveCfg.Options,
+		"modelName": liveCfg.ModelName, "options": options,
 		"credentialSecretId": liveCfg.CredentialSecretID, "lockVersion": liveCfg.LockVersion,
 	})
 	if merr != nil {
 		return agentdelegation.GraphNodeSnapshot{}, merr
 	}
 	roleDesc := strings.TrimSpace(configured.RoleDescription)
+	// Agent-binding.v1 closed producer keys (always emitted, empty strings legal).
 	agentSnap, aerr := json.Marshal(map[string]any{
 		"schemaVersion": "agent-binding.v1", "agentId": agentID, "name": configured.Name,
 		"roleDescription":  roleDesc,
@@ -684,10 +702,18 @@ func (b *Bridge) capabilitySnapshotJSON(ctx context.Context, workspaceID, agentI
 	}
 	releases := make([]map[string]any, 0, len(descriptors))
 	for _, item := range descriptors {
+		inSchema := json.RawMessage(item.InputSchema)
+		if len(inSchema) == 0 || string(inSchema) == "null" {
+			inSchema = json.RawMessage(`{}`)
+		}
+		outSchema := json.RawMessage(item.OutputSchema)
+		if len(outSchema) == 0 || string(outSchema) == "null" {
+			outSchema = json.RawMessage(`{}`)
+		}
 		entry := map[string]any{
 			"capabilityId": item.CapabilityID, "releaseId": item.ReleaseID, "kind": item.Kind,
 			"callableName": item.CallableName, "callableDescription": item.CallableDescription,
-			"inputSchema": json.RawMessage(item.InputSchema), "outputSchema": json.RawMessage(item.OutputSchema),
+			"inputSchema": inSchema, "outputSchema": outSchema,
 			"riskLevel": item.RiskLevel, "sideEffectLevel": item.SideEffectLevel,
 			"requiresConfirmation": item.RequiresConfirmation,
 		}

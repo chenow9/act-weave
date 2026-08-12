@@ -77,10 +77,10 @@ var visionMediaTypes = map[string]struct{}{
 
 // AssembleUserMessage maps a durable user message body to a model schema message.
 //
-// - Legacy plain text / non-v1 JSON → Content string (Console/history compat).
-// - aap.message-content.v1 text-only → Content = joined text (not raw JSON).
-// - v1 with input_file → UserInputMultiContent when RuntimeMultimodal + supported
-//   image media; otherwise ErrModelContentUnsupported (never drop parts).
+//   - Legacy plain text / non-v1 JSON → Content string (Console/history compat).
+//   - aap.message-content.v1 text-only → Content = joined text (not raw JSON).
+//   - v1 with input_file → UserInputMultiContent when RuntimeMultimodal + supported
+//     image media; otherwise ErrModelContentUnsupported (never drop parts).
 func (a *MultimodalAssembler) AssembleUserMessage(
 	ctx context.Context,
 	workspaceID, agentID, content string,
@@ -285,4 +285,93 @@ func (a *MultimodalAssembler) assembleInputFile(
 // LimitReader is exported for tests/adapters that stream with a size cap.
 func LimitReader(r io.Reader, n int64) io.Reader {
 	return io.LimitReader(r, n)
+}
+
+// TextForTokenEstimate returns plain text suitable for context estimators.
+// For aap.message-content.v1 it joins text parts only (never tool/reasoning JSON).
+// ok=false means content is not v1; callers should use the raw string.
+func TextForTokenEstimate(content string) (string, bool) {
+	parts, ok := parseMessageContentV1(content)
+	if !ok {
+		return "", false
+	}
+	return joinTextParts(parts), true
+}
+
+// AssembleUserAgenticMessage maps durable user content to a validated Agentic
+// user message (Task 4A). Text → UserInputText; READY vision input_file →
+// UserInputImage (base64). Unsupported types fail with ErrModelContentUnsupported.
+// Never projects tool/reasoning/search blocks into public text.
+func (a *MultimodalAssembler) AssembleUserAgenticMessage(
+	ctx context.Context,
+	workspaceID, agentID, content string,
+) (*schema.AgenticMessage, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, ErrModelContentUnsupported
+	}
+	parts, ok := parseMessageContentV1(content)
+	if !ok {
+		// Legacy / Console plain text.
+		return schema.UserAgenticMessage(content), nil
+	}
+	if len(parts) == 0 {
+		return nil, ErrModelContentUnsupported
+	}
+
+	hasFile := false
+	for _, p := range parts {
+		if p.Type == "input_file" {
+			hasFile = true
+			break
+		}
+	}
+	if !hasFile {
+		text := joinTextParts(parts)
+		if text == "" {
+			return nil, ErrModelContentUnsupported
+		}
+		return schema.UserAgenticMessage(text), nil
+	}
+	if a == nil || !a.RuntimeMultimodal || a.Files == nil {
+		return nil, fmt.Errorf("%w: multimodal runtime unavailable for input_file", ErrModelContentUnsupported)
+	}
+	maxBytes := a.MaxBytes
+	if maxBytes <= 0 {
+		maxBytes = defaultMultimodalMaxBytes
+	}
+
+	blocks := make([]*schema.ContentBlock, 0, len(parts))
+	for _, p := range parts {
+		switch p.Type {
+		case "text":
+			if p.Text == "" {
+				continue
+			}
+			blocks = append(blocks, schema.NewContentBlock(&schema.UserInputText{Text: p.Text}))
+		case "input_file":
+			filePart, err := a.assembleInputFile(ctx, workspaceID, agentID, p, maxBytes)
+			if err != nil {
+				return nil, err
+			}
+			// Map classic MessageInputImage → Agentic UserInputImage.
+			if filePart.Image == nil || filePart.Image.Base64Data == nil {
+				return nil, fmt.Errorf("%w: image assembly missing base64", ErrModelContentUnsupported)
+			}
+			blocks = append(blocks, schema.NewContentBlock(&schema.UserInputImage{
+				Base64Data: *filePart.Image.Base64Data,
+				MIMEType:   filePart.Image.MIMEType,
+				Detail:     schema.ImageURLDetail(filePart.Image.Detail),
+			}))
+		default:
+			return nil, fmt.Errorf("%w: unsupported content part type %q", ErrModelContentUnsupported, p.Type)
+		}
+	}
+	if len(blocks) == 0 {
+		return nil, ErrModelContentUnsupported
+	}
+	return &schema.AgenticMessage{
+		Role:          schema.AgenticRoleTypeUser,
+		ContentBlocks: blocks,
+	}, nil
 }

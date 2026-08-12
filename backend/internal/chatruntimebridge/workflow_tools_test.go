@@ -23,7 +23,7 @@ func TestBuildPipelineToolsIncludesWorkflow(t *testing.T) {
 				Snapshot: execution.ReleaseSnapshot{
 					WorkspaceID: "ws-1", CapabilityID: "cap-tool", ReleaseID: "rel-tool",
 					ExecutorType: execution.ExecutorTypeHTTP, ToolVersionID: "ver-1",
-					InputSchema:  json.RawMessage(`{"type":"object"}`),
+					InputSchema: json.RawMessage(`{"type":"object"}`),
 				},
 				Connection: execution.ConnectionSnapshot{ID: "conn-1", WorkspaceID: "ws-1"},
 			},
@@ -31,7 +31,7 @@ func TestBuildPipelineToolsIncludesWorkflow(t *testing.T) {
 				Snapshot: execution.ReleaseSnapshot{
 					WorkspaceID: "ws-1", CapabilityID: "cap-wf", ReleaseID: "rel-wf",
 					ExecutorType: execution.ExecutorTypeWORKFLOW, ToolVersionID: "rev-1",
-					InputSchema:  json.RawMessage(`{"type":"object"}`),
+					InputSchema: json.RawMessage(`{"type":"object"}`),
 				},
 				Connection: execution.ConnectionSnapshot{WorkspaceID: "ws-1"},
 				Credential: execution.CredentialReference{WorkspaceID: "ws-1", AuthMode: "NONE"},
@@ -256,7 +256,7 @@ func TestBuildPipelineToolsLazy_SuccessfulCallResolvesThenInvokes(t *testing.T) 
 				Snapshot: execution.ReleaseSnapshot{
 					WorkspaceID: "ws-1", CapabilityID: "cap-tool", ReleaseID: "rel-tool",
 					ExecutorType: execution.ExecutorTypeHTTP, ToolVersionID: "ver-1",
-					InputSchema:  json.RawMessage(`{"type":"object"}`),
+					InputSchema: json.RawMessage(`{"type":"object"}`),
 				},
 				Connection: execution.ConnectionSnapshot{ID: "conn-1", WorkspaceID: "ws-1"},
 			},

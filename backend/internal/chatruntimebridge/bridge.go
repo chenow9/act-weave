@@ -51,7 +51,8 @@ type CheckpointTTL interface {
 }
 
 // ChatModelBuilder constructs a true-Stream BaseChatModel for one model config.
-// Production BuildChatModel uses eino-ext openai ChatModel (or a test fake).
+// Task 4A: used only by the resume/HITL, delegation, A2A, and compact seams.
+// Production initial Chat never uses this builder (Agentic-only).
 type ChatModelBuilder func(ctx context.Context, cfg modelconfig.Config) (model.BaseChatModel, error)
 
 // Dependencies wires the bridge to platform services.
@@ -69,19 +70,32 @@ type Dependencies struct {
 	ModelTurns    chatruntime.ModelTurnRecorder
 	ToolInvoker   chatruntime.ToolInvoker
 	Confirmations chatruntime.ConfirmationPreparer
-	// Engine drives ChatModelAgent Run/Resume. Required.
+	// Engine drives classic ChatModelAgent Resume (Task 4B HITL seam) and
+	// non-main paths (delegation/A2A). Required while those paths remain classic.
 	Engine *einoruntime.Engine
+	// AgenticEngine drives Typed Agentic initial Chat (Task 4A). Required for
+	// production Enqueue/Execute initial path.
+	AgenticEngine *einoruntime.AgenticEngine
 	// CheckpointTTL renews expires_at after confirmation prepare (D15).
 	CheckpointTTL CheckpointTTL
-	// BuildChatModel constructs the production ChatModel (eino-ext openai or test fake).
-	// Required for Enqueue.
+	// BuildAgenticModel constructs the production AgenticModel for initial Chat.
+	// Required for Enqueue/Execute initial path. No classic fallback.
+	BuildAgenticModel AgenticModelBuilder
+	// BuildChatModel is the classic builder for resume/HITL (Task 4B), delegation,
+	// A2A inbound, and compact. Not used on the production initial Chat path.
 	BuildChatModel ChatModelBuilder
 	// TextSinkFactory builds ProtocolMessageTextSink (or test recording sink) for
 	// true Stream → item.delta projection (D14 / A.5). When set, drive always
 	// wires StreamDeltaRecorder.Sink so deltas leave the in-memory buffer.
 	TextSinkFactory TextSinkFactory
-	// MaxIterations / MaxToolInvocations override eino budgets (0 → defaults).
-	MaxIterations      int
+	// MaxIterations overrides the model-round budget (0 / negative → default).
+	// Agentic initial path always uses einoruntime.DefaultMaxIterations (8).
+	MaxIterations int
+	// MaxToolInvocations hard-caps tool InvokableRun calls per run.
+	// Contract (aligned with einoruntime / config; no silent clamp):
+	//   - 0 → einoruntime.DefaultMaxToolInvocations (16)
+	//   - 1..16 accepted as-is
+	//   - negative or >16 → NewBridge error
 	MaxToolInvocations int
 	Logger             *slog.Logger
 	Now                func() time.Time
@@ -90,8 +104,9 @@ type Dependencies struct {
 	// to show LLM thinking (output_summary.reasoning).
 	AgentAuditDebug bool
 	// Assemblies persists immutable context assembly manifests (ZKL-74).
-	// Optional in tests; required for session-context.v1 initial runs in production.
-	Assemblies *execution.ContextAssemblyRepository
+	// Required for every successful Agentic initial run (Task 4A); nil fails closed.
+	// *execution.ContextAssemblyRepository implements ContextAssemblyInserter.
+	Assemblies ContextAssemblyInserter
 	// Compact wires LLM rolling compact for session-context.v2 (ZKL-81).
 	// Optional in tests; when nil/incomplete, triggered compact falls back to token_window
 	// after best-effort evidence persistence (or hard-fails on evidence errors).
@@ -107,30 +122,32 @@ type Dependencies struct {
 
 // Bridge implements agentrun.Runtime on the eino engine path.
 type Bridge struct {
-	sessions        chatruntime.SessionReader
-	results         chatruntime.AssistantRecorder
-	content         chatruntime.ContentReader
-	agents          chatruntime.AgentReader
-	models          chatruntime.ModelReader
-	runs            chatruntime.RunReader
-	events          chatruntime.EventRecorder
-	steps           chatruntime.StepStore
-	modelTurns      chatruntime.ModelTurnRecorder
-	toolInvoker     chatruntime.ToolInvoker
-	confirmations   chatruntime.ConfirmationPreparer
-	engine          *einoruntime.Engine
-	checkpointTTL   CheckpointTTL
-	buildModel      ChatModelBuilder
-	textSinkFactory TextSinkFactory
-	maxIterations   int
-	maxTools        int
-	logger          *slog.Logger
-	now             func() time.Time
-	agentAuditDebug bool
-	assemblies      *execution.ContextAssemblyRepository
-	compact         *CompactDependencies
-	multimodal      *chatruntime.MultimodalAssembler
-	delegation      *DelegationDeps
+	sessions          chatruntime.SessionReader
+	results           chatruntime.AssistantRecorder
+	content           chatruntime.ContentReader
+	agents            chatruntime.AgentReader
+	models            chatruntime.ModelReader
+	runs              chatruntime.RunReader
+	events            chatruntime.EventRecorder
+	steps             chatruntime.StepStore
+	modelTurns        chatruntime.ModelTurnRecorder
+	toolInvoker       chatruntime.ToolInvoker
+	confirmations     chatruntime.ConfirmationPreparer
+	engine            *einoruntime.Engine
+	agenticEngine     *einoruntime.AgenticEngine
+	checkpointTTL     CheckpointTTL
+	buildAgenticModel AgenticModelBuilder
+	buildModel        ChatModelBuilder
+	textSinkFactory   TextSinkFactory
+	maxIterations     int
+	maxTools          int
+	logger            *slog.Logger
+	now               func() time.Time
+	agentAuditDebug   bool
+	assemblies        ContextAssemblyInserter
+	compact           *CompactDependencies
+	multimodal        *chatruntime.MultimodalAssembler
+	delegation        *DelegationDeps
 
 	activeMu   sync.Mutex
 	activeRuns map[string]*activeRunExecution
@@ -171,9 +188,11 @@ func NewBridge(deps Dependencies) (*Bridge, error) {
 	if maxIter <= 0 {
 		maxIter = einoruntime.DefaultMaxIterations
 	}
-	maxTools := deps.MaxToolInvocations
-	if maxTools <= 0 {
-		maxTools = einoruntime.DefaultMaxToolInvocations
+	// Fail closed for invalid tool budget at the bridge boundary (same contract
+	// as einoruntime.normalizeMaxToolInvocations / config.validateEinoMaxToolInvocations).
+	maxTools, err := normalizeBridgeMaxToolInvocations(deps.MaxToolInvocations)
+	if err != nil {
+		return nil, err
 	}
 	return &Bridge{
 		sessions: deps.Sessions, results: deps.Results, content: deps.Content,
@@ -181,7 +200,8 @@ func NewBridge(deps Dependencies) (*Bridge, error) {
 		events: deps.Events, steps: deps.Steps, modelTurns: deps.ModelTurns,
 		toolInvoker:   deps.ToolInvoker,
 		confirmations: deps.Confirmations, engine: deps.Engine,
-		checkpointTTL: deps.CheckpointTTL, buildModel: deps.BuildChatModel,
+		agenticEngine: deps.AgenticEngine, checkpointTTL: deps.CheckpointTTL,
+		buildAgenticModel: deps.BuildAgenticModel, buildModel: deps.BuildChatModel,
 		textSinkFactory: deps.TextSinkFactory,
 		maxIterations:   maxIter, maxTools: maxTools,
 		logger: logger, now: now, agentAuditDebug: deps.AgentAuditDebug,
@@ -192,6 +212,24 @@ func NewBridge(deps Dependencies) (*Bridge, error) {
 		activeRuns:      make(map[string]*activeRunExecution),
 		pendingConfirms: make(map[string][]einoruntime.PendingConfirmInterrupt),
 	}, nil
+}
+
+// normalizeBridgeMaxToolInvocations enforces the production-wide tool budget
+// contract at the bridge construction boundary:
+//   - 0 → einoruntime.DefaultMaxToolInvocations (16)
+//   - 1..16 accepted as-is
+//   - negative or >16 → error (never silently defaulted or clamped)
+func normalizeBridgeMaxToolInvocations(max int) (int, error) {
+	if max == 0 {
+		return einoruntime.DefaultMaxToolInvocations, nil
+	}
+	if max < 0 || max > einoruntime.DefaultMaxToolInvocations {
+		return 0, fmt.Errorf(
+			"chatruntimebridge: MaxToolInvocations must be 0 (default %d) or 1..%d, got %d",
+			einoruntime.DefaultMaxToolInvocations, einoruntime.DefaultMaxToolInvocations, max,
+		)
+	}
+	return max, nil
 }
 
 // Enqueue starts asynchronous execution for a CHAT AgentRun.
@@ -372,7 +410,8 @@ func (b *Bridge) ContinueAfterConfirmation(
 }
 
 // drive builds the agent and either Run or ResumeWithParams.
-// When targets != nil, Resume path is used with checkpointID.
+// When targets != nil, Resume path is used with checkpointID (classic seam for Task 4B).
+// When targets == nil, production initial Chat is Agentic-only (Task 4A).
 //
 // streamMessageID is the assistant message/item ID opened for item.started +
 // item.delta (empty when no TextSinkFactory). completeRun must reuse it so
@@ -386,6 +425,18 @@ func (b *Bridge) drive(
 ) (text string, streamMessageID string, err error) {
 	ctx = einoruntime.WithTrustedWorkspaceID(ctx, job.WorkspaceID)
 
+	// Task 4A: initial Chat is Agentic-only. Validate frozen snapshots before any
+	// models.Get / SnapshotRuntime live factory lookup (structurally unreachable
+	// for classic resume when targets==nil).
+	if targets == nil {
+		return b.driveAgenticInitial(ctx, job, run)
+	}
+
+	// -------------------------------------------------------------------------
+	// Resume/HITL classic seam (Task 4B). Isolated from initial Agentic path;
+	// does not silently mix AgenticMessage with schema.Message on one runner.
+	// Live model reads are permitted only on this seam.
+	// -------------------------------------------------------------------------
 	configuredAgent, err := b.agents.Get(ctx, job.WorkspaceID, run.AgentID)
 	if err != nil {
 		return "", "", fmt.Errorf("load agent: %w", err)
@@ -400,16 +451,19 @@ func (b *Bridge) drive(
 	if liveCfg.Status == modelconfig.StatusDisabled {
 		return "", "", errors.New("model config is disabled")
 	}
-	if b.buildModel == nil {
-		return "", "", errors.New("chatruntimebridge: chat model builder is not configured")
-	}
 
-	// Snapshot-backed prompt/model/tools for run.v2 (IC-03). Live kill switch only.
 	fallbackInstruction := b.systemPrompt(ctx, job, configuredAgent)
 	resolver := &SnapshotRuntimeResolver{Agents: b.agents, Models: b.models, Content: b.content}
 	snapRT, err := resolver.Resolve(ctx, job.WorkspaceID, run, configuredAgent, fallbackInstruction)
 	if err != nil {
 		return "", "", err
+	}
+
+	if b.buildModel == nil {
+		return "", "", errors.New("chatruntimebridge: chat model builder is not configured for resume")
+	}
+	if b.engine == nil {
+		return "", "", errors.New("chatruntimebridge: classic engine is not configured for resume")
 	}
 	factory := SnapshotModelFactory{Build: b.buildModel}
 	cfg, err := factory.BuildFromSnapshot(ctx, snapRT, liveCfg)
@@ -484,63 +538,35 @@ func (b *Bridge) drive(
 	}
 
 	// D14: true Stream chunks → StreamDeltaRecorder → TextDeltaSink → item.delta.
-	// For initial runs, assemble context BEFORE opening the text sink so
-	// preflight failures do not emit empty streaming items (ZKL-74 D6-A).
-	// Resume continues to open the sink first because checkpoint path skips assembly.
+	// Resume opens the sink first because checkpoint path skips assembly.
 	projector := &StreamDeltaRecorder{
 		Now: b.now,
 		ModelTurnHook: func(hookCtx context.Context, turn einoruntime.ModelTurn) error {
 			return b.recordModelTurn(hookCtx, job, run, turn)
 		},
 	}
-	openSink := func() error {
-		if b.textSinkFactory == nil || projector.Sink != nil {
-			return nil
-		}
+	if b.textSinkFactory != nil {
 		messageID, idErr := newRuntimeID()
 		if idErr != nil {
-			return idErr
+			return "", "", idErr
 		}
 		streamMessageID = messageID
 		sink, sinkErr := b.textSinkFactory(ctx, TextSinkArgs{
 			Job: job, Run: run, MessageID: messageID,
 		})
 		if sinkErr != nil {
-			return fmt.Errorf("open stream text sink: %w", sinkErr)
+			return "", streamMessageID, fmt.Errorf("open stream text sink: %w", sinkErr)
 		}
 		projector.Sink = sink
-		return nil
 	}
 
-	var result *einoruntime.RunResult
-	if targets != nil {
-		// Resume: no history re-assembly, no manifest, no summary.
-		if err := openSink(); err != nil {
-			return "", "", err
-		}
-		result, err = b.engine.Resume(ctx, built, einoruntime.ResumeInput{
-			WorkspaceID:  job.WorkspaceID,
-			RunID:        job.RunID,
-			CheckpointID: checkpointID,
-			Targets:      targets,
-			Projector:    projector,
-		})
-	} else {
-		messages, msgErr := b.buildInitialMessages(ctx, job, run, configuredAgent, instruction, snapRT.ToolSchemas)
-		if msgErr != nil {
-			return "", streamMessageID, msgErr
-		}
-		if err := openSink(); err != nil {
-			return "", streamMessageID, err
-		}
-		result, err = b.engine.Run(ctx, built, einoruntime.RunInput{
-			WorkspaceID:  job.WorkspaceID,
-			RunID:        job.RunID,
-			CheckpointID: checkpointID,
-			Messages:     messages,
-			Projector:    projector,
-		})
-	}
+	result, err := b.engine.Resume(ctx, built, einoruntime.ResumeInput{
+		WorkspaceID:  job.WorkspaceID,
+		RunID:        job.RunID,
+		CheckpointID: checkpointID,
+		Targets:      targets,
+		Projector:    projector,
+	})
 	if err != nil {
 		_ = projector.FailIncomplete(ctx, "MODEL_STREAM_INTERRUPTED", true)
 		return "", streamMessageID, err
@@ -578,6 +604,20 @@ func (b *Bridge) buildPipelineTools(
 	if err != nil {
 		return nil, err
 	}
+	return b.buildPipelineToolsFrom(ctx, job, run, pendingKey, capabilities)
+}
+
+// buildPipelineToolsFrom materializes PipelineTools from an already-parsed
+// capability list. The Agentic initial path passes the strict-parsed freeze
+// (parseRunCapabilitySnapshotStrict) so no lax normalization or silent drop can
+// change the executable tool set behind the frozen catalog digest.
+func (b *Bridge) buildPipelineToolsFrom(
+	ctx context.Context,
+	job agentrun.Job,
+	run execution.AgentRun,
+	pendingKey string,
+	capabilities []chatruntime.SnapshotCapability,
+) ([]tool.BaseTool, error) {
 	if len(capabilities) == 0 {
 		return nil, nil
 	}
@@ -1611,6 +1651,27 @@ func executionErrorCode(err error) string {
 	if errors.Is(err, chatruntime.ErrModelContentUnsupported) {
 		return chatruntime.ErrCodeModelContentUnsupported
 	}
+	if errors.Is(err, ErrAgenticDelegationMigrationPending) {
+		return "AGENTIC_DELEGATION_MIGRATION_PENDING"
+	}
+	if errors.Is(err, ErrAgenticModelSnapshotRequired) {
+		return "AGENTIC_MODEL_SNAPSHOT_REQUIRED"
+	}
+	if errors.Is(err, ErrAgenticGraphSnapshotRequired) {
+		return "AGENTIC_GRAPH_SNAPSHOT_REQUIRED"
+	}
+	if errors.Is(err, ErrAgenticProviderTupleUnsupported) {
+		return "AGENTIC_PROVIDER_TUPLE_UNSUPPORTED"
+	}
+	if errors.Is(err, ErrAgenticAgentSnapshotRequired) {
+		return "AGENTIC_AGENT_SNAPSHOT_REQUIRED"
+	}
+	if errors.Is(err, ErrAgenticCapabilitySnapshotRequired) {
+		return "AGENTIC_CAPABILITY_SNAPSHOT_REQUIRED"
+	}
+	if errors.Is(err, ErrAgenticPromptRevisionMismatch) {
+		return "AGENTIC_PROMPT_REVISION_MISMATCH"
+	}
 	var ctxErr *execution.ContextError
 	if errors.As(err, &ctxErr) && ctxErr != nil && strings.TrimSpace(ctxErr.Code) != "" {
 		return ctxErr.Code
@@ -1624,6 +1685,13 @@ func executionErrorCode(err error) string {
 		execution.ErrCodeContextAssemblyFailed,
 		execution.ErrCodeContextWindowExceededUpstream,
 		chatruntime.ErrCodeModelContentUnsupported,
+		"AGENTIC_DELEGATION_MIGRATION_PENDING",
+		"AGENTIC_MODEL_SNAPSHOT_REQUIRED",
+		"AGENTIC_GRAPH_SNAPSHOT_REQUIRED",
+		"AGENTIC_PROVIDER_TUPLE_UNSUPPORTED",
+		"AGENTIC_AGENT_SNAPSHOT_REQUIRED",
+		"AGENTIC_CAPABILITY_SNAPSHOT_REQUIRED",
+		"AGENTIC_PROMPT_REVISION_MISMATCH",
 	} {
 		if strings.Contains(msg, code) {
 			return code

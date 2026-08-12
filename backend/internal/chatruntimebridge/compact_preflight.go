@@ -129,7 +129,7 @@ func (b *Bridge) maybeCompactForInitialRun(
 		// T8-A: evidence start failure hard-fails before main model.
 		return compactAssemblyResult{
 			CompactAttempted: true,
-			HardFail: fmt.Errorf("%s: %w", execution.ErrCodeCompactionEvidencePersistFailed, err),
+			HardFail:         fmt.Errorf("%s: %w", execution.ErrCodeCompactionEvidencePersistFailed, err),
 		}
 	}
 

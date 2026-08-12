@@ -323,9 +323,10 @@ func TestFinalizeDelegation_RowsAffected_StepRequired(t *testing.T) {
 func TestValidateGraphSnapshotIntegrity_FailClosed(t *testing.T) {
 	t.Parallel()
 	agentID := uuid.Must(uuid.NewV7()).String()
+	workspaceID := uuid.Must(uuid.NewV7()).String()
 	// schema only — missing root node
 	raw := json.RawMessage(`{"schemaVersion":"agent_graph_snapshot.v1","rootAgentId":"` + agentID + `","nodes":[],"edges":[]}`)
-	if _, err := agentdelegation.ParseSnapshot(raw); err == nil {
+	if _, err := agentdelegation.ParseSnapshot(workspaceID, raw); err == nil {
 		t.Fatal("incomplete snapshot must fail")
 	}
 	// missing remotesFrozen
@@ -336,7 +337,7 @@ func TestValidateGraphSnapshotIntegrity_FailClosed(t *testing.T) {
 			"capabilitySnapshot":{"schemaVersion":"capability-snapshot.v1","releases":[]},"depth":0}],
 		"edges":[]
 	}`)
-	if _, err := agentdelegation.ParseSnapshot(raw2); err == nil {
+	if _, err := agentdelegation.ParseSnapshot(workspaceID, raw2); err == nil {
 		t.Fatal("remotesFrozen required")
 	}
 }

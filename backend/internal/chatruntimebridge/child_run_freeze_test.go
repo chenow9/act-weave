@@ -16,6 +16,67 @@ import (
 	"github.com/google/uuid"
 )
 
+// producerNodeModel / producerNodeAgent match snapshotAgentNode closed schemas.
+func producerNodeModel(modelID string, lock int64, modelName, apiBase string) json.RawMessage {
+	if modelName == "" {
+		modelName = "m"
+	}
+	if apiBase == "" {
+		apiBase = "https://example.test"
+	}
+	return json.RawMessage(`{` +
+		`"id":"` + modelID + `",` +
+		`"provider":"openai",` +
+		`"apiBase":"` + apiBase + `",` +
+		`"modelName":"` + modelName + `",` +
+		`"options":{},` +
+		`"credentialSecretId":null,` +
+		`"lockVersion":` + itoa64(lock) +
+		`}`)
+}
+
+func producerNodeAgent(agentID, modelID string, lock int64, name, role string) json.RawMessage {
+	if name == "" {
+		name = "Agent"
+	}
+	return json.RawMessage(`{` +
+		`"schemaVersion":"agent-binding.v1",` +
+		`"agentId":"` + agentID + `",` +
+		`"name":"` + name + `",` +
+		`"roleDescription":"` + role + `",` +
+		`"promptRevisionId":"",` +
+		`"promptRevisionHash":"",` +
+		`"modelConfigId":"` + modelID + `",` +
+		`"modelConfigLockVer":` + itoa64(lock) +
+		`}`)
+}
+
+func producerNodeCap() json.RawMessage {
+	return json.RawMessage(`{"schemaVersion":"capability-snapshot.v1","releases":[]}`)
+}
+
+func itoa64(n int64) string {
+	if n == 0 {
+		return "0"
+	}
+	var b [20]byte
+	i := len(b)
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	for n > 0 {
+		i--
+		b[i] = byte('0' + n%10)
+		n /= 10
+	}
+	if neg {
+		i--
+		b[i] = '-'
+	}
+	return string(b[i:])
+}
+
 func TestStartChild_MalformedParentGraph_FailClosed(t *testing.T) {
 	h := dbtest.New(t)
 	h.MigrateToLatest(t)
@@ -143,15 +204,19 @@ func TestStartChild_CallerGraphMismatch_FailClosed(t *testing.T) {
 	ctx := context.Background()
 	fx := seedChildFixture(t, db)
 	runRepo, _ := execution.NewRunRepository(db)
-	modelFrozen := json.RawMessage(`{"id":"` + fx.model + `","marker":"P"}`)
-	agentFrozen := json.RawMessage(`{"schemaVersion":"agent-binding.v1","agentId":"` + fx.agentB + `"}`)
-	capFrozen := json.RawMessage(`{"schemaVersion":"capability-snapshot.v1","releases":[]}`)
+	modelFrozen := producerNodeModel(fx.model, 1, "m", "https://example.test")
+	agentA := producerNodeAgent(fx.agentA, fx.model, 1, "A", "")
+	agentB := producerNodeAgent(fx.agentB, fx.model, 1, "B", "")
+	capFrozen := producerNodeCap()
 	graph, _ := json.Marshal(map[string]any{
 		"schemaVersion": "agent_graph_snapshot.v1", "rootAgentId": fx.agentA,
 		"maxDepth": 4, "maxTotalDelegations": 20, "maxPerBinding": 5,
+		"builtAt": "2026-08-10T12:00:00Z",
 		"nodes": []map[string]any{
-			{"agentId": fx.agentA, "depth": 0, "modelConfigId": fx.model, "modelSnapshot": modelFrozen, "agentSnapshot": agentFrozen, "capabilitySnapshot": capFrozen},
-			{"agentId": fx.agentB, "depth": 1, "modelConfigId": fx.model, "modelSnapshot": modelFrozen, "agentSnapshot": agentFrozen, "capabilitySnapshot": capFrozen},
+			{"agentId": fx.agentA, "depth": 0, "modelConfigId": fx.model, "modelConfigLockVersion": 1,
+				"modelSnapshot": modelFrozen, "agentSnapshot": agentA, "capabilitySnapshot": capFrozen},
+			{"agentId": fx.agentB, "depth": 1, "modelConfigId": fx.model, "modelConfigLockVersion": 1,
+				"modelSnapshot": modelFrozen, "agentSnapshot": agentB, "capabilitySnapshot": capFrozen},
 		},
 		"edges": []map[string]any{{
 			"bindingId": uuid.Must(uuid.NewV7()).String(), "callerAgentId": fx.agentA, "targetAgentId": fx.agentB,
@@ -159,13 +224,17 @@ func TestStartChild_CallerGraphMismatch_FailClosed(t *testing.T) {
 		}},
 		"remotesFrozen": true, "frozenRemotesByCaller": map[string]any{fx.agentA: []any{}, fx.agentB: []any{}},
 	})
+	// Parent graph must pass strict ParseSnapshot so StartChild reaches caller-mismatch check.
+	if _, err := agentdelegation.ParseSnapshot(fx.ws, graph); err != nil {
+		t.Fatalf("fixture graph: %v", err)
+	}
 	parentID := uuid.Must(uuid.NewV7()).String()
 	if _, err := runRepo.StartAgentRun(ctx, execution.StartAgentRunInput{
 		ID: parentID, WorkspaceID: fx.ws, AgentID: fx.agentA,
 		TriggerType: "MANUAL", TriggeredByType: "USER", TriggeredByID: fx.owner, TraceID: parentID,
 		Snapshots: execution.AgentRunSnapshots{
 			SchemaVersion: execution.RunSnapshotSchemaV2,
-			Model:         modelFrozen, Capabilities: capFrozen, ContextPolicy: json.RawMessage(`{}`), Agent: agentFrozen,
+			Model:         modelFrozen, Capabilities: capFrozen, ContextPolicy: json.RawMessage(`{}`), Agent: agentA,
 		},
 		AuthorizationSnapshot: json.RawMessage(`{}`), InputSummary: json.RawMessage(`{}`),
 		AgentGraphSnapshot: graph,
@@ -194,20 +263,24 @@ func TestStartChild_TargetMissingFromParentGraph_FailClosed(t *testing.T) {
 	ctx := context.Background()
 	fx := seedChildFixture(t, db)
 	runRepo, _ := execution.NewRunRepository(db)
-	modelFrozen := json.RawMessage(`{"id":"` + fx.model + `","marker":"P"}`)
-	agentFrozen := json.RawMessage(`{"schemaVersion":"agent-binding.v1","agentId":"` + fx.agentA + `"}`)
-	capFrozen := json.RawMessage(`{"schemaVersion":"capability-snapshot.v1","releases":[]}`)
+	modelFrozen := producerNodeModel(fx.model, 1, "m", "https://example.test")
+	agentFrozen := producerNodeAgent(fx.agentA, fx.model, 1, "A", "")
+	capFrozen := producerNodeCap()
 	// Graph only has root A — not agentB.
 	graph, _ := json.Marshal(map[string]any{
 		"schemaVersion": "agent_graph_snapshot.v1", "rootAgentId": fx.agentA,
 		"maxDepth": 4, "maxTotalDelegations": 20, "maxPerBinding": 5,
+		"builtAt": "2026-08-10T12:00:00Z",
 		"nodes": []map[string]any{{
-			"agentId": fx.agentA, "depth": 0, "modelConfigId": fx.model,
+			"agentId": fx.agentA, "depth": 0, "modelConfigId": fx.model, "modelConfigLockVersion": 1,
 			"modelSnapshot": modelFrozen, "agentSnapshot": agentFrozen, "capabilitySnapshot": capFrozen,
 		}},
 		"edges": []any{}, "remotesFrozen": true,
 		"frozenRemotesByCaller": map[string]any{fx.agentA: []any{}},
 	})
+	if _, err := agentdelegation.ParseSnapshot(fx.ws, graph); err != nil {
+		t.Fatalf("fixture graph: %v", err)
+	}
 	parentID := uuid.Must(uuid.NewV7()).String()
 	if _, err := runRepo.StartAgentRun(ctx, execution.StartAgentRunInput{
 		ID: parentID, WorkspaceID: fx.ws, AgentID: fx.agentA,
@@ -245,20 +318,23 @@ func TestStartChild_UsesExactFrozenNodeBytes(t *testing.T) {
 	fx := seedChildFixture(t, db)
 	runRepo, _ := execution.NewRunRepository(db)
 
-	modelFrozen := json.RawMessage(`{"id":"` + fx.model + `","provider":"openai","apiBase":"https://frozen.example","modelName":"frozen-model","lockVersion":7,"marker":"FROZEN_MODEL"}`)
-	agentFrozen := json.RawMessage(`{"schemaVersion":"agent-binding.v1","agentId":"` + fx.agentB + `","name":"FrozenB","modelConfigId":"` + fx.model + `","modelConfigLockVer":7,"marker":"FROZEN_AGENT"}`)
-	capFrozen := json.RawMessage(`{"schemaVersion":"capability-snapshot.v1","releases":[],"marker":"FROZEN_CAP"}`)
+	// Markers live in allowed producer fields (closed schema rejects unknown keys).
+	modelFrozen := producerNodeModel(fx.model, 7, "frozen-model-FROZEN_MODEL", "https://frozen.example")
+	agentASnap := producerNodeAgent(fx.agentA, fx.model, 7, "FrozenA", "")
+	agentFrozen := producerNodeAgent(fx.agentB, fx.model, 7, "FrozenB", "FROZEN_AGENT")
+	capFrozen := producerNodeCap()
 	graph, _ := json.Marshal(map[string]any{
 		"schemaVersion": "agent_graph_snapshot.v1",
 		"rootAgentId":   fx.agentA,
 		"maxDepth":      4, "maxTotalDelegations": 20, "maxPerBinding": 5,
+		"builtAt": "2026-08-10T12:00:00Z",
 		"nodes": []map[string]any{
 			{
-				"agentId": fx.agentA, "depth": 0, "modelConfigId": fx.model,
-				"modelSnapshot": modelFrozen, "agentSnapshot": agentFrozen, "capabilitySnapshot": capFrozen,
+				"agentId": fx.agentA, "depth": 0, "modelConfigId": fx.model, "modelConfigLockVersion": 7,
+				"modelSnapshot": modelFrozen, "agentSnapshot": agentASnap, "capabilitySnapshot": capFrozen,
 			},
 			{
-				"agentId": fx.agentB, "depth": 1, "modelConfigId": fx.model,
+				"agentId": fx.agentB, "depth": 1, "modelConfigId": fx.model, "modelConfigLockVersion": 7,
 				"modelSnapshot": modelFrozen, "agentSnapshot": agentFrozen, "capabilitySnapshot": capFrozen,
 			},
 		},
@@ -269,6 +345,9 @@ func TestStartChild_UsesExactFrozenNodeBytes(t *testing.T) {
 		"remotesFrozen":         true,
 		"frozenRemotesByCaller": map[string]any{fx.agentA: []any{}, fx.agentB: []any{}},
 	})
+	if _, err := agentdelegation.ParseSnapshot(fx.ws, graph); err != nil {
+		t.Fatalf("fixture graph: %v", err)
+	}
 
 	parentID := uuid.Must(uuid.NewV7()).String()
 	if _, err := runRepo.StartAgentRun(ctx, execution.StartAgentRunInput{

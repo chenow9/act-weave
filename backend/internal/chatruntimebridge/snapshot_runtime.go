@@ -52,7 +52,7 @@ func (r *SnapshotRuntimeResolver) Resolve(
 	fallbackInstruction string,
 ) (SnapshotRuntime, error) {
 	out := SnapshotRuntime{
-		SystemPrompt: fallbackInstruction,
+		SystemPrompt:  fallbackInstruction,
 		ModelConfigID: strings.TrimSpace(liveAgent.ModelConfigID),
 	}
 	if run.SnapshotSchemaVersion != execution.RunSnapshotSchemaV2 {
@@ -76,9 +76,10 @@ func (r *SnapshotRuntimeResolver) Resolve(
 	out.IsContextV2 = resolved.SchemaVersion == sessioncontext.SnapshotSchemaV2
 
 	// Model from immutable run.ModelSnapshot; only kill-switch via live status.
+	// Malformed snapshot is never reconstructed from live config.
 	model, modelID, err := parseModelSnapshot(run.ModelSnapshot)
 	if err != nil {
-		return SnapshotRuntime{}, execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
+		return SnapshotRuntime{}, fmt.Errorf("%w: %v", ErrAgenticModelSnapshotRequired, err)
 	}
 	if modelID != "" {
 		out.ModelConfigID = modelID
@@ -150,13 +151,15 @@ func parseModelSnapshot(raw json.RawMessage) (modelconfig.Config, string, error)
 		return modelconfig.Config{}, "", nil
 	}
 	var doc struct {
-		ID                 string          `json:"id"`
-		Provider           string          `json:"provider"`
-		APIBase            string          `json:"apiBase"`
-		ModelName          string          `json:"modelName"`
-		Options            json.RawMessage `json:"options"`
-		CredentialSecretID *string         `json:"credentialSecretId"`
-		LockVersion        int64           `json:"lockVersion"`
+		ID                  string          `json:"id"`
+		Provider            string          `json:"provider"`
+		APIBase             string          `json:"apiBase"`
+		ModelName           string          `json:"modelName"`
+		Options             json.RawMessage `json:"options"`
+		CredentialSecretID  *string         `json:"credentialSecretId"`
+		LockVersion         int64           `json:"lockVersion"`
+		AgenticCapabilities json.RawMessage `json:"agenticCapabilities"`
+		RuntimeCapabilities json.RawMessage `json:"runtimeCapabilities"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return modelconfig.Config{}, "", err
@@ -166,17 +169,25 @@ func parseModelSnapshot(raw json.RawMessage) (modelconfig.Config, string, error)
 		return modelconfig.Config{}, "", errors.New("model snapshot missing id")
 	}
 	cfg := modelconfig.Config{
-		ID:                 id,
-		Provider:           strings.TrimSpace(doc.Provider),
-		APIBase:            strings.TrimSpace(doc.APIBase),
-		ModelName:          strings.TrimSpace(doc.ModelName),
-		Options:            doc.Options,
-		CredentialSecretID: doc.CredentialSecretID,
-		LockVersion:        doc.LockVersion,
-		Status:             modelconfig.StatusVerified,
+		ID:                  id,
+		Provider:            strings.TrimSpace(doc.Provider),
+		APIBase:             strings.TrimSpace(doc.APIBase),
+		ModelName:           strings.TrimSpace(doc.ModelName),
+		Options:             doc.Options,
+		CredentialSecretID:  doc.CredentialSecretID,
+		LockVersion:         doc.LockVersion,
+		Status:              modelconfig.StatusVerified,
+		AgenticCapabilities: doc.AgenticCapabilities,
+		RuntimeCapabilities: doc.RuntimeCapabilities,
 	}
 	if len(cfg.Options) == 0 {
 		cfg.Options = json.RawMessage(`{}`)
+	}
+	if len(cfg.AgenticCapabilities) == 0 {
+		cfg.AgenticCapabilities = json.RawMessage(`{}`)
+	}
+	if len(cfg.RuntimeCapabilities) == 0 {
+		cfg.RuntimeCapabilities = json.RawMessage(`{}`)
 	}
 	return cfg, id, nil
 }

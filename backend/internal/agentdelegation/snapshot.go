@@ -25,30 +25,69 @@ type AgentParts struct {
 }
 
 // SnapshotJSON marshals a graph snapshot for agent_runs.agent_graph_snapshot.
+// Always emits the complete producer field set (including budget ints and builtAt)
+// with explicit empty containers (never JSON null for nodes/edges/remotes map).
+// Does not emit `extra` (freeze producers never set it).
 func SnapshotJSON(snap GraphSnapshotV1) (json.RawMessage, error) {
 	if snap.SchemaVersion == "" {
 		snap.SchemaVersion = GraphSnapshotSchemaV1
 	}
-	return json.Marshal(snap)
+	if snap.MaxDepth <= 0 {
+		snap.MaxDepth = DefaultMaxDepth
+	}
+	if snap.MaxTotal <= 0 {
+		snap.MaxTotal = DefaultMaxTotalDelegations
+	}
+	if snap.MaxPerBinding <= 0 {
+		snap.MaxPerBinding = DefaultMaxPerBinding
+	}
+	if snap.Nodes == nil {
+		snap.Nodes = []GraphNodeSnapshot{}
+	}
+	if snap.Edges == nil {
+		snap.Edges = []GraphEdgeSnapshot{}
+	}
+	if snap.FrozenRemotesByCaller == nil {
+		snap.FrozenRemotesByCaller = map[string][]FrozenRemoteBinding{}
+	}
+	for k, v := range snap.FrozenRemotesByCaller {
+		if v == nil {
+			snap.FrozenRemotesByCaller[k] = []FrozenRemoteBinding{}
+		}
+	}
+	// Structured marshal so omitempty cannot drop producer-required zeros.
+	doc := map[string]any{
+		"schemaVersion":         snap.SchemaVersion,
+		"rootAgentId":           snap.RootAgentID,
+		"maxDepth":              snap.MaxDepth,
+		"maxTotalDelegations":   snap.MaxTotal,
+		"maxPerBinding":         snap.MaxPerBinding,
+		"nodes":                 snap.Nodes,
+		"edges":                 snap.Edges,
+		"builtAt":               snap.BuiltAt.UTC(),
+		"frozenRemotesByCaller": snap.FrozenRemotesByCaller,
+		"remotesFrozen":         snap.RemotesFrozen,
+	}
+	return json.Marshal(doc)
 }
 
 // ParseSnapshot unmarshals agent_graph_snapshot JSON and validates v1 integrity
 // (root/reachable nodes, frozen model/agent/capability, RemotesFrozen + per-caller keys).
-func ParseSnapshot(raw json.RawMessage) (*GraphSnapshotV1, error) {
+// Empty/null/{} remain "no snapshot" for legacy callers. Any non-empty document
+// is strict: duplicate keys, null containers, and missing required fields fail closed.
+//
+// workspaceID is the tenant that owns the run carrying this freeze. It is required
+// so frozen remote authSecretRef values are checked against the owning workspace
+// exactly like a2agateway.CreateRemote does; a missing or malformed workspaceID
+// fails the whole parse rather than silently disabling the cross-tenant check.
+//
+// Parsing performs no network I/O: remote policy uses the egressguard syntax layer
+// only. DNS/IP SSRF resolution happens at dial time with the caller's context.
+func ParseSnapshot(workspaceID string, raw json.RawMessage) (*GraphSnapshotV1, error) {
 	if len(raw) == 0 || string(raw) == "{}" || string(raw) == "null" {
 		return nil, nil
 	}
-	var snap GraphSnapshotV1
-	if err := json.Unmarshal(raw, &snap); err != nil {
-		return nil, err
-	}
-	if snap.SchemaVersion != GraphSnapshotSchemaV1 {
-		return nil, fmt.Errorf("unsupported graph snapshot schema %q", snap.SchemaVersion)
-	}
-	if err := ValidateGraphSnapshotIntegrity(&snap); err != nil {
-		return nil, err
-	}
-	return &snap, nil
+	return parseSnapshotStrict(workspaceID, raw)
 }
 
 // ValidateGraphSnapshotIntegrity fail-closes incomplete v1 freezes.

@@ -42,7 +42,7 @@ func (a *ChildRunStoreAdapter) StartChild(ctx context.Context, in agentdelegatio
 			return "", fmt.Errorf("TASK child: caller GraphSnapshot mismatches parent freeze")
 		}
 	}
-	snap, perr := agentdelegation.ParseSnapshot(parentGraph)
+	snap, perr := agentdelegation.ParseSnapshot(in.WorkspaceID, parentGraph)
 	if perr != nil {
 		return "", fmt.Errorf("parse parent agent_graph_snapshot for TASK child: %w", perr)
 	}
