@@ -151,6 +151,48 @@ func JoinTextPartsFromDurable(content string) string {
 	return builder.String()
 }
 
+// A2UISurfacesFromDurable projects durable chat content to the A2UI surfaces a
+// display client may render, in part order.
+//
+// This is the read counterpart of JoinTextPartsFromDurable: text goes to the
+// message body, surfaces go to their own channel, and neither can reach the
+// other. Only parts declaring wantVersion are returned, so a row written by an
+// older surface version stays invisible instead of reaching a renderer built
+// for a contract it does not satisfy.
+//
+// The result is the surface object alone. The envelope around it is a storage
+// detail and never leaves the server.
+func A2UISurfacesFromDurable(content, wantVersion string) []json.RawMessage {
+	if content == "" || wantVersion == "" {
+		return nil
+	}
+	var envelope struct {
+		SchemaVersion string            `json:"schemaVersion"`
+		Parts         []json.RawMessage `json:"parts"`
+	}
+	if err := json.Unmarshal([]byte(content), &envelope); err != nil ||
+		envelope.SchemaVersion != MessageContentSchemaVersion || len(envelope.Parts) == 0 {
+		return nil
+	}
+	var surfaces []json.RawMessage
+	for _, raw := range envelope.Parts {
+		var wire struct {
+			Type    string          `json:"type"`
+			Version string          `json:"version"`
+			Surface json.RawMessage `json:"surface"`
+		}
+		if err := json.Unmarshal(raw, &wire); err != nil {
+			continue
+		}
+		if wire.Type != string(protocolevent.ContentPartTypeA2UI) ||
+			wire.Version != wantVersion || len(wire.Surface) == 0 {
+			continue
+		}
+		surfaces = append(surfaces, append(json.RawMessage(nil), wire.Surface...))
+	}
+	return surfaces
+}
+
 func (mapper *ProtocolMessageMapper) MapStarted(
 	messageID, role string,
 ) (protocolevent.MessageItem, error) {

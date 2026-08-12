@@ -1,10 +1,12 @@
 package chat_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -395,6 +397,61 @@ func TestJoinTextPartsFromDurable(t *testing.T) {
 		`]}`
 	if got := chat.JoinTextPartsFromDurable(empty); got != "" {
 		t.Fatalf("empty text join=%q", got)
+	}
+}
+
+// A2UISurfacesFromDurable is the read counterpart of JoinTextPartsFromDurable:
+// between them, text and surfaces reach a display client through separate fields
+// and neither can carry the other.
+func TestA2UISurfacesFromDurable(t *testing.T) {
+	const want = "a2ui-surface.v1"
+
+	surfaces := chat.A2UISurfacesFromDurable(
+		`{"schemaVersion":"aap.message-content.v1","parts":[`+
+			`{"type":"text","text":"Two charts."},`+
+			`{"type":"a2ui","version":"`+want+`","surface":{"surfaceId":"one","components":[]}},`+
+			`{"type":"a2ui","version":"`+want+`","surface":{"surfaceId":"two","components":[]}}`+
+			`]}`, want)
+	if len(surfaces) != 2 {
+		t.Fatalf("surfaces=%d want 2, in part order", len(surfaces))
+	}
+	for index, expected := range []string{"one", "two"} {
+		var decoded struct {
+			SurfaceID string `json:"surfaceId"`
+		}
+		if err := json.Unmarshal(surfaces[index], &decoded); err != nil {
+			t.Fatalf("surface %d: %v", index, err)
+		}
+		if decoded.SurfaceID != expected {
+			t.Fatalf("surface %d id=%q want %q", index, decoded.SurfaceID, expected)
+		}
+		if bytes.Contains(surfaces[index], []byte(`"type"`)) ||
+			bytes.Contains(surfaces[index], []byte("schemaVersion")) {
+			t.Fatalf("surface %d carries the envelope: %s", index, surfaces[index])
+		}
+	}
+
+	// Everything that is not a current-version surface stays invisible.
+	for name, content := range map[string]string{
+		"plain body":    "hello",
+		"non-v1 body":   `{"schemaVersion":"other","parts":[{"type":"a2ui","version":"` + want + `","surface":{}}]}`,
+		"no parts":      `{"schemaVersion":"aap.message-content.v1","parts":[]}`,
+		"text only":     `{"schemaVersion":"aap.message-content.v1","parts":[{"type":"text","text":"x"}]}`,
+		"older version": `{"schemaVersion":"aap.message-content.v1","parts":[{"type":"a2ui","version":"a2ui-surface.v0","surface":{"root":"x"}}]}`,
+		"no version":    `{"schemaVersion":"aap.message-content.v1","parts":[{"type":"a2ui","surface":{"root":"x"}}]}`,
+		"empty surface": `{"schemaVersion":"aap.message-content.v1","parts":[{"type":"a2ui","version":"` + want + `"}]}`,
+		"input file":    `{"schemaVersion":"aap.message-content.v1","parts":[{"type":"input_file","fileId":"f","mediaType":"image/png"}]}`,
+	} {
+		if got := chat.A2UISurfacesFromDurable(content, want); len(got) != 0 {
+			t.Fatalf("%s: surfaces=%v want none", name, got)
+		}
+	}
+
+	// A caller that asks for no version gets nothing, rather than everything.
+	both := `{"schemaVersion":"aap.message-content.v1","parts":[` +
+		`{"type":"a2ui","version":"` + want + `","surface":{"components":[]}}]}`
+	if got := chat.A2UISurfacesFromDurable(both, ""); len(got) != 0 {
+		t.Fatalf("empty wantVersion returned %v", got)
 	}
 }
 
