@@ -1,0 +1,94 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`charts > draws chart-area as an svg tagged area 1`] = `
+"<div class="a2ui-stack">
+    <figure class="a2ui-chart" data-a2ui-chart="area">
+      <div class="a2ui-chart-head">
+        <h3 class="a2ui-title">净现金流</h3>
+        <span class="a2ui-chart-badge">面积图 · 万元</span>
+      </div>
+      <div class="a2ui-chart-body" role="img" aria-label="净现金流">
+        <svg class="a2ui-chart-svg" viewBox="0 0 400 220" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg"><line x1="44" y1="180.0" x2="386" y2="180.0" class="a2ui-chart-grid" /><text x="38" y="183.0" text-anchor="end" class="a2ui-chart-axis">-20 万元</text><line x1="44" y1="139.0" x2="386" y2="139.0" class="a2ui-chart-grid" /><text x="38" y="142.0" text-anchor="end" class="a2ui-chart-axis">10 万元</text><line x1="44" y1="98.0" x2="386" y2="98.0" class="a2ui-chart-grid" /><text x="38" y="101.0" text-anchor="end" class="a2ui-chart-axis">40 万元</text><line x1="44" y1="57.0" x2="386" y2="57.0" class="a2ui-chart-grid" /><text x="38" y="60.0" text-anchor="end" class="a2ui-chart-axis">70 万元</text><line x1="44" y1="16.0" x2="386" y2="16.0" class="a2ui-chart-grid" /><text x="38" y="19.0" text-anchor="end" class="a2ui-chart-axis">100 万元</text><path d="M44.0,95.3 L129.5,177.3 L215.0,143.1 L300.5,66.6 L386.0,32.4 L386.0,152.7 L300.5,152.7 L215.0,152.7 L129.5,152.7 L44.0,152.7 Z" fill="#0d9488" opacity="0.18" /><path d="M44.0,95.3 L129.5,177.3 L215.0,143.1 L300.5,66.6 L386.0,32.4" fill="none" stroke="#0d9488" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" /><circle cx="44.0" cy="95.3" r="3.5" fill="#0d9488"><title>1月 = 42 万元</title></circle><circle cx="129.5" cy="177.3" r="3.5" fill="#0d9488"><title>2月 = -18 万元</title></circle><circle cx="215.0" cy="143.1" r="3.5" fill="#0d9488"><title>3月 = 7 万元</title></circle><circle cx="300.5" cy="66.6" r="3.5" fill="#0d9488"><title>4月 = 63 万元</title></circle><circle cx="386.0" cy="32.4" r="3.5" fill="#0d9488"><title>5月 = 88 万元</title></circle><text x="44.0" y="208" text-anchor="middle" class="a2ui-chart-axis">1月</text><text x="129.5" y="208" text-anchor="middle" class="a2ui-chart-axis">2月</text><text x="215.0" y="208" text-anchor="middle" class="a2ui-chart-axis">3月</text><text x="300.5" y="208" text-anchor="middle" class="a2ui-chart-axis">4月</text><text x="386.0" y="208" text-anchor="middle" class="a2ui-chart-axis">5月</text></svg>
+      </div>
+      
+    </figure>
+  </div>"
+`;
+
+exports[`charts > draws chart-bar as an svg tagged bar 1`] = `
+"<div class="a2ui-stack"><div class="a2ui-col"><h3 class="a2ui-title">季度营收</h3>
+    <figure class="a2ui-chart" data-a2ui-chart="bar">
+      <div class="a2ui-chart-head">
+        
+        <span class="a2ui-chart-badge">柱状图 · 万元</span>
+      </div>
+      <div class="a2ui-chart-body" role="img" aria-label="柱状图 · 万元">
+        <svg class="a2ui-chart-svg" viewBox="0 0 400 220" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg"><line x1="44" y1="180.0" x2="386" y2="180.0" class="a2ui-chart-grid" /><text x="38" y="183.0" text-anchor="end" class="a2ui-chart-axis">0 万元</text><line x1="44" y1="139.0" x2="386" y2="139.0" class="a2ui-chart-grid" /><text x="38" y="142.0" text-anchor="end" class="a2ui-chart-axis">500 万元</text><line x1="44" y1="98.0" x2="386" y2="98.0" class="a2ui-chart-grid" /><text x="38" y="101.0" text-anchor="end" class="a2ui-chart-axis">1k 万元</text><line x1="44" y1="57.0" x2="386" y2="57.0" class="a2ui-chart-grid" /><text x="38" y="60.0" text-anchor="end" class="a2ui-chart-axis">1.5k 万元</text><line x1="44" y1="16.0" x2="386" y2="16.0" class="a2ui-chart-grid" /><text x="38" y="19.0" text-anchor="end" class="a2ui-chart-axis">2k 万元</text><rect x="52.5" y="75.0" width="68.4" height="105.0" rx="3" fill="#0d9488" opacity="0.92"><title>Q1 = 1.3k 万元</title></rect><rect x="138.1" y="53.4" width="68.4" height="126.6" rx="3" fill="#0d9488" opacity="0.92"><title>Q2 = 1.5k 万元</title></rect><rect x="223.6" y="66.0" width="68.4" height="114.0" rx="3" fill="#0d9488" opacity="0.92"><title>Q3 = 1.4k 万元</title></rect><rect x="309.1" y="31.4" width="68.4" height="148.6" rx="3" fill="#0d9488" opacity="0.92"><title>Q4 = 1.8k 万元</title></rect><text x="86.8" y="208" text-anchor="middle" class="a2ui-chart-axis">Q1</text><text x="172.3" y="208" text-anchor="middle" class="a2ui-chart-axis">Q2</text><text x="257.8" y="208" text-anchor="middle" class="a2ui-chart-axis">Q3</text><text x="343.3" y="208" text-anchor="middle" class="a2ui-chart-axis">Q4</text></svg>
+      </div>
+      
+    </figure>
+  </div></div>"
+`;
+
+exports[`charts > draws chart-donut as an svg tagged donut 1`] = `
+"<div class="a2ui-stack">
+    <figure class="a2ui-chart" data-a2ui-chart="donut">
+      <div class="a2ui-chart-head">
+        <h3 class="a2ui-title">存储占用</h3>
+        <span class="a2ui-chart-badge">环图 · GB</span>
+      </div>
+      <div class="a2ui-chart-body" role="img" aria-label="存储占用">
+        <svg class="a2ui-chart-svg a2ui-chart-svg-pie" viewBox="0 0 280 220" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg"><path d="M110.0,22.0 A88,88 0 1 1 71.8,189.3 L89.2,153.2 A48,48 0 1 0 110.0,62.0 Z" fill="#0d9488" stroke="#fff" stroke-width="1.5"><title>会话记录 = 128 GB（57.1%）</title></path><path d="M71.8,189.3 A88,88 0 0 1 41.2,55.1 L72.5,80.1 A48,48 0 0 0 89.2,153.2 Z" fill="#2563eb" stroke="#fff" stroke-width="1.5"><title>审计轨迹 = 64 GB（28.6%）</title></path><path d="M41.2,55.1 A88,88 0 0 1 110.0,22.0 L110.0,62.0 A48,48 0 0 0 72.5,80.1 Z" fill="#d97706" stroke="#fff" stroke-width="1.5"><title>附件 = 32 GB（14.3%）</title></path><text x="110" y="114" text-anchor="middle" class="a2ui-chart-center">224 GB</text></svg>
+      </div>
+      <ul class="a2ui-chart-legend"><li><span class="a2ui-chart-swatch" style="background:#0d9488"></span><span>会话记录</span><strong>128 GB</strong><em>57.1%</em></li><li><span class="a2ui-chart-swatch" style="background:#2563eb"></span><span>审计轨迹</span><strong>64 GB</strong><em>28.6%</em></li><li><span class="a2ui-chart-swatch" style="background:#d97706"></span><span>附件</span><strong>32 GB</strong><em>14.3%</em></li><li><span class="a2ui-chart-swatch" style="background:#7c3aed"></span><span>冷备</span><strong>0 GB</strong><em>0.0%</em></li></ul>
+    </figure>
+  </div>"
+`;
+
+exports[`charts > draws chart-hbar as an svg tagged hbar 1`] = `
+"<div class="a2ui-stack">
+    <figure class="a2ui-chart" data-a2ui-chart="hbar">
+      <div class="a2ui-chart-head">
+        <h3 class="a2ui-title">工单来源分布</h3>
+        <span class="a2ui-chart-badge">条形图</span>
+      </div>
+      <div class="a2ui-chart-body" role="img" aria-label="工单来源分布">
+        <svg class="a2ui-chart-svg" viewBox="0 0 400 128" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg"><line x1="96.0" y1="8" x2="96.0" y2="120" class="a2ui-chart-grid" /><text x="96.0" y="126" text-anchor="middle" class="a2ui-chart-axis">0</text><line x1="159.0" y1="8" x2="159.0" y2="120" class="a2ui-chart-grid" /><text x="159.0" y="126" text-anchor="middle" class="a2ui-chart-axis">125</text><line x1="222.0" y1="8" x2="222.0" y2="120" class="a2ui-chart-grid" /><text x="222.0" y="126" text-anchor="middle" class="a2ui-chart-axis">250</text><line x1="285.0" y1="8" x2="285.0" y2="120" class="a2ui-chart-grid" /><text x="285.0" y="126" text-anchor="middle" class="a2ui-chart-axis">375</text><line x1="348.0" y1="8" x2="348.0" y2="120" class="a2ui-chart-grid" /><text x="348.0" y="126" text-anchor="middle" class="a2ui-chart-axis">500</text><rect x="96.0" y="10.8" width="207.6" height="22.4" rx="3" fill="#0d9488" opacity="0.92"><title>企业微信客服机器人 = 412</title></rect><rect x="96.0" y="38.8" width="160.3" height="22.4" rx="3" fill="#0d9488" opacity="0.92"><title>官网工单表单 = 318</title></rect><rect x="96.0" y="66.8" width="99.3" height="22.4" rx="3" fill="#0d9488" opacity="0.92"><title>电话热线转写 = 197</title></rect><rect x="96.0" y="94.8" width="44.4" height="22.4" rx="3" fill="#0d9488" opacity="0.92"><title>邮件自动归类 = 88</title></rect><text x="88" y="26.0" text-anchor="end" class="a2ui-chart-axis">企业微信客服机器人</text><text x="88" y="54.0" text-anchor="end" class="a2ui-chart-axis">官网工单表单</text><text x="88" y="82.0" text-anchor="end" class="a2ui-chart-axis">电话热线转写</text><text x="88" y="110.0" text-anchor="end" class="a2ui-chart-axis">邮件自动归类</text></svg>
+      </div>
+      
+    </figure>
+  </div>"
+`;
+
+exports[`charts > draws chart-line as an svg tagged line 1`] = `
+"<div class="a2ui-stack">
+    <figure class="a2ui-chart" data-a2ui-chart="line">
+      <div class="a2ui-chart-head">
+        <h3 class="a2ui-title">运行成功率</h3>
+        <span class="a2ui-chart-badge">折线图</span>
+      </div>
+      <div class="a2ui-chart-body" role="img" aria-label="运行成功率">
+        <svg class="a2ui-chart-svg" viewBox="0 0 400 220" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg"><line x1="44" y1="180.0" x2="386" y2="180.0" class="a2ui-chart-grid" /><text x="38" y="183.0" text-anchor="end" class="a2ui-chart-axis">0%</text><line x1="44" y1="139.0" x2="386" y2="139.0" class="a2ui-chart-grid" /><text x="38" y="142.0" text-anchor="end" class="a2ui-chart-axis">25%</text><line x1="44" y1="98.0" x2="386" y2="98.0" class="a2ui-chart-grid" /><text x="38" y="101.0" text-anchor="end" class="a2ui-chart-axis">50%</text><line x1="44" y1="57.0" x2="386" y2="57.0" class="a2ui-chart-grid" /><text x="38" y="60.0" text-anchor="end" class="a2ui-chart-axis">75%</text><line x1="44" y1="16.0" x2="386" y2="16.0" class="a2ui-chart-grid" /><text x="38" y="19.0" text-anchor="end" class="a2ui-chart-axis">100%</text><path d="M44.0,30.4 L112.4,26.2 L180.8,31.7 L249.2,22.4 L317.6,20.1 L386.0,22.7" fill="none" stroke="#0d9488" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" /><circle cx="44.0" cy="30.4" r="3.5" fill="#0d9488"><title>01-05 = 91.2%</title></circle><circle cx="112.4" cy="26.2" r="3.5" fill="#0d9488"><title>01-06 = 93.8%</title></circle><circle cx="180.8" cy="31.7" r="3.5" fill="#0d9488"><title>01-07 = 90.4%</title></circle><circle cx="249.2" cy="22.4" r="3.5" fill="#0d9488"><title>01-08 = 96.1%</title></circle><circle cx="317.6" cy="20.1" r="3.5" fill="#0d9488"><title>01-09 = 97.5%</title></circle><circle cx="386.0" cy="22.7" r="3.5" fill="#0d9488"><title>01-10 = 95.9%</title></circle><text x="44.0" y="208" text-anchor="middle" class="a2ui-chart-axis">01-05</text><text x="112.4" y="208" text-anchor="middle" class="a2ui-chart-axis">01-06</text><text x="180.8" y="208" text-anchor="middle" class="a2ui-chart-axis">01-07</text><text x="249.2" y="208" text-anchor="middle" class="a2ui-chart-axis">01-08</text><text x="317.6" y="208" text-anchor="middle" class="a2ui-chart-axis">01-09</text><text x="386.0" y="208" text-anchor="middle" class="a2ui-chart-axis">01-10</text></svg>
+      </div>
+      
+    </figure>
+  </div>"
+`;
+
+exports[`charts > draws chart-pie as an svg tagged pie 1`] = `
+"<div class="a2ui-stack"><div class="a2ui-panel">
+    <div class="a2ui-panel-title">模型调用占比</div>
+    
+    <figure class="a2ui-chart" data-a2ui-chart="pie">
+      <div class="a2ui-chart-head">
+        
+        <span class="a2ui-chart-badge">饼图</span>
+      </div>
+      <div class="a2ui-chart-body" role="img" aria-label="饼图">
+        <svg class="a2ui-chart-svg a2ui-chart-svg-pie" viewBox="0 0 280 220" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg"><path d="M110,110 L110.0,22.0 A88,88 0 0 1 129.2,195.9 Z" fill="#0d9488" stroke="#fff" stroke-width="1.5"><title>gpt-5.6 = 46.5%（46.5%）</title></path><path d="M110,110 L129.2,195.9 A88,88 0 0 1 23.3,95.1 Z" fill="#2563eb" stroke="#fff" stroke-width="1.5"><title>claude-opus-5 = 31.2%（31.2%）</title></path><path d="M110,110 L23.3,95.1 A88,88 0 0 1 70.0,31.6 Z" fill="#d97706" stroke="#fff" stroke-width="1.5"><title>composer-2.5 = 14.8%（14.8%）</title></path><path d="M110,110 L70.0,31.6 A88,88 0 0 1 110.0,22.0 Z" fill="#7c3aed" stroke="#fff" stroke-width="1.5"><title>其他 = 7.5%（7.5%）</title></path></svg>
+      </div>
+      <ul class="a2ui-chart-legend"><li><span class="a2ui-chart-swatch" style="background:#0d9488"></span><span>gpt-5.6</span><strong>46.5%</strong><em>46.5%</em></li><li><span class="a2ui-chart-swatch" style="background:#2563eb"></span><span>claude-opus-5</span><strong>31.2%</strong><em>31.2%</em></li><li><span class="a2ui-chart-swatch" style="background:#d97706"></span><span>composer-2.5</span><strong>14.8%</strong><em>14.8%</em></li><li><span class="a2ui-chart-swatch" style="background:#7c3aed"></span><span>其他</span><strong>7.5%</strong><em>7.5%</em></li></ul>
+    </figure>
+  
+  </div></div>"
+`;

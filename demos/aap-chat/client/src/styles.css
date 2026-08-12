@@ -719,7 +719,6 @@ textarea {
   padding: 14px 16px 12px;
 }
 
-.a2ui-form,
 .a2ui-stack,
 .a2ui-col {
   display: flex;
@@ -739,6 +738,55 @@ textarea {
   min-width: 140px;
 }
 
+/* Catalog align / justify. The surface carries intent; these pick the geometry. */
+.a2ui-col.a2ui-align-start,
+.a2ui-row.a2ui-align-start {
+  align-items: flex-start;
+}
+
+.a2ui-col.a2ui-align-center,
+.a2ui-row.a2ui-align-center {
+  align-items: center;
+}
+
+.a2ui-col.a2ui-align-end,
+.a2ui-row.a2ui-align-end {
+  align-items: flex-end;
+}
+
+.a2ui-col.a2ui-align-stretch,
+.a2ui-row.a2ui-align-stretch {
+  align-items: stretch;
+}
+
+.a2ui-justify-start {
+  justify-content: flex-start;
+}
+
+.a2ui-justify-center {
+  justify-content: center;
+}
+
+.a2ui-justify-end {
+  justify-content: flex-end;
+}
+
+.a2ui-justify-spaceBetween {
+  justify-content: space-between;
+}
+
+.a2ui-justify-spaceAround {
+  justify-content: space-around;
+}
+
+/* A Row that positions its children must not have them fill the line. */
+.a2ui-row.a2ui-justify-end > *,
+.a2ui-row.a2ui-justify-center > *,
+.a2ui-row.a2ui-justify-start > * {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
 .a2ui-title {
   margin: 0;
   font-size: 15px;
@@ -747,7 +795,6 @@ textarea {
   letter-spacing: -0.01em;
 }
 
-.a2ui-desc,
 .a2ui-text {
   margin: 0;
   font-size: 13px;
@@ -755,10 +802,9 @@ textarea {
   color: #475569;
 }
 
-.a2ui-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.a2ui-text-caption {
+  font-size: 11.5px;
+  color: #64748b;
 }
 
 .a2ui-field {
@@ -805,8 +851,7 @@ textarea.a2ui-input {
   font-family: inherit;
 }
 
-.a2ui-field-check .a2ui-check-label,
-.a2ui-radio {
+.a2ui-field-check .a2ui-check-label {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -815,17 +860,8 @@ textarea.a2ui-input {
   cursor: pointer;
 }
 
-.a2ui-radio-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.a2ui-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 4px;
+.a2ui-field-action {
+  flex-direction: row;
 }
 
 .a2ui-btn {
@@ -847,17 +883,10 @@ textarea.a2ui-input {
   color: #fff;
 }
 
-.a2ui-note {
-  margin: 2px 0 0;
-  font-size: 11.5px;
-  color: #64748b;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.a2ui-note i {
-  color: #0d9488;
+.a2ui-btn-borderless {
+  background: transparent;
+  border-color: transparent;
+  color: #475569;
 }
 
 .a2ui-empty {
@@ -882,68 +911,19 @@ textarea.a2ui-input {
   color: #0f172a;
 }
 
-.a2ui-image img {
-  max-width: 100%;
-  border-radius: 10px;
-  display: block;
-}
-
 .a2ui-divider {
   border: 0;
   border-top: 1px solid #e2e8f0;
   margin: 4px 0;
 }
 
-.a2ui-spacer {
-  height: 8px;
-}
-
-.a2ui-unknown {
-  display: flex;
-  gap: 8px;
-  align-items: center;
+/* Graceful degradation: a component this build cannot draw, a dangling child
+   reference, or a tree deeper than the contract allows. */
+[data-a2ui-placeholder] {
   padding: 8px 10px;
   border-radius: 8px;
   background: #f8fafc;
   border: 1px dashed #cbd5e1;
-  font-size: 12.5px;
-  color: #64748b;
-}
-
-.a2ui-unknown-kind {
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 700;
-  color: #0f766e;
-  background: #ccfbf1;
-  padding: 2px 6px;
-  border-radius: 6px;
-}
-
-.a2ui-kv-list {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.a2ui-kv {
-  display: grid;
-  grid-template-columns: minmax(80px, 120px) 1fr;
-  gap: 8px;
-  font-size: 12.5px;
-}
-
-.a2ui-kv dt {
-  margin: 0;
-  font-weight: 600;
-  color: #64748b;
-}
-
-.a2ui-kv dd {
-  margin: 0;
-  color: #0f172a;
-  word-break: break-word;
 }
 
 .a2ui-raw {
@@ -974,8 +954,7 @@ textarea.a2ui-input {
   content: "▾ ";
 }
 
-.a2ui-raw pre,
-.a2ui-fallback {
+.a2ui-raw pre {
   margin: 0;
   padding: 10px 14px 12px;
   background: transparent;
@@ -994,6 +973,7 @@ textarea.a2ui-input {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  margin: 0;
   padding: 4px 0 2px;
 }
 

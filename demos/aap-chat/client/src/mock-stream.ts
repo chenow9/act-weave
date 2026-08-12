@@ -1,6 +1,9 @@
 /**
  * Offline demo stream: rich Markdown / math / code / image / A2UI without AAP credentials.
  */
+import { A2UI_CATALOG_ID, A2UI_SURFACE_VERSION } from "./a2ui/generated/catalog.gen";
+import { A2UI_FIXTURES_BY_NAME } from "./a2ui/generated/fixtures.gen";
+
 export type MockChunk =
   | { kind: "user"; text: string }
   | { kind: "assistant_delta"; text: string }
@@ -16,71 +19,34 @@ export type MockChunk =
   | { kind: "tool"; name: string; status: "running" | "succeeded" | "failed"; detail?: string }
   | { kind: "status"; text: string };
 
-/** Sample form surface matching live natural-conversation e2e shape. */
-export const MOCK_A2UI_FORM_SURFACE = {
-  type: "form",
-  title: "产品演示预约登记",
-  fields: [
-    {
-      type: "text",
-      name: "name",
-      label: "姓名",
-      required: true,
-      placeholder: "请输入联系人姓名",
-    },
-    {
-      type: "text",
-      name: "company",
-      label: "公司",
-      required: true,
-      placeholder: "请输入公司名称",
-    },
-    {
-      type: "text",
-      name: "mobile",
-      label: "手机",
-      required: true,
-      placeholder: "请输入手机号",
-    },
-    {
-      type: "date",
-      name: "demoDate",
-      label: "演示日期",
-      required: true,
-      placeholder: "请选择希望演示的日期",
-    },
-  ],
-} as const;
+/**
+ * Mock surfaces are the shared fixtures, so the offline demo shows exactly the
+ * baselines the renderer is tested against and the server accepts.
+ */
+export const MOCK_A2UI_FIXTURES = A2UI_FIXTURES_BY_NAME;
 
-/** Sample chart surfaces for mock A2UI statistics render. */
-export const MOCK_A2UI_BAR_CHART = {
-  type: "chart",
-  chartType: "bar",
-  title: "近 6 个月预约量",
-  unit: "次",
-  labels: ["3月", "4月", "5月", "6月", "7月", "8月"],
-  series: [
-    { name: "预约", data: [12, 18, 15, 24, 31, 28] },
-    { name: "成交", data: [4, 7, 6, 11, 14, 13] },
-  ],
-} as const;
-
-export const MOCK_A2UI_PIE_CHART = {
-  component: "PieChart",
-  title: "线索来源分布",
-  data: [
-    { label: "官网", value: 42 },
-    { label: "渠道伙伴", value: 28 },
-    { label: "活动", value: 18 },
-    { label: "转介绍", value: 12 },
-  ],
-} as const;
-
-const FORM_HINT =
-  /表单|form|登记|预约|填写|字段|a2ui|A2UI|结构化/i;
+const FORM_HINT = /表单|form|登记|预约|填写|字段|a2ui|A2UI|结构化/i;
 
 const CHART_HINT =
-  /统计图|图表|chart|柱状|折线|饼图|环图|可视化|趋势|分布|bar\s*chart|line\s*chart|pie/i;
+  /统计图|图表|chart|柱状|折线|饼图|环图|面积|条形|堆叠|绑定|可视化|趋势|分布|占比|bar\s*chart|line\s*chart|pie/i;
+
+/**
+ * Picks the fixture whose shape the request is asking about. Order matters: the
+ * more specific words are tested first.
+ */
+function pickChartFixture(userText: string): string {
+  const rules: Array<[RegExp, string]> = [
+    [/绑定|binding|dataModel|共享数据/i, "chart-binding"],
+    [/堆叠|stacked/i, "chart-stacked"],
+    [/多系列|多条|对比|multi/i, "chart-multi-series"],
+    [/环图|donut|doughnut/i, "chart-donut"],
+    [/饼图|pie|占比|来源|分布/i, "chart-pie"],
+    [/面积|area/i, "chart-area"],
+    [/折线|line|趋势|成功率/i, "chart-line"],
+    [/条形|横向|hbar/i, "chart-hbar"],
+  ];
+  return rules.find(([pattern]) => pattern.test(userText))?.[1] ?? "chart-bar";
+}
 
 const DEMO_REPLY = `你好！这是 **ActWeave AAP Chat Demo** 的富文本渲染样例（Mock 模式，无需真实 AAP 凭证）。
 
@@ -179,13 +145,17 @@ export async function* mockAssistantStream(
 
   const wantsForm = FORM_HINT.test(userText) && !CHART_HINT.test(userText);
   const wantsChart = CHART_HINT.test(userText);
-  const wantsPie = /饼图|pie|环图|donut|doughnut|来源|分布/i.test(userText);
+  const fixture = wantsChart
+    ? MOCK_A2UI_FIXTURES[pickChartFixture(userText)]
+    : wantsForm
+      ? MOCK_A2UI_FIXTURES["form"]
+      : undefined;
   const formReply =
-    "可以，直接在下面表单里填写这 4 项信息。我收到后会帮你整理成预约登记内容。\n\n" +
-    "（Mock：A2UI 以真实表单控件渲染；提交按钮 display-only，尚未接入 ui-actions。）";
-  const chartReply = wantsPie
-    ? "下面用 **A2UI 饼图** 展示线索来源占比（Mock 示例数据，纯 SVG 渲染）。"
-    : "下面用 **A2UI 柱状图** 展示近 6 个月预约与成交趋势（Mock 示例数据，纯 SVG 渲染）。";
+    "可以，直接在下面的表单里填写。我收到后会帮你整理成工单内容。\n\n" +
+    "（Mock：A2UI 以真实表单控件渲染；按钮为展示态，catalog v1 不定义动作。）";
+  const chartReply = fixture
+    ? `下面用 **A2UI 图表** 渲染基线样例「${fixture.title}」（纯 SVG，视觉由客户端决定）。`
+    : "";
 
   const reply = isAttachmentOnly
     ? [
@@ -219,13 +189,10 @@ export async function* mockAssistantStream(
             ].join("\n")
           : DEMO_REPLY;
 
-  const a2uiSurface = wantsChart
-    ? wantsPie
-      ? MOCK_A2UI_PIE_CHART
-      : MOCK_A2UI_BAR_CHART
-    : wantsForm
-      ? MOCK_A2UI_FORM_SURFACE
-      : null;
+  // The server stamps identity onto a validated surface, so the mock does too.
+  const a2uiSurface = fixture
+    ? { surfaceId: `mock:${fixture.name}`, catalogId: A2UI_CATALOG_ID, ...fixture.surface }
+    : null;
 
   yield {
     kind: "tool",
@@ -262,8 +229,8 @@ export async function* mockAssistantStream(
     yield {
       kind: "assistant_done",
       a2ui: {
-        version: "a2ui-surface.v0",
-        catalogId: "standard",
+        version: A2UI_SURFACE_VERSION,
+        catalogId: A2UI_CATALOG_ID,
         surface: a2uiSurface,
       },
     };

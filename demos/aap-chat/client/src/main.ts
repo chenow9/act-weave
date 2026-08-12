@@ -14,7 +14,7 @@ import {
   type BffConfig,
   type OutboundStatus,
 } from "./aap";
-import { renderA2UICard } from "./a2ui-render";
+import { renderA2UICard } from "./a2ui";
 import { escapeHtml, renderMarkdown } from "./markdown";
 import { mockAssistantStream } from "./mock-stream";
 import type { ProtocolItem } from "@actweave/agent-client";

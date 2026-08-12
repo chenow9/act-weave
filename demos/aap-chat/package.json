@@ -10,7 +10,9 @@
     "dev:bff": "node ./server/index.mjs",
     "dev:mock": "VITE_DEMO_MODE=mock vite --config vite.config.ts",
     "build": "vite build --config vite.config.ts",
-    "preview": "vite preview --config vite.config.ts"
+    "preview": "vite preview --config vite.config.ts",
+    "type-check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
   },
   "dependencies": {
     "@actweave/agent-client": "file:../../sdk/typescript",
@@ -25,7 +27,8 @@
     "@types/markdown-it": "14.1.2",
     "concurrently": "9.2.0",
     "typescript": "5.9.3",
-    "vite": "7.3.5"
+    "vite": "7.3.5",
+    "vitest": "3.2.4"
   },
   "engines": {
     "node": ">=20"
