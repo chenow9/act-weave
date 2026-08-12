@@ -32,7 +32,8 @@ type AgentBuildConfig struct {
 
 	// MaxIterations caps model rounds. Zero → DefaultMaxIterations (8).
 	MaxIterations int
-	// MaxToolInvocations hard-caps tool InvokableRun calls. Zero → 16.
+	// MaxToolInvocations hard-caps tool InvokableRun calls.
+	// Zero → DefaultMaxToolInvocations (16). Values <0 or >16 are rejected.
 	MaxToolInvocations int
 
 	// UnknownToolsHandler handles hallucinated tool names. Optional; defaults
@@ -55,9 +56,10 @@ func BuildChatModelAgent(ctx context.Context, cfg AgentBuildConfig) (*adk.ChatMo
 	if maxIter <= 0 {
 		maxIter = DefaultMaxIterations
 	}
-	maxTools := cfg.MaxToolInvocations
-	if maxTools <= 0 {
-		maxTools = DefaultMaxToolInvocations
+	// Same limit contract as agentic path: 0→16, 1..16; reject negative/>16.
+	budgetMW, err := NewToolBudgetMiddleware(cfg.MaxToolInvocations)
+	if err != nil {
+		return nil, err
 	}
 
 	unknown := cfg.UnknownToolsHandler
@@ -73,7 +75,7 @@ func BuildChatModelAgent(ctx context.Context, cfg AgentBuildConfig) (*adk.ChatMo
 	}
 
 	middlewares := make([]compose.ToolMiddleware, 0, 1+len(cfg.ExtraToolMiddlewares))
-	middlewares = append(middlewares, NewToolBudgetMiddleware(maxTools))
+	middlewares = append(middlewares, budgetMW)
 	middlewares = append(middlewares, cfg.ExtraToolMiddlewares...)
 
 	return adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{

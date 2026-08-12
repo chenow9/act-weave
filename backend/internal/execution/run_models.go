@@ -160,6 +160,11 @@ type AgentRunSnapshots struct {
 	// Agent is the run.v2 binding snapshot (prompt revision + model config refs).
 	// Empty object means legacy / gate-off.
 	Agent json.RawMessage
+	// Graph is the immutable agent_graph_snapshot.v1 frozen at run start. Root
+	// chat runs freeze an explicitly empty graph (root node only, zero edges,
+	// zero remotes) so the Agentic initial path has a topology authority that is
+	// not live delegation config. Empty means legacy / gate-off.
+	Graph json.RawMessage
 }
 
 // Snapshot schema versions for agent runs.

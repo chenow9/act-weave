@@ -161,9 +161,9 @@ type pipelineTool struct {
 	principalSnapshot     *principal.ExecutionSnapshot
 	authorizationSnapshot json.RawMessage
 	// resolved holds pre-baked test resolution or empty for lazy path.
-	resolved          execution.ResolvedInvocation
-	fixedInvocationID string
-	stepID            string
+	resolved           execution.ResolvedInvocation
+	fixedInvocationID  string
+	stepID             string
 	onConfirmInterrupt ConfirmInterruptHook
 	onToolComplete     ToolCompleteHook
 }

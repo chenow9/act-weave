@@ -291,6 +291,8 @@ func (c *capturingProjector) Joined() string {
 }
 
 // mapEngineError maps vendor budget errors into the platform ErrToolBudgetExceeded family.
+// Max-iterations uses errors.Join so both ErrToolBudgetExceeded and
+// adk.ErrExceedMaxIterations remain matchable via errors.Is.
 func mapEngineError(err error) error {
 	if err == nil {
 		return nil
@@ -299,7 +301,14 @@ func mapEngineError(err error) error {
 		return err
 	}
 	if errors.Is(err, adk.ErrExceedMaxIterations) {
-		return fmt.Errorf("%w: %v", ErrToolBudgetExceeded, err)
+		return errors.Join(ErrToolBudgetExceeded, err)
 	}
 	return err
+}
+
+// IsMaxIterationsExceeded reports whether err is the max-iteration /
+// iteration-exhausted family (raw ADK sentinel and/or mapped Join form).
+// Prefer this over string matching when classifying resume/run terminal errors.
+func IsMaxIterationsExceeded(err error) bool {
+	return errors.Is(err, adk.ErrExceedMaxIterations)
 }

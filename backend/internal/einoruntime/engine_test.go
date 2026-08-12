@@ -351,6 +351,13 @@ func TestMapEngineError_MaxIterations(t *testing.T) {
 	if !errors.Is(err, ErrToolBudgetExceeded) {
 		t.Fatalf("want ErrToolBudgetExceeded family, got %v", err)
 	}
+	// Join form preserves the ADK sentinel for errors.Is.
+	if !errors.Is(err, adk.ErrExceedMaxIterations) {
+		t.Fatalf("want errors.Is adk.ErrExceedMaxIterations, got %v", err)
+	}
+	if !IsMaxIterationsExceeded(err) {
+		t.Fatalf("IsMaxIterationsExceeded(%v)=false", err)
+	}
 }
 
 func TestProjectAgentEvent_StreamDeltas(t *testing.T) {

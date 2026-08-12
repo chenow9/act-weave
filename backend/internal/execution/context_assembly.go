@@ -1,6 +1,7 @@
 package execution
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -17,21 +18,21 @@ import (
 
 // Stable context-window error codes (safe for Console/AAP projection).
 const (
-	ErrCodeContextSnapshotUnsupported   = "CONTEXT_SNAPSHOT_UNSUPPORTED"
-	ErrCodeContextModelLimitUnknown     = "CONTEXT_MODEL_LIMIT_UNKNOWN"
-	ErrCodeContextRequiredInputTooLarge = "CONTEXT_REQUIRED_INPUT_TOO_LARGE"
-	ErrCodeContextAssemblyFailed        = "CONTEXT_ASSEMBLY_FAILED"
+	ErrCodeContextSnapshotUnsupported    = "CONTEXT_SNAPSHOT_UNSUPPORTED"
+	ErrCodeContextModelLimitUnknown      = "CONTEXT_MODEL_LIMIT_UNKNOWN"
+	ErrCodeContextRequiredInputTooLarge  = "CONTEXT_REQUIRED_INPUT_TOO_LARGE"
+	ErrCodeContextAssemblyFailed         = "CONTEXT_ASSEMBLY_FAILED"
 	ErrCodeContextWindowExceededUpstream = "CONTEXT_WINDOW_EXCEEDED_UPSTREAM"
 )
 
 // Typed context errors for runtime mapping.
 var (
-	ErrContextSnapshotUnsupported   = errors.New(ErrCodeContextSnapshotUnsupported)
-	ErrContextModelLimitUnknown     = errors.New(ErrCodeContextModelLimitUnknown)
-	ErrContextRequiredInputTooLarge = errors.New(ErrCodeContextRequiredInputTooLarge)
-	ErrContextAssemblyFailed        = errors.New(ErrCodeContextAssemblyFailed)
+	ErrContextSnapshotUnsupported    = errors.New(ErrCodeContextSnapshotUnsupported)
+	ErrContextModelLimitUnknown      = errors.New(ErrCodeContextModelLimitUnknown)
+	ErrContextRequiredInputTooLarge  = errors.New(ErrCodeContextRequiredInputTooLarge)
+	ErrContextAssemblyFailed         = errors.New(ErrCodeContextAssemblyFailed)
 	ErrContextWindowExceededUpstream = errors.New(ErrCodeContextWindowExceededUpstream)
-	ErrContextAssemblyConflict      = errors.New("context assembly digest conflict")
+	ErrContextAssemblyConflict       = errors.New("context assembly digest conflict")
 )
 
 // ContextError is a stable, non-sensitive runtime error for context assembly.
@@ -66,6 +67,14 @@ func NewContextError(code string) *ContextError {
 	}
 }
 
+// Tool search modes for assembly manifests (design §9.3).
+const (
+	// AssemblyToolSearchModeNone is the default for classic/old assemblies.
+	AssemblyToolSearchModeNone = "none"
+	// AssemblyToolSearchModeClientBounded is required for new Agentic assemblies.
+	AssemblyToolSearchModeClientBounded = "client_bounded"
+)
+
 // ContextAssemblyRecord is the immutable assembly manifest row (no body text).
 type ContextAssemblyRecord struct {
 	ID                          string
@@ -94,7 +103,16 @@ type ContextAssemblyRecord struct {
 	SummaryCoverage             json.RawMessage
 	AssemblyDigest              string
 	EstimatedTotalTokens        int64
-	CreatedAt                   time.Time
+	// Agentic expand-only fields (defaults for classic/old rows).
+	ToolSearchMode               string
+	ToolCatalogDigest            string // 64 hex; required for client_bounded
+	ImmediateToolCount           int
+	DeferredToolCount            int
+	MaxLoadedToolCount           int
+	ImmediateToolsTokens         int64
+	DeferredMetadataTokens       int64
+	DynamicToolLoadReserveTokens int64
+	CreatedAt                    time.Time
 }
 
 // ContextAssemblyRepository persists agent_run_context_assemblies.
@@ -146,9 +164,13 @@ func (r *ContextAssemblyRepository) InsertImmutable(ctx context.Context, rec Con
 			hard_input_ceiling_tokens,output_reserve_tokens,safety_margin_tokens,tools_overhead_tokens,
 			system_prompt_revision_id,system_prompt_hash,included_segments,
 			omitted_prefix_start_message_id,omitted_prefix_end_message_id,omitted_prefix_count,
-			summary_id,summary_hash,summary_coverage,assembly_digest,estimated_total_tokens
+			summary_id,summary_hash,summary_coverage,assembly_digest,estimated_total_tokens,
+			tool_search_mode,tool_catalog_digest,
+			immediate_tool_count,deferred_tool_count,max_loaded_tool_count,
+			immediate_tools_tokens,deferred_metadata_tokens,dynamic_tool_load_reserve_tokens
 		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,
+			$27,$28,$29,$30,$31,$32,$33,$34
 		)
 	`,
 		rec.ID, rec.WorkspaceID, rec.RunID, nullableStr(rec.SessionID), rec.Mode,
@@ -159,6 +181,9 @@ func (r *ContextAssemblyRepository) InsertImmutable(ctx context.Context, rec Con
 		nullableStrPtr(rec.OmittedPrefixStartMessageID), nullableStrPtr(rec.OmittedPrefixEndMessageID), rec.OmittedPrefixCount,
 		nullableStrPtr(rec.SummaryID), nullableStrPtr(rec.SummaryHash), nullableJSON(rec.SummaryCoverage),
 		rec.AssemblyDigest, rec.EstimatedTotalTokens,
+		rec.ToolSearchMode, nullableStr(rec.ToolCatalogDigest),
+		rec.ImmediateToolCount, rec.DeferredToolCount, rec.MaxLoadedToolCount,
+		rec.ImmediateToolsTokens, rec.DeferredMetadataTokens, rec.DynamicToolLoadReserveTokens,
 	)
 	if err != nil {
 		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
@@ -177,13 +202,20 @@ func (r *ContextAssemblyRepository) InsertImmutable(ctx context.Context, rec Con
 }
 
 // GetByRun loads the assembly for a workspace-scoped run.
+//
+// Read integrity: after scan, only allowed body-free defaults are normalized
+// (empty tool_search_mode → none, empty included_segments → []), then
+// validateAssemblyRecord runs including AssemblyDigest recompute/equality,
+// estimator/mode/token/count fields. Corrupt or cross-state DB rows fail closed.
+// Insert race/idempotent winner path relies on this validated GetByRun and never
+// trusts a stored digest alone without structural validation.
 func (r *ContextAssemblyRepository) GetByRun(ctx context.Context, workspaceID, runID string) (ContextAssemblyRecord, error) {
 	workspaceID, runID = strings.TrimSpace(workspaceID), strings.TrimSpace(runID)
 	if !invocationValidUUID(workspaceID) || !invocationValidUUID(runID) {
 		return ContextAssemblyRecord{}, ErrRunInvalid
 	}
 	var rec ContextAssemblyRecord
-	var sessionID, sysRev, omitStart, omitEnd, summaryID, summaryHash sql.NullString
+	var sessionID, sysRev, omitStart, omitEnd, summaryID, summaryHash, catalogDigest sql.NullString
 	var segments, coverage []byte
 	err := r.db.QueryRowContext(ctx, `
 		SELECT id,workspace_id,run_id,session_id,mode,
@@ -192,7 +224,11 @@ func (r *ContextAssemblyRepository) GetByRun(ctx context.Context, workspaceID, r
 			hard_input_ceiling_tokens,output_reserve_tokens,safety_margin_tokens,tools_overhead_tokens,
 			system_prompt_revision_id,system_prompt_hash,included_segments,
 			omitted_prefix_start_message_id,omitted_prefix_end_message_id,omitted_prefix_count,
-			summary_id,summary_hash,summary_coverage,assembly_digest,estimated_total_tokens,created_at
+			summary_id,summary_hash,summary_coverage,assembly_digest,estimated_total_tokens,
+			tool_search_mode,tool_catalog_digest,
+			immediate_tool_count,deferred_tool_count,max_loaded_tool_count,
+			immediate_tools_tokens,deferred_metadata_tokens,dynamic_tool_load_reserve_tokens,
+			created_at
 		FROM agent_run_context_assemblies
 		WHERE workspace_id=$1 AND run_id=$2
 	`, workspaceID, runID).Scan(
@@ -202,7 +238,11 @@ func (r *ContextAssemblyRepository) GetByRun(ctx context.Context, workspaceID, r
 		&rec.HardInputCeilingTokens, &rec.OutputReserveTokens, &rec.SafetyMarginTokens, &rec.ToolsOverheadTokens,
 		&sysRev, &rec.SystemPromptHash, &segments,
 		&omitStart, &omitEnd, &rec.OmittedPrefixCount,
-		&summaryID, &summaryHash, &coverage, &rec.AssemblyDigest, &rec.EstimatedTotalTokens, &rec.CreatedAt,
+		&summaryID, &summaryHash, &coverage, &rec.AssemblyDigest, &rec.EstimatedTotalTokens,
+		&rec.ToolSearchMode, &catalogDigest,
+		&rec.ImmediateToolCount, &rec.DeferredToolCount, &rec.MaxLoadedToolCount,
+		&rec.ImmediateToolsTokens, &rec.DeferredMetadataTokens, &rec.DynamicToolLoadReserveTokens,
+		&rec.CreatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ContextAssemblyRecord{}, ErrRunNotFound
@@ -227,15 +267,60 @@ func (r *ContextAssemblyRepository) GetByRun(ctx context.Context, workspaceID, r
 	if summaryHash.Valid {
 		rec.SummaryHash = &summaryHash.String
 	}
+	if catalogDigest.Valid {
+		rec.ToolCatalogDigest = catalogDigest.String
+	}
 	if len(coverage) > 0 {
 		rec.SummaryCoverage = append(json.RawMessage(nil), coverage...)
+	}
+	// Normalize only allowed body-free defaults, then strict validate (digest etc.).
+	rec = normalizeAssemblyRecordForRead(rec)
+	if err := validateAssemblyRecord(rec); err != nil {
+		return ContextAssemblyRecord{}, err
 	}
 	return rec, nil
 }
 
 // ComputeAssemblyDigest is a canonical SHA-256 over body-free identity fields.
+// Current (agentic-aware) form always includes Agentic expand-only fields so new
+// classic and client_bounded rows share one content-addressed payload.
+//
+// Legacy classic-v1 digests (rows written before Agentic fields entered the
+// payload) are accepted on read via assemblyDigestMatches / computeClassicV1AssemblyDigest.
+// Do not rewrite old rows.
 func ComputeAssemblyDigest(rec ContextAssemblyRecord) string {
 	// Intentionally exclude ID/created_at so digest is content-addressed.
+	// Never includes schema bodies, tool names list text, or query content.
+	payload := strings.Join([]string{
+		rec.WorkspaceID, rec.RunID, rec.SessionID, rec.Mode,
+		rec.PolicySnapshotHash, rec.ModelSnapshotHash, rec.CapabilitySnapshotHash, rec.AgentSnapshotHash,
+		rec.EstimatorProfile, rec.EstimatorVersion,
+		fmt.Sprintf("%d", rec.HardInputCeilingTokens),
+		fmt.Sprintf("%d", rec.OutputReserveTokens),
+		fmt.Sprintf("%d", rec.SafetyMarginTokens),
+		fmt.Sprintf("%d", rec.ToolsOverheadTokens),
+		ptrStr(rec.SystemPromptRevisionID), rec.SystemPromptHash,
+		string(rec.IncludedSegments),
+		ptrStr(rec.OmittedPrefixStartMessageID), ptrStr(rec.OmittedPrefixEndMessageID),
+		fmt.Sprintf("%d", rec.OmittedPrefixCount),
+		ptrStr(rec.SummaryID), ptrStr(rec.SummaryHash), string(rec.SummaryCoverage),
+		fmt.Sprintf("%d", rec.EstimatedTotalTokens),
+		rec.ToolSearchMode, rec.ToolCatalogDigest,
+		fmt.Sprintf("%d", rec.ImmediateToolCount),
+		fmt.Sprintf("%d", rec.DeferredToolCount),
+		fmt.Sprintf("%d", rec.MaxLoadedToolCount),
+		fmt.Sprintf("%d", rec.ImmediateToolsTokens),
+		fmt.Sprintf("%d", rec.DeferredMetadataTokens),
+		fmt.Sprintf("%d", rec.DynamicToolLoadReserveTokens),
+	}, "|")
+	sum := sha256.Sum256([]byte(payload))
+	return hex.EncodeToString(sum[:])
+}
+
+// computeClassicV1AssemblyDigest is the original pre-Agentic digest payload
+// (no tool_search_mode / catalog / count / token Agentic fields). Used only to
+// accept legacy classic rows on read; new inserts always use ComputeAssemblyDigest.
+func computeClassicV1AssemblyDigest(rec ContextAssemblyRecord) string {
 	payload := strings.Join([]string{
 		rec.WorkspaceID, rec.RunID, rec.SessionID, rec.Mode,
 		rec.PolicySnapshotHash, rec.ModelSnapshotHash, rec.CapabilitySnapshotHash, rec.AgentSnapshotHash,
@@ -255,6 +340,23 @@ func ComputeAssemblyDigest(rec ContextAssemblyRecord) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// assemblyDigestMatches reports whether the stored digest is valid for rec.
+// Accepts current ComputeAssemblyDigest always; for classic mode (none) also
+// accepts exact classic-v1 digests so legacy rows remain readable without rewrite.
+func assemblyDigestMatches(rec ContextAssemblyRecord) bool {
+	if rec.AssemblyDigest == ComputeAssemblyDigest(rec) {
+		return true
+	}
+	mode := rec.ToolSearchMode
+	if mode == "" {
+		mode = AssemblyToolSearchModeNone
+	}
+	if mode == AssemblyToolSearchModeNone {
+		return rec.AssemblyDigest == computeClassicV1AssemblyDigest(rec)
+	}
+	return false
+}
+
 // HashJSONObject returns sha256 hex of canonical JSON object bytes (or empty object).
 func HashJSONObject(raw json.RawMessage) string {
 	raw = bytesTrimSpace(raw)
@@ -266,19 +368,69 @@ func HashJSONObject(raw json.RawMessage) string {
 }
 
 func normalizeAssemblyRecord(rec ContextAssemblyRecord) ContextAssemblyRecord {
+	rec = normalizeAssemblyRecordForRead(rec)
+	// Empty AssemblyDigest is computed canonically after other fields normalize.
+	// New inserts always use the current (agentic-aware) digest form.
+	if rec.AssemblyDigest == "" {
+		rec.AssemblyDigest = ComputeAssemblyDigest(rec)
+	}
+	return rec
+}
+
+// normalizeAssemblyRecordForRead applies only allowed body-free defaults.
+// Never rewrites digests, catalog digests, or token/count fields.
+func normalizeAssemblyRecordForRead(rec ContextAssemblyRecord) ContextAssemblyRecord {
 	rec.WorkspaceID = strings.TrimSpace(rec.WorkspaceID)
 	rec.RunID = strings.TrimSpace(rec.RunID)
 	rec.SessionID = strings.TrimSpace(rec.SessionID)
 	rec.Mode = strings.TrimSpace(rec.Mode)
 	rec.EstimatorProfile = strings.TrimSpace(rec.EstimatorProfile)
 	rec.EstimatorVersion = strings.TrimSpace(rec.EstimatorVersion)
+	rec.ToolSearchMode = strings.TrimSpace(rec.ToolSearchMode)
+	if rec.ToolSearchMode == "" {
+		rec.ToolSearchMode = AssemblyToolSearchModeNone
+	}
+	// Never lowercase/trim catalog or assembly digests into validity — reject
+	// noncanonical forms in validateAssemblyRecord instead.
 	if len(rec.IncludedSegments) == 0 {
 		rec.IncludedSegments = json.RawMessage(`[]`)
 	}
-	if rec.AssemblyDigest == "" {
-		rec.AssemblyDigest = ComputeAssemblyDigest(rec)
+	// The digest hashes these two members as text, and jsonb does not round-trip
+	// text: it re-spaces and reorders object keys. Without a canonical form the
+	// digest recomputed in GetByRun never matches the digest written moments
+	// earlier, so every assembly carrying a non-empty segment list failed its own
+	// read-back validation. Canonicalizing (sorted keys, compact, numeric
+	// literals preserved) makes writer and reader agree without weakening the
+	// digest: different content still yields different bytes.
+	rec.IncludedSegments = canonicalDigestJSON(rec.IncludedSegments)
+	if len(rec.SummaryCoverage) > 0 {
+		rec.SummaryCoverage = canonicalDigestJSON(rec.SummaryCoverage)
 	}
 	return rec
+}
+
+// canonicalDigestJSON re-encodes raw with object keys sorted and whitespace
+// removed. Malformed or trailing-garbage input is returned trimmed but
+// otherwise untouched so it cannot be normalized into a colliding shape.
+func canonicalDigestJSON(raw json.RawMessage) json.RawMessage {
+	trimmed := bytesTrimSpace(raw)
+	if len(trimmed) == 0 {
+		return trimmed
+	}
+	decoder := json.NewDecoder(bytes.NewReader(trimmed))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return trimmed
+	}
+	if decoder.More() {
+		return trimmed
+	}
+	out, err := json.Marshal(value)
+	if err != nil {
+		return trimmed
+	}
+	return json.RawMessage(out)
 }
 
 func validateAssemblyRecord(rec ContextAssemblyRecord) error {
@@ -288,20 +440,100 @@ func validateAssemblyRecord(rec ContextAssemblyRecord) error {
 	if rec.Mode == "" || rec.EstimatorProfile == "" || rec.EstimatorVersion == "" {
 		return ErrRunInvalid
 	}
+	// Snapshot hashes and digests must be exact lowercase 64-hex (no case/whitespace normalize).
 	if !isHex64(rec.PolicySnapshotHash) || !isHex64(rec.ModelSnapshotHash) ||
 		!isHex64(rec.CapabilitySnapshotHash) || !isHex64(rec.AgentSnapshotHash) ||
 		!isHex64(rec.SystemPromptHash) || !isHex64(rec.AssemblyDigest) {
 		return ErrRunInvalid
 	}
+	// AssemblyDigest must match current content digest, or classic-v1 for legacy
+	// classic rows (exact original semantics; do not rewrite old rows).
+	if !assemblyDigestMatches(rec) {
+		return ErrRunInvalid
+	}
+	switch rec.ToolSearchMode {
+	case AssemblyToolSearchModeNone, AssemblyToolSearchModeClientBounded:
+	default:
+		return ErrRunInvalid
+	}
+	if rec.ImmediateToolCount < 0 || rec.DeferredToolCount < 0 || rec.MaxLoadedToolCount < 0 ||
+		rec.ImmediateToolsTokens < 0 || rec.DeferredMetadataTokens < 0 || rec.DynamicToolLoadReserveTokens < 0 ||
+		rec.ToolsOverheadTokens < 0 {
+		return ErrRunInvalid
+	}
+
+	// Classic / non-agentic: all Agentic fields must be at defaults.
+	if rec.ToolSearchMode == AssemblyToolSearchModeNone {
+		if rec.ToolCatalogDigest != "" ||
+			rec.ImmediateToolCount != 0 || rec.DeferredToolCount != 0 || rec.MaxLoadedToolCount != 0 ||
+			rec.ImmediateToolsTokens != 0 || rec.DeferredMetadataTokens != 0 || rec.DynamicToolLoadReserveTokens != 0 {
+			return ErrRunInvalid
+		}
+		// Classic estimator version must not claim agentic.
+		if rec.EstimatorVersion == "contextwindow-estimator.agentic-openai-responses.v1" {
+			return ErrRunInvalid
+		}
+		return nil
+	}
+
+	// client_bounded: exact estimator version, lowercase 64-hex digest, structural bounds.
+	if rec.ToolSearchMode != AssemblyToolSearchModeClientBounded {
+		return ErrRunInvalid
+	}
+	if rec.EstimatorVersion != "contextwindow-estimator.agentic-openai-responses.v1" {
+		return ErrRunInvalid
+	}
+	// Catalog digest: exact lowercase 64-hex; no trim/case normalization on input.
+	if !isHex64(rec.ToolCatalogDigest) {
+		return ErrRunInvalid
+	}
+	// MaxLoadedToolCount == min(DeferredToolCount, 40)
+	wantMax := rec.DeferredToolCount
+	if wantMax > 40 {
+		wantMax = 40
+	}
+	if rec.MaxLoadedToolCount != wantMax || rec.MaxLoadedToolCount > 40 {
+		return ErrRunInvalid
+	}
+	// ToolsOverheadTokens == immediate+metadata+reserve (overflow-safe).
+	sum, err := addAssemblyTokens(
+		rec.ImmediateToolsTokens,
+		rec.DeferredMetadataTokens,
+		rec.DynamicToolLoadReserveTokens,
+	)
+	if err != nil || rec.ToolsOverheadTokens != sum {
+		return ErrRunInvalid
+	}
 	return nil
 }
 
+// addAssemblyTokens is overflow-safe sum of nonnegative int64 token components.
+func addAssemblyTokens(parts ...int64) (int64, error) {
+	var sum int64
+	for _, p := range parts {
+		if p < 0 {
+			return 0, ErrRunInvalid
+		}
+		if p > 0 && sum > (1<<63-1)-p {
+			return 0, ErrRunInvalid
+		}
+		sum += p
+	}
+	return sum, nil
+}
+
+// isHex64 requires exact lowercase 64-hex. Uppercase and whitespace are rejected
+// (never normalized into validity).
 func isHex64(v string) bool {
 	if len(v) != 64 {
 		return false
 	}
-	_, err := hex.DecodeString(v)
-	return err == nil
+	for _, c := range v {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func nullableStr(v string) any {

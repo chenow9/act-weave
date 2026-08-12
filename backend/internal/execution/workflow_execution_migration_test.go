@@ -42,7 +42,7 @@ func TestWorkflowExecutionMigration(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
 	if !version.Applied || version.Number != 5 || version.Dirty {
-		t.Fatalf("expected clean workflow execution migration version 19, got %+v", version)
+		t.Fatalf("expected clean workflow execution migration version 20, got %+v", version)
 	}
 	db := testDatabase.Open(t)
 	insertWorkflowExecutionMigrationFixtures(t, db)

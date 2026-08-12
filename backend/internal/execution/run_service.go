@@ -99,6 +99,9 @@ func (s *RunService) PrepareAgentRun(
 		TraceID: request.TraceID, Snapshots: snapshots,
 		AuthorizationSnapshot: authorization, InputSummary: request.InputSummary,
 		PrincipalSnapshot: request.PrincipalSnapshot,
+		// Root chat runs carry their own explicit empty freeze; startAgentRun
+		// still defaults to {} when the snapshot source produced none (legacy).
+		AgentGraphSnapshot: snapshots.Graph,
 	}, nil
 }
 
