@@ -76,6 +76,7 @@ func (b *Bridge) driveAgenticResume(
 		return "", "", err
 	}
 
+	ctx = withDelegationRunContext(ctx, job, run, plan.delBudget)
 	return b.runAgenticTurn(ctx, job, run, built, func(
 		turnCtx context.Context,
 		agent adk.TypedAgent[*schema.AgenticMessage],

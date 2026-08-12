@@ -638,8 +638,8 @@ func TestAgenticInitial_StrictRawSnapshotMatrix(t *testing.T) {
 				if !errors.Is(err, chatruntimebridge.ErrAgenticGraphSnapshotRequired) {
 					t.Fatalf("err=%v want errors.Is ErrAgenticGraphSnapshotRequired", err)
 				}
-				if strings.Contains(err.Error(), "AGENTIC_DELEGATION_MIGRATION_PENDING") {
-					t.Fatalf("must not classify invalid graph as migration-pending: %v", err)
+				if strings.Contains(err.Error(), "Audit required") {
+					t.Fatalf("must not classify invalid graph as missing delegation audit: %v", err)
 				}
 			} else if !strings.Contains(err.Error(), tc.wantSubstr) {
 				t.Fatalf("err=%v want %q", err, tc.wantSubstr)

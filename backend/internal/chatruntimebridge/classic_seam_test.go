@@ -172,16 +172,19 @@ func TestChatInitialEntryNamesTheAgenticRuntime(t *testing.T) {
 	}
 }
 
-// TestAgenticTurnsBuildTheAgentInOnePlace is the 4B-2 invariant expressed
-// structurally. adk resumes into a freshly built agent, so an initial turn and a
-// resume that build their agent in two places are free to drift into building
-// two different agents — and the restore then applies a half-executed
-// conversation to a different wire than the one that paused it.
-func TestAgenticTurnsBuildTheAgentInOnePlace(t *testing.T) {
+// TestAgenticTurnsBuildTheAgentInKnownPlaces: root turns share
+// buildAgenticAgentFromPlan (4B-2); Task 5 children use buildAgenticChildAgent.
+// A third call site would be a drift risk (resume vs initial, or classic rebuild).
+func TestAgenticTurnsBuildTheAgentInKnownPlaces(t *testing.T) {
 	t.Parallel()
 	sites := countCallSites(t, "einoruntime.BuildAgenticAgent(")
-	if sites != 1 {
-		t.Fatalf("the typed agent is built in %d places, want exactly 1 shared builder", sites)
+	if sites != 2 {
+		t.Fatalf("the typed agent is built in %d places, want exactly 2 (root plan + child)", sites)
+	}
+	root := strings.Count(functionBody(t, "func (b *Bridge) buildAgenticAgentFromPlan("), "einoruntime.BuildAgenticAgent(")
+	child := strings.Count(functionBody(t, "func (b *Bridge) buildAgenticChildAgent("), "einoruntime.BuildAgenticAgent(")
+	if root != 1 || child != 1 {
+		t.Fatalf("root builder sites=%d child builder sites=%d, want 1 each", root, child)
 	}
 }
 

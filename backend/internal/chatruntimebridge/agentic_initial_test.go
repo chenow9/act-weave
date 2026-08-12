@@ -1166,12 +1166,14 @@ func TestAgenticInitial_FrozenEmptyGraph_IgnoresPostFreezeLiveEdges(t *testing.T
 	}
 }
 
-// TestAgenticInitial_FrozenNonemptyGraph_BoundaryFail zero side effects.
-func TestAgenticInitial_FrozenNonemptyGraph_BoundaryFail(t *testing.T) {
+// TestAgenticInitial_FrozenNonemptyGraph_RequiresDelegationAudit: a valid freeze
+// with edges is accepted as topology (Task 5) but still fails closed before any
+// model construction when DelegationDeps.Audit is missing — and never consults
+// live ListEnabledEdges.
+func TestAgenticInitial_FrozenNonemptyGraph_RequiresDelegationAudit(t *testing.T) {
 	listCalls := atomic.Int64{}
 	f := newAgenticFixture(t, func(f *agenticFixture) {
 		f.classic.panic = true
-		// Valid freeze with one edge (root + target nodes) → pending.
 		childID := "f77ce000-0000-4000-8000-000000000077"
 		nodeModel := producerNodeModelSnap(testModelUUID)
 		capSnap := emptyCapSnap()
@@ -1211,8 +1213,8 @@ func TestAgenticInitial_FrozenNonemptyGraph_BoundaryFail(t *testing.T) {
 		}
 	})
 	err := f.bridge(t).Execute(context.Background(), f.job())
-	if err == nil || !strings.Contains(err.Error(), "AGENTIC_DELEGATION_MIGRATION_PENDING") {
-		t.Fatalf("err=%v", err)
+	if err == nil || !strings.Contains(err.Error(), "Audit required") {
+		t.Fatalf("err=%v want Audit required", err)
 	}
 	if listCalls.Load() != 0 {
 		t.Fatalf("must not list live edges, calls=%d", listCalls.Load())

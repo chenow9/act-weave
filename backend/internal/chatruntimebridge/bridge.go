@@ -1709,9 +1709,6 @@ func executionErrorCode(err error) string {
 	if errors.Is(err, chatruntime.ErrModelContentUnsupported) {
 		return chatruntime.ErrCodeModelContentUnsupported
 	}
-	if errors.Is(err, ErrAgenticDelegationMigrationPending) {
-		return "AGENTIC_DELEGATION_MIGRATION_PENDING"
-	}
 	if errors.Is(err, ErrAgenticModelSnapshotRequired) {
 		return "AGENTIC_MODEL_SNAPSHOT_REQUIRED"
 	}
@@ -1749,7 +1746,6 @@ func executionErrorCode(err error) string {
 		execution.ErrCodeContextAssemblyFailed,
 		execution.ErrCodeContextWindowExceededUpstream,
 		chatruntime.ErrCodeModelContentUnsupported,
-		"AGENTIC_DELEGATION_MIGRATION_PENDING",
 		"AGENTIC_MODEL_SNAPSHOT_REQUIRED",
 		"AGENTIC_GRAPH_SNAPSHOT_REQUIRED",
 		"AGENTIC_PROVIDER_TUPLE_UNSUPPORTED",

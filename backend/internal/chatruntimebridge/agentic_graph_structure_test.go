@@ -16,13 +16,13 @@ import (
 //
 // The parser package owns most of these shapes, but Bridge.Execute is where a
 // gap actually costs something: the parser returning an error is only useful if
-// the initial path treats it as fail-closed rather than, say, answering
-// AGENTIC_DELEGATION_MIGRATION_PENDING or falling back to live topology.
+// the initial path treats it as fail-closed rather than falling back to live
+// topology. Task 5 lifted AGENTIC_DELEGATION_MIGRATION_PENDING: valid remotes
+// with Audit reach attach; missing Audit fails closed with "Audit required".
 //
-// Every remote here is built by one shared producer-shaped builder, and the
-// migration-pending positive control below uses that same builder. That pairing
-// is what makes the rejections meaningful: it proves the builder emits remotes
-// the parser accepts, so a rejection can only come from the field under test.
+// Every remote here is built by one shared producer-shaped builder. That
+// pairing makes rejections meaningful: the builder emits remotes the parser
+// accepts, so a rejection can only come from the field under test.
 
 const (
 	structRemoteID     = "b22ce000-0000-4000-8000-0000000000a1"
@@ -83,30 +83,23 @@ func graphWithRemotes(t *testing.T, remotes ...agentdelegation.FrozenRemoteBindi
 	return raw
 }
 
-// TestAgenticInitial_PolicyValidRemoteIsMigrationPending is the G8 positive
-// control, and the most load-bearing test in this file.
-//
-// Every other remote row expects a rejection. Without this one, an
-// implementation that refused *all* frozen remotes — including legitimate ones —
-// would satisfy the entire suite, and the Task 5 handoff contract ("a valid
-// freeze that happens to contain delegation is deferred, not corrupt") would be
-// silently unprotected.
-func TestAgenticInitial_PolicyValidRemoteIsMigrationPending(t *testing.T) {
-	assertPending := func(t *testing.T, f *agenticFixture, err error) {
+// TestAgenticInitial_PolicyValidRemoteRequiresDelegationAudit is the G8 positive
+// control after Task 5: a policy-valid frozen remote is no longer "migration
+// pending" — it is real wiring. Without DelegationDeps.Audit the attach path
+// fails closed before any model construction; that is what proves the freeze
+// was accepted as topology (not corrupt) and then refused for missing wiring.
+func TestAgenticInitial_PolicyValidRemoteRequiresDelegationAudit(t *testing.T) {
+	assertAuditRequired := func(t *testing.T, f *agenticFixture, err error) {
 		t.Helper()
 		if err == nil {
-			t.Fatal("a frozen remote must still stop the initial path")
-		}
-		if !errors.Is(err, chatruntimebridge.ErrAgenticDelegationMigrationPending) {
-			t.Fatalf("err=%v want errors.Is ErrAgenticDelegationMigrationPending", err)
+			t.Fatal("a frozen remote without Audit must stop the initial path")
 		}
 		if errors.Is(err, chatruntimebridge.ErrAgenticGraphSnapshotRequired) {
 			t.Fatalf("a policy-valid remote must not be reported as a corrupt freeze: %v", err)
 		}
-		if !strings.Contains(err.Error(), "AGENTIC_DELEGATION_MIGRATION_PENDING") {
-			t.Fatalf("error code not surfaced: %v", err)
+		if !strings.Contains(err.Error(), "Audit required") {
+			t.Fatalf("err=%v want Audit required", err)
 		}
-		// Deferral is not execution: nothing may be constructed either.
 		if f.agentic.calls.Load() != 0 || f.classic.calls.Load() != 0 ||
 			f.mdl.calls.Load() != 0 || f.sinks.opens.Load() != 0 ||
 			f.assemblies.inserts.Load() != 0 {
@@ -118,14 +111,12 @@ func TestAgenticInitial_PolicyValidRemoteIsMigrationPending(t *testing.T) {
 
 	t.Run("fully_specified_remote", func(t *testing.T) {
 		rem := validFrozenRemote()
-		// The freeze must be structurally acceptable before Bridge sees it,
-		// otherwise this would prove nothing about the remote policy.
 		graph := graphWithRemotes(t, rem)
 		if _, err := agentdelegation.ParseSnapshot(testWSUUID, graph); err != nil {
 			t.Fatalf("the valid-remote fixture must parse: %v", err)
 		}
 		f := newAgenticFixture(t, func(f *agenticFixture) { f.run.AgentGraphSnapshot = graph })
-		assertPending(t, f, f.bridge(t).Execute(context.Background(), f.job()))
+		assertAuditRequired(t, f, f.bridge(t).Execute(context.Background(), f.job()))
 	})
 
 	t.Run("minimal_remote_no_card_no_secret", func(t *testing.T) {
@@ -135,7 +126,7 @@ func TestAgenticInitial_PolicyValidRemoteIsMigrationPending(t *testing.T) {
 		f := newAgenticFixture(t, func(f *agenticFixture) {
 			f.run.AgentGraphSnapshot = graphWithRemotes(t, rem)
 		})
-		assertPending(t, f, f.bridge(t).Execute(context.Background(), f.job()))
+		assertAuditRequired(t, f, f.bridge(t).Execute(context.Background(), f.job()))
 	})
 
 	t.Run("wildcard_allowlist_entry", func(t *testing.T) {
@@ -144,7 +135,7 @@ func TestAgenticInitial_PolicyValidRemoteIsMigrationPending(t *testing.T) {
 		f := newAgenticFixture(t, func(f *agenticFixture) {
 			f.run.AgentGraphSnapshot = graphWithRemotes(t, rem)
 		})
-		assertPending(t, f, f.bridge(t).Execute(context.Background(), f.job()))
+		assertAuditRequired(t, f, f.bridge(t).Execute(context.Background(), f.job()))
 	})
 
 	t.Run("public_literal_ip_endpoint", func(t *testing.T) {
@@ -155,12 +146,10 @@ func TestAgenticInitial_PolicyValidRemoteIsMigrationPending(t *testing.T) {
 		f := newAgenticFixture(t, func(f *agenticFixture) {
 			f.run.AgentGraphSnapshot = graphWithRemotes(t, rem)
 		})
-		assertPending(t, f, f.bridge(t).Execute(context.Background(), f.job()))
+		assertAuditRequired(t, f, f.bridge(t).Execute(context.Background(), f.job()))
 	})
 
 	t.Run("zero_remotes_still_executes", func(t *testing.T) {
-		// The other end of the same axis: an explicitly empty remote list is not
-		// delegation and must run normally.
 		f := newAgenticFixture(t, func(f *agenticFixture) {
 			f.run.AgentGraphSnapshot = graphWithRemotes(t)
 		})
@@ -174,11 +163,10 @@ func TestAgenticInitial_PolicyValidRemoteIsMigrationPending(t *testing.T) {
 }
 
 // TestAgenticInitial_RemotePolicyRejectionsAtBridge is the G7 rejection face.
-// Each row starts from the exact remote that reaches migration-pending above and
-// changes one policy-relevant field, so the difference in outcome isolates that
-// field. The rejection must be the corrupt-freeze family, never migration-pending
-// (which runRunLevelRows also asserts): classifying a hostile endpoint as
-// "deferred to Task 5" would smuggle it past the freeze contract.
+// Each row starts from the valid remote (HTTPS + allowlist + secret ownership)
+// and changes one policy-relevant field. The rejection must be the
+// corrupt-freeze family — never treated as a soft deferral that smuggles a
+// hostile endpoint past the freeze contract.
 func TestAgenticInitial_RemotePolicyRejectionsAtBridge(t *testing.T) {
 	rows := []struct {
 		name   string
@@ -256,8 +244,8 @@ func TestAgenticInitial_RemotePolicyRejectionsAtBridge(t *testing.T) {
 				rem := validFrozenRemote()
 				tc.mutate(&rem)
 				// Effectiveness guard: the row must actually differ from the
-				// remote that reaches migration-pending, otherwise it would be
-				// asserting a rejection that has nothing to do with its name.
+				// valid remote, otherwise it would assert a rejection that has
+				// nothing to do with its name.
 				if remoteFingerprint(t, rem) == remoteFingerprint(t, validFrozenRemote()) {
 					t.Fatal("row did not change any remote field")
 				}

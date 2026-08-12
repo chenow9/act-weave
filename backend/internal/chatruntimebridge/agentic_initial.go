@@ -30,11 +30,6 @@ import (
 // ParallelToolCalls=false, no auto-cache). No classic Chat Completions fallback.
 type AgenticModelBuilder func(ctx context.Context, cfg modelconfig.Config) (model.AgenticModel, error)
 
-// ErrAgenticDelegationMigrationPending is returned when the initial Agentic path
-// would require Task 5 AgentTool/A2A delegation. Fail closed: never attach
-// classic delegation tools or invoke b.buildModel from the initial path.
-var ErrAgenticDelegationMigrationPending = errors.New("AGENTIC_DELEGATION_MIGRATION_PENDING")
-
 // ErrAgenticModelSnapshotRequired is returned when run.ModelSnapshot is missing
 // or cannot be used as the sole model identity for Agentic initial construction.
 var ErrAgenticModelSnapshotRequired = errors.New("AGENTIC_MODEL_SNAPSHOT_REQUIRED")
@@ -210,61 +205,48 @@ func extractAgenticCapabilitiesFromModelSnapshot(raw json.RawMessage) json.RawMe
 	return doc.AgenticCapabilities
 }
 
-// requireFrozenAgentGraphForInitial validates run.AgentGraphSnapshot as the sole
-// authority for Task 4A delegation applicability.
+// requireFrozenAgentGraph validates run.AgentGraphSnapshot as the sole topology
+// authority for Agentic turns (Task 4A/5).
 //
 // Contract (agent_graph_snapshot.v1 via agentdelegation.ParseSnapshot):
 //   - Missing / null / {} / unversioned / integrity failure → ErrAgenticGraphSnapshotRequired
 //     (never ListEnabledEdges / live topology to recover).
-//   - Valid freeze with zero INTERNAL edges and zero remotes for all frozen callers
-//     → proceed (even if live edges were added after freeze).
-//   - Valid freeze with any edge or remote → ErrAgenticDelegationMigrationPending.
+//   - Valid freeze (empty or with edges/remotes) → returned for attachAgenticDelegationTools.
 //
-// Never calls attachDelegationTools or classic buildModel.
+// Never calls classic attachDelegationTools or classic buildModel.
 //
 // cfg is the already-strict-parsed run.ModelSnapshot. The graph is not an
 // independent island: its root node must describe exactly the model identity
-// that actually drives execution, otherwise a self-consistent hostile graph
-// (three-layer lock 9/9/9) could ride alongside run.ModelSnapshot lockVersion 1.
-// The cross-snapshot assertions run before the edges/remotes classification so a
-// forged graph can never be answered with AGENTIC_DELEGATION_MIGRATION_PENDING.
-func requireFrozenAgentGraphForInitial(
+// that actually drives execution.
+func requireFrozenAgentGraph(
 	workspaceID string,
 	run execution.AgentRun,
 	cfg modelconfig.Config,
-) error {
+) (*agentdelegation.GraphSnapshotV1, error) {
 	// No TrimSpace of the freeze blob — outer whitespace fails closed in strict parse.
 	rawSnap := run.AgentGraphSnapshot
 	if len(rawSnap) == 0 || string(rawSnap) == "null" || string(rawSnap) == "{}" {
-		return fmt.Errorf("%w: agent_graph_snapshot.v1 missing (explicit empty freeze required)", ErrAgenticGraphSnapshotRequired)
+		return nil, fmt.Errorf("%w: agent_graph_snapshot.v1 missing (explicit empty freeze required)", ErrAgenticGraphSnapshotRequired)
 	}
 	parsed, perr := agentdelegation.ParseSnapshot(workspaceID, rawSnap)
 	if perr != nil {
 		// Never embed raw snapshot / secrets in the public error surface.
-		return fmt.Errorf("%w: agent_graph_snapshot.v1 invalid", ErrAgenticGraphSnapshotRequired)
+		return nil, fmt.Errorf("%w: agent_graph_snapshot.v1 invalid", ErrAgenticGraphSnapshotRequired)
 	}
 	if parsed == nil {
-		return fmt.Errorf("%w: agent_graph_snapshot.v1 empty after parse", ErrAgenticGraphSnapshotRequired)
+		return nil, fmt.Errorf("%w: agent_graph_snapshot.v1 empty after parse", ErrAgenticGraphSnapshotRequired)
 	}
 	// Root must match the run agent (cross-identity fail closed).
 	runAgentID := strings.TrimSpace(run.AgentID)
 	root := strings.TrimSpace(parsed.RootAgentID)
 	if root == "" || runAgentID == "" || root != runAgentID {
-		return fmt.Errorf("%w: graph rootAgentId does not match run agent", ErrAgenticGraphSnapshotRequired)
+		return nil, fmt.Errorf("%w: graph rootAgentId does not match run agent", ErrAgenticGraphSnapshotRequired)
 	}
 	if err := requireGraphRootMatchesFrozenModel(parsed, runAgentID, cfg); err != nil {
-		return err
+		return nil, err
 	}
-	if len(parsed.Edges) > 0 {
-		return fmt.Errorf("%w: frozen graph edges present", ErrAgenticDelegationMigrationPending)
-	}
-	for caller, list := range parsed.FrozenRemotesByCaller {
-		if len(list) > 0 {
-			return fmt.Errorf("%w: frozen A2A remotes present for caller %s", ErrAgenticDelegationMigrationPending, caller)
-		}
-	}
-	// Explicit empty freeze: proceed. Post-freeze live topology is ignored.
-	return nil
+	// Post-freeze live topology is ignored; edges/remotes in the freeze are authoritative.
+	return parsed, nil
 }
 
 // requireGraphRootMatchesFrozenModel binds the graph freeze to the model freeze.
@@ -416,11 +398,13 @@ type agenticFrozenPlan struct {
 	binding           runAgentBinding
 	frozenCaps        []chatruntime.SnapshotCapability
 	policy            sessioncontext.ResolvedSnapshot
+	graph             *agentdelegation.GraphSnapshotV1
 	tools             []tool.BaseTool
 	catalog           *einoruntime.ToolCatalogSnapshot
 	instruction       string
 	promptCacheKey    string
 	hasToolsOrCatalog bool
+	delBudget         *agentdelegation.Budget
 }
 
 // planAgenticRun performs the frozen-identity validation shared by every Agentic
@@ -472,7 +456,8 @@ func (b *Bridge) planAgenticRun(
 
 	// 3) Frozen agent graph is the only topology authority (no ListEnabledEdges),
 	// and its root node must agree with the frozen model identity.
-	if err := requireFrozenAgentGraphForInitial(job.WorkspaceID, run, cfg); err != nil {
+	graph, err := requireFrozenAgentGraph(job.WorkspaceID, run, cfg)
+	if err != nil {
 		return nil, err
 	}
 
@@ -498,10 +483,15 @@ func (b *Bridge) planAgenticRun(
 		return nil, err
 	}
 
-	// 5) Executable tools only from immutable capability snapshot — never attachDelegationTools.
+	// 5) Capability tools from the immutable snapshot, then Typed AgentTool / A2A
+	// from the frozen graph (never classic attachDelegationTools).
 	pendingKey := pendingConfirmKey(job.WorkspaceID, job.RunID)
 	b.clearPending(pendingKey)
 	tools, err := b.buildPipelineToolsFrom(ctx, job, run, pendingKey, frozenCaps)
+	if err != nil {
+		return nil, err
+	}
+	tools, delBudget, err := b.attachAgenticDelegationTools(ctx, job, run, tools, pendingKey, graph)
 	if err != nil {
 		return nil, err
 	}
@@ -529,11 +519,13 @@ func (b *Bridge) planAgenticRun(
 		binding:           binding,
 		frozenCaps:        frozenCaps,
 		policy:            policy,
+		graph:             graph,
 		tools:             tools,
 		catalog:           catalog,
 		instruction:       instruction,
 		promptCacheKey:    promptCacheKey,
 		hasToolsOrCatalog: len(tools) > 0 || (catalog != nil && catalog.Len() > 0),
+		delBudget:         delBudget,
 	}, nil
 }
 
@@ -555,8 +547,17 @@ func (b *Bridge) buildAgenticAgentFromPlan(
 	if err != nil {
 		return nil, fmt.Errorf("build agentic model: %w", err)
 	}
+	name := "agent-" + strings.TrimSpace(run.AgentID)
+	desc := "workspace agent"
+	if n := strings.TrimSpace(plan.configuredAgent.Name); n != "" {
+		name = n
+	}
+	if d := strings.TrimSpace(plan.configuredAgent.RoleDescription); d != "" {
+		desc = d
+	}
 	built, err := einoruntime.BuildAgenticAgent(ctx, einoruntime.AgenticAgentBuildConfig{
-		Name:                     "agent-" + strings.TrimSpace(run.AgentID),
+		Name:                     name,
+		Description:              desc,
 		Model:                    agenticModel,
 		Tools:                    plan.tools,
 		Catalog:                  plan.catalog,
@@ -565,6 +566,8 @@ func (b *Bridge) buildAgenticAgentFromPlan(
 		ToolSearchMode:           einoruntime.ToolSearchModeClientBounded,
 		ClientToolSearchVerified: plan.hasToolsOrCatalog,
 		PromptCacheKey:           plan.promptCacheKey,
+		// Instruction deliberately empty: frozen system prompt is the leading
+		// assembled message. Children under AgentTool set Instruction themselves.
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build agentic agent: %w", err)
@@ -612,6 +615,7 @@ func (b *Bridge) driveAgenticInitial(
 		return "", "", err
 	}
 
+	ctx = withDelegationRunContext(ctx, job, run, plan.delBudget)
 	return b.runAgenticTurn(ctx, job, run, built, func(
 		turnCtx context.Context,
 		agent adk.TypedAgent[*schema.AgenticMessage],
@@ -687,6 +691,9 @@ func buildFrozenToolCatalogStrict(
 			default:
 				entry.Kind = einoruntime.ToolKindTool
 			}
+		} else if kind := catalogKindForTool(t); kind != "" {
+			// Graph-edge AgentTool / A2A outbound are not capability releases.
+			entry.Kind = kind
 		}
 		inputs = append(inputs, entry)
 	}

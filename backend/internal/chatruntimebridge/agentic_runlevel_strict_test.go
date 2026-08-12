@@ -58,10 +58,10 @@ func runRunLevelRows(t *testing.T, rows []runLevelRow) {
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("err=%v want errors.Is %v", err, tc.wantErr)
 			}
-			// A run-level freeze defect must never be laundered into the Task 5
-			// "delegation not migrated yet" bucket.
-			if strings.Contains(err.Error(), "AGENTIC_DELEGATION_MIGRATION_PENDING") {
-				t.Fatalf("must not classify a freeze defect as migration-pending: %v", err)
+			// A run-level freeze defect must never be laundered into the
+			// "delegation wiring missing" bucket.
+			if strings.Contains(err.Error(), "Audit required") {
+				t.Fatalf("must not classify a freeze defect as missing delegation audit: %v", err)
 			}
 			if f.agentic.calls.Load() != 0 || f.classic.calls.Load() != 0 ||
 				f.mdl.calls.Load() != 0 || f.sinks.opens.Load() != 0 {

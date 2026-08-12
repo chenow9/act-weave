@@ -9,7 +9,8 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 )
 
-// AgentParts is everything needed to materialize one ChatModelAgent node under Bridge.
+// AgentParts is everything needed to materialize one classic ChatModelAgent node
+// under Bridge (classic seam until Task 9).
 type AgentParts struct {
 	AgentID            string
 	Name               string
@@ -17,6 +18,24 @@ type AgentParts struct {
 	Instruction        string
 	Model              model.BaseChatModel
 	Tools              []tool.BaseTool // existing TOOL/WORKFLOW tools
+	PromptRevisionID   string
+	PromptRevisionHash string
+	ModelConfigID      string
+	ModelConfigLockVer int64
+	CapabilitySnapshot json.RawMessage
+}
+
+// AgenticAgentParts is everything needed to materialize one Typed Agentic child
+// under NewTypedAgentTool. Model is AgenticModel — never schema.Message / classic
+// ChatModel. Tools are that node's capability tools plus any nested Agent/A2A
+// tools already attached for deeper graph levels.
+type AgenticAgentParts struct {
+	AgentID            string
+	Name               string
+	Description        string
+	Instruction        string
+	Model              model.AgenticModel
+	Tools              []tool.BaseTool
 	PromptRevisionID   string
 	PromptRevisionHash string
 	ModelConfigID      string

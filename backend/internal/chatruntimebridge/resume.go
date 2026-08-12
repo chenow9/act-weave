@@ -90,7 +90,7 @@ func (m EinoChatResume) EffectiveRuntimeGeneration() string {
 
 // runCarriesFrozenAgentGraph reports whether the run already has the freeze
 // document that only Agentic-era root chat writes. Missing / null / {} match
-// requireFrozenAgentGraphForInitial's "no freeze" cases — those are the
+// requireFrozenAgentGraph's "no freeze" cases — those are the
 // classic in-flight population this seam still serves until Task 9.
 func runCarriesFrozenAgentGraph(run execution.AgentRun) bool {
 	raw := run.AgentGraphSnapshot
