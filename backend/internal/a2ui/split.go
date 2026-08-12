@@ -72,6 +72,9 @@ func SplitTextAndA2UI(full string) (text string, payload *Payload, result EmitRe
 	if inner == "" || !json.Valid([]byte(inner)) {
 		return text, nil, EmitInvalidJSON
 	}
+	// Accept either:
+	//  1) envelope: {"version","catalogId","surface":{...}}
+	//  2) bare surface object: {"components":...} / any JSON object (common model output)
 	var wire struct {
 		Version   string          `json:"version"`
 		CatalogID string          `json:"catalogId"`
@@ -81,6 +84,10 @@ func SplitTextAndA2UI(full string) (text string, payload *Payload, result EmitRe
 		return text, nil, EmitInvalidJSON
 	}
 	surface := bytes.TrimSpace(wire.Surface)
+	if len(surface) == 0 {
+		// Bare surface: the entire fence body is the surface object.
+		surface = bytes.TrimSpace([]byte(inner))
+	}
 	if len(surface) == 0 {
 		return text, nil, EmitInvalidJSON
 	}

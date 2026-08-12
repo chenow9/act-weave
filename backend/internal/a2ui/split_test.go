@@ -245,3 +245,23 @@ func TestProjectionEnabledEnv(t *testing.T) {
 		t.Fatal("OFF must disable")
 	}
 }
+
+func TestSplitTextAndA2UI_BareSurfaceObject(t *testing.T) {
+	t.Parallel()
+	// Models often emit surface JSON directly (no envelope.surface wrapper).
+	full := `Hello, pick a city:<<<A2UI>>>{"components":[{"id":"root","component":"Column"}]}<<<END_A2UI>>>`
+	text, payload, result := a2ui.SplitTextAndA2UI(full)
+	if result != a2ui.EmitOK {
+		t.Fatalf("result=%s want ok", result)
+	}
+	if text != "Hello, pick a city:" {
+		t.Fatalf("text=%q", text)
+	}
+	if payload == nil || !strings.Contains(string(payload.Surface), `"components"`) {
+		t.Fatalf("payload surface=%v", payload)
+	}
+	prepared := a2ui.PrepareAssistantContent(full, a2ui.PrepareOptions{EnableA2UI: true, ProjectionEnabled: true})
+	if !prepared.AttachedA2UI {
+		t.Fatalf("expected attached a2ui, result=%s content=%s", prepared.Result, prepared.Content)
+	}
+}
