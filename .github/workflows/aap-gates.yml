@@ -188,6 +188,14 @@ jobs:
           node-version: "22.22.3"
           cache: npm
           cache-dependency-path: demos/aap-chat/package-lock.json
+      # The demo takes the SDK from the working tree, and that package points at
+      # dist/, which is not committed. Without this the demo's own sources
+      # type-check but the SDK import resolves to nothing.
+      - name: build the sdk the demo links against
+        working-directory: sdk/typescript
+        run: |
+          npm ci
+          npm run build
       - name: install
         run: npm ci
       - name: renderer unit + type-check + build
