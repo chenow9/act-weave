@@ -96,6 +96,38 @@ export {
 
 export { RunReducer } from "./reducer.js";
 
+export type {
+  A2UIChartPoint,
+  A2UIChartSeries,
+  A2UIChartType,
+  A2UIComponentName,
+  A2UIComponentNode,
+  A2UIDataBinding,
+  A2UIDynamic,
+  A2UISurface,
+  A2UIValueFormat,
+} from "./generated/a2ui.gen.js";
+export {
+  A2UI_CATALOG_ID,
+  A2UI_CHART_TYPES,
+  A2UI_CHILD_MEMBERS,
+  A2UI_COMPONENT_NAMES,
+  A2UI_ENUMS,
+  A2UI_LIMITS,
+  A2UI_ROOT_ID,
+  A2UI_SURFACE_VERSION,
+  A2UI_VALUE_FORMATS,
+  isA2UIChartType,
+  isA2UIComponentName,
+} from "./generated/a2ui.gen.js";
+export {
+  isA2UIDataBinding,
+  isKnownA2UICatalog,
+  iterCharts,
+  resolveBinding,
+  type A2UIChart,
+} from "./a2ui.js";
+
 export type { AccessTokenMaterial, MemoryTokenProviderOptions, TokenProvider } from "./token-provider.js";
 export { MemoryTokenProvider, StaticTokenProvider } from "./token-provider.js";
 

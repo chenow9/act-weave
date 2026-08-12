@@ -102,6 +102,38 @@ function renderAssistant(item: ProtocolItem) {
 `item.failed`; progressive `text_delta` only mutates the live text part until
 the completed snapshot overwrites it.
 
+### Reading a surface
+
+A surface is a flat component graph plus an optional `dataModel`. Any member is
+either a literal or a JSON Pointer into that data model, so read members through
+`resolveBinding` rather than by inspecting their shape. The catalog vocabulary
+(`A2UI_CATALOG_ID`, `A2UI_COMPONENT_NAMES`, `A2UI_CHART_TYPES`, `A2UI_LIMITS`, …)
+is generated from the same catalog the server validates against.
+
+```ts
+import { findA2UIPart, isKnownA2UICatalog, iterCharts, joinTextParts, type ProtocolItem } from "@actweave/agent-client";
+
+function readAssistant(item: ProtocolItem) {
+  const text = joinTextParts(item);
+  const surface = findA2UIPart(item)?.surface;
+  // A surface from a newer catalog may use components that do not exist here.
+  // Falling back to the text is honest; drawing half a UI is not.
+  if (!isKnownA2UICatalog(surface)) return { text, charts: [] };
+  // Charts arrive as measurements: values are numbers, `unit` and `valueFormat`
+  // say how they should read, and nothing visual is prescribed.
+  return { text, charts: iterCharts(surface) };
+}
+```
+
+| Concern | Contract |
+| --- | --- |
+| Catalog | Every delivered surface declares `catalogId`. Check it with `isKnownA2UICatalog` before rendering; the Agent Profile advertises the set as `a2ui.catalogIds`. |
+| Schemas | Fetch from `GET {base}/api/v1/a2ui/catalogs/standard/v1/catalog.json` (public, ETag). `catalogId` is an identifier, not necessarily a URL you can fetch. |
+| Bindings | `{ "path": "/pointer" }` anywhere a value is allowed. `resolveBinding(surface, value)` returns `undefined` when the pointer reaches nothing. |
+| Unknown components | Degrade per component: render a placeholder for the one you do not know, keep drawing its siblings. Never fail the message. |
+| Limits | `A2UI_LIMITS` mirrors the server's structural caps (components, depth, series, points). Respect them and a foreign surface cannot drive unbounded work. |
+| Official renderers | The surface is the A2UI `createSurface` payload, so it can be fed to a conforming renderer unchanged. |
+
 ## Development
 
 ```bash

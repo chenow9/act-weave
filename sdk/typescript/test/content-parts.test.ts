@@ -12,17 +12,18 @@ import {
 } from "../src/index.js";
 
 const surface = {
-  root: "form",
-  components: {
-    form: { type: "Column", children: ["title"] },
-    title: { type: "Text", text: "Hello" },
-  },
+  surfaceId: "srf_1",
+  catalogId: "https://catalog.actweave.dev/standard/v1/catalog.json",
+  components: [
+    { id: "form", component: "Column", children: ["title"] },
+    { id: "title", component: "Text", text: "Hello" },
+  ],
 };
 
 const a2uiPart: A2UIContentPart = {
   type: "a2ui",
-  version: "a2ui-surface.v0",
-  catalogId: "standard",
+  version: "a2ui-surface.v1",
+  catalogId: "https://catalog.actweave.dev/standard/v1/catalog.json",
   surface,
 };
 
@@ -83,7 +84,7 @@ describe("findA2UIPart", () => {
     const content = [textPart, a2uiPart, { type: "a2ui", surface: { other: true } }];
     const found = findA2UIPart(content);
     expect(found).toBeDefined();
-    expect(found?.catalogId).toBe("standard");
+    expect(found?.catalogId).toBe("https://catalog.actweave.dev/standard/v1/catalog.json");
     expect(found?.surface).toEqual(surface);
 
     const item: ProtocolItem = {
@@ -92,7 +93,7 @@ describe("findA2UIPart", () => {
       status: "completed",
       content,
     };
-    expect(findA2UIPart(item)?.version).toBe("a2ui-surface.v0");
+    expect(findA2UIPart(item)?.version).toBe("a2ui-surface.v1");
   });
 
   it("returns undefined when no a2ui part is present", () => {

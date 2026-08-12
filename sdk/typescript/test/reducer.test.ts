@@ -113,9 +113,12 @@ describe("RunReducer golden traces", () => {
     } as const;
     const itemId = "81000000-0000-4000-8000-0000000000a1";
     const surface = {
-      root: "form",
-      components: { form: { type: "Column", children: ["password"] } },
-      password: { type: "TextField", label: "Password", name: "password" },
+      surfaceId: "srf_1",
+      catalogId: "https://catalog.actweave.dev/standard/v1/catalog.json",
+      components: [
+        { id: "form", component: "Column", children: ["password"] },
+        { id: "password", component: "TextField", label: "Password" },
+      ],
     };
 
     const events: ProtocolEventEnvelope[] = [
@@ -198,8 +201,8 @@ describe("RunReducer golden traces", () => {
               { type: "text", text: "Confirm booking:" },
               {
                 type: "a2ui",
-                version: "a2ui-surface.v0",
-                catalogId: "standard",
+                version: "a2ui-surface.v1",
+                catalogId: "https://catalog.actweave.dev/standard/v1/catalog.json",
                 surface,
               },
             ],
@@ -224,13 +227,13 @@ describe("RunReducer golden traces", () => {
 
     const a2ui = findA2UIPart(item);
     expect(a2ui).toBeDefined();
-    expect(a2ui?.version).toBe("a2ui-surface.v0");
-    expect(a2ui?.catalogId).toBe("standard");
+    expect(a2ui?.version).toBe("a2ui-surface.v1");
+    expect(a2ui?.catalogId).toBe("https://catalog.actweave.dev/standard/v1/catalog.json");
     expect(a2ui?.surface).toEqual(surface);
 
     const content = item.content as unknown[];
     expect(content).toHaveLength(2);
     expect(content[0]).toMatchObject({ type: "text", text: "Confirm booking:" });
-    expect(content[1]).toMatchObject({ type: "a2ui", version: "a2ui-surface.v0" });
+    expect(content[1]).toMatchObject({ type: "a2ui", version: "a2ui-surface.v1" });
   });
 });
