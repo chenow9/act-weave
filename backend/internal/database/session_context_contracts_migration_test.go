@@ -43,7 +43,7 @@ func TestSessionContextContractsMigration(t *testing.T) {
 		if err := migrator.Up(); err != nil {
 			t.Fatalf("apply migrations up: %v", err)
 		}
-		assertMigrationVersion(t, migrator, 18) // includes later additive migrations
+		assertMigrationVersion(t, migrator, 20) // includes later additive migrations
 	})
 
 	db := openSessionContextDB(t, dsn)
@@ -58,9 +58,9 @@ func TestSessionContextContractsMigration(t *testing.T) {
 	_ = db.Close()
 
 	// Roll back all additive migrations (2..latest) to baseline 000001, then up again.
-	// Latest is 16 → 15 down steps leaves version 1.
+	// Latest is 20 → 19 down steps leaves version 1.
 	applyMigrations(t, dsn, func(migrator *database.Migrator) {
-		if err := migrator.Down(17); err != nil {
+		if err := migrator.Down(19); err != nil {
 			t.Fatalf("roll back session context migration: %v", err)
 		}
 		assertMigrationVersion(t, migrator, 1)
@@ -71,7 +71,7 @@ func TestSessionContextContractsMigration(t *testing.T) {
 		if err := migrator.Up(); err != nil {
 			t.Fatalf("re-apply session context migration: %v", err)
 		}
-		assertMigrationVersion(t, migrator, 18)
+		assertMigrationVersion(t, migrator, 20)
 	})
 	db = openSessionContextDB(t, dsn)
 	assertSessionContextColumns(t, db)

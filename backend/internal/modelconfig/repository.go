@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -17,6 +18,10 @@ var (
 	ErrConflict = errors.New("model config conflict")
 	ErrInvalid  = errors.New("invalid model config")
 	ErrInUse    = errors.New("model config is in use")
+	// ErrAgenticCapabilitiesReadOnly is returned when a create/update request
+	// includes any presence of agenticCapabilities (null, {}, or data). Mapped
+	// to HTTP 400 — not 422 — without changing other model validation.
+	ErrAgenticCapabilitiesReadOnly = errors.New("agenticCapabilities is read-only")
 )
 
 const configColumns = `
@@ -41,6 +46,7 @@ const configColumns = `
 	),
 	m.options,
 	m.runtime_capabilities,
+	m.agentic_capabilities,
 	m.status,
 	m.last_verified_at,
 	m.last_latency_ms,
@@ -93,7 +99,10 @@ func NewRepository(db *sql.DB, usageChecker ...UsageChecker) (*Repository, error
 }
 
 func (r *Repository) Create(ctx context.Context, input NewConfig) (Config, error) {
-	input = normalizeNewConfig(input)
+	input, err := normalizeNewConfig(input)
+	if err != nil {
+		return Config{}, err
+	}
 	if err := validateNewConfig(input); err != nil {
 		return Config{}, err
 	}
@@ -182,9 +191,20 @@ func (r *Repository) Update(
 	input UpdateConfig,
 ) (Config, error) {
 	workspaceID, configID = strings.TrimSpace(workspaceID), strings.TrimSpace(configID)
-	input = normalizeUpdateConfig(input)
+	input, providerErr := normalizeUpdateConfig(input)
+	if providerErr != nil {
+		return Config{}, providerErr
+	}
 	if !validUUID(workspaceID) || !validUUID(configID) || validateUpdateConfig(input) != nil {
 		return Config{}, ErrInvalid
+	}
+	// Any user mutation that can change wire behavior atomically clears *all*
+	// verification evidence in the same CAS update (D10 / Task 3 fix):
+	// agentic_capabilities={}, last_verified_at/latency/error NULL, status
+	// UNVERIFIED (or DISABLED when explicitly requested).
+	status := StatusUnverified
+	if input.Status == StatusDisabled {
+		status = StatusDisabled
 	}
 	config, err := scanConfig(r.db.QueryRowContext(ctx, `
 		WITH updated AS (
@@ -196,6 +216,10 @@ func (r *Repository) Update(
 				credential_secret_id = $7,
 				options = $8,
 				runtime_capabilities = $9,
+				agentic_capabilities = '{}'::jsonb,
+				last_verified_at = NULL,
+				last_latency_ms = NULL,
+				last_error_code = NULL,
 				status = $10,
 				updated_by = $11,
 				updated_at = clock_timestamp(),
@@ -219,7 +243,7 @@ func (r *Repository) Update(
 		input.CredentialSecretID,
 		[]byte(input.Options),
 		[]byte(input.RuntimeCapabilities),
-		input.Status,
+		status,
 		input.UpdatedBy,
 		input.ExpectedLockVersion,
 	))
@@ -237,25 +261,60 @@ func (r *Repository) RecordVerification(ctx context.Context, input VerificationU
 	input.ConfigID = strings.TrimSpace(input.ConfigID)
 	input.VerifiedBy = strings.TrimSpace(input.VerifiedBy)
 	input.ErrorCode = normalizeOptionalText(input.ErrorCode)
+	caps, err := NormalizeAgenticCapabilitiesRaw(input.AgenticCapabilities)
+	if err != nil {
+		return Config{}, ErrInvalid
+	}
 	if !validUUID(input.WorkspaceID) || !validUUID(input.ConfigID) ||
 		!validUUID(input.VerifiedBy) || input.ExpectedLockVersion < 1 || input.LatencyMS < 0 ||
 		(input.Status != StatusVerified && input.Status != StatusError) ||
-		(input.Status == StatusVerified && input.ErrorCode != nil) ||
-		(input.Status == StatusError && (input.ErrorCode == nil || !validStableCode(*input.ErrorCode))) {
+		(input.Status == StatusVerified && (input.ErrorCode != nil || IsUnverifiedAgenticCapabilities(caps))) ||
+		(input.Status == StatusError && (input.ErrorCode == nil || !validVerificationErrorCode(*input.ErrorCode) || !IsUnverifiedAgenticCapabilities(caps))) {
 		return Config{}, ErrInvalid
+	}
+	// On VERIFIED, capability lock identity must match the CAS expected version
+	// and VerifiedAt must be non-zero (shared with last_verified_at at UTC second).
+	var lastVerifiedAt any
+	if input.Status == StatusVerified {
+		doc, _, parseErr := ParseAgenticCapabilities(caps)
+		if parseErr != nil || doc.VerifiedLockVersion != input.ExpectedLockVersion {
+			return Config{}, ErrInvalid
+		}
+		if input.VerifiedAt.IsZero() {
+			return Config{}, ErrInvalid
+		}
+		// Persist the same UTC-second timestamp into last_verified_at so the
+		// read invariant (capability.VerifiedAt == LastVerifiedAt @ second) holds.
+		// SQL uses GREATEST(created_at, $9) so model_configs_verification_time_check
+		// (last_verified_at >= created_at) still holds when truncation lands on the
+		// same second as create (sub-second created_at can otherwise exceed truncated evidence).
+		lastVerifiedAt = input.VerifiedAt.UTC().Truncate(time.Second)
+		// Capability document must already stamp the same second.
+		if !doc.VerifiedAt.UTC().Truncate(time.Second).Equal(lastVerifiedAt.(time.Time)) {
+			return Config{}, ErrInvalid
+		}
+	} else {
+		// ERROR path: canonical verification-attempt timestamp (UTC second).
+		// Prefer caller VerifiedAt when set; otherwise clock. Always non-nil.
+		if !input.VerifiedAt.IsZero() {
+			lastVerifiedAt = input.VerifiedAt.UTC().Truncate(time.Second)
+		} else {
+			lastVerifiedAt = time.Now().UTC().Truncate(time.Second)
+		}
 	}
 	config, err := scanConfig(r.db.QueryRowContext(ctx, `
 		WITH updated AS (
 			UPDATE model_configs
 			SET status = $3,
-				last_verified_at = clock_timestamp(),
+				last_verified_at = GREATEST(created_at, $9::timestamptz),
 				last_latency_ms = $4,
 				last_error_code = $5,
-				updated_by = $6,
+				agentic_capabilities = $6::jsonb,
+				updated_by = $7,
 				updated_at = clock_timestamp(),
 				lock_version = lock_version + 1
 			WHERE workspace_id = $1 AND id = $2
-			  AND deleted_at IS NULL AND lock_version = $7
+			  AND deleted_at IS NULL AND lock_version = $8
 			RETURNING *
 		)
 		SELECT `+configColumns+`
@@ -264,7 +323,7 @@ func (r *Repository) RecordVerification(ctx context.Context, input VerificationU
 		  ON s.workspace_id = m.workspace_id
 		 AND s.id = m.credential_secret_id
 	`, input.WorkspaceID, input.ConfigID, input.Status, input.LatencyMS,
-		input.ErrorCode, input.VerifiedBy, input.ExpectedLockVersion))
+		input.ErrorCode, []byte(caps), input.VerifiedBy, input.ExpectedLockVersion, lastVerifiedAt))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Config{}, r.classifyMissingOrConflict(ctx, input.WorkspaceID, input.ConfigID)
 	}
@@ -360,6 +419,7 @@ func scanConfig(row rowScanner) (Config, error) {
 	var config Config
 	var options []byte
 	var runtimeCapabilities []byte
+	var agenticCapabilities []byte
 	err := row.Scan(
 		&config.ID,
 		&config.WorkspaceID,
@@ -371,6 +431,7 @@ func scanConfig(row rowScanner) (Config, error) {
 		&config.CredentialConfigured,
 		&options,
 		&runtimeCapabilities,
+		&agenticCapabilities,
 		&config.Status,
 		&config.LastVerifiedAt,
 		&config.LastLatencyMS,
@@ -382,16 +443,142 @@ func scanConfig(row rowScanner) (Config, error) {
 		&config.LockVersion,
 		&config.DeletedAt,
 	)
+	if err != nil {
+		return Config{}, err
+	}
 	config.Options = append(json.RawMessage(nil), options...)
 	config.RuntimeCapabilities = append(json.RawMessage(nil), runtimeCapabilities...)
-	return config, err
+	// Strict ParseAgenticCapabilities on every read/list — malformed/corrupt JSONB
+	// fails closed and never projects. `{}` unverified remains readable.
+	raw := json.RawMessage(agenticCapabilities)
+	if len(raw) == 0 {
+		raw = json.RawMessage(`{}`)
+	}
+	doc, normalized, parseErr := ParseAgenticCapabilities(raw)
+	if parseErr != nil {
+		return Config{}, fmt.Errorf("%w: corrupt agentic_capabilities", ErrInvalid)
+	}
+	config.AgenticCapabilities = normalized
+	if err := validateAgenticCapabilitiesCrossField(config, doc); err != nil {
+		return Config{}, err
+	}
+	return config, nil
 }
 
-func normalizeNewConfig(input NewConfig) NewConfig {
+// validateAgenticCapabilitiesCrossField enforces projection invariants:
+//
+// VERIFIED requires all of:
+//   - nonempty verified capability document
+//   - non-nil LastVerifiedAt
+//   - non-nil nonnegative LastLatencyMS
+//   - nil LastErrorCode
+//   - verifiedLockVersion matches pre-increment lock identity
+//     (LockVersion == VerifiedLockVersion+1 after CAS)
+//   - verifiedConfigDigest matches WireConfigDigest of the current row
+//   - capability VerifiedAt equals LastVerifiedAt at UTC second precision
+//     (documented rule: both are written from the same truncated UTC second
+//     at verification CAS; any drift means corrupt evidence and fails Get/List)
+//
+// UNVERIFIED and DISABLED require:
+//   - caps {}
+//   - last_verified_at, last_latency_ms, last_error_code all nil
+//
+// ERROR requires:
+//   - caps {}
+//   - non-nil LastVerifiedAt (canonical verification attempt time)
+//   - non-nil nonnegative LastLatencyMS
+//   - non-nil LastErrorCode from the exact stable verification allowlist
+//     (not arbitrary uppercase text)
+//
+// Verification CAS increments lock_version on both success and failure, so a
+// successful verify stamps VerifiedLockVersion = ExpectedLockVersion and then
+// stores LockVersion = ExpectedLockVersion+1.
+func validateAgenticCapabilitiesCrossField(config Config, doc AgenticCapabilities) error {
+	unverified := IsUnverifiedAgenticCapabilities(config.AgenticCapabilities)
+	switch config.Status {
+	case StatusVerified:
+		if unverified {
+			return fmt.Errorf("%w: VERIFIED requires nonempty agentic capabilities", ErrInvalid)
+		}
+		// Read evidence: nonnil LastVerifiedAt, nonnil nonnegative LastLatencyMS, nil LastErrorCode.
+		if config.LastVerifiedAt == nil {
+			return fmt.Errorf("%w: VERIFIED requires LastVerifiedAt", ErrInvalid)
+		}
+		if config.LastLatencyMS == nil {
+			return fmt.Errorf("%w: VERIFIED requires LastLatencyMS", ErrInvalid)
+		}
+		if *config.LastLatencyMS < 0 {
+			return fmt.Errorf("%w: VERIFIED LastLatencyMS must be nonnegative", ErrInvalid)
+		}
+		if config.LastErrorCode != nil {
+			return fmt.Errorf("%w: VERIFIED requires nil LastErrorCode", ErrInvalid)
+		}
+		// Lock identity: verified against N, then CAS set lock to N+1.
+		if !AgenticCapabilityLockMatches(doc, config.LockVersion) {
+			return fmt.Errorf("%w: verifiedLockVersion does not match lock identity", ErrInvalid)
+		}
+		if doc.VerifiedConfigDigest != WireConfigDigest(config) {
+			return fmt.Errorf("%w: verifiedConfigDigest does not match current config", ErrInvalid)
+		}
+		// Canonical capability VerifiedAt must equal stored LastVerifiedAt at UTC second.
+		capAt := doc.VerifiedAt.UTC().Truncate(time.Second)
+		rowAt := config.LastVerifiedAt.UTC().Truncate(time.Second)
+		if !capAt.Equal(rowAt) {
+			return fmt.Errorf("%w: verifiedAt does not match LastVerifiedAt at UTC second", ErrInvalid)
+		}
+		return nil
+	case StatusError:
+		if !unverified {
+			return fmt.Errorf("%w: ERROR cannot carry verified agentic capabilities", ErrInvalid)
+		}
+		if config.LastVerifiedAt == nil {
+			return fmt.Errorf("%w: ERROR requires LastVerifiedAt", ErrInvalid)
+		}
+		if config.LastLatencyMS == nil {
+			return fmt.Errorf("%w: ERROR requires LastLatencyMS", ErrInvalid)
+		}
+		if *config.LastLatencyMS < 0 {
+			return fmt.Errorf("%w: ERROR LastLatencyMS must be nonnegative", ErrInvalid)
+		}
+		if config.LastErrorCode == nil {
+			return fmt.Errorf("%w: ERROR requires LastErrorCode", ErrInvalid)
+		}
+		if !validVerificationErrorCode(*config.LastErrorCode) {
+			return fmt.Errorf("%w: ERROR LastErrorCode not in stable allowlist", ErrInvalid)
+		}
+		return nil
+	case StatusUnverified, StatusDisabled:
+		if !unverified {
+			return fmt.Errorf("%w: %s cannot carry verified agentic capabilities", ErrInvalid, config.Status)
+		}
+		if config.LastVerifiedAt != nil {
+			return fmt.Errorf("%w: %s requires nil LastVerifiedAt", ErrInvalid, config.Status)
+		}
+		if config.LastLatencyMS != nil {
+			return fmt.Errorf("%w: %s requires nil LastLatencyMS", ErrInvalid, config.Status)
+		}
+		if config.LastErrorCode != nil {
+			return fmt.Errorf("%w: %s requires nil LastErrorCode", ErrInvalid, config.Status)
+		}
+		return nil
+	default:
+		// Unknown status: fail closed.
+		return fmt.Errorf("%w: unknown model config status %q", ErrInvalid, config.Status)
+	}
+}
+
+// normalizeNewConfig trims identity fields and canonicalizes the provider.
+// Canonicalization is fail-closed (CanonicalProvider), so a provider outside the
+// closed alias set aborts the create instead of being stored verbatim.
+func normalizeNewConfig(input NewConfig) (NewConfig, error) {
 	input.ID = strings.TrimSpace(input.ID)
 	input.WorkspaceID = strings.TrimSpace(input.WorkspaceID)
 	input.Name = strings.TrimSpace(input.Name)
-	input.Provider = strings.TrimSpace(input.Provider)
+	provider, err := CanonicalProvider(input.Provider)
+	if err != nil {
+		return NewConfig{}, err
+	}
+	input.Provider = provider
 	input.APIBase = strings.TrimSpace(input.APIBase)
 	input.ModelName = strings.TrimSpace(input.ModelName)
 	input.CreatedBy = strings.TrimSpace(input.CreatedBy)
@@ -404,12 +591,19 @@ func normalizeNewConfig(input NewConfig) NewConfig {
 	if normalized, err := NormalizeRuntimeCapabilitiesRaw(input.RuntimeCapabilities); err == nil {
 		input.RuntimeCapabilities = normalized
 	}
-	return input
+	return input, nil
 }
 
-func normalizeUpdateConfig(input UpdateConfig) UpdateConfig {
+// normalizeUpdateConfig mirrors normalizeNewConfig: the provider is canonicalized
+// fail-closed, because Update rewrites model_configs.provider and therefore the
+// row's WireConfigDigest identity.
+func normalizeUpdateConfig(input UpdateConfig) (UpdateConfig, error) {
 	input.Name = strings.TrimSpace(input.Name)
-	input.Provider = strings.TrimSpace(input.Provider)
+	provider, err := CanonicalProvider(input.Provider)
+	if err != nil {
+		return UpdateConfig{}, err
+	}
+	input.Provider = provider
 	input.APIBase = strings.TrimSpace(input.APIBase)
 	input.ModelName = strings.TrimSpace(input.ModelName)
 	input.UpdatedBy = strings.TrimSpace(input.UpdatedBy)
@@ -425,7 +619,7 @@ func normalizeUpdateConfig(input UpdateConfig) UpdateConfig {
 	if input.Status == "" {
 		input.Status = StatusUnverified
 	}
-	return input
+	return input, nil
 }
 
 func validateNewConfig(input NewConfig) error {
@@ -453,6 +647,11 @@ func validateUpdateConfig(input UpdateConfig) error {
 		containsSensitiveKey(input.Options) {
 		return ErrInvalid
 	}
+	// VERIFIED/ERROR are verification-owned. User Update may only leave
+	// UNVERIFIED (default after clearing evidence) or DISABLED.
+	if input.Status != StatusUnverified && input.Status != StatusDisabled && input.Status != "" {
+		return ErrInvalid
+	}
 	if _, err := NormalizeRuntimeCapabilitiesRaw(input.RuntimeCapabilities); err != nil {
 		return ErrInvalid
 	}
@@ -470,6 +669,8 @@ func containsRuntimeCapabilityLeak(options json.RawMessage) bool {
 	for _, forbidden := range []string{
 		"runtimeCapabilities", "contextWindowTokens", "tokenizerProfile",
 		"defaultOutputReserveTokens", "outputTokenLimitMode", "tokenizerVersion",
+		"agenticCapabilities", "toolSearchModes", "verifiedAdapter",
+		"verifiedLockVersion", "verifiedConfigDigest",
 	} {
 		if _, ok := object[forbidden]; ok {
 			return true
@@ -548,16 +749,22 @@ func normalizeOptionalText(value *string) *string {
 	return &trimmed
 }
 
-func validStableCode(value string) bool {
-	if value == "" || len(value) > 128 {
+// validVerificationErrorCode accepts only the exact stable verification allowlist.
+// Arbitrary uppercase/text (e.g. "SOMETHING_ELSE", "ERROR") is rejected.
+func validVerificationErrorCode(value string) bool {
+	switch value {
+	case ErrorCodeVerificationTimeout,
+		ErrorCodeNetwork,
+		ErrorCodeAuthentication,
+		ErrorCodeUpstream,
+		ErrorCodeResponsesUnsupported,
+		ErrorCodeToolSearchUnsupported,
+		ErrorCodeAgenticStreamInvalid,
+		ErrorCodeAgenticUsageInvalid:
+		return true
+	default:
 		return false
 	}
-	for _, character := range value {
-		if (character < 'A' || character > 'Z') && (character < '0' || character > '9') && character != '_' {
-			return false
-		}
-	}
-	return true
 }
 
 func validOptionalID(value *string) bool {

@@ -39,6 +39,9 @@ type Config struct {
 	// RuntimeCapabilities is the raw JSON object from model_configs.runtime_capabilities.
 	// Empty object "{}" is the expand-only default and means "unset".
 	RuntimeCapabilities json.RawMessage
+	// AgenticCapabilities is verification-owned (D10). Empty "{}" means unverified.
+	// Never client-writable; never merged into RuntimeCapabilities or Options.
+	AgenticCapabilities json.RawMessage
 	Status              Status
 	LastVerifiedAt      *time.Time
 	LastLatencyMS       *int
@@ -79,12 +82,22 @@ type UpdateConfig struct {
 
 // VerificationUpdate is the small, compare-and-swap write performed after an
 // upstream verification call has completed outside a database transaction.
+// Success writes canonical AgenticCapabilities; failure writes "{}".
+// CAS refuses to apply when ExpectedLockVersion does not match the current row.
 type VerificationUpdate struct {
-	WorkspaceID         string
-	ConfigID            string
-	Status              Status
-	LatencyMS           int
-	ErrorCode           *string
+	WorkspaceID string
+	ConfigID    string
+	Status      Status
+	LatencyMS   int
+	ErrorCode   *string
+	// AgenticCapabilities is required: non-empty canonical document on VERIFIED,
+	// or empty object on ERROR. Never raw provider bodies.
+	AgenticCapabilities json.RawMessage
+	// VerifiedAt is the UTC-second evidence timestamp written to both
+	// last_verified_at and capability verifiedAt on VERIFIED. Required for
+	// VERIFIED so read invariants can enforce equal UTC-second relationship.
+	// On ERROR may be zero (repository uses clock_timestamp).
+	VerifiedAt          time.Time
 	VerifiedBy          string
 	ExpectedLockVersion int64
 }

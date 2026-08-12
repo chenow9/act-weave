@@ -38,8 +38,8 @@ func TestEmbeddedMigrationSetStartsWithBaselineThenSessionContext(t *testing.T) 
 		current = next
 		last = next
 	}
-	// Latest embedded migration (000016_inbound_task_aliases).
-	const wantLatest = 18
+	// Latest embedded migration (000020_model_config_provider_canonicalization).
+	const wantLatest = 20
 	if last != wantLatest {
 		t.Fatalf("expected latest embedded migration version %d, got %d (update wantLatest when adding migrations)", wantLatest, last)
 	}
@@ -64,6 +64,10 @@ func TestEmbeddedMigrationSetStartsWithBaselineThenSessionContext(t *testing.T) 
 		{version: 14, identifier: "delegation_attempt_invariant"},
 		{version: 15, identifier: "inbound_request_hash_sticky"},
 		{version: 16, identifier: "inbound_task_aliases"},
+		{version: 17, identifier: "a2a_task_principal_store"},
+		{version: 18, identifier: "terminal_delegation_step_immutable"},
+		{version: 19, identifier: "agentic_capabilities_context_assembly"},
+		{version: 20, identifier: "model_config_provider_canonicalization"},
 	} {
 		for _, direction := range []struct {
 			name string
