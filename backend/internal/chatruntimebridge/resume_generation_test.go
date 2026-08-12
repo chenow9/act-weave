@@ -390,7 +390,7 @@ func TestResumeGeneration_DispatchesToTheRuntimeThatPaused(t *testing.T) {
 		{
 			name:       "classic checkpoint drives the classic seam",
 			generation: RuntimeGenerationClassic,
-			// Reached drive(): only the classic seam reads the live agent.
+			// Reached driveClassicResume: only the classic seam reads the live agent.
 			wantContains: errResumeDispatchClassicSeam.Error(),
 		},
 	} {

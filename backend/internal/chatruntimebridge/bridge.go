@@ -360,8 +360,13 @@ func (b *Bridge) Execute(ctx context.Context, job agentrun.Job) error {
 		}
 	}
 
-	content, streamMessageID, runErr := b.drive(ctx, job, run, "", nil)
-	// Persist terminal status even when drive timed out / cancelled the ctx.
+	// The initial chat turn is Agentic, and it says so here rather than being
+	// dispatched from inside the classic seam. Passing through a function whose
+	// first lines choose the runtime generation is what let live agent and model
+	// reads sit textually above the Agentic path: anything added to the top of
+	// the classic seam silently ran on the frozen path too.
+	content, streamMessageID, runErr := b.driveAgenticInitial(ctx, job, run)
+	// Persist terminal status even when the turn timed out / cancelled the ctx.
 	persistCtx := context.WithoutCancel(ctx)
 	if runErr != nil {
 		if errors.Is(runErr, ErrWaitingConfirmation) {
@@ -419,7 +424,8 @@ func (b *Bridge) ContinueAfterConfirmation(
 		content, streamMessageID, runErr = b.driveAgenticResume(
 			ctx, job, run, meta.EinoCheckpointID, targets)
 	} else {
-		content, streamMessageID, runErr = b.drive(ctx, job, run, meta.EinoCheckpointID, targets)
+		content, streamMessageID, runErr = b.driveClassicResume(
+			ctx, job, run, meta.EinoCheckpointID, targets)
 	}
 	persistCtx := context.WithoutCancel(ctx)
 	if runErr != nil {
@@ -438,7 +444,21 @@ func (b *Bridge) ContinueAfterConfirmation(
 // streamMessageID is the assistant message/item ID opened for item.started +
 // item.delta (empty when no TextSinkFactory). completeRun must reuse it so
 // item.completed keeps the same identity as progressive deltas (AAP A.1).
-func (b *Bridge) drive(
+// driveClassicResume is the legacy seam that restores a checkpoint written by the
+// classic ChatModelAgent runtime, and nothing else.
+//
+// It exists only for confirmations that were already pending when the Agentic
+// runtime took over the chat path; ContinueAfterConfirmation reaches it solely
+// for a checkpoint stamped RuntimeGenerationClassic, and Task 9 removes it once
+// no such checkpoint can still be outstanding. Live agent and model reads are
+// permitted here and only here: a classic checkpoint predates frozen identity,
+// so there is no frozen document to restore it against.
+//
+// It refuses to run without resume targets. That is what keeps it off the
+// initial turn: an initial chat turn has no targets, so a future entry point
+// that reaches for this function instead of the Agentic path fails closed
+// rather than quietly running the frozen path on live config.
+func (b *Bridge) driveClassicResume(
 	ctx context.Context,
 	job agentrun.Job,
 	run execution.AgentRun,
@@ -447,18 +467,17 @@ func (b *Bridge) drive(
 ) (text string, streamMessageID string, err error) {
 	ctx = einoruntime.WithTrustedWorkspaceID(ctx, job.WorkspaceID)
 
-	// Task 4A: initial Chat is Agentic-only. Validate frozen snapshots before any
-	// models.Get / SnapshotRuntime live factory lookup (structurally unreachable
-	// for classic resume when targets==nil).
-	if targets == nil {
-		return b.driveAgenticInitial(ctx, job, run)
+	if strings.TrimSpace(checkpointID) == "" {
+		return "", "", errors.New("chatruntimebridge: checkpoint id is required for classic resume")
+	}
+	if len(targets) == 0 {
+		return "", "", errors.New("chatruntimebridge: resume targets are required for classic resume")
 	}
 
-	// -------------------------------------------------------------------------
-	// Resume/HITL classic seam (Task 4B). Isolated from initial Agentic path;
-	// does not silently mix AgenticMessage with schema.Message on one runner.
-	// Live model reads are permitted only on this seam.
-	// -------------------------------------------------------------------------
+	// Live model reads are permitted on this seam and are the reason it is
+	// isolated: it must not silently mix AgenticMessage with schema.Message on
+	// one runner, and it must never be entered by a turn that has frozen
+	// documents to honour.
 	configuredAgent, err := b.agents.Get(ctx, job.WorkspaceID, run.AgentID)
 	if err != nil {
 		return "", "", fmt.Errorf("load agent: %w", err)
