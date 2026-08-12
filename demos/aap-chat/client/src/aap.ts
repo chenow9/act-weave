@@ -288,28 +288,49 @@ export function extractMessageText(item: ProtocolItem): string {
   return "";
 }
 
+export interface A2UIPartExtract {
+  version?: string;
+  catalogId?: string;
+  surface: unknown;
+  /** Pretty JSON of the a2ui part (for debug / raw panel). */
+  rawJson: string;
+}
+
 /**
- * Pretty-print first a2ui part surface for demo preview (display-only; no actions).
+ * Extract first a2ui part for real surface rendering (display-only; no actions).
  * Returns null when the item has no a2ui part.
  */
-export function extractA2UIPreview(item: ProtocolItem): string | null {
+export function extractA2UIPart(item: ProtocolItem): A2UIPartExtract | null {
   if (item.type !== "message") return null;
   const part = findA2UIPart(item);
   if (!part) return null;
   try {
-    return JSON.stringify(
+    const version = part.version ? String(part.version) : undefined;
+    const catalogId = part.catalogId ? String(part.catalogId) : undefined;
+    const surface = part.surface ?? null;
+    const rawJson = JSON.stringify(
       {
         type: part.type,
-        ...(part.version ? { version: part.version } : {}),
-        ...(part.catalogId ? { catalogId: part.catalogId } : {}),
-        surface: part.surface,
+        ...(version ? { version } : {}),
+        ...(catalogId ? { catalogId } : {}),
+        surface,
       },
       null,
       2,
     );
+    return { version, catalogId, surface, rawJson };
   } catch {
     return null;
   }
+}
+
+/**
+ * @deprecated Prefer extractA2UIPart + a2ui-render for real UI.
+ * Pretty-print first a2ui part surface (legacy JSON preview).
+ */
+export function extractA2UIPreview(item: ProtocolItem): string | null {
+  const part = extractA2UIPart(item);
+  return part?.rawJson ?? null;
 }
 
 export function extractToolSummary(item: ProtocolItem): {

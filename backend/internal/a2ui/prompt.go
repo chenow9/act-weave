@@ -10,15 +10,23 @@ const promptAppendixV1 = `
 
 Default to natural language. Do **not** attach A2UI on every reply.
 Only when a declarative UI is clearly better for the user (forms, structured
-choices, multi-field confirmation), append **one** fenced block after your prose:
+choices, multi-field confirmation, **charts/statistics**), append **one** fenced
+block after your prose:
 
 <<<A2UI>>>
 {"version":"a2ui-surface.v0","catalogId":"standard","surface":{/* declarative UI object */}}
 <<<END_A2UI>>>
 
+Surface shapes clients understand (pick one compact object):
+- Form: {"type":"form","title":"...","fields":[{"type":"text","name":"...","label":"...","required":true}]}
+- Chart: {"type":"chart","chartType":"bar|line|area|pie|donut|hbar","title":"...","labels":["A","B"],"series":[{"name":"s1","data":[1,2]}]}
+  or {"component":"PieChart","title":"...","data":[{"label":"A","value":10},{"label":"B","value":20}]}
+- Components graph: {"components":[{"id":"root","component":"Column","children":["..."]}]}
+
 Rules:
 - MVP is **display-oriented**. Do not assume buttons submit or that actions are wired.
 - Keep surface a single JSON **object** (not array/string). Prefer compact surfaces.
+- For statistics, prefer chart surfaces over ASCII tables when the user asks for 图/趋势/分布.
 - Prose outside the fence is the human-readable reply; the fence body is not shown as raw JSON to end users.
 - At most one A2UI fence per assistant message.
 `
