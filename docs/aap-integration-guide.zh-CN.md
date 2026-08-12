@@ -561,10 +561,10 @@ ETag / profile version 纳入该对象：开关翻转或广告元数据变化会
 | **入站** | `createRun` **拒绝**用户/入站 `a2ui`（`UNSUPPORTED_CONTENT_TYPE` / 4xx）。A2UI 仅助手出站 |
 | **降级** | 非法 / 过大 / 投影失败 → 纯 text 成功；A2UI 损坏**不会**单独导致 Run 失败 |
 
-#### 客户端规则（completed 权威 vs 流式围栏）
+#### 客户端规则（completed 权威 vs 流式预览）
 
 1. **按今日方式流式文本。** 仅 `text_delta` 流式（index 0）。拼接的 delta 只是**实时预览**，不是终稿。
-2. **A2UI 开启时的流式阶段**，delta 文本中可能仍含原始围栏片段（如 `<<<A2UI>>>` … `<<<END_A2UI>>>`）。**不要**把 delta 拼接当权威正文，也不要在生产 UI 里客户端解析围栏。
+2. **delta 只承载正文。** 围栏（`<<<A2UI>>>` … `<<<END_A2UI>>>`）是平台向模型索取 surface 的编码方式，在 delta 离开服务端之前已被剥离——包括被切分在两个 chunk 之间的标记。客户端不会看到任何围栏片段，因此既不需要剥离也不需要解析。surface 本身不产生任何文本流，所以正文结束到 `item.completed` 之间会有一段停顿：保持你已有的"进行中"提示直到该 item 完成。
 3. **`item.completed` 为权威。** 它会**整项替换** item 快照。使用其多 part `content`：清洗后的 text [+ 可选 `a2ui`]。优先 completed，而非任何在途 delta 缓冲。
 4. **MVP 仅展示 / 客户端对 action 做 no-op。** Profile 广告 `a2ui.actions: false`。若有本地 catalog 可渲染 surface；**不要**把按钮点击、表单提交等控件动作回传到 ActWeave。**禁止**复用 `interaction.decide` 承载 A2UI 控件（审批类 Interaction 保持独立）。
 5. **不实现 A2UI 时可忽略未知 part**；只要出现 `id:` 仍须推进 SSE sequence。

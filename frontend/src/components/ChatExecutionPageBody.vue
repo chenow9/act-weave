@@ -292,6 +292,16 @@ void DebugOutboundCredentialPanel;
                     class="assistant-bubble"
                     v-html="renderMessageMarkdown(message.content)"
                   />
+                  <!--
+                    A reply is still being produced. Without this, a stream that
+                    pauses — the agent thinking, or writing a surface, which is
+                    delivered whole at the end and so streams no text — looks
+                    exactly like a finished answer.
+                  -->
+                  <p v-if="message.status === 'PROCESSING'" class="assistant-working" role="status">
+                    <span class="assistant-working-dots" aria-hidden="true"><span /><span /><span /></span>
+                    <span>{{ t("chat.assistantWorking") }}</span>
+                  </p>
                   <A2UISurface
                     v-for="(surface, surfaceIndex) in message.a2ui ?? []"
                     :key="`${message.id}-a2ui-${surfaceIndex}`"

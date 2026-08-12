@@ -566,10 +566,10 @@ On `item.completed`, content is multi-part when A2UI was successfully extracted:
 | **Inbound** | `createRun` **rejects** user/input `a2ui` (`UNSUPPORTED_CONTENT_TYPE` / 4xx). A2UI is assistant outbound only |
 | **Degrade** | Invalid / oversized / failed projection → text-only success; A2UI never alone fails the Run |
 
-#### Client rules (authoritative completed vs streaming fences)
+#### Client rules (authoritative completed vs streaming preview)
 
 1. **Stream text as today.** Only `text_delta` streams (index 0). Concatenated deltas are a **live preview**, not final copy.
-2. **While streaming with A2UI enabled**, delta text may still contain raw fence fragments (e.g. `<<<A2UI>>>` … `<<<END_A2UI>>>`). Do **not** treat delta concatenation as authoritative prose or parse fences client-side for production UI.
+2. **Deltas carry prose only.** The A2UI fence (`<<<A2UI>>>` … `<<<END_A2UI>>>`) is how the platform asks a model for a surface, and it is stripped before any delta leaves the server — including a marker split across chunks. You never see a fragment of one, so there is nothing to strip and nothing to parse client-side. A surface streams no text at all, so expect a pause between prose and `item.completed`; keep whatever in-progress affordance you already show until the item completes.
 3. **`item.completed` is authoritative.** It **replaces** the whole item snapshot. Use its multiparty `content`: cleaned text [+ optional `a2ui`]. Prefer completed over any in-flight delta buffer.
 4. **MVP display-only / client no-op for actions.** Profile advertises `a2ui.actions: false`. Render surfaces with a local catalog if you have one; **do not** submit button clicks, form posts, or other control actions to ActWeave. **Never** reuse `interaction.decide` for A2UI controls (approval Interactions stay separate).
 5. **Ignore unknown parts** if you do not implement A2UI; still advance the SSE sequence cursor.

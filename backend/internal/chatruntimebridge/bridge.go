@@ -474,7 +474,8 @@ func (b *Bridge) drive(
 	// KD-17: inject A2UI rules once into instruction only — before BuildChatModelAgent
 	// and buildInitialMessages. Resume (targets != nil) reuses frozen graph instruction
 	// and must not re-append (AppendPromptRules is also idempotent).
-	if sessioncontext.EnableA2UIFromSnapshot(run.ContextPolicySnapshot) {
+	a2uiEnabled := sessioncontext.EnableA2UIFromSnapshot(run.ContextPolicySnapshot)
+	if a2uiEnabled {
 		instruction = a2ui.AppendPromptRules(instruction)
 	}
 	agentName := "agent-" + strings.TrimSpace(run.AgentID)
@@ -499,6 +500,11 @@ func (b *Bridge) drive(
 		ModelTurnHook: func(hookCtx context.Context, turn einoruntime.ModelTurn) error {
 			return b.recordModelTurn(hookCtx, job, run, turn)
 		},
+	}
+	if a2uiEnabled {
+		// Only this run's model was told about the fence, so only this run's
+		// preview needs to hide it.
+		projector.Preview = &a2ui.FencePreview{}
 	}
 	openSink := func() error {
 		if b.textSinkFactory == nil || projector.Sink != nil {

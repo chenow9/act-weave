@@ -517,8 +517,8 @@ sequenceDiagram
   participant SSE as Clients
 
   Drive->>Drive: AppendPromptRules once if snapshot.enableA2UI
-  Model->>Rec: OnTextDelta (may include fence fragments)
-  Rec->>SSE: text_delta
+  Model->>Rec: OnTextDelta (raw, fence included)
+  Rec->>SSE: text_delta (prose only; FencePreview hides the fence)
   Model->>Rec: OnTextComplete(full)
   Note over CR: extract ONLY on terminal completeRun content
   CR->>CR: SplitTextAndA2UI(full)
@@ -535,20 +535,20 @@ sequenceDiagram
 
 #### 4.3 流式围栏（S1）与集成契约
 
-| 策略 | MVP |
+| 策略 | 当前 |
 |------|-----|
-| **S1** | 流式原样 delta；`item.completed` 为剥离后 text [+a2ui]；客户端 **必须以 completed 为权威** |
+| **S2** | 流式 delta 只含正文（`a2ui.FencePreview` 在 delta 出站前剥离围栏，含跨 chunk 的标记碎片）；`item.completed` 仍为剥离后 text [+a2ui]，客户端 **必须以 completed 为权威** |
 
 **对 Console / SDK：** 已分别 `extractMessageText` 覆盖 / item replace — 行为正确。
 
-**对 AAP 第三方（PR-8 强制文档）：**
+**对 AAP 第三方：**
 
 1. 始终应用 `item.completed` 的 `content` 作为最终 message 状态。  
-2. **不要**假设 `text_delta` 拼接 === 最终 text（enable A2UI 时可能含 `<<<A2UI>>>` 碎片）。  
+2. **不要**假设 `text_delta` 拼接 === 最终 text（终稿会整项替换预览）。  
 3. 遍历 `content`，`type=="text"` 展示文案；`type=="a2ui"` 交 catalog；未知 type 忽略。  
 4. MVP `actions: false`：按钮/提交 **no-op** 或 toast。
 
-服务端流式剥离（S2）仍为 **非目标**。
+原设计把服务端流式剥离（S2）列为非目标，实测后改为交付：围栏是平台自己向模型索取 surface 的编码，把它流给每个接入方，等于要求所有客户端都实现一遍剥离，而没剥离的客户端会先显示一屏 surface JSON 再被 completed 替换。剥离只作用于 delta，`StreamDeltaRecorder` 记录的 delta 保持原文（终态文本在引擎未给出 final text 时回退到它），抽取仍只发生在终态一处。surface 本身不产生文本流，因此正文结束到 completed 之间会有停顿，两端 UI 用"进行中"提示覆盖。
 
 #### 4.4 completeRun / 抽取范围
 

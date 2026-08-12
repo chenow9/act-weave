@@ -82,7 +82,7 @@ When an Agent has `enableA2UI`, assistant messages may carry a first-class
 | Concern | Contract |
 | --- | --- |
 | Streaming | Only `text_delta` streams. Concatenated deltas are a live preview only. |
-| Fences | Until `item.completed`, delta text may include raw A2UI fence fragments (e.g. `<<<A2UI>>>` …). Do **not** treat delta concatenation as final copy. |
+| Fences | Deltas carry prose only: the A2UI fence (`<<<A2UI>>>` …) is stripped server-side, fragments included. A surface streams no text, so expect a pause before `item.completed`. |
 | Completed | `item.completed` **replaces** the whole item. Its `content` is authoritative (cleaned text [+ optional `a2ui`]). |
 | Helpers | `joinTextParts(item)` / `findA2UIPart(item)` read text and the first a2ui part from a content array or item. |
 | Actions | MVP Profile advertises `a2ui.actions: false`. UI controls are display-only; client should no-op submits. |
