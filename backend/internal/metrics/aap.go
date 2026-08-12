@@ -26,6 +26,10 @@ var allowedLabelKeys = map[string]struct{}{
 	"result":       {},
 	// agentrun.Factory Enqueue route (PR15): values are only "eino" | "legacy".
 	"engine": {},
+	// A2UI catalog signals. Both are normalized against fixed vocabularies in
+	// a2ui.go before they reach here, so cardinality stays bounded.
+	"keyword":    {},
+	"chart_type": {},
 }
 
 // AAPCollector is the shared AAP metrics surface for one process.

@@ -21,7 +21,7 @@ func TestValidateProjectionItem_SharesMarshalPath(t *testing.T) {
 		Content: []protocolevent.ContentPart{
 			protocolevent.TextContentPart{Type: protocolevent.ContentPartTypeText, Text: "form"},
 			protocolevent.A2UIContentPart{
-				Type: protocolevent.ContentPartTypeA2UI, Version: a2ui.EnvelopeVersionV0,
+				Type: protocolevent.ContentPartTypeA2UI, Version: a2ui.EnvelopeVersionV1,
 				Surface: surface, CatalogID: "standard",
 			},
 		},

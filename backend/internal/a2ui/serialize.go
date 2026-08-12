@@ -25,7 +25,7 @@ func SerializeAssistantDurable(text string, payload *Payload) (string, error) {
 	}
 	version := payload.Version
 	if version == "" {
-		version = EnvelopeVersionV0
+		version = EnvelopeVersionV1
 	}
 	a2uiPart := map[string]any{
 		"type":    "a2ui",

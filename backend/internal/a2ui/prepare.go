@@ -1,6 +1,9 @@
 package a2ui
 
-import "strings"
+import (
+	"errors"
+	"strings"
+)
 
 // PrepareOptions controls terminal assistant content materialization for completeRun.
 type PrepareOptions struct {
@@ -9,6 +12,9 @@ type PrepareOptions struct {
 	// ProjectionEnabled is usually a2ui.ProjectionEnabled(); injectable for tests.
 	// When false, fences are stripped but a2ui is never persisted.
 	ProjectionEnabled bool
+	// SurfaceID identifies the persisted surface. Without one the surface cannot
+	// be materialized and the message degrades to text-only.
+	SurfaceID string
 }
 
 // PrepareResult is the durable body for RecordAssistantResult plus emit classification.
@@ -23,6 +29,9 @@ type PrepareResult struct {
 	Text string
 	// Payload is non-nil only when AttachedA2UI.
 	Payload *Payload
+	// Diagnostic explains a catalog rejection. Non-nil only when Result is
+	// EmitCatalogInvalid, and safe to log: it carries no payload values.
+	Diagnostic *Diagnostic
 }
 
 // PrepareAssistantContent materializes terminal model text into durable chat content.
@@ -62,11 +71,36 @@ func PrepareAssistantContent(full string, opts PrepareOptions) PrepareResult {
 		return PrepareResult{Content: plain, Result: splitResult, Text: plain}
 	}
 
-	// Valid payload (ok / ok_empty_text / truncated).
+	// Well-formed payload (ok / ok_empty_text / truncated).
 	if payload == nil {
 		plain := NonEmptyOrFallback(text, full)
 		return PrepareResult{Content: plain, Result: EmitInvalidJSON, Text: plain}
 	}
+
+	// Catalog conformance decides whether a surface may be persisted at all. A
+	// rejection is a prompt problem, not a run failure: degrade to text.
+	if diagnostic := ValidateSurface("", payload.Surface); diagnostic != nil {
+		plain := NonEmptyOrFallback(text, full)
+		return PrepareResult{
+			Content: plain, Result: EmitCatalogInvalid, Text: plain, Diagnostic: diagnostic,
+		}
+	}
+
+	materialized, err := MaterializeSurface(payload.Surface, opts.SurfaceID)
+	if errors.Is(err, ErrSurfaceTooLarge) {
+		plain := NonEmptyOrFallback(text, full)
+		return PrepareResult{Content: plain, Result: EmitTooLarge, Text: plain}
+	}
+	if err != nil {
+		plain := NonEmptyOrFallback(text, full)
+		return PrepareResult{
+			Content: plain, Result: EmitCatalogInvalid, Text: plain,
+			Diagnostic: newDiagnostic(ReasonSchema, "/surfaceId", "pattern", "", "a platform-assigned id"),
+		}
+	}
+	payload.Surface = materialized
+	payload.Version = EnvelopeVersionV1
+	payload.CatalogID = CatalogID
 
 	durable, err := SerializeAssistantDurable(text, payload)
 	if err != nil || durable == "" {

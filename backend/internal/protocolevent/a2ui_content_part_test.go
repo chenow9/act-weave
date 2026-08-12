@@ -49,7 +49,7 @@ func TestA2UIContentPartSensitiveSurfaceKeysPass(t *testing.T) {
 			},
 			protocolevent.A2UIContentPart{
 				Type:      protocolevent.ContentPartTypeA2UI,
-				Version:   a2ui.EnvelopeVersionV0,
+				Version:   a2ui.EnvelopeVersionV1,
 				Surface:   surfaceRaw,
 				CatalogID: "standard",
 			},
@@ -86,7 +86,7 @@ func TestA2UIContentPartDecodeAndValidate(t *testing.T) {
 	t.Run("roundTrip", func(t *testing.T) {
 		raw := json.RawMessage(`{
 			"type":"a2ui",
-			"version":"a2ui-surface.v0",
+			"version":"a2ui-surface.v1",
 			"catalogId":"standard",
 			"surface":{"root":"form","password":{"label":"Password"}}
 		}`)
@@ -98,7 +98,7 @@ func TestA2UIContentPartDecodeAndValidate(t *testing.T) {
 		if !ok || a2uiPart.ContentKind() != protocolevent.ContentPartTypeA2UI {
 			t.Fatalf("decoded type=%T kind=%v", part, part.ContentKind())
 		}
-		if a2uiPart.Version != a2ui.EnvelopeVersionV0 || a2uiPart.CatalogID != "standard" {
+		if a2uiPart.Version != a2ui.EnvelopeVersionV1 || a2uiPart.CatalogID != "standard" {
 			t.Fatalf("version/catalog=%q/%q", a2uiPart.Version, a2uiPart.CatalogID)
 		}
 		if err := protocolevent.ValidateItem(protocolevent.MessageItem{

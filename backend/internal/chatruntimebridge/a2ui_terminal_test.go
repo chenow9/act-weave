@@ -44,7 +44,7 @@ func TestGoldenA2UI_PasswordSurfacePreflightPass(t *testing.T) {
 	}
 	text := "Please complete the form."
 	durable, err := a2ui.SerializeAssistantDurable(text, &a2ui.Payload{
-		Version: a2ui.EnvelopeVersionV0, CatalogID: "standard", Surface: surfaceRaw,
+		Version: a2ui.EnvelopeVersionV1, CatalogID: a2ui.CatalogID, Surface: surfaceRaw,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -88,11 +88,15 @@ func TestGoldenA2UI_PasswordSurfacePreflightPass(t *testing.T) {
 	}
 }
 
+// catalogSurface is a minimal conformant surface for write-path tests.
+const catalogSurface = `{"components":[{"id":"root","component":"Text","text":"Hello"}]}`
+
 func TestGoldenA2UI_EmptyTextValidSurface(t *testing.T) {
 	t.Parallel()
-	full := a2ui.FenceStart + `{"version":"a2ui-surface.v0","surface":{"root":"card"}}` + a2ui.FenceEnd
+	full := a2ui.FenceStart + catalogSurface + a2ui.FenceEnd
 	prepared := a2ui.PrepareAssistantContent(full, a2ui.PrepareOptions{
 		EnableA2UI: true, ProjectionEnabled: true,
+		SurfaceID: a2ui.SurfaceIDFor(uuid.NewString()),
 	})
 	if !prepared.AttachedA2UI || prepared.Result != a2ui.EmitOKEmptyText {
 		t.Fatalf("prepared=%+v", prepared)
@@ -141,7 +145,7 @@ func TestGoldenA2UI_NextTurnHistoryOmitsSurface(t *testing.T) {
 	t.Parallel()
 	surface := `{"root":"form","password":{"label":"Secret"},"schemaVersion":"must-not-leak"}`
 	durable, err := a2ui.SerializeAssistantDurable("Prior reply", &a2ui.Payload{
-		Version: a2ui.EnvelopeVersionV0, Surface: json.RawMessage(surface),
+		Version: a2ui.EnvelopeVersionV1, Surface: json.RawMessage(surface),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -176,7 +180,12 @@ func TestCompleteRun_MaterializesA2UIEnvelope(t *testing.T) {
 		mid = "a6000000-0000-4000-8000-0000000000a6"
 	)
 
-	surfaceBody := `{"version":"a2ui-surface.v0","catalogId":"standard","surface":{"password":{"label":"Pw"},"accessToken":{"label":"Tok"}}}`
+	// Sensitive-looking labels inside the surface must survive the write path
+	// (KD-11): the surface subtree is exempt from sensitive-key scanning.
+	surfaceBody := `{"components":[` +
+		`{"id":"root","component":"Column","children":["f1","f2"]},` +
+		`{"id":"f1","component":"TextField","label":"password","variant":"password"},` +
+		`{"id":"f2","component":"TextField","label":"accessToken"}]}`
 	modelOut := "Please fill:\n" + a2ui.FenceStart + surfaceBody + a2ui.FenceEnd
 
 	results := &a2uiResults{}
@@ -264,7 +273,7 @@ func TestCompleteRun_ProjectionEnvOffStripsOnly(t *testing.T) {
 		aid = "c5000000-0000-4000-8000-0000000000c5"
 		mid = "c6000000-0000-4000-8000-0000000000c6"
 	)
-	modelOut := "Hi\n" + a2ui.FenceStart + `{"surface":{"root":"x"}}` + a2ui.FenceEnd
+	modelOut := "Hi\n" + a2ui.FenceStart + catalogSurface + a2ui.FenceEnd
 	results := &a2uiResults{}
 	bridge, err := newA2UITestBridge(t, a2uiBridgeOpts{
 		ws: ws, runID: run, sid: sid, uid: uid, aid: aid, mid: mid,
@@ -317,7 +326,7 @@ func TestDrive_InjectsA2UIPromptWhenEnabled(t *testing.T) {
 	if capturing.system == "" {
 		t.Fatal("model received no system instruction")
 	}
-	if !strings.Contains(capturing.system, a2ui.PromptTemplateV1) {
+	if !strings.Contains(capturing.system, a2ui.PromptTemplateV2) {
 		t.Fatalf("A2UI rules not injected into instruction: %q", capturing.system)
 	}
 	if !strings.Contains(capturing.system, "Base agent prompt.") {
@@ -570,7 +579,7 @@ func (m *a2uiCapturingModel) Generate(_ context.Context, msgs []*schema.Message,
 	// Also capture from first message if ADK folds instruction differently.
 	if m.system == "" {
 		for _, msg := range msgs {
-			if msg != nil && strings.Contains(msg.Content, a2ui.PromptTemplateV1) {
+			if msg != nil && strings.Contains(msg.Content, a2ui.PromptTemplateV2) {
 				m.system = msg.Content
 				break
 			}

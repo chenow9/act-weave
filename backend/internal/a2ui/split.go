@@ -19,9 +19,12 @@ const (
 	EmitTruncated          EmitResult = "truncated"
 	EmitProjectionRejected EmitResult = "projection_rejected"
 	EmitProjectionOff      EmitResult = "projection_off"
+	EmitCatalogInvalid     EmitResult = "catalog_invalid"
 )
 
-// Payload is a validated A2UI envelope body extracted from model output fences.
+// Payload is an A2UI surface extracted from model output fences. Version and
+// CatalogID are filled in by the write path after validation, never by the
+// model; see MaterializeSurface.
 type Payload struct {
 	Version   string
 	CatalogID string
@@ -37,6 +40,9 @@ type Payload struct {
 //   - Bad JSON / non-object surface → (outer text, nil, invalid_json)
 //   - Surface over MaxSurfaceBytes → (outer text, nil, too_large)
 //   - Valid + empty outer text → ( "", payload, ok_empty_text )
+//
+// A well-formed JSON object is not yet a usable surface: catalog conformance is
+// checked separately by ValidateSurface.
 //
 // Outer text is the content outside the first fence pair (surrounding whitespace
 // at the fence boundary is trimmed). Callers must apply fallback policy when
@@ -72,25 +78,12 @@ func SplitTextAndA2UI(full string) (text string, payload *Payload, result EmitRe
 	if inner == "" || !json.Valid([]byte(inner)) {
 		return text, nil, EmitInvalidJSON
 	}
-	// Accept either:
-	//  1) envelope: {"version","catalogId","surface":{...}}
-	//  2) bare surface object: {"components":...} / any JSON object (common model output)
-	var wire struct {
-		Version   string          `json:"version"`
-		CatalogID string          `json:"catalogId"`
-		Surface   json.RawMessage `json:"surface"`
-	}
-	if err := json.Unmarshal([]byte(inner), &wire); err != nil {
-		return text, nil, EmitInvalidJSON
-	}
-	surface := bytes.TrimSpace(wire.Surface)
-	if len(surface) == 0 {
-		// Bare surface: the entire fence body is the surface object.
-		surface = bytes.TrimSpace([]byte(inner))
-	}
-	if len(surface) == 0 {
-		return text, nil, EmitInvalidJSON
-	}
+	// The fence body is the surface itself. There is deliberately no envelope
+	// form to unwrap: version, catalogId and surfaceId are platform-owned, and
+	// guessing between "bare surface" and "wrapped surface" is what made the
+	// previous parser ambiguous. A model-emitted wrapper now fails catalog
+	// validation with a pointer at the offending key.
+	surface := bytes.TrimSpace([]byte(inner))
 	if len(surface) > MaxSurfaceBytes {
 		return text, nil, EmitTooLarge
 	}
@@ -101,16 +94,7 @@ func SplitTextAndA2UI(full string) (text string, payload *Payload, result EmitRe
 	if err := json.Unmarshal(surface, &object); err != nil || object == nil {
 		return text, nil, EmitInvalidJSON
 	}
-
-	version := strings.TrimSpace(wire.Version)
-	if version == "" {
-		version = EnvelopeVersionV0
-	}
-	payload = &Payload{
-		Version:   version,
-		CatalogID: strings.TrimSpace(wire.CatalogID),
-		Surface:   append(json.RawMessage(nil), surface...),
-	}
+	payload = &Payload{Surface: append(json.RawMessage(nil), surface...)}
 	if truncated {
 		if strings.TrimSpace(text) == "" {
 			return "", payload, EmitTruncated
