@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"actweave/backend/internal/a2ui"
 	"actweave/backend/internal/agent"
 	"actweave/backend/internal/agentaccessauth"
 	"actweave/backend/internal/capability"
@@ -210,11 +211,11 @@ func TestAAPAgentProfileA2UIAdvertisement(t *testing.T) {
 
 	t.Run("parts composition files x a2ui", func(t *testing.T) {
 		cases := []struct {
-			name         string
-			files        bool
-			a2ui         bool
-			wantParts    []string
-			wantA2UIObj  bool
+			name            string
+			files           bool
+			a2ui            bool
+			wantParts       []string
+			wantA2UIObj     bool
 			wantConstraints bool
 		}{
 			{name: "default", files: false, a2ui: false, wantParts: []string{"text"}},
@@ -249,9 +250,13 @@ func TestAAPAgentProfileA2UIAdvertisement(t *testing.T) {
 					if profile.A2UI == nil || !profile.A2UI.Enabled ||
 						profile.A2UI.Delivery != aapA2UIDelivery ||
 						profile.A2UI.Streaming || profile.A2UI.Actions ||
-						profile.A2UI.MaxSurfaceBytes != aapA2UIMaxSurfaceBytes ||
-						profile.A2UI.SpecHint != aapA2UISpecHint {
+						profile.A2UI.MaxSurfaceBytes != a2ui.MaxSurfaceBytes ||
+						profile.A2UI.SpecHint != a2ui.EnvelopeVersionV1 {
 						t.Fatalf("a2ui=%+v", profile.A2UI)
+					}
+					// A client must be told which catalog it needs to render.
+					if !reflect.DeepEqual(profile.A2UI.CatalogIDs, a2ui.RegisteredCatalogIDs()) {
+						t.Fatalf("catalogIds=%v", profile.A2UI.CatalogIDs)
 					}
 				} else if profile.A2UI != nil {
 					t.Fatalf("a2ui must be omitted when disabled: %+v", profile.A2UI)
@@ -300,7 +305,7 @@ func TestAAPAgentProfileA2UIAdvertisement(t *testing.T) {
 		}
 		alt := base
 		altA2UI := *base.A2UI
-		altA2UI.MaxSurfaceBytes = aapA2UIMaxSurfaceBytes + 1
+		altA2UI.MaxSurfaceBytes = a2ui.MaxSurfaceBytes + 1
 		alt.A2UI = &altA2UI
 		hash := func(seed aapAgentProfileVersionSeed) string {
 			raw, err := json.Marshal(seed)

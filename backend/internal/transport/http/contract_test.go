@@ -57,8 +57,13 @@ func TestV1ContractAuthenticationAndPublicCommandPaths(t *testing.T) {
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, request)
 			want := http.StatusUnauthorized
-			if route.public && route.path == "/api/v1/auth/login" {
+			switch {
+			case route.public && route.path == "/api/v1/auth/login":
 				want = http.StatusUnprocessableEntity
+			// A public document must be readable with no credentials at all;
+			// anything else here is a route that only looks public.
+			case route.public && route.method == http.MethodGet:
+				want = http.StatusOK
 			}
 			if response.Code != want {
 				t.Fatalf("route status=%d want=%d body=%s", response.Code, want, response.Body.String())
@@ -188,10 +193,14 @@ func (contractNotVisibleAuthorizer) AuthorizeWorkspace(
 }
 
 func allV1ContractRegistrars() []V1RouteRegistrar {
+	catalogRoutes, err := NewA2UICatalogRoutes()
+	if err != nil {
+		panic(err)
+	}
 	return []V1RouteRegistrar{
 		&AuthUserRoutes{}, &WorkspaceRoutes{}, &ConfigurationRoutes{}, &AgentCapabilityRoutes{},
 		&ToolOpenAPIRoutes{}, &WorkflowRoutes{}, &GenerateSessionRoutes{}, &ChatExecutionRoutes{}, &AuditRoutes{},
-		&AgentAccessManagementRoutes{},
+		&AgentAccessManagementRoutes{}, catalogRoutes,
 	}
 }
 
@@ -375,5 +384,9 @@ func v1ContractRoutes() []v1ContractRoute {
 		{http.MethodGet, root + "/workspaces/:wid/audit-events/:id", false},
 		{http.MethodPost, root + "/workspaces/:wid/audit-exports", false},
 		{http.MethodGet, root + "/workspaces/:wid/audit-exports/:id", false},
+
+		// A2UI schemas: the contract a client reads before it holds any token.
+		{http.MethodGet, root + "/a2ui/catalogs/standard/v1/catalog.json", true},
+		{http.MethodGet, root + "/a2ui/catalogs/standard/v1/surface.schema.json", true},
 	}
 }

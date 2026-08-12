@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"actweave/backend/internal/a2ui"
 	"actweave/backend/internal/aapfile"
 	"actweave/backend/internal/agent"
 	"actweave/backend/internal/agentaccessauth"
@@ -22,13 +23,9 @@ import (
 
 var ErrAAPAgentProfileUnavailable = errors.New("AAP Agent Profile is unavailable")
 
-// MVP A2UI profile advertisement constants (KD-15 / Q10 / Q11).
-// Centralized a2ui package lands in PR-4; keep literals here until then.
-const (
-	aapA2UIMaxSurfaceBytes = 64 << 10 // 65536
-	aapA2UIDelivery        = "item_completed"
-	aapA2UISpecHint        = "a2ui-surface.v0"
-)
+// A2UI profile advertisement (KD-15 / Q10 / Q11). Values come from the a2ui
+// package so the profile cannot disagree with what the write path emits.
+const aapA2UIDelivery = "item_completed"
 
 type AAPAgentProfileStore interface {
 	GetSummary(context.Context, string, string) (agent.Summary, error)
@@ -90,6 +87,9 @@ type aapA2UIDTO struct {
 	Actions         bool   `json:"actions"`
 	MaxSurfaceBytes int64  `json:"maxSurfaceBytes"`
 	SpecHint        string `json:"specHint"`
+	// CatalogIDs tells a client which component catalogs surfaces may declare, so
+	// it can decide whether it is able to render them before subscribing.
+	CatalogIDs []string `json:"catalogIds"`
 }
 
 type aapSupportedContentDTO struct {
@@ -220,9 +220,9 @@ func projectAAPAgentProfile(
 	enableA2UI := aapEnableA2UIFromPolicy(value.ContextPolicy)
 	supportedContent := aapSupportedContentForAgent(filesEnabled, filesGate, enableA2UI)
 	// When disabled: omit top-level a2ui (prefer omit over enabled:false; KD-15).
-	var a2ui *aapA2UIDTO
+	var a2uiProfile *aapA2UIDTO
 	if enableA2UI {
-		a2ui = aapA2UIAdvertisement()
+		a2uiProfile = aapA2UIAdvertisement()
 	}
 	seed := aapAgentProfileVersionSeed{
 		Schema: "aap.agent-profile.v1", AgentID: value.ID,
@@ -232,7 +232,7 @@ func projectAAPAgentProfile(
 		Capabilities:            versions,
 		// Content support + a2ui metadata changes must flip ETag (KD-14 / KD-15).
 		SupportedContent: supportedContent,
-		A2UI:             a2ui,
+		A2UI:             a2uiProfile,
 	}
 	canonical, err := json.Marshal(seed)
 	if err != nil {
@@ -245,7 +245,7 @@ func projectAAPAgentProfile(
 		Description: value.RoleDescription, Version: version,
 		SupportedContent: supportedContent,
 		Capabilities:     capabilities,
-		A2UI:             a2ui,
+		A2UI:             a2uiProfile,
 		InteractionRequirements: aapInteractionRequirementsDTO{
 			Approval: aapApprovalRequirementDTO{
 				Supported: true, MayBeRequired: mayRequireApproval,
@@ -272,8 +272,9 @@ func aapA2UIAdvertisement() *aapA2UIDTO {
 		Delivery:        aapA2UIDelivery,
 		Streaming:       false,
 		Actions:         false,
-		MaxSurfaceBytes: aapA2UIMaxSurfaceBytes,
-		SpecHint:        aapA2UISpecHint,
+		MaxSurfaceBytes: a2ui.MaxSurfaceBytes,
+		SpecHint:        a2ui.EnvelopeVersionV1,
+		CatalogIDs:      a2ui.RegisteredCatalogIDs(),
 	}
 }
 
