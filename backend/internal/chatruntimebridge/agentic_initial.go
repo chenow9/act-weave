@@ -521,9 +521,14 @@ func (b *Bridge) driveAgenticInitial(
 
 	agentName := "agent-" + strings.TrimSpace(run.AgentID)
 	hasToolsOrCatalog := len(tools) > 0 || (catalog != nil && catalog.Len() > 0)
+	// Instruction is deliberately empty: the frozen system prompt is already the
+	// leading message of the assembled list, which is the audited description of
+	// the wire (SystemPromptHash plus a single out-of-band system term in
+	// EstimateAgenticRequest). adk prepends a non-empty Instruction on top of the
+	// input messages, so setting it here would put the system prompt on the wire
+	// twice while the manifest and the preflight estimate still count one.
 	built, err := einoruntime.BuildAgenticAgent(ctx, einoruntime.AgenticAgentBuildConfig{
 		Name:                     agentName,
-		Instruction:              instruction,
 		Model:                    agenticModel,
 		Tools:                    tools,
 		Catalog:                  catalog,
