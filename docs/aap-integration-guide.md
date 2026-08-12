@@ -493,7 +493,8 @@ Partners must **not** be required to hold an AAP token and call `:download` them
 ### 9.2 A2UI (optional, additive)
 
 Design (normative product locks): [`designs/a2ui-additive-capability.md`](./designs/a2ui-additive-capability.md).  
-Implementation checklist: [`designs/a2ui-additive-capability-checklist.md`](./designs/a2ui-additive-capability-checklist.md).
+Implementation checklist: [`designs/a2ui-additive-capability-checklist.md`](./designs/a2ui-additive-capability-checklist.md).  
+Surface contract (component catalog, chart semantics, strict validation): [`designs/a2ui-catalog-refactor.md`](./designs/a2ui-catalog-refactor.md).
 
 A2UI is an **optional, additive** capability: **text is always first-class**. Enabling it means the Agent **may** attach a declarative UI surface when useful — it does **not** require every reply to include A2UI. Simple Q&A can remain text-only; the same Conversation may mix pure-text turns and text+a2ui turns.
 
@@ -521,7 +522,8 @@ When `enableA2UI` is true, the Agent Profile **advertises** assistant outbound c
   "streaming": false,
   "actions": false,
   "maxSurfaceBytes": 65536,
-  "specHint": "a2ui-surface.v0"
+  "specHint": "a2ui-surface.v1",
+  "catalogIds": ["https://catalog.actweave.dev/standard/v1/catalog.json"]
 }
 ```
 
@@ -532,6 +534,7 @@ When `enableA2UI` is true, the Agent Profile **advertises** assistant outbound c
 | `actions: false` | **No** action channel; controls are **display-only** |
 | `maxSurfaceBytes` | Raw `surface` JSON size cap (64 KiB) |
 | `specHint` | Envelope / surface version hint for clients |
+| `catalogIds` | Component catalogs a surface may declare. Every surface carries one of these as `catalogId`; a client that renders none of them should ignore `a2ui` parts and use the text |
 
 ETag / profile version includes this object: flipping enable or changing advertised metadata changes ETag.
 
@@ -548,8 +551,8 @@ On `item.completed`, content is multi-part when A2UI was successfully extracted:
     { "type": "text", "text": "Please confirm the booking details:" },
     {
       "type": "a2ui",
-      "version": "a2ui-surface.v0",
-      "catalogId": "standard",
+      "version": "a2ui-surface.v1",
+      "catalogId": "https://catalog.actweave.dev/standard/v1/catalog.json",
       "surface": { }
     }
   ]
@@ -574,24 +577,111 @@ On `item.completed`, content is multi-part when A2UI was successfully extracted:
 TypeScript SDK helpers (`@actweave/agent-client`):
 
 ```ts
-import { findA2UIPart, joinTextParts, type ProtocolItem } from "@actweave/agent-client";
+import { findA2UIPart, isKnownA2UICatalog, iterCharts, joinTextParts, type ProtocolItem } from "@actweave/agent-client";
 
-function renderAssistant(item: ProtocolItem) {
+function readAssistant(item: ProtocolItem) {
   const text = joinTextParts(item); // text parts only; ignores a2ui / unknown
-  const a2ui = findA2UIPart(item);  // undefined when text-only
-  // Prefer item.completed snapshot over delta buffers.
-  return { text, surface: a2ui?.surface, version: a2ui?.version };
+  const surface = findA2UIPart(item)?.surface; // undefined when text-only
+  // A surface from a catalog you do not know: show the text, draw nothing.
+  if (!isKnownA2UICatalog(surface)) return { text, charts: [] };
+  return { text, charts: iterCharts(surface) }; // series resolved, values numeric
 }
 ```
 
 `RunReducer` already replaces items on `item.completed` so progressive text is overwritten by the authoritative multiparty content.
 
+#### Surface contract (catalog `standard/v1`)
+
+The `surface` is **not** free-form: the server validates every surface against a
+component catalog before storing it, and rejects the whole surface if it does not
+conform (the message then arrives as text alone). What you receive is therefore
+already inside these bounds — the contract exists so your renderer can rely on
+that instead of guessing.
+
+Design and rationale: [`designs/a2ui-catalog-refactor.md`](./designs/a2ui-catalog-refactor.md).
+
+**Shape.** A surface is the A2UI `createSurface` payload, so a conforming
+renderer can consume it unchanged:
+
+```json
+{
+  "surfaceId": "019ff3f0-bfdd-7b38-9c53-f90bf5812478:item_1",
+  "catalogId": "https://catalog.actweave.dev/standard/v1/catalog.json",
+  "components": [
+    { "id": "root", "component": "Column", "children": ["t1", "c1"] },
+    { "id": "t1", "component": "Text", "text": "2026 Q1 revenue by region", "variant": "heading" },
+    { "id": "c1", "component": "Chart", "chartType": "bar", "unit": "万元", "series": { "path": "/revenue" } }
+  ],
+  "dataModel": {
+    "revenue": [{ "name": "revenue", "points": [{ "label": "East", "value": 1280 }] }]
+  }
+}
+```
+
+The graph is **flat**: components are a list, children are referenced by id, and
+exactly one component has `id: "root"`. Walk from `root`; a component nobody
+references is unreachable and never reaches you.
+
+**Components** (`standard/v1`, 11): `Column` `Row` `Card` `Text` `Divider`
+`Chart` `TextField` `CheckBox` `ChoicePicker` `DateTimeInput` `Button`.
+Names match exactly — no aliases, no case folding.
+
+**Charts** carry measurements only. There is no colour, size, axis range, legend
+or formatted string to inherit; that is your design system's business.
+
+| Member | Contract |
+| --- | --- |
+| `chartType` | `bar` `hbar` `line` `area` `pie` `donut`. `hbar` exists so long category labels need no rotation |
+| `series` | 1–8 series, each with 1–64 `{label, value}` points. Inline or a binding |
+| `unit` | Unit of every value (e.g. `万元`, `%`), never baked into the numbers |
+| `valueFormat` | `plain` `compact` `percent` `currency` — how a value should read |
+| `stacked` | Bar shapes only; the server rejects it elsewhere |
+| `title` | Optional. A chart's own title, separate from any sibling `Text` heading |
+
+Cross-field rules the server has already enforced: `pie` / `donut` carry exactly
+one series and no negative values; multi-series charts share one label sequence.
+
+**Bindings.** Anywhere a value is allowed, a member may instead be a JSON Pointer
+(RFC 6901) into `dataModel`: `{ "path": "/revenue" }`. Resolve every member
+through one helper — do not decide literal-vs-pointer by inspecting the value.
+A pointer that reaches nothing is not an error; treat it as an absent member.
+
+**Limits** (server-enforced; mirror them and a foreign surface cannot drive
+unbounded work in your client):
+
+| Limit | Value |
+| --- | --- |
+| `surface` JSON bytes | 65536 |
+| Components per surface | 64 |
+| Tree depth | 16 |
+| Series per chart / points per series | 8 / 64 |
+
+**Client obligations.**
+
+1. **Check `catalogId`** against the profile's `a2ui.catalogIds` before rendering. An unknown catalog means unknown components: fall back to the text.
+2. **Degrade per component, never per message.** For a component you do not implement, render a placeholder and keep drawing its siblings. The same applies to a dangling child id or a tree deeper than you allow.
+3. **Never execute anything from a surface.** Text is text, not markup: interpolate it. `actions: false` means controls are display-only.
+4. **Do not infer meaning from ids.** `id` is a graph key, not a semantic hint.
+
+**Schema distribution.** Fetch the catalog and surface schemas (public,
+cacheable, `ETag`, no token):
+
+```
+GET {base}/api/v1/a2ui/catalogs/standard/v1/catalog.json
+GET {base}/api/v1/a2ui/catalogs/standard/v1/surface.schema.json
+```
+
+`catalogId` is an *identifier*: per the A2UI spec it need not be fetchable, so
+resolve schemas through these endpoints rather than by dereferencing the id.
+The surface schema reaches the catalog through a relative `$ref`, so keep the two
+documents siblings if you mirror them.
+
 #### Non-goals (MVP)
 
 - A2UI streaming / progressive surface (future)
 - Component action channel / `a2ui_action` user parts (future)
-- Full Console catalog renderer for every surface
-- Forcing Google A2UI JSON Schema validation server-side beyond object + size
+- Catalog negotiation: a client cannot yet declare which catalogs it renders
+- Catalogs beyond `standard/v1`, and the Basic Catalog components it omits
 
 ---
 

@@ -8,9 +8,9 @@ AAP（Agent Access Protocol）是应用调用 ActWeave Agent Runtime 的路径�
 
 1. [AAP 对接指南](../aap-integration-guide.zh-CN.md)：认证、scope、Conversation、Run、SSE、错误、CORS、密钥轮换和上线检查（含可选 [A2UI §9.2](../aap-integration-guide.zh-CN.md#92-a2ui可选附加)）。
 2. [OpenAPI](../openapi/agent-access-v1.yaml)：机器可读 HTTP 契约和字段 schema 的事实来源。
-3. [TypeScript SDK](../../sdk/typescript/)：`@actweave/agent-client`（`enableA2UI` 时可用 `joinTextParts` / `findA2UIPart`）。
+3. [TypeScript SDK](../../sdk/typescript/)：`@actweave/agent-client`（`enableA2UI` 时可用 `joinTextParts` / `findA2UIPart`，以及读 surface 的 `isKnownA2UICatalog` / `resolveBinding` / `iterCharts`）。
 4. [AAP Chat Demo](../../demos/aap-chat/)：BFF 持有 Client Secret 的本地演示。
-5. [A2UI 附加能力设计](../designs/a2ui-additive-capability.md)：助手消息上可选声明式 UI 的产品锁定（MVP `actions: false`）。
+5. A2UI 设计：[附加能力](../designs/a2ui-additive-capability.md)给出产品锁定（MVP `actions: false`），[catalog 契约](../designs/a2ui-catalog-refactor.md)给出 surface 能装什么、如何被校验。
 
 ## 最短调用链
 
@@ -22,6 +22,6 @@ Client credentials / private_key_jwt
   → SSE events (Last-Event-ID reconnect)
 ```
 
-当前默认部署接受文本 `input`。文件上传路由存在但默认关闭；端到端多模态还需 `runtimeMultimodal`。可选 A2UI 默认关闭（`context_policy.aap.enableA2UI`）；开启后文本仍为一等，`a2ui` 仅在 `item.completed` 上出现（`streaming: false`，`actions: false`）。不要在浏览器保存长期 Client Secret，也不要用 `/api/v1` 作为第三方调用入口。
+当前默认部署接受文本 `input`。文件上传路由存在但默认关闭；端到端多模态还需 `runtimeMultimodal`。可选 A2UI 默认关闭（`context_policy.aap.enableA2UI`）；开启后文本仍为一等，`a2ui` 仅在 `item.completed` 上出现（`streaming: false`，`actions: false`），且每个 surface 都符合所广告的组件 catalog。不要在浏览器保存长期 Client Secret，也不要用 `/api/v1` 作为第三方调用入口——它对第三方开放的只有 A2UI schema 分发（`GET /api/v1/a2ui/catalogs/standard/v1/catalog.json`），返回的是静态文档，不含任何工作区数据。
 
 关于 AAP 与 A2A 的边界见[概念](../concepts.zh-CN.md)。

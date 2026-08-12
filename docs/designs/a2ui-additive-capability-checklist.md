@@ -205,6 +205,8 @@
 ### Optional later
 
 - [-] 强制 Google A2UI JSON Schema（Q5-B）
+  → 已展开为独立设计：[a2ui-catalog-refactor.md](./a2ui-catalog-refactor.md)
+  （catalog 强契约 + 图表优先，取代本分支的 opaque surface 与客户端嗅探）
 - [-] side-car stored_object 存超大 surface（Alt-5）
 - [-] Console 完整 A2UI catalog 渲染
 - [-] 可运营配置 `MaxSurfaceBytes`
