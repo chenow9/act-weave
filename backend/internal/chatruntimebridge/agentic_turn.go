@@ -41,6 +41,12 @@ func (b *Bridge) runAgenticTurn(
 	built adk.TypedAgent[*schema.AgenticMessage],
 	call agenticTurnFunc,
 ) (text string, streamMessageID string, err error) {
+	// Store-side tenant cross-check for every checkpoint this turn reads or
+	// writes. It is injected here rather than per path because the check is a
+	// silent no-op when absent, so an entry point that forgot it would lose the
+	// guard without failing anything.
+	ctx = einoruntime.WithTrustedWorkspaceID(ctx, job.WorkspaceID)
+
 	projector := &StreamDeltaRecorder{
 		Now: b.now,
 		ModelTurnHook: func(hookCtx context.Context, turn einoruntime.ModelTurn) error {

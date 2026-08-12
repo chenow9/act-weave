@@ -118,6 +118,34 @@ func TestAgenticTurnsBuildTheAgentInOnePlace(t *testing.T) {
 	}
 }
 
+// TestAgenticTurnBindsTheTrustedWorkspaceOnce keeps the checkpoint store's tenant
+// cross-check at the single seam both Agentic turns pass through. The check is a
+// no-op when the binding is absent, so an entry point that forgets it loses the
+// guard silently — which is how 4B-4 dropped it from the initial turn while
+// moving the dispatch out of drive(). Binding it once, where both paths must go,
+// also gives it to whatever delegation or SmartDAG entry reuses runAgenticTurn.
+func TestAgenticTurnBindsTheTrustedWorkspaceOnce(t *testing.T) {
+	t.Parallel()
+	const binding = "einoruntime.WithTrustedWorkspaceID"
+	if got := strings.Count(functionBody(t, "func (b *Bridge) runAgenticTurn("), binding); got != 1 {
+		t.Fatalf("runAgenticTurn binds the trusted workspace %d times, want exactly 1", got)
+	}
+	for _, decl := range []string{
+		"func (b *Bridge) driveAgenticInitial(",
+		"func (b *Bridge) driveAgenticResume(",
+	} {
+		body := functionBody(t, decl)
+		if got := strings.Count(body, binding); got != 0 {
+			t.Errorf("%s binds the trusted workspace itself (%d occurrences); the binding "+
+				"belongs to runAgenticTurn so the two Agentic paths cannot diverge", decl, got)
+		}
+		if got := strings.Count(body, "b.runAgenticTurn("); got != 1 {
+			t.Errorf("%s reaches runAgenticTurn %d times, want exactly 1: a path that "+
+				"bypasses it also bypasses the binding", decl, got)
+		}
+	}
+}
+
 // countCallSites counts occurrences of a call expression across the package's
 // non-test sources.
 func countCallSites(t *testing.T, expression string) int {

@@ -263,7 +263,7 @@ func TestAgenticResume_RebuildsTheAgentThatPaused(t *testing.T) {
 		t.Fatalf("ContinueAfterConfirmation: %v", err)
 	}
 
-	input := h.f.mdl.lastInput
+	input := h.f.mdl.inputSnapshot()
 	if len(input) == 0 {
 		t.Fatal("resume produced no model input")
 	}

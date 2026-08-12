@@ -41,15 +41,20 @@ type scriptedAgenticModel struct {
 	calls     atomic.Int64
 	lastInput []*schema.AgenticMessage
 	lastOpts  []model.Option
+	// trustedWS records the trusted workspace visible in the call context, one
+	// entry per call, empty when the bridge did not bind one.
+	trustedWS []string
 	onCall    func(call int, input []*schema.AgenticMessage, opts []model.Option)
 }
 
-func (m *scriptedAgenticModel) next(input []*schema.AgenticMessage, opts []model.Option) (*schema.AgenticMessage, error) {
+func (m *scriptedAgenticModel) next(ctx context.Context, input []*schema.AgenticMessage, opts []model.Option) (*schema.AgenticMessage, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	n := int(m.calls.Add(1))
 	m.lastInput = append([]*schema.AgenticMessage(nil), input...)
 	m.lastOpts = append([]model.Option(nil), opts...)
+	seen, _ := einoruntime.TrustedWorkspaceID(ctx)
+	m.trustedWS = append(m.trustedWS, seen)
 	if m.onCall != nil {
 		m.onCall(n, input, opts)
 	}
@@ -62,15 +67,29 @@ func (m *scriptedAgenticModel) next(input []*schema.AgenticMessage, opts []model
 }
 
 func (m *scriptedAgenticModel) Generate(ctx context.Context, input []*schema.AgenticMessage, opts ...model.Option) (*schema.AgenticMessage, error) {
-	return m.next(input, opts)
+	return m.next(ctx, input, opts)
 }
 
 func (m *scriptedAgenticModel) Stream(ctx context.Context, input []*schema.AgenticMessage, opts ...model.Option) (*schema.StreamReader[*schema.AgenticMessage], error) {
-	msg, err := m.next(input, opts)
+	msg, err := m.next(ctx, input, opts)
 	if err != nil {
 		return nil, err
 	}
 	return schema.StreamReaderFromArray([]*schema.AgenticMessage{msg}), nil
+}
+
+// inputSnapshot returns the last input under the lock next() writes it with.
+func (m *scriptedAgenticModel) inputSnapshot() []*schema.AgenticMessage {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]*schema.AgenticMessage(nil), m.lastInput...)
+}
+
+// trustedWorkspaces returns the trusted workspace seen on each model call.
+func (m *scriptedAgenticModel) trustedWorkspaces() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.trustedWS...)
 }
 
 var _ model.AgenticModel = (*scriptedAgenticModel)(nil)
