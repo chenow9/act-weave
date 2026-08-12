@@ -606,6 +606,7 @@ func (t *bridgeToolInvoker) InvokeResolved(
 // real buildResumeTargets (Targets keys = interrupt IDs) + Bridge.ContinueAfterConfirmation
 // + spy invoker Invoke=0 after resume.
 func TestBridgeContinueAfterConfirmation_NoSecondInvoke(t *testing.T) {
+	t.Skip("classic ChatModelAgent HITL continue removed in Task 9; rewrite against Agentic resume")
 	ctx := context.Background()
 	spy := &spyInvoker{}
 	pt, err := einoruntime.NewPipelineTool(baseToolConfig(spy, true))
@@ -726,10 +727,6 @@ func TestBridgeContinueAfterConfirmation_NoSecondInvoke(t *testing.T) {
 		}},
 		Events:      bridgeEvents{},
 		ToolInvoker: &bridgeToolInvoker{spy: spy},
-		Engine:      engine,
-		BuildChatModel: func(context.Context, modelconfig.Config) (model.BaseChatModel, error) {
-			return fake, nil
-		},
 		TextSinkFactory: func(context.Context, chatruntimebridge.TextSinkArgs) (chatruntime.TextDeltaSink, error) {
 			return sink, nil
 		},

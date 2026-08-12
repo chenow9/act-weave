@@ -6,7 +6,6 @@ require (
 	github.com/a2aproject/a2a-go v0.3.15
 	github.com/cloudwego/eino v0.9.13
 	github.com/cloudwego/eino-ext/components/model/agenticopenai v0.2.2
-	github.com/cloudwego/eino-ext/components/model/openai v0.1.13
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/getkin/kin-openapi v0.128.0
 	github.com/gin-gonic/gin v1.12.0

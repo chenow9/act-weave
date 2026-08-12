@@ -213,7 +213,7 @@ func extractAgenticCapabilitiesFromModelSnapshot(raw json.RawMessage) json.RawMe
 //     (never ListEnabledEdges / live topology to recover).
 //   - Valid freeze (empty or with edges/remotes) → returned for attachAgenticDelegationTools.
 //
-// Never calls classic attachDelegationTools or classic buildModel.
+// Never calls classic live-topology attach or classic model builders.
 //
 // cfg is the already-strict-parsed run.ModelSnapshot. The graph is not an
 // independent island: its root node must describe exactly the model identity
@@ -484,7 +484,7 @@ func (b *Bridge) planAgenticRun(
 	}
 
 	// 5) Capability tools from the immutable snapshot, then Typed AgentTool / A2A
-	// from the frozen graph (never classic attachDelegationTools).
+	// from the frozen graph (never classic live-topology attach).
 	pendingKey := pendingConfirmKey(job.WorkspaceID, job.RunID)
 	b.clearPending(pendingKey)
 	tools, err := b.buildPipelineToolsFrom(ctx, job, run, pendingKey, frozenCaps)

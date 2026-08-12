@@ -201,10 +201,8 @@ func TestRootChatFreeze_ProducerToBridgeExecuteClosure(t *testing.T) {
 	bridge, err := chatruntimebridge.NewBridge(chatruntimebridge.Dependencies{
 		Sessions: fake, Results: fake, Agents: repos.agents, Models: repos.models,
 		Runs: fake, Events: fake,
-		Engine:            einoruntime.NewEngine(einoruntime.EngineConfig{Store: store}),
 		AgenticEngine:     einoruntime.NewAgenticEngine(einoruntime.AgenticEngineConfig{Store: store}),
 		BuildAgenticModel: fake.buildAgenticModel,
-		BuildChatModel:    fake.buildClassicModel,
 		Assemblies:        assemblies,
 		ToolInvoker:       nil,
 	})
@@ -307,10 +305,8 @@ func TestRootChatFreeze_ProducerCapabilityReleasesPassStrictParse(t *testing.T) 
 	bridge, err := chatruntimebridge.NewBridge(chatruntimebridge.Dependencies{
 		Sessions: fake, Results: fake, Agents: repos.agents, Models: repos.models,
 		Runs: fake, Events: fake,
-		Engine:            einoruntime.NewEngine(einoruntime.EngineConfig{Store: store}),
 		AgenticEngine:     einoruntime.NewAgenticEngine(einoruntime.AgenticEngineConfig{Store: store}),
 		BuildAgenticModel: fake.buildAgenticModel,
-		BuildChatModel:    fake.buildClassicModel,
 		Assemblies:        assemblies,
 		ToolInvoker:       closureToolInvoker{},
 	})

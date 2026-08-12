@@ -22,7 +22,7 @@ func TestNewBridge_MaxToolInvocationsContract(t *testing.T) {
 			Models:             bridgeModels{},
 			Runs:               &bridgeRuns{},
 			Events:             bridgeEvents{},
-			Engine:             einoruntime.NewEngine(einoruntime.EngineConfig{}),
+			AgenticEngine:      einoruntime.NewAgenticEngine(einoruntime.AgenticEngineConfig{}),
 			MaxToolInvocations: maxTools,
 		}
 	}

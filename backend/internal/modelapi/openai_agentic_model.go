@@ -56,9 +56,8 @@ var (
 // official eino-ext agenticopenai Responses adapter (Responses API), wrapped
 // in a guarding boundary that enforces platform request invariants.
 //
-// This is the Agentic foundation path (Task 1). Classic Chat Completions
-// callers continue to use NewEinoOpenAIChatModel until later migration tasks;
-// there is no runtime fallback between Agentic and classic.
+// This is the sole production OpenAI model path after Task 9. There is no
+// runtime fallback to classic Chat Completions.
 //
 // Security and request semantics:
 //   - Credentials are resolved once via SecretOpener; secret material is never

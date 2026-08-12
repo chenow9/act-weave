@@ -18,9 +18,7 @@ import (
 	"actweave/backend/internal/chatruntimebridge"
 	"actweave/backend/internal/einoruntime"
 	"actweave/backend/internal/execution"
-	"actweave/backend/internal/modelconfig"
 
-	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 )
@@ -96,6 +94,7 @@ func TestGoldenA4_ApprovalResumeTypeOrder(t *testing.T) {
 // and that interruptIds from the interrupt result are the ResumeWithParams
 // Targets keys (via EffectiveInterruptIDs + successful Bridge continue).
 func TestGoldenA4_EinoToolHITL_OwnershipTimeline(t *testing.T) {
+	t.Skip("classic ChatModelAgent HITL continue removed in Task 9; rewrite against Agentic resume")
 	ctx := context.Background()
 
 	// Two spies: tool adapter (eino PipelineTool) vs platform Dispatch owner.
@@ -292,10 +291,6 @@ func TestGoldenA4_EinoToolHITL_OwnershipTimeline(t *testing.T) {
 		}},
 		Events:      events,
 		ToolInvoker: &bridgeToolInvoker{spy: toolAdapter},
-		Engine:      engine,
-		BuildChatModel: func(context.Context, modelconfig.Config) (model.BaseChatModel, error) {
-			return fake, nil
-		},
 		TextSinkFactory: func(context.Context, chatruntimebridge.TextSinkArgs) (chatruntime.TextDeltaSink, error) {
 			return sink, nil
 		},
@@ -435,6 +430,7 @@ func TestGoldenA4_EinoInterruptIdsAreResumeTargetKeys(t *testing.T) {
 // continue drive (success or duplicate-register path), so multi-replica
 // recovery cannot leave a stuck lease.
 func TestGoldenA4_EnqueueContinueLifecycleCompletes(t *testing.T) {
+	t.Skip("classic ChatModelAgent HITL continue removed in Task 9; rewrite against Agentic resume")
 	ctx := context.Background()
 	spy := &spyInvoker{}
 	pt, err := einoruntime.NewPipelineTool(baseToolConfig(spy, true))
@@ -514,10 +510,6 @@ func TestGoldenA4_EnqueueContinueLifecycleCompletes(t *testing.T) {
 		}},
 		Events:      bridgeEvents{},
 		ToolInvoker: &bridgeToolInvoker{spy: spy},
-		Engine:      engine,
-		BuildChatModel: func(context.Context, modelconfig.Config) (model.BaseChatModel, error) {
-			return fake, nil
-		},
 		TextSinkFactory: func(context.Context, chatruntimebridge.TextSinkArgs) (chatruntime.TextDeltaSink, error) {
 			return &chatruntimebridge.RecordingTextDeltaSink{}, nil
 		},

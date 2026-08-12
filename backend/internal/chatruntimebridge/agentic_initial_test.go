@@ -642,10 +642,8 @@ func (f *agenticFixture) bridge(t *testing.T) *chatruntimebridge.Bridge {
 		Models:            agenticModels{cfg: f.cfg},
 		Runs:              &agenticRuns{run: f.run},
 		Events:            f.events,
-		Engine:            einoruntime.NewEngine(einoruntime.EngineConfig{Store: f.store}),
 		AgenticEngine:     einoruntime.NewAgenticEngine(einoruntime.AgenticEngineConfig{Store: f.store}),
 		BuildAgenticModel: f.agentic.Build,
-		BuildChatModel:    f.classic.Build,
 		TextSinkFactory:   f.sinks.Factory,
 		Assemblies:        f.assemblies,
 		Delegation:        f.delegation,
@@ -808,13 +806,11 @@ func TestAgenticInitial_WireCapture_ClientToolSearch(t *testing.T) {
 		}},
 		Events:        &eventCounter{},
 		ToolInvoker:   invoker,
-		Engine:        einoruntime.NewEngine(einoruntime.EngineConfig{Store: store}),
 		AgenticEngine: einoruntime.NewAgenticEngine(einoruntime.AgenticEngineConfig{Store: store}),
 		BuildAgenticModel: func(ctx context.Context, c modelconfig.Config) (model.AgenticModel, error) {
 			agenticBuilds.Add(1)
 			return modelapi.NewOpenAIAgenticModel(ctx, modelapi.NewStreamingHTTPClient(), opener, c)
 		},
-		BuildChatModel:  classic.Build,
 		Assemblies:      assemblies,
 		TextSinkFactory: (&sinkCounter{}).Factory,
 	})
@@ -1054,10 +1050,8 @@ func TestAgenticInitial_Ledger_RepairCycle2(t *testing.T) {
 					Models:            agenticModels{cfg: f.cfg},
 					Runs:              &agenticRuns{run: f.run},
 					Events:            f.events,
-					Engine:            einoruntime.NewEngine(einoruntime.EngineConfig{Store: f.store}),
 					AgenticEngine:     einoruntime.NewAgenticEngine(einoruntime.AgenticEngineConfig{Store: f.store}),
 					BuildAgenticModel: agentic.Build,
-					BuildChatModel:    classic.Build,
 					Assemblies:        f.assemblies,
 					TextSinkFactory:   f.sinks.Factory,
 				})
@@ -1087,10 +1081,8 @@ func TestAgenticInitial_Ledger_RepairCycle2(t *testing.T) {
 					Models:            agenticModels{cfg: f.cfg},
 					Runs:              &agenticRuns{run: f.run},
 					Events:            f.events,
-					Engine:            einoruntime.NewEngine(einoruntime.EngineConfig{Store: f.store}),
 					AgenticEngine:     einoruntime.NewAgenticEngine(einoruntime.AgenticEngineConfig{Store: f.store}),
 					BuildAgenticModel: f.agentic.Build,
-					BuildChatModel:    f.classic.Build,
 					Assemblies:        nil,
 					TextSinkFactory:   f.sinks.Factory,
 				})
@@ -1328,10 +1320,8 @@ func TestAgenticInitial_LiveGetErrorDoesNotBlockValidFreeze(t *testing.T) {
 		Models:            errModels{},
 		Runs:              &agenticRuns{run: f.run},
 		Events:            f.events,
-		Engine:            einoruntime.NewEngine(einoruntime.EngineConfig{Store: f.store}),
 		AgenticEngine:     einoruntime.NewAgenticEngine(einoruntime.AgenticEngineConfig{Store: f.store}),
 		BuildAgenticModel: f.agentic.Build,
-		BuildChatModel:    f.classic.Build,
 		Assemblies:        f.assemblies,
 		TextSinkFactory:   f.sinks.Factory,
 	})
@@ -1358,10 +1348,8 @@ func TestAgenticInitial_LiveDisabledKillSwitch(t *testing.T) {
 		Models:            agenticModels{cfg: disabled},
 		Runs:              &agenticRuns{run: f.run},
 		Events:            f.events,
-		Engine:            einoruntime.NewEngine(einoruntime.EngineConfig{Store: f.store}),
 		AgenticEngine:     einoruntime.NewAgenticEngine(einoruntime.AgenticEngineConfig{Store: f.store}),
 		BuildAgenticModel: f.agentic.Build,
-		BuildChatModel:    f.classic.Build,
 		Assemblies:        f.assemblies,
 		TextSinkFactory:   f.sinks.Factory,
 	})
@@ -1410,10 +1398,8 @@ func TestAgenticInitial_ManifestPersistedNoLeak(t *testing.T) {
 		Runs:              &agenticRuns{run: f.run},
 		Events:            f.events,
 		ToolInvoker:       &bridgeToolInvoker{spy: &spyInvoker{}},
-		Engine:            einoruntime.NewEngine(einoruntime.EngineConfig{Store: f.store}),
 		AgenticEngine:     einoruntime.NewAgenticEngine(einoruntime.AgenticEngineConfig{Store: f.store}),
 		BuildAgenticModel: f.agentic.Build,
-		BuildChatModel:    f.classic.Build,
 		Assemblies:        f.assemblies,
 		TextSinkFactory:   f.sinks.Factory,
 	})

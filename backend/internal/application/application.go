@@ -1155,7 +1155,6 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		return nil, fmt.Errorf("eino checkpoint store required after PR16: %w", storeErr)
 	}
 	einoCheckpoints := einoCheckpointDeleter(checkpointStore)
-	einoEngine := einoruntime.NewEngine(einoruntime.EngineConfig{Store: checkpointStore})
 	agenticEngine := einoruntime.NewAgenticEngine(einoruntime.AgenticEngineConfig{Store: checkpointStore})
 	// modelHTTP is constructed earlier for smart-dag PlatformChatGraphModel (shared).
 	// D14: ProtocolMessageTextSink path for true Stream → item.delta.
@@ -1221,11 +1220,6 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if summaryBodyErr != nil {
 		return nil, fmt.Errorf("context summary body store: %w", summaryBodyErr)
 	}
-	// Classic Chat Completions builder: classic checkpoint resume (Task 9 removes).
-	// Production Chat / SmartDAG / compact / prompt enhance use BuildAgenticModel.
-	buildChatModel := func(ctx context.Context, cfg modelconfig.Config) (model.BaseChatModel, error) {
-		return modelapi.NewEinoOpenAIChatModel(ctx, modelHTTP, secretService, cfg)
-	}
 	// Production AgenticModel (Responses; store=false; parallel=false).
 	buildAgenticModel := func(ctx context.Context, cfg modelconfig.Config) (model.AgenticModel, error) {
 		return modelapi.NewOpenAIAgenticModel(ctx, modelHTTP, secretService, cfg)
@@ -1289,7 +1283,6 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		ModelTurns:         &chatModelTurnRecorder{inner: modelTurnContent},
 		ToolInvoker:        chatInvoker,
 		Confirmations:      chatConfirmations,
-		Engine:             einoEngine,
 		AgenticEngine:      agenticEngine,
 		CheckpointTTL:      checkpointStore,
 		TextSinkFactory:    textSinkFactory,
@@ -1299,7 +1292,6 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		Assemblies:         assemblyRepo,
 		Compact:            compactDeps,
 		BuildAgenticModel:  buildAgenticModel,
-		BuildChatModel:     buildChatModel,
 		Multimodal:         multimodalAssembler,
 		Delegation: &chatruntimebridge.DelegationDeps{
 			Bindings: delegationService,

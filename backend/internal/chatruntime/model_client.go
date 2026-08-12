@@ -39,7 +39,7 @@ type ToolFunctionSchema struct {
 }
 
 // CompletionRequest is one chat completion / text-stream invocation payload.
-// Production agent traffic uses modelapi.NewEinoOpenAIChatModel via chatruntimebridge;
+// Production agent traffic uses modelapi.NewOpenAIAgenticModel via chatruntimebridge;
 // this type remains for the provider-neutral text stream adapter interface.
 type CompletionRequest struct {
 	Messages   []ChatCompletionMessage

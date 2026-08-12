@@ -1,11 +1,7 @@
 // Package modelapi adapts ACTWEAVE modelconfig + secret credentials to Eino
-// model interfaces (classic ChatModel and AgenticModel).
+// AgenticModel (OpenAI Responses).
 //
-// Classic path (still used by runtime callers until later migration tasks):
-//   - NewEinoOpenAIChatModel → eino-ext openai Chat Completions ToolCallingChatModel
-//   - PlatformChatModel → hand-rolled Completions client for tests / reference
-//
-// Agentic foundation (Task 1; callers migrate later):
+// Production path:
 //   - NewOpenAIAgenticModel → guarded agenticopenai ResponsesModel (model.AgenticModel)
 //   - Strict API base validation at construction (absolute http/https,
 //     non-empty Hostname, valid port 1..65535 when present; reject relative,
@@ -22,7 +18,12 @@
 //   - WithProtectedPromptCacheKey + transport force-set so ExtraFields cannot
 //     override a platform-owned prompt_cache_key on the wire
 //   - Azure provider and apiVersion rejected until a complete contract exists
-//   - No runtime fallback between Agentic and classic
+//
+// Reference / tests only:
+//   - PlatformChatModel → hand-rolled Completions client (not wired in production)
+//
+// Classic NewEinoOpenAIChatModel / eino-ext openai Chat Completions was removed
+// in Task 9 (PR-09). Do not reintroduce a production Chat Completions adapter.
 //
 // Do not hand-roll chat/completions or Responses HTTP clients in business
 // packages; extend this package instead (eino-no-reinvent P2).

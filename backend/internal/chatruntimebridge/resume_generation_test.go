@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,9 +96,9 @@ func TestResumeGeneration_RoutesBeforeLoadingAnything(t *testing.T) {
 			wantErr: ErrAgenticResumeGenerationMismatch,
 		},
 		{
-			name:       "classic checkpoint still reaches the classic seam",
+			name:       "classic checkpoint is refused after Task 9",
 			generation: RuntimeGenerationClassic, stamp: true,
-			wantPastRouting: true,
+			wantErr: ErrClassicResumeRemoved,
 		},
 		{
 			name:       "agentic checkpoint is no longer refused by routing",
@@ -105,12 +106,10 @@ func TestResumeGeneration_RoutesBeforeLoadingAnything(t *testing.T) {
 			wantPastRouting: true,
 		},
 		{
-			// In-flight confirmations written before the Agentic path existed carry
-			// no marker, and rolling back to a build that never wrote one must keep
-			// working. Absent has to mean classic, not "unknown".
-			name:            "absent marker means classic",
-			stamp:           false,
-			wantPastRouting: true,
+			// Absent marker still means classic, but classic resume is removed.
+			name:    "absent marker refuses as classic removed",
+			stamp:   false,
+			wantErr: ErrClassicResumeRemoved,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -124,6 +123,9 @@ func TestResumeGeneration_RoutesBeforeLoadingAnything(t *testing.T) {
 			if test.wantPastRouting {
 				if errors.Is(err, ErrAgenticResumeGenerationMismatch) {
 					t.Fatalf("checkpoint was refused by generation routing: %v", err)
+				}
+				if errors.Is(err, ErrClassicResumeRemoved) {
+					t.Fatalf("agentic checkpoint was refused as classic: %v", err)
 				}
 				if !strings.Contains(err.Error(), "not resumable") {
 					t.Fatalf("expected the shared run load to reject the status, got %v", err)
@@ -269,13 +271,14 @@ func TestExecutionErrorCode_ResumeGenerationErrors(t *testing.T) {
 	}{
 		{ErrAgenticResumeGenerationMismatch, "AGENTIC_RESUME_GENERATION_MISMATCH"},
 		{ErrAgenticResumeClassicOnFrozenRun, "AGENTIC_RESUME_CLASSIC_ON_FROZEN_RUN"},
+		{ErrClassicResumeRemoved, "CLASSIC_RESUME_REMOVED"},
 	} {
 		if got := executionErrorCode(test.err); got != test.want {
 			t.Fatalf("executionErrorCode(%v) = %q, want %q", test.err, got, test.want)
 		}
-		// Routing wraps the mismatch with the offending value; the code must
-		// survive wrapping or the operator sees INVOCATION_FAILED instead.
-		wrapped := errors.New("outer: " + test.err.Error())
+		// Routing wraps the sentinel; the code must survive wrapping or the
+		// operator sees INVOCATION_FAILED instead.
+		wrapped := fmt.Errorf("outer: %w", test.err)
 		if got := executionErrorCode(wrapped); got != test.want {
 			t.Fatalf("executionErrorCode(wrapped %v) = %q, want %q", test.err, got, test.want)
 		}
@@ -291,7 +294,6 @@ func TestPauseCallSitesDeclareTheirGeneration(t *testing.T) {
 	const call = "b.pauseForInterrupt("
 	expected := map[string]string{
 		"agentic_turn.go": "RuntimeGenerationAgentic",
-		"bridge.go":       "RuntimeGenerationClassic",
 	}
 	counterpart := map[string]string{
 		"RuntimeGenerationAgentic": "RuntimeGenerationClassic",
@@ -389,10 +391,9 @@ func TestResumeGeneration_DispatchesToTheRuntimeThatPaused(t *testing.T) {
 			wantContains: "agentic model builder is not configured",
 		},
 		{
-			name:       "classic checkpoint drives the classic seam",
-			generation: RuntimeGenerationClassic,
-			// Reached driveClassicResume: only the classic seam reads the live agent.
-			wantContains: errResumeDispatchClassicSeam.Error(),
+			name:         "classic checkpoint is refused before any live read",
+			generation:   RuntimeGenerationClassic,
+			wantContains: ErrClassicResumeRemoved.Error(),
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

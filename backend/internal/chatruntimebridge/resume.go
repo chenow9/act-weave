@@ -14,15 +14,15 @@ import (
 // "no child agents leading to interrupted agent were found".
 var ErrAgenticResumeGenerationMismatch = errors.New("AGENTIC_RESUME_GENERATION_MISMATCH")
 
-// ErrAgenticResumeClassicOnFrozenRun is returned when the classic seam is asked
+// ErrAgenticResumeClassicOnFrozenRun was returned when the classic seam was asked
 // to restore a run that already carries a frozen agent_graph_snapshot.
-//
-// Absent RuntimeGeneration still routes to classic (pre-Agentic confirmations
-// carry no marker), but an Agentic-era pause written before generation stamping
-// also carries no marker — and those runs are exactly the ones that freeze a
-// graph. Refusing here turns that mis-route into a stable code instead of adk's
-// opaque restore failure after the user has already approved.
+// Kept for error-code mapping of historical wraps; Task 9 removed the seam.
 var ErrAgenticResumeClassicOnFrozenRun = errors.New("AGENTIC_RESUME_CLASSIC_ON_FROZEN_RUN")
+
+// ErrClassicResumeRemoved is returned when ContinueAfterConfirmation would have
+// entered the classic ChatModelAgent seam. Task 9 deleted that path; drain
+// outstanding classic confirmations before cutover (§16.2.3).
+var ErrClassicResumeRemoved = errors.New("CLASSIC_RESUME_REMOVED")
 
 // EinoChatResumeSchemaVersion is the nested resume payload version (design §3.6.2).
 const EinoChatResumeSchemaVersion = "eino-chat-resume.v1"
@@ -65,22 +65,17 @@ type EinoChatResume struct {
 	InterruptKind       string   `json:"interruptKind"`
 	// RuntimeGeneration names the runtime that paused the run. Absent on
 	// payloads written before generation stamping existed; see
-	// EffectiveRuntimeGeneration. Absence alone is not proof of classic —
-	// Agentic pauses before 4B-1 also omit the marker; driveClassicResume
-	// refuses those via the frozen-graph discriminator.
+	// EffectiveRuntimeGeneration. After Task 9, classic/absent generations fail
+	// closed with ErrClassicResumeRemoved (drain before cutover).
 	RuntimeGeneration string `json:"runtimeGeneration,omitempty"`
 }
 
 // EffectiveRuntimeGeneration reports which runtime must carry the resume.
 //
-// An absent marker still routes toward classic so pre-Agentic in-flight
-// confirmations (and rollbacks to builds that never wrote a marker) keep
-// working. That is a routing default, not a historical claim that classic was
-// the only unmarked writer: Agentic pauses between Task 4A and generation
-// stamping also omit the marker. Those runs freeze an agent_graph_snapshot,
-// and driveClassicResume refuses them with ErrAgenticResumeClassicOnFrozenRun
-// before any live config read. Any other value is returned verbatim so the
-// resume path rejects an unrecognised generation instead of guessing.
+// An absent marker still reports classic so ContinueAfterConfirmation can
+// refuse with ErrClassicResumeRemoved (Task 9) instead of guessing Agentic.
+// Any other value is returned verbatim so an unrecognised generation is
+// rejected rather than guessed.
 func (m EinoChatResume) EffectiveRuntimeGeneration() string {
 	if generation := strings.TrimSpace(m.RuntimeGeneration); generation != "" {
 		return generation

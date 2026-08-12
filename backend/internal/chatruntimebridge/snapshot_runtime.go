@@ -92,8 +92,8 @@ func (r *SnapshotRuntimeResolver) Resolve(
 		}
 		// Same secret reference may rotate; snapshot keeps credential secret ID.
 		if liveErr == nil && model.CredentialSecretID == nil && live.CredentialSecretID != nil {
-			// Do not pull live secrets into snapshot model identity; BuildChatModel
-			// may still resolve credential by ID from snapshot when present.
+			// Do not pull live secrets into snapshot model identity; the Agentic
+			// model builder may still resolve credential by ID from snapshot.
 		}
 	}
 	out.Model = model
@@ -113,36 +113,6 @@ func (r *SnapshotRuntimeResolver) Resolve(
 		return SnapshotRuntime{}, err
 	}
 	return out, nil
-}
-
-// SnapshotModelFactory builds a chat model from snapshot-backed Config.
-// Callers pass the same BuildChatModel used for live path; factory only selects input.
-type SnapshotModelFactory struct {
-	Build ChatModelBuilder
-}
-
-// BuildFromSnapshot constructs the model for a SnapshotRuntime (or live cfg when not snapshot).
-func (f SnapshotModelFactory) BuildFromSnapshot(
-	ctx context.Context,
-	rt SnapshotRuntime,
-	live modelconfig.Config,
-) (modelconfig.Config, error) {
-	if f.Build == nil {
-		return modelconfig.Config{}, errors.New("chat model builder is not configured")
-	}
-	cfg := live
-	if rt.UseSnapshot && strings.TrimSpace(rt.Model.ID) != "" {
-		cfg = rt.Model
-		// Preserve workspace for secret resolution scope.
-		if cfg.WorkspaceID == "" {
-			cfg.WorkspaceID = live.WorkspaceID
-		}
-		// Status on snapshot may be empty; kill-switch already applied in Resolve.
-		if cfg.Status == "" {
-			cfg.Status = modelconfig.StatusVerified
-		}
-	}
-	return cfg, nil
 }
 
 func parseModelSnapshot(raw json.RawMessage) (modelconfig.Config, string, error) {

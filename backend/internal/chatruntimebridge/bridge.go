@@ -20,11 +20,9 @@ import (
 	"actweave/backend/internal/contextwindow"
 	"actweave/backend/internal/einoruntime"
 	"actweave/backend/internal/execution"
-	"actweave/backend/internal/modelconfig"
 	"actweave/backend/internal/sessioncontext"
 	"actweave/backend/internal/tooltranslator"
 
-	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
@@ -50,11 +48,6 @@ type CheckpointTTL interface {
 	TouchExpiresAt(ctx context.Context, checkPointID string, expiresAt time.Time) error
 }
 
-// ChatModelBuilder constructs a true-Stream BaseChatModel for one model config.
-// Task 4A: used only by the resume/HITL, delegation, A2A, and compact seams.
-// Production initial Chat never uses this builder (Agentic-only).
-type ChatModelBuilder func(ctx context.Context, cfg modelconfig.Config) (model.BaseChatModel, error)
-
 // Dependencies wires the bridge to platform services.
 type Dependencies struct {
 	Sessions chatruntime.SessionReader
@@ -70,20 +63,13 @@ type Dependencies struct {
 	ModelTurns    chatruntime.ModelTurnRecorder
 	ToolInvoker   chatruntime.ToolInvoker
 	Confirmations chatruntime.ConfirmationPreparer
-	// Engine drives classic ChatModelAgent Resume (Task 4B HITL seam) and
-	// non-main paths (delegation/A2A). Required while those paths remain classic.
-	Engine *einoruntime.Engine
-	// AgenticEngine drives Typed Agentic initial Chat (Task 4A). Required for
-	// production Enqueue/Execute initial path.
+	// AgenticEngine drives Typed Agentic Chat (initial + confirmation resume).
 	AgenticEngine *einoruntime.AgenticEngine
 	// CheckpointTTL renews expires_at after confirmation prepare (D15).
 	CheckpointTTL CheckpointTTL
-	// BuildAgenticModel constructs the production AgenticModel for initial Chat.
-	// Required for Enqueue/Execute initial path. No classic fallback.
+	// BuildAgenticModel constructs the production AgenticModel.
+	// Required for Enqueue/Execute and Agentic resume. No classic fallback.
 	BuildAgenticModel AgenticModelBuilder
-	// BuildChatModel is the classic builder for resume/HITL (Task 4B), delegation,
-	// A2A inbound, and compact. Not used on the production initial Chat path.
-	BuildChatModel ChatModelBuilder
 	// TextSinkFactory builds ProtocolMessageTextSink (or test recording sink) for
 	// true Stream → item.delta projection (D14 / A.5). When set, drive always
 	// wires StreamDeltaRecorder.Sink so deltas leave the in-memory buffer.
@@ -133,11 +119,9 @@ type Bridge struct {
 	modelTurns        chatruntime.ModelTurnRecorder
 	toolInvoker       chatruntime.ToolInvoker
 	confirmations     chatruntime.ConfirmationPreparer
-	engine            *einoruntime.Engine
 	agenticEngine     *einoruntime.AgenticEngine
 	checkpointTTL     CheckpointTTL
 	buildAgenticModel AgenticModelBuilder
-	buildModel        ChatModelBuilder
 	textSinkFactory   TextSinkFactory
 	maxIterations     int
 	maxTools          int
@@ -173,8 +157,8 @@ func NewBridge(deps Dependencies) (*Bridge, error) {
 		deps.Models == nil || deps.Runs == nil || deps.Events == nil {
 		return nil, errors.New("chatruntimebridge: core dependencies are required")
 	}
-	if deps.Engine == nil {
-		return nil, errors.New("chatruntimebridge: Engine is required")
+	if deps.AgenticEngine == nil {
+		return nil, errors.New("chatruntimebridge: AgenticEngine is required")
 	}
 	logger := deps.Logger
 	if logger == nil {
@@ -198,12 +182,13 @@ func NewBridge(deps Dependencies) (*Bridge, error) {
 		sessions: deps.Sessions, results: deps.Results, content: deps.Content,
 		agents: deps.Agents, models: deps.Models, runs: deps.Runs,
 		events: deps.Events, steps: deps.Steps, modelTurns: deps.ModelTurns,
-		toolInvoker:   deps.ToolInvoker,
-		confirmations: deps.Confirmations, engine: deps.Engine,
-		agenticEngine: deps.AgenticEngine, checkpointTTL: deps.CheckpointTTL,
-		buildAgenticModel: deps.BuildAgenticModel, buildModel: deps.BuildChatModel,
-		textSinkFactory: deps.TextSinkFactory,
-		maxIterations:   maxIter, maxTools: maxTools,
+		toolInvoker:       deps.ToolInvoker,
+		confirmations:     deps.Confirmations,
+		agenticEngine:     deps.AgenticEngine,
+		checkpointTTL:     deps.CheckpointTTL,
+		buildAgenticModel: deps.BuildAgenticModel,
+		textSinkFactory:   deps.TextSinkFactory,
+		maxIterations:     maxIter, maxTools: maxTools,
 		logger: logger, now: now, agentAuditDebug: deps.AgentAuditDebug,
 		assemblies:      deps.Assemblies,
 		compact:         deps.Compact,
@@ -390,14 +375,13 @@ func (b *Bridge) ContinueAfterConfirmation(
 	if !ok {
 		return errors.New("einoChatResume missing from confirmation checkpoint")
 	}
-	// The two runtimes share one CheckPointStore, so this marker is the only thing
-	// that distinguishes a checkpoint the classic seam can restore from one only
-	// the Agentic runtime can. An unrecognised marker is refused before anything is
-	// loaded: guessing is what produces adk's opaque "no child agents leading to
-	// interrupted agent were found" after the user has already approved.
+	// The CheckPointStore is shared; RuntimeGeneration is the only discriminator.
+	// Classic (and unmarked→classic) checkpoints are fail-closed after Task 9.
 	generation := meta.EffectiveRuntimeGeneration()
 	switch generation {
-	case RuntimeGenerationClassic, RuntimeGenerationAgentic:
+	case RuntimeGenerationAgentic:
+	case RuntimeGenerationClassic:
+		return fmt.Errorf("%w: drain classic confirmations before cutover", ErrClassicResumeRemoved)
 	default:
 		return fmt.Errorf("%w: %q", ErrAgenticResumeGenerationMismatch, generation)
 	}
@@ -415,18 +399,8 @@ func (b *Bridge) ContinueAfterConfirmation(
 		return err
 	}
 
-	var (
-		content         string
-		streamMessageID string
-		runErr          error
-	)
-	if generation == RuntimeGenerationAgentic {
-		content, streamMessageID, runErr = b.driveAgenticResume(
-			ctx, job, run, meta.EinoCheckpointID, targets)
-	} else {
-		content, streamMessageID, runErr = b.driveClassicResume(
-			ctx, job, run, meta.EinoCheckpointID, targets)
-	}
+	content, streamMessageID, runErr := b.driveAgenticResume(
+		ctx, job, run, meta.EinoCheckpointID, targets)
 	persistCtx := context.WithoutCancel(ctx)
 	if runErr != nil {
 		if errors.Is(runErr, ErrWaitingConfirmation) {
@@ -435,213 +409,6 @@ func (b *Bridge) ContinueAfterConfirmation(
 		return b.failRun(persistCtx, job, run, runErr)
 	}
 	return b.completeRun(persistCtx, job, run, content, streamMessageID, true)
-}
-
-// drive builds the agent and either Run or ResumeWithParams.
-// When targets != nil, Resume path is used with checkpointID (classic seam for Task 4B).
-// When targets == nil, production initial Chat is Agentic-only (Task 4A).
-//
-// streamMessageID is the assistant message/item ID opened for item.started +
-// item.delta (empty when no TextSinkFactory). completeRun must reuse it so
-// item.completed keeps the same identity as progressive deltas (AAP A.1).
-// driveClassicResume is the legacy seam that restores a checkpoint written by the
-// classic ChatModelAgent runtime, and nothing else.
-//
-// It exists only for confirmations that were already pending when the Agentic
-// runtime took over the chat path; ContinueAfterConfirmation reaches it solely
-// for a checkpoint stamped RuntimeGenerationClassic, and Task 9 removes it once
-// no such checkpoint can still be outstanding. Live agent and model reads are
-// permitted here and only here: a classic checkpoint predates frozen identity,
-// so there is no frozen document to restore it against.
-//
-// It refuses to run without resume targets. That is what keeps it off the
-// initial turn: an initial chat turn has no targets, so a future entry point
-// that reaches for this function instead of the Agentic path fails closed
-// rather than quietly running the frozen path on live config.
-func (b *Bridge) driveClassicResume(
-	ctx context.Context,
-	job agentrun.Job,
-	run execution.AgentRun,
-	checkpointID string,
-	targets map[string]any,
-) (text string, streamMessageID string, err error) {
-	ctx = einoruntime.WithTrustedWorkspaceID(ctx, job.WorkspaceID)
-
-	if strings.TrimSpace(checkpointID) == "" {
-		return "", "", errors.New("chatruntimebridge: checkpoint id is required for classic resume")
-	}
-	if len(targets) == 0 {
-		return "", "", errors.New("chatruntimebridge: resume targets are required for classic resume")
-	}
-	// A frozen graph means this run was created after root-chat freeze landed.
-	// The classic seam exists only for confirmations that predate frozen
-	// identity. An unmarked Agentic pause (written before generation stamping)
-	// still EffectiveRuntimeGeneration→classic, so without this check it would
-	// reach live config reads and then fail inside adk after approval.
-	if runCarriesFrozenAgentGraph(run) {
-		return "", "", fmt.Errorf("%w: classic seam cannot restore a run that already has a frozen agent graph",
-			ErrAgenticResumeClassicOnFrozenRun)
-	}
-
-	// Live model reads are permitted on this seam and are the reason it is
-	// isolated: it must not silently mix AgenticMessage with schema.Message on
-	// one runner, and it must never be entered by a turn that has frozen
-	// documents to honour.
-	configuredAgent, err := b.agents.Get(ctx, job.WorkspaceID, run.AgentID)
-	if err != nil {
-		return "", "", fmt.Errorf("load agent: %w", err)
-	}
-	if configuredAgent.Status != agent.StatusActive {
-		return "", "", errors.New("agent is not active")
-	}
-	liveCfg, err := b.models.Get(ctx, job.WorkspaceID, configuredAgent.ModelConfigID)
-	if err != nil {
-		return "", "", fmt.Errorf("load model config: %w", err)
-	}
-	if liveCfg.Status == modelconfig.StatusDisabled {
-		return "", "", errors.New("model config is disabled")
-	}
-
-	fallbackInstruction := b.systemPrompt(ctx, job, configuredAgent)
-	resolver := &SnapshotRuntimeResolver{Agents: b.agents, Models: b.models, Content: b.content}
-	snapRT, err := resolver.Resolve(ctx, job.WorkspaceID, run, configuredAgent, fallbackInstruction)
-	if err != nil {
-		return "", "", err
-	}
-
-	if b.buildModel == nil {
-		return "", "", errors.New("chatruntimebridge: chat model builder is not configured for resume")
-	}
-	if b.engine == nil {
-		return "", "", errors.New("chatruntimebridge: classic engine is not configured for resume")
-	}
-	factory := SnapshotModelFactory{Build: b.buildModel}
-	cfg, err := factory.BuildFromSnapshot(ctx, snapRT, liveCfg)
-	if err != nil {
-		return "", "", err
-	}
-	chatModel, err := b.buildModel(ctx, cfg)
-	if err != nil {
-		return "", "", fmt.Errorf("build chat model: %w", err)
-	}
-
-	pendingKey := pendingConfirmKey(job.WorkspaceID, job.RunID)
-	b.clearPending(pendingKey)
-
-	tools, err := b.buildPipelineTools(ctx, job, run, pendingKey)
-	if err != nil {
-		return "", "", err
-	}
-	// Inject internal AgentTools + optional A2A remotes (preserves existing tools).
-	// Graph snapshot freeze is fail-closed before any nested dispatch.
-	var delBudget *agentdelegation.Budget
-	var graphSnap *agentdelegation.GraphSnapshotV1
-	tools, delBudget, graphSnap, err = b.attachDelegationTools(ctx, job, run, tools, pendingKey)
-	if err != nil {
-		return "", "", fmt.Errorf("attach agent delegation tools: %w", err)
-	}
-	if graphSnap != nil {
-		raw, rawErr := graphSnapshotBytes(graphSnap)
-		if rawErr != nil {
-			return "", "", fmt.Errorf("marshal agent graph snapshot: %w", rawErr)
-		}
-		if b.runs == nil {
-			return "", "", fmt.Errorf("persist agent graph snapshot: run store required")
-		}
-		setter, ok := b.runs.(interface {
-			SetAgentGraphSnapshotIfEmpty(context.Context, string, string, json.RawMessage) error
-		})
-		if !ok {
-			return "", "", fmt.Errorf("persist agent graph snapshot: SetAgentGraphSnapshotIfEmpty not supported")
-		}
-		if err := setter.SetAgentGraphSnapshotIfEmpty(ctx, job.WorkspaceID, job.RunID, raw); err != nil {
-			return "", "", fmt.Errorf("persist agent graph snapshot: %w", err)
-		}
-		// Keep in-memory run view consistent for child capability reads and
-		// subsequent lock_version-sensitive transitions (freeze bumps lock).
-		run.AgentGraphSnapshot = raw
-		if current, gerr := b.runs.GetAgentRun(ctx, job.WorkspaceID, job.RunID); gerr == nil {
-			run.LockVersion = current.LockVersion
-			if len(current.AgentGraphSnapshot) > 0 {
-				run.AgentGraphSnapshot = current.AgentGraphSnapshot
-			}
-		}
-	}
-	// Root-shared budget + run identity for audited AgentTool / A2A tools.
-	ctx = withDelegationRunContext(ctx, job, run, delBudget)
-
-	instruction := snapRT.SystemPrompt
-	if strings.TrimSpace(instruction) == "" {
-		instruction = fallbackInstruction
-	}
-	agentName := "agent-" + strings.TrimSpace(run.AgentID)
-	built, err := einoruntime.BuildChatModelAgent(ctx, einoruntime.AgentBuildConfig{
-		Name:               agentName,
-		Instruction:        instruction,
-		Model:              chatModel,
-		Tools:              tools,
-		MaxIterations:      b.maxIterations,
-		MaxToolInvocations: b.maxTools,
-	})
-	if err != nil {
-		return "", "", fmt.Errorf("build chat model agent: %w", err)
-	}
-
-	// D14: true Stream chunks → StreamDeltaRecorder → TextDeltaSink → item.delta.
-	// Resume opens the sink first because checkpoint path skips assembly.
-	projector := &StreamDeltaRecorder{
-		Now: b.now,
-		ModelTurnHook: func(hookCtx context.Context, turn einoruntime.ModelTurn) error {
-			return b.recordModelTurn(hookCtx, job, run, turn)
-		},
-	}
-	if b.textSinkFactory != nil {
-		messageID, idErr := newRuntimeID()
-		if idErr != nil {
-			return "", "", idErr
-		}
-		streamMessageID = messageID
-		sink, sinkErr := b.textSinkFactory(ctx, TextSinkArgs{
-			Job: job, Run: run, MessageID: messageID,
-		})
-		if sinkErr != nil {
-			return "", streamMessageID, fmt.Errorf("open stream text sink: %w", sinkErr)
-		}
-		projector.Sink = sink
-	}
-
-	result, err := b.engine.Resume(ctx, built, einoruntime.ResumeInput{
-		WorkspaceID:  job.WorkspaceID,
-		RunID:        job.RunID,
-		CheckpointID: checkpointID,
-		Targets:      targets,
-		Projector:    projector,
-	})
-	if err != nil {
-		_ = projector.FailIncomplete(ctx, "MODEL_STREAM_INTERRUPTED", true)
-		return "", streamMessageID, err
-	}
-	if result == nil {
-		_ = projector.FailIncomplete(ctx, "MODEL_STREAM_INTERRUPTED", true)
-		return "", streamMessageID, errors.New("einoruntime engine returned nil result")
-	}
-	if result.Err != nil {
-		_ = projector.FailIncomplete(ctx, "MODEL_STREAM_INTERRUPTED", true)
-		return "", streamMessageID, result.Err
-	}
-	if result.Interrupted {
-		// A.5: interrupt flushes FailText for any incomplete assistant text item.
-		_ = projector.FailIncomplete(ctx, "WAITING_CONFIRMATION", true)
-		if err := b.pauseForInterrupt(ctx, job, run, result, RuntimeGenerationClassic); err != nil {
-			return "", streamMessageID, err
-		}
-		return "", streamMessageID, ErrWaitingConfirmation
-	}
-	text = strings.TrimSpace(result.FinalAssistantText)
-	if text == "" {
-		text = strings.TrimSpace(projector.Joined())
-	}
-	return text, streamMessageID, nil
 }
 
 func (b *Bridge) buildPipelineTools(
@@ -1732,6 +1499,9 @@ func executionErrorCode(err error) string {
 	}
 	if errors.Is(err, ErrAgenticResumeClassicOnFrozenRun) {
 		return "AGENTIC_RESUME_CLASSIC_ON_FROZEN_RUN"
+	}
+	if errors.Is(err, ErrClassicResumeRemoved) {
+		return "CLASSIC_RESUME_REMOVED"
 	}
 	var ctxErr *execution.ContextError
 	if errors.As(err, &ctxErr) && ctxErr != nil && strings.TrimSpace(ctxErr.Code) != "" {
