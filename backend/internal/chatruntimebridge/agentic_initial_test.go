@@ -22,6 +22,7 @@ import (
 	"actweave/backend/internal/chat"
 	"actweave/backend/internal/chatruntime"
 	"actweave/backend/internal/chatruntimebridge"
+	"actweave/backend/internal/config"
 	"actweave/backend/internal/contextwindow"
 	"actweave/backend/internal/einoruntime"
 	"actweave/backend/internal/execution"
@@ -316,6 +317,9 @@ func marshalTestModelSnapshot(t *testing.T, cfg modelconfig.Config) json.RawMess
 	if cfg.CredentialSecretID != nil {
 		m["credentialSecretId"] = *cfg.CredentialSecretID
 	}
+	if len(cfg.ToolDisclosurePolicy) > 0 {
+		m["toolDisclosurePolicy"] = cfg.ToolDisclosurePolicy
+	}
 	raw, err := json.Marshal(m)
 	if err != nil {
 		t.Fatal(err)
@@ -506,7 +510,11 @@ func producerNodeModelSnap(modelID string) json.RawMessage {
 		`"modelName":"gpt-test",` +
 		`"options":{},` +
 		`"credentialSecretId":null,` +
-		`"lockVersion":` + itoa(testModelLockVersion) +
+		`"lockVersion":` + itoa(testModelLockVersion) + `,` +
+		`"status":"VERIFIED",` +
+		`"agenticCapabilities":{},` +
+		`"runtimeCapabilities":{},` +
+		`"toolDisclosurePolicy":{}` +
 		`}`)
 }
 
@@ -596,20 +604,21 @@ func sha256Hex(s string) string {
 
 // agenticFixture holds counters + deps for Bridge.Execute initial path tests.
 type agenticFixture struct {
-	cfg        modelconfig.Config
-	mdl        *scriptedAgenticModel
-	classic    *classicBuilderSpy
-	agentic    *agenticCallCounter
-	sinks      *sinkCounter
-	events     *eventCounter
-	assemblies *memAssemblies
-	results    *agenticResults
-	store      *memStore
-	run        execution.AgentRun
-	messages   []chat.Message
-	delegation *chatruntimebridge.DelegationDeps
-	agents     agenticAgents
-	invoker    *bridgeToolInvoker
+	cfg            modelconfig.Config
+	mdl            *scriptedAgenticModel
+	classic        *classicBuilderSpy
+	agentic        *agenticCallCounter
+	sinks          *sinkCounter
+	events         *eventCounter
+	assemblies     *memAssemblies
+	results        *agenticResults
+	store          *memStore
+	run            execution.AgentRun
+	messages       []chat.Message
+	delegation     *chatruntimebridge.DelegationDeps
+	agents         agenticAgents
+	invoker        *bridgeToolInvoker
+	toolDisclosure config.RuntimeFeatureRollout
 	// steps and modelTurns are opt-in: MODEL audit evidence is only persisted
 	// when both are wired, so tests that do not assert on it leave them nil.
 	steps      *agenticSteps
@@ -668,6 +677,7 @@ func (f *agenticFixture) bridge(t *testing.T) *chatruntimebridge.Bridge {
 		TextSinkFactory:   f.sinks.Factory,
 		Assemblies:        f.assemblies,
 		Delegation:        f.delegation,
+		ToolDisclosure:    f.toolDisclosure,
 	}
 	if f.steps != nil {
 		deps.Steps = f.steps
@@ -737,7 +747,7 @@ func TestAgenticInitial_ToolBearingNonNativeFailClosed(t *testing.T) {
 		calling string
 		want    error
 	}{
-		{modelconfig.ToolCallingFunctionCalling, modelconfig.ErrToolDisclosureRuntimePending},
+		{modelconfig.ToolCallingFunctionCalling, modelconfig.ErrToolDisclosureNotRolledOut},
 		{modelconfig.ToolCallingNone, modelconfig.ErrAgentModelToolsUnsupported},
 	}
 	for _, tc := range cases {
@@ -757,6 +767,67 @@ func TestAgenticInitial_ToolBearingNonNativeFailClosed(t *testing.T) {
 				t.Fatal("model must not be invoked for fail-closed tool-bearing non-native")
 			}
 		})
+	}
+}
+
+func TestAgenticInitial_FunctionCallingPlatformWritesV2Assembly(t *testing.T) {
+	f := newAgenticFixture(t, func(f *agenticFixture) {
+		f.cfg.AgenticCapabilities = mustAgenticCapsV2(t, f.cfg, modelconfig.ToolCallingFunctionCalling)
+		policy, err := modelconfig.CanonicalToolDisclosurePolicy(modelconfig.DisclosureModePlatformOnDemand)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.cfg.ToolDisclosurePolicy = policy
+		f.run.ModelSnapshot = marshalTestModelSnapshot(t, f.cfg)
+		f.run.CapabilitySnapshot = toolCapSnap("lookup_order", "find order",
+			`{"type":"object","properties":{"id":{"type":"string"}}}`)
+		f.invoker = &bridgeToolInvoker{spy: &spyInvoker{}, free: true}
+		f.toolDisclosure = config.RuntimeFeatureRollout{Enabled: true, AllowAllWorkspaces: true}
+	})
+	if err := f.bridge(t).Execute(context.Background(), f.job()); err != nil {
+		t.Fatalf("rolled-out FC: %v", err)
+	}
+	rec, ok := f.assemblies.Get(testWSUUID, testRunUUID)
+	if !ok {
+		t.Fatal("missing assembly")
+	}
+	if rec.ToolSearchMode != execution.AssemblyToolSearchModePlatformBounded {
+		t.Fatalf("mode=%s", rec.ToolSearchMode)
+	}
+	if rec.EstimatorVersion != contextwindow.EstimatorVersionAgenticOpenAIResponsesV2 {
+		t.Fatalf("estimator=%s", rec.EstimatorVersion)
+	}
+}
+
+func TestAgenticInitial_FrozenCarryAllIgnoresLiveSetDisclosure(t *testing.T) {
+	carry, err := modelconfig.CanonicalToolDisclosurePolicy(modelconfig.DisclosureModeCarryAll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	onDemand, err := modelconfig.CanonicalToolDisclosurePolicy(modelconfig.DisclosureModePlatformOnDemand)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newAgenticFixture(t, func(f *agenticFixture) {
+		f.cfg.AgenticCapabilities = mustAgenticCapsV2(t, f.cfg, modelconfig.ToolCallingFunctionCalling)
+		f.cfg.ToolDisclosurePolicy = carry
+		f.run.ModelSnapshot = marshalTestModelSnapshot(t, f.cfg)
+		f.run.CapabilitySnapshot = toolCapSnap("lookup_order", "find order",
+			`{"type":"object","properties":{"id":{"type":"string"}}}`)
+		f.invoker = &bridgeToolInvoker{spy: &spyInvoker{}, free: true}
+		f.toolDisclosure = config.RuntimeFeatureRollout{Enabled: true, AllowAllWorkspaces: true}
+		// Live config after set-disclosure no longer matches the freeze.
+		f.cfg.ToolDisclosurePolicy = onDemand
+	})
+	if err := f.bridge(t).Execute(context.Background(), f.job()); err != nil {
+		t.Fatalf("in-flight carry_all: %v", err)
+	}
+	rec, ok := f.assemblies.Get(testWSUUID, testRunUUID)
+	if !ok {
+		t.Fatal("missing assembly")
+	}
+	if rec.ToolSearchMode != execution.AssemblyToolSearchModeCarryAll {
+		t.Fatalf("in-flight must keep frozen carry_all, got %s", rec.ToolSearchMode)
 	}
 }
 

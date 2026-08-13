@@ -1290,6 +1290,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		TextSinkFactory:    textSinkFactory,
 		MaxIterations:      runtimeCfg.Eino.MaxIterations,
 		MaxToolInvocations: runtimeCfg.Eino.MaxToolInvocations,
+		ToolDisclosure:     runtimeCfg.ToolDisclosure,
 		AgentAuditDebug:    config.AgentAuditDebug,
 		Assemblies:         assemblyRepo,
 		Compact:            compactDeps,

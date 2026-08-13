@@ -48,14 +48,18 @@ var graphNodeAllowed = map[string]struct{}{
 	"modelSnapshot": {}, "agentSnapshot": {}, "capabilitySnapshot": {},
 }
 
-// Node model snapshot (snapshotAgentNode) — distinct from root agentic-model.v1.
+// Node model snapshot (MarshalNodeModelSnapshot) — distinct from root
+// run.ModelSnapshot (credentialSecretId is always present; unbound is JSON null).
 var nodeModelRequired = []string{
 	"id", "provider", "apiBase", "modelName", "options", "credentialSecretId", "lockVersion",
+	"status", "agenticCapabilities", "runtimeCapabilities", "toolDisclosurePolicy",
 }
 
 var nodeModelAllowed = map[string]struct{}{
 	"id": {}, "provider": {}, "apiBase": {}, "modelName": {},
 	"options": {}, "credentialSecretId": {}, "lockVersion": {},
+	"status": {}, "agenticCapabilities": {}, "runtimeCapabilities": {},
+	"toolDisclosurePolicy": {},
 }
 
 // Node agent-binding.v1 (snapshotAgentNode).
@@ -355,7 +359,7 @@ func validateNodesRawComplete(raw json.RawMessage) (map[string]struct{}, error) 
 			}
 		}
 
-		if err := validateNodeModelSnapshot(node["modelSnapshot"], path+".modelSnapshot", modelConfigID, lockVer); err != nil {
+		if err := ValidateNodeModelSnapshot(node["modelSnapshot"], path+".modelSnapshot", modelConfigID, lockVer); err != nil {
 			return nil, err
 		}
 		if err := validateNodeAgentSnapshot(node["agentSnapshot"], path+".agentSnapshot", agentID, modelConfigID, lockVer); err != nil {
@@ -368,9 +372,9 @@ func validateNodesRawComplete(raw json.RawMessage) (map[string]struct{}, error) 
 	return ids, nil
 }
 
-// validateNodeModelSnapshot enforces snapshotAgentNode model shape.
+// ValidateNodeModelSnapshot enforces the node model producer shape.
 // credentialSecretId is required and deliberately nullable (null when unset).
-func validateNodeModelSnapshot(raw json.RawMessage, path, modelConfigID string, nodeLockVer int64) error {
+func ValidateNodeModelSnapshot(raw json.RawMessage, path, modelConfigID string, nodeLockVer int64) error {
 	if err := strictjson.RequireObject(raw); err != nil {
 		return fmt.Errorf("agent_graph_snapshot %s: %w", path, err)
 	}
@@ -433,6 +437,27 @@ func validateNodeModelSnapshot(raw json.RawMessage, path, modelConfigID string, 
 	// Unconditional identity: nested model lock must equal required node lock.
 	if lock != nodeLockVer {
 		return fmt.Errorf("agent_graph_snapshot %s.lockVersion must equal node modelConfigLockVersion", path)
+	}
+	if _, err := decodeNonemptyExactString(top["status"]); err != nil {
+		return fmt.Errorf("agent_graph_snapshot %s.status invalid", path)
+	}
+	if err := strictjson.RequireObject(top["agenticCapabilities"]); err != nil {
+		return fmt.Errorf("agent_graph_snapshot %s.agenticCapabilities: %w", path, err)
+	}
+	if _, err := strictjson.DecodeObjectMap(top["agenticCapabilities"]); err != nil {
+		return fmt.Errorf("agent_graph_snapshot %s.agenticCapabilities: %w", path, err)
+	}
+	if err := strictjson.RequireObject(top["runtimeCapabilities"]); err != nil {
+		return fmt.Errorf("agent_graph_snapshot %s.runtimeCapabilities: %w", path, err)
+	}
+	if _, err := strictjson.DecodeObjectMap(top["runtimeCapabilities"]); err != nil {
+		return fmt.Errorf("agent_graph_snapshot %s.runtimeCapabilities: %w", path, err)
+	}
+	if err := strictjson.RequireObject(top["toolDisclosurePolicy"]); err != nil {
+		return fmt.Errorf("agent_graph_snapshot %s.toolDisclosurePolicy: %w", path, err)
+	}
+	if _, err := strictjson.DecodeObjectMap(top["toolDisclosurePolicy"]); err != nil {
+		return fmt.Errorf("agent_graph_snapshot %s.toolDisclosurePolicy: %w", path, err)
 	}
 	return nil
 }

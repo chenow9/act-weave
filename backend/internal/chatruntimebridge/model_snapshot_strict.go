@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"actweave/backend/internal/agentdelegation"
 	"actweave/backend/internal/modelapi"
 	"actweave/backend/internal/modelconfig"
 	"actweave/backend/internal/strictjson"
@@ -26,6 +27,7 @@ var modelSnapshotAllowed = map[string]struct{}{
 	"id": {}, "provider": {}, "apiBase": {}, "modelName": {},
 	"options": {}, "credentialSecretId": {}, "lockVersion": {},
 	"agenticCapabilities": {}, "runtimeCapabilities": {}, "status": {},
+	"toolDisclosurePolicy": {},
 }
 
 // parseModelSnapshotStrict validates raw run.ModelSnapshot for Agentic initial
@@ -135,21 +137,126 @@ func parseModelSnapshotStrict(raw json.RawMessage, workspaceID string) (modelcon
 		cred = &s
 	}
 
+	policyRaw := json.RawMessage(`{}`)
+	if v, ok := top["toolDisclosurePolicy"]; ok {
+		if _, normalized, err := modelconfig.ParseToolDisclosurePolicy(v); err != nil {
+			return modelconfig.Config{}, fmt.Errorf("%w: model snapshot toolDisclosurePolicy", ErrAgenticModelSnapshotRequired)
+		} else {
+			policyRaw = normalized
+		}
+	}
+
 	cfg := modelconfig.Config{
-		ID:                  id,
-		WorkspaceID:         strings.TrimSpace(workspaceID),
-		Provider:            provider,
-		APIBase:             apiBase,
-		ModelName:           modelName,
-		Options:             options,
-		CredentialSecretID:  cred,
-		LockVersion:         lock,
-		Status:              modelconfig.Status(statusStr),
-		AgenticCapabilities: agenticNormalized,
-		RuntimeCapabilities: runtimeCaps,
+		ID:                   id,
+		WorkspaceID:          strings.TrimSpace(workspaceID),
+		Provider:             provider,
+		APIBase:              apiBase,
+		ModelName:            modelName,
+		Options:              options,
+		CredentialSecretID:   cred,
+		LockVersion:          lock,
+		Status:               modelconfig.Status(statusStr),
+		AgenticCapabilities:  agenticNormalized,
+		RuntimeCapabilities:  runtimeCaps,
+		ToolDisclosurePolicy: policyRaw,
 	}
 	if cfg.Status == "" {
 		return modelconfig.Config{}, fmt.Errorf("%w: model snapshot status", ErrAgenticModelSnapshotRequired)
 	}
 	return cfg, nil
+}
+
+// parseNodeModelSnapshotStrict validates a graph node model blob. The key set
+// is closed and credentialSecretId is always present (JSON null when unbound).
+func parseNodeModelSnapshotStrict(
+	raw json.RawMessage,
+	workspaceID, modelConfigID string,
+	nodeLockVer int64,
+) (modelconfig.Config, error) {
+	if err := agentdelegation.ValidateNodeModelSnapshot(raw, "modelSnapshot", modelConfigID, nodeLockVer); err != nil {
+		return modelconfig.Config{}, fmt.Errorf("%w: %v", ErrAgenticModelSnapshotRequired, err)
+	}
+	top, err := strictjson.DecodeObjectMap(raw)
+	if err != nil {
+		return modelconfig.Config{}, fmt.Errorf("%w: node model snapshot structure", ErrAgenticModelSnapshotRequired)
+	}
+	id, err := strictjson.DecodeStringExact(top["id"])
+	if err != nil {
+		return modelconfig.Config{}, fmt.Errorf("%w: node model snapshot id", ErrAgenticModelSnapshotRequired)
+	}
+	provider, err := strictjson.DecodeStringExact(top["provider"])
+	if err != nil {
+		return modelconfig.Config{}, fmt.Errorf("%w: node model snapshot provider", ErrAgenticModelSnapshotRequired)
+	}
+	apiBase, err := strictjson.DecodeStringExact(top["apiBase"])
+	if err != nil {
+		return modelconfig.Config{}, fmt.Errorf("%w: node model snapshot apiBase", ErrAgenticModelSnapshotRequired)
+	}
+	if _, err := modelapi.ValidateAgenticAPIBase(apiBase); err != nil {
+		return modelconfig.Config{}, fmt.Errorf("%w: node model snapshot apiBase policy", ErrAgenticModelSnapshotRequired)
+	}
+	modelName, err := strictjson.DecodeStringExact(top["modelName"])
+	if err != nil {
+		return modelconfig.Config{}, fmt.Errorf("%w: node model snapshot modelName", ErrAgenticModelSnapshotRequired)
+	}
+	lock, err := strictjson.DecodeInt64Exact(top["lockVersion"])
+	if err != nil {
+		return modelconfig.Config{}, fmt.Errorf("%w: node model snapshot lockVersion", ErrAgenticModelSnapshotRequired)
+	}
+	statusStr, err := strictjson.DecodeStringExact(top["status"])
+	if err != nil || statusStr != strings.TrimSpace(statusStr) || statusStr == "" {
+		return modelconfig.Config{}, fmt.Errorf("%w: node model snapshot status", ErrAgenticModelSnapshotRequired)
+	}
+	if err := strictjson.RequireObject(top["options"]); err != nil {
+		return modelconfig.Config{}, fmt.Errorf("%w: node model snapshot options", ErrAgenticModelSnapshotRequired)
+	}
+	options := append(json.RawMessage(nil), bytes.TrimSpace(top["options"])...)
+	if err := strictjson.RequireObject(top["runtimeCapabilities"]); err != nil {
+		return modelconfig.Config{}, fmt.Errorf("%w: node model snapshot runtimeCapabilities", ErrAgenticModelSnapshotRequired)
+	}
+	runtimeCaps := append(json.RawMessage(nil), bytes.TrimSpace(top["runtimeCapabilities"])...)
+	if !strictjson.IsEmptyObject(runtimeCaps) {
+		if _, _, err := modelconfig.ParseRuntimeCapabilities(runtimeCaps); err != nil {
+			return modelconfig.Config{}, fmt.Errorf("%w: node model snapshot runtimeCapabilities", ErrAgenticModelSnapshotRequired)
+		}
+	}
+	if err := strictjson.RequireObject(top["agenticCapabilities"]); err != nil {
+		return modelconfig.Config{}, fmt.Errorf("%w: node model snapshot agenticCapabilities", ErrAgenticModelSnapshotRequired)
+	}
+	_, agenticNormalized, err := modelconfig.ParseAgenticCapabilities(top["agenticCapabilities"])
+	if err != nil {
+		return modelconfig.Config{}, fmt.Errorf("%w: node model snapshot agenticCapabilities", ErrAgenticModelSnapshotRequired)
+	}
+	if err := strictjson.RequireObject(top["toolDisclosurePolicy"]); err != nil {
+		return modelconfig.Config{}, fmt.Errorf("%w: node model snapshot toolDisclosurePolicy", ErrAgenticModelSnapshotRequired)
+	}
+	_, policyRaw, err := modelconfig.ParseToolDisclosurePolicy(top["toolDisclosurePolicy"])
+	if err != nil {
+		return modelconfig.Config{}, fmt.Errorf("%w: node model snapshot toolDisclosurePolicy", ErrAgenticModelSnapshotRequired)
+	}
+
+	var cred *string
+	credRaw := top["credentialSecretId"]
+	if !strictjson.IsNull(credRaw) {
+		s, err := strictjson.DecodeStringExact(credRaw)
+		if err != nil || s == "" || s != strings.TrimSpace(s) {
+			return modelconfig.Config{}, fmt.Errorf("%w: node model snapshot credentialSecretId", ErrAgenticModelSnapshotRequired)
+		}
+		cred = &s
+	}
+
+	return modelconfig.Config{
+		ID:                   id,
+		WorkspaceID:          strings.TrimSpace(workspaceID),
+		Provider:             provider,
+		APIBase:              apiBase,
+		ModelName:            modelName,
+		Options:              options,
+		CredentialSecretID:   cred,
+		LockVersion:          lock,
+		Status:               modelconfig.Status(statusStr),
+		AgenticCapabilities:  agenticNormalized,
+		RuntimeCapabilities:  runtimeCaps,
+		ToolDisclosurePolicy: policyRaw,
+	}, nil
 }

@@ -99,9 +99,12 @@ export interface ModelAgenticCapabilities {
 }
 
 /** Read-only on GET/list. Unset is {}. Create/update must never send this field. */
+export type ToolDisclosureUI = ModelToolDisclosureUI;
+export type ToolDisclosureMode = "platform_on_demand" | "carry_all";
+
 export interface ModelToolDisclosurePolicy {
   schemaVersion?: "tool-disclosure.v1";
-  mode?: "platform_on_demand" | "carry_all";
+  mode?: ToolDisclosureMode;
 }
 
 export interface Workspace {

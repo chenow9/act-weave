@@ -127,5 +127,14 @@
   "validationSecretUuid": "Secret ID 必须是有效的 UUID，不能填写 API Key 或 Token。",
   "validationModelName": "请输入模型名称。",
   "validationApiBase": "请输入 API 请求地址。",
-  "validationApiBaseUrl": "请输入有效的 URL（包含 http:// 或 https://）。"
+  "validationApiBaseUrl": "请输入有效的 URL（包含 http:// 或 https://）。",
+  "disclosureSection": "工具披露",
+  "disclosureHidden": "该模型支持原生工具检索，已自动按需加载。无需配置。",
+  "disclosureUnavailable": "该模型无法调用工具，不能绑定到已配置工具的 Agent。",
+  "disclosureBinaryHelp": "选择模型看到工具的方式。保存后仅影响新的运行。",
+  "disclosureOnDemand": "按需检索（推荐，每次最多加载 5 个工具）",
+  "disclosureCarryAll": "全量携带（仅适用于工具数量 ≤ 8 的 Agent）",
+  "disclosureSave": "保存披露策略",
+  "disclosureSaved": "{name} 的披露策略已更新。",
+  "disclosureSaveFailed": "披露策略保存失败，请检查网络或稍后重试。"
 }

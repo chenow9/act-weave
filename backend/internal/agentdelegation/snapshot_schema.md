@@ -41,9 +41,9 @@ Unknown node keys rejected.
 
 ### nodes[].modelSnapshot (node producer — NOT root run.ModelSnapshot)
 
-Producer: `snapshotAgentNode` map marshal. Distinct from root
-`agentic-model` / `marshalModelSnapshot` (no status / agenticCapabilities /
-runtimeCapabilities).
+Producer: `chatruntimebridge.MarshalNodeModelSnapshot`. Distinct from root
+`marshalModelSnapshot`: credentialSecretId is always present (JSON null when
+unbound); root may omit the key and rejects explicit null.
 
 | path | required | nullable | kind | notes |
 | --- | --- | --- | --- | --- |
@@ -54,6 +54,10 @@ runtimeCapabilities).
 | options | yes | no | object | always `{}` minimum; never null |
 | credentialSecretId | yes | **yes** | string\|null | key always present; `null` when unset; else non-empty |
 | lockVersion | yes | no | integer | ≥ 1; **must equal** node.modelConfigLockVersion (unconditional) |
+| status | yes | no | string | non-empty |
+| agenticCapabilities | yes | no | object | `{}` legal unset |
+| runtimeCapabilities | yes | no | object | `{}` legal unset |
+| toolDisclosurePolicy | yes | no | object | `{}` legal unset |
 
 Unknown keys rejected (e.g. `forged`, root-only capability fields).
 

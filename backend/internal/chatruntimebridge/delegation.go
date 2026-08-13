@@ -382,18 +382,7 @@ func (b *Bridge) snapshotAgentNode(ctx context.Context, workspaceID, agentID str
 			return agentdelegation.GraphNodeSnapshot{}, fmt.Errorf("prompt revision %s not found for agent %s", promptRev, agentID)
 		}
 	}
-	// Node model shape is intentionally narrower than root run.ModelSnapshot
-	// (no status/agenticCapabilities/runtimeCapabilities). options is always an
-	// object; credentialSecretId is always present and may be JSON null.
-	options := liveCfg.Options
-	if len(options) == 0 || string(options) == "null" {
-		options = json.RawMessage(`{}`)
-	}
-	modelSnap, merr := json.Marshal(map[string]any{
-		"id": liveCfg.ID, "provider": liveCfg.Provider, "apiBase": liveCfg.APIBase,
-		"modelName": liveCfg.ModelName, "options": options,
-		"credentialSecretId": liveCfg.CredentialSecretID, "lockVersion": liveCfg.LockVersion,
-	})
+	modelSnap, merr := MarshalNodeModelSnapshot(liveCfg)
 	if merr != nil {
 		return agentdelegation.GraphNodeSnapshot{}, merr
 	}

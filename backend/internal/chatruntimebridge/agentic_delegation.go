@@ -130,7 +130,7 @@ func (b *Bridge) attachAgenticDelegationTools(
 			tools = append(tools, ot)
 		}
 
-		child, err := b.buildAgenticChildAgent(ctx, parts, buildCfg, tools)
+		child, err := b.buildAgenticChildAgent(ctx, job.WorkspaceID, parts, buildCfg, tools)
 		if err != nil {
 			return nil, err
 		}
@@ -239,7 +239,7 @@ func (b *Bridge) loadChildAgentPartsAgentic(
 		return agentdelegation.AgenticAgentParts{}, modelconfig.Config{}, fmt.Errorf(
 			"frozen node incomplete for agent %s (require model/agent/capability snapshots; no live fallback)", agentID)
 	}
-	buildCfg, err := requireFrozenModelConfig(node.ModelSnapshot, job.WorkspaceID)
+	buildCfg, err := parseNodeModelSnapshotStrict(node.ModelSnapshot, job.WorkspaceID, node.ModelConfigID, node.ModelConfigLockVer)
 	if err != nil {
 		return agentdelegation.AgenticAgentParts{}, modelconfig.Config{}, fmt.Errorf("child frozen model: %w", err)
 	}
@@ -347,6 +347,7 @@ func (b *Bridge) loadChildAgentPartsAgentic(
 
 func (b *Bridge) buildAgenticChildAgent(
 	ctx context.Context,
+	workspaceID string,
 	parts agentdelegation.AgenticAgentParts,
 	cfg modelconfig.Config,
 	tools []tool.BaseTool,
@@ -359,15 +360,19 @@ func (b *Bridge) buildAgenticChildAgent(
 	if err != nil {
 		return nil, fmt.Errorf("child catalog: %w", err)
 	}
-	promptCacheKey, err := buildRunPromptCacheKey(cfg, parts.Instruction, catalog)
+	mode, calling, err := b.resolveFrozenDisclosure(workspaceID, cfg, catalog)
+	if err != nil {
+		return nil, err
+	}
+	if nested, ok := parts.Model.(*nestedAuditAgenticModel); ok {
+		nested.setDisclosure(string(mode), calling)
+	}
+	promptCacheKey, err := buildRunPromptCacheKey(cfg, parts.Instruction, catalog, mode)
 	if err != nil {
 		return nil, err
 	}
 	hasToolsOrCatalog := len(tools) > 0 || (catalog != nil && catalog.Len() > 0)
-	native := frozenCapsAreNative(cfg)
-	if hasToolsOrCatalog && !native {
-		return nil, errToolBearingNonNative(cfg)
-	}
+	clientVerified, fcVerified := disclosureVerifiedFlags(mode, hasToolsOrCatalog)
 	built, err := einoruntime.BuildAgenticAgent(ctx, einoruntime.AgenticAgentBuildConfig{
 		Name:                     parts.Name,
 		Description:              parts.Description,
@@ -377,8 +382,9 @@ func (b *Bridge) buildAgenticChildAgent(
 		Catalog:                  catalog,
 		MaxIterations:            einoruntime.DefaultMaxIterations,
 		MaxToolInvocations:       b.maxTools,
-		ToolSearchMode:           einoruntime.ToolSearchModeClientBounded,
-		ClientToolSearchVerified: hasToolsOrCatalog && native,
+		ToolSearchMode:           mode,
+		ClientToolSearchVerified: clientVerified,
+		FunctionCallingVerified:  fcVerified,
 		PromptCacheKey:           promptCacheKey,
 	})
 	if err != nil {

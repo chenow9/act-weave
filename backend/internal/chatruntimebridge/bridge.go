@@ -17,6 +17,7 @@ import (
 	"actweave/backend/internal/agentrun"
 	"actweave/backend/internal/chat"
 	"actweave/backend/internal/chatruntime"
+	"actweave/backend/internal/config"
 	"actweave/backend/internal/contextwindow"
 	"actweave/backend/internal/einoruntime"
 	"actweave/backend/internal/execution"
@@ -105,6 +106,9 @@ type Dependencies struct {
 	// Delegation wires internal Agent→Agent (Eino AgentTool) and optional A2A remotes.
 	// When nil, existing single-agent tool behavior is unchanged.
 	Delegation *DelegationDeps
+	// ToolDisclosure gates platform_bounded / carry_all. Zero value denies every
+	// workspace (same as omitted runtime.toolDisclosure).
+	ToolDisclosure config.RuntimeFeatureRollout
 }
 
 // Bridge implements agentrun.Runtime on the eino engine path.
@@ -133,6 +137,7 @@ type Bridge struct {
 	compact           *CompactDependencies
 	multimodal        *chatruntime.MultimodalAssembler
 	delegation        *DelegationDeps
+	toolDisclosure    config.RuntimeFeatureRollout
 
 	activeMu   sync.Mutex
 	activeRuns map[string]*activeRunExecution
@@ -195,6 +200,7 @@ func NewBridge(deps Dependencies) (*Bridge, error) {
 		compact:         deps.Compact,
 		multimodal:      deps.Multimodal,
 		delegation:      deps.Delegation,
+		toolDisclosure:  deps.ToolDisclosure.Normalized(),
 		activeRuns:      make(map[string]*activeRunExecution),
 		pendingConfirms: make(map[string][]einoruntime.PendingConfirmInterrupt),
 	}, nil
@@ -1220,6 +1226,9 @@ func (b *Bridge) recordToolStep(ctx context.Context, event einoruntime.ToolCompl
 	if b == nil || b.steps == nil {
 		return nil
 	}
+	if einoruntime.IsRedactedSearchToolName(event.ToolName) {
+		return nil
+	}
 	if strings.TrimSpace(event.WorkspaceID) == "" || strings.TrimSpace(event.AgentRunID) == "" {
 		return nil
 	}
@@ -1384,6 +1393,14 @@ func (b *Bridge) recordModelTurn(
 	if _, err := b.steps.AppendAgentRunStep(ctx, modelStep); err != nil {
 		return fmt.Errorf("append MODEL step: %w", err)
 	}
+	if disc, ok := frozenDisclosureFrom(ctx); ok {
+		if strings.TrimSpace(turn.ToolSearchMode) == "" {
+			turn.ToolSearchMode = string(disc.Mode)
+		}
+		if strings.TrimSpace(turn.ToolCalling) == "" {
+			turn.ToolCalling = disc.ToolCalling
+		}
+	}
 	payload, err := json.Marshal(buildModelTurnAuditPayload(turn, true, b.agentAuditDebug))
 	if err != nil {
 		return err
@@ -1435,6 +1452,12 @@ func buildModelTurnAuditPayload(turn einoruntime.ModelTurn, ok, agentAuditDebug 
 	}
 	if len(turn.ToolCallIDs) > 0 {
 		payload["toolCallIds"] = turn.ToolCallIDs
+	}
+	if mode := strings.TrimSpace(turn.ToolSearchMode); mode != "" {
+		payload["toolSearchMode"] = mode
+	}
+	if calling := strings.TrimSpace(turn.ToolCalling); calling != "" {
+		payload["toolCalling"] = calling
 	}
 	if turn.TokensKnown {
 		usage := map[string]any{
@@ -1552,6 +1575,15 @@ func executionErrorCode(err error) string {
 	if errors.Is(err, modelconfig.ErrToolDisclosureRuntimePending) {
 		return modelconfig.ErrorCodeToolDisclosureRuntimePending
 	}
+	if errors.Is(err, modelconfig.ErrToolDisclosureNotRolledOut) {
+		return modelconfig.ErrorCodeToolDisclosureNotRolledOut
+	}
+	if errors.Is(err, modelconfig.ErrToolDisclosureInvalid) {
+		return modelconfig.ErrorCodeToolDisclosureInvalid
+	}
+	if errors.Is(err, modelconfig.ErrToolCarryAllTooLarge) {
+		return modelconfig.ErrorCodeToolCarryAllTooLarge
+	}
 	if errors.Is(err, modelconfig.ErrAgentModelToolsUnsupported) {
 		return modelconfig.ErrorCodeAgentModelToolsUnsupported
 	}
@@ -1577,6 +1609,9 @@ func executionErrorCode(err error) string {
 		"AGENTIC_RESUME_GENERATION_MISMATCH",
 		"AGENTIC_RESUME_CLASSIC_ON_FROZEN_RUN",
 		modelconfig.ErrorCodeToolDisclosureRuntimePending,
+		modelconfig.ErrorCodeToolDisclosureNotRolledOut,
+		modelconfig.ErrorCodeToolDisclosureInvalid,
+		modelconfig.ErrorCodeToolCarryAllTooLarge,
 		modelconfig.ErrorCodeAgentModelToolsUnsupported,
 	} {
 		if strings.Contains(msg, code) {

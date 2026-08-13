@@ -158,17 +158,6 @@ func frozenCapsAreNative(cfg modelconfig.Config) bool {
 	return doc.ToolCalling == modelconfig.ToolCallingNativeClientSearch
 }
 
-// errToolBearingNonNative is the caller-side gate: BuildAgenticAgent must not
-// see tools on a function_calling or none snapshot (it would treat them as
-// native tool_search).
-func errToolBearingNonNative(cfg modelconfig.Config) error {
-	doc, _, err := modelconfig.ParseAgenticCapabilities(cfg.AgenticCapabilities)
-	if err != nil || doc.ToolCalling == modelconfig.ToolCallingNone {
-		return modelconfig.ErrAgentModelToolsUnsupported
-	}
-	return modelconfig.ErrToolDisclosureRuntimePending
-}
-
 // requireSupportedAgenticProvider enforces the exact frozen Provider values that
 // bind to openai-responses-v1 + agenticopenai/v0.2.2. No case fold / alias map.
 func requireSupportedAgenticProvider(provider string) error {
@@ -428,6 +417,8 @@ type agenticFrozenPlan struct {
 	promptCacheKey    string
 	hasToolsOrCatalog bool
 	delBudget         *agentdelegation.Budget
+	toolSearchMode    einoruntime.ToolSearchMode
+	toolCalling       string
 }
 
 // planAgenticRun performs the frozen-identity validation shared by every Agentic
@@ -538,7 +529,11 @@ func (b *Bridge) planAgenticRun(
 		instruction = a2ui.AppendPromptRules(instruction)
 	}
 
-	promptCacheKey, err := buildRunPromptCacheKey(cfg, instruction, catalog)
+	mode, calling, err := b.resolveFrozenDisclosure(job.WorkspaceID, cfg, catalog)
+	if err != nil {
+		return nil, err
+	}
+	promptCacheKey, err := buildRunPromptCacheKey(cfg, instruction, catalog, mode)
 	if err != nil {
 		return nil, execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
 	}
@@ -556,6 +551,8 @@ func (b *Bridge) planAgenticRun(
 		promptCacheKey:    promptCacheKey,
 		hasToolsOrCatalog: len(tools) > 0 || (catalog != nil && catalog.Len() > 0),
 		delBudget:         delBudget,
+		toolSearchMode:    mode,
+		toolCalling:       calling,
 	}, nil
 }
 
@@ -585,10 +582,7 @@ func (b *Bridge) buildAgenticAgentFromPlan(
 	if d := strings.TrimSpace(plan.configuredAgent.RoleDescription); d != "" {
 		desc = d
 	}
-	native := frozenCapsAreNative(plan.cfg)
-	if plan.hasToolsOrCatalog && !native {
-		return nil, errToolBearingNonNative(plan.cfg)
-	}
+	clientVerified, fcVerified := disclosureVerifiedFlags(plan.toolSearchMode, plan.hasToolsOrCatalog)
 	built, err := einoruntime.BuildAgenticAgent(ctx, einoruntime.AgenticAgentBuildConfig{
 		Name:                     name,
 		Description:              desc,
@@ -597,8 +591,9 @@ func (b *Bridge) buildAgenticAgentFromPlan(
 		Catalog:                  plan.catalog,
 		MaxIterations:            einoruntime.DefaultMaxIterations,
 		MaxToolInvocations:       b.maxTools,
-		ToolSearchMode:           einoruntime.ToolSearchModeClientBounded,
-		ClientToolSearchVerified: plan.hasToolsOrCatalog && native,
+		ToolSearchMode:           plan.toolSearchMode,
+		ClientToolSearchVerified: clientVerified,
+		FunctionCallingVerified:  fcVerified,
 		PromptCacheKey:           plan.promptCacheKey,
 		// Instruction deliberately empty: frozen system prompt is the leading
 		// assembled message. Children under AgentTool set Instruction themselves.
@@ -637,8 +632,11 @@ func (b *Bridge) driveAgenticInitial(
 	}
 
 	// 6) Assemble + estimate + hard preflight + persist agentic manifest BEFORE model/sink/provider.
+	ctx = withFrozenDisclosure(ctx, frozenDisclosure{
+		Mode: plan.toolSearchMode, ToolCalling: plan.toolCalling,
+	})
 	messages, msgErr := b.buildInitialAgenticMessages(
-		ctx, job, run, plan.configuredAgent, plan.instruction, plan.catalog, plan.policy)
+		ctx, job, run, plan.configuredAgent, plan.instruction, plan.catalog, plan.policy, plan.toolSearchMode)
 	if msgErr != nil {
 		return "", "", msgErr
 	}
@@ -767,6 +765,7 @@ func buildRunPromptCacheKey(
 	cfg modelconfig.Config,
 	systemPrompt string,
 	catalog *einoruntime.ToolCatalogSnapshot,
+	mode einoruntime.ToolSearchMode,
 ) (string, error) {
 	digest := ""
 	if catalog != nil {
@@ -787,6 +786,7 @@ func buildRunPromptCacheKey(
 		PromptRevisionHash: promptHash,
 		CatalogDigest:      digest,
 		AdapterVersion:     contextwindow.PromptCacheAdapterAgenticOpenAIV022,
+		DisclosureMode:     promptCacheDisclosureMode(mode),
 	})
 }
 
@@ -801,16 +801,17 @@ func (b *Bridge) buildInitialAgenticMessages(
 	instruction string,
 	catalog *einoruntime.ToolCatalogSnapshot,
 	policy sessioncontext.ResolvedSnapshot,
+	mode einoruntime.ToolSearchMode,
 ) ([]*schema.AgenticMessage, error) {
 	if policy.ModelContextWindowTokens <= 0 || strings.TrimSpace(policy.TokenizerProfile) == "" {
 		return nil, execution.NewContextError(execution.ErrCodeContextModelLimitUnknown)
 	}
-	exposure := toolExposureFromCatalog(catalog)
+	exposure := toolExposureForDisclosure(catalog, mode)
 	catalogDigest := ""
-	if catalog != nil {
+	if mode != einoruntime.ToolSearchModeNone && catalog != nil {
 		catalogDigest = catalog.CatalogDigest()
 	}
-	if catalogDigest == "" {
+	if mode != einoruntime.ToolSearchModeNone && catalogDigest == "" {
 		empty, err := einoruntime.BuildToolCatalog(ctx, nil)
 		if err != nil {
 			return nil, execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
@@ -819,7 +820,7 @@ func (b *Bridge) buildInitialAgenticMessages(
 	}
 
 	// Token-window assembly path (required for Agentic initial).
-	return b.buildAgenticMessagesTokenWindow(ctx, job, run, instruction, policy, exposure, catalogDigest)
+	return b.buildAgenticMessagesTokenWindow(ctx, job, run, instruction, policy, exposure, catalogDigest, mode)
 }
 
 func (b *Bridge) buildAgenticMessagesTokenWindow(
@@ -830,6 +831,7 @@ func (b *Bridge) buildAgenticMessagesTokenWindow(
 	policy sessioncontext.ResolvedSnapshot,
 	exposure contextwindow.ToolExposureEstimate,
 	catalogDigest string,
+	mode einoruntime.ToolSearchMode,
 ) ([]*schema.AgenticMessage, error) {
 	// instruction is already the hash-verified frozen revision (see
 	// requireFrozenInstruction); re-reading run.AgentSnapshot here would reopen
@@ -927,7 +929,7 @@ func (b *Bridge) buildAgenticMessagesTokenWindow(
 		OmittedPrefixCount:     plan.OmittedTurnCount,
 		Policy:                 policy,
 	}
-	if err := b.estimateAndPreflightAgentic(ctx, job, run, system, exposure, catalogDigest, estMsgs, meta); err != nil {
+	if err := b.estimateAndPreflightAgentic(ctx, job, run, system, exposure, catalogDigest, estMsgs, meta, mode); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -956,6 +958,7 @@ func (b *Bridge) estimateAndPreflightAgentic(
 	catalogDigest string,
 	estMsgs []contextwindow.Message,
 	meta *agenticAssemblyPlanMeta,
+	mode einoruntime.ToolSearchMode,
 ) error {
 	if meta == nil {
 		return execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
@@ -978,7 +981,7 @@ func (b *Bridge) estimateAndPreflightAgentic(
 	if err != nil {
 		return execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
 	}
-	got, err := est.EstimateAgenticRequest(system, exposure, estMsgs)
+	got, err := est.EstimateAgenticRequestV2(system, exposure, estMsgs)
 	if err != nil {
 		return execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
 	}
@@ -1017,25 +1020,30 @@ func (b *Bridge) estimateAndPreflightAgentic(
 	if safe == 0 {
 		safe = safety
 	}
-	mode := meta.Mode
-	if mode == "" {
-		mode = meta.Policy.Mode
+	policyMode := meta.Mode
+	if policyMode == "" {
+		policyMode = meta.Policy.Mode
 	}
-	if strings.TrimSpace(catalogDigest) == "" || len(catalogDigest) != 64 {
-		return execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
+	searchMode, estimatorVersion := assemblyFieldsForDisclosure(mode)
+	if searchMode != execution.AssemblyToolSearchModeNone {
+		if strings.TrimSpace(catalogDigest) == "" || len(catalogDigest) != 64 {
+			return execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
+		}
+	} else {
+		catalogDigest = ""
 	}
 
 	rec := execution.ContextAssemblyRecord{
 		WorkspaceID:                  job.WorkspaceID,
 		RunID:                        job.RunID,
 		SessionID:                    job.SessionID,
-		Mode:                         mode,
+		Mode:                         policyMode,
 		PolicySnapshotHash:           execution.HashJSONObject(run.ContextPolicySnapshot),
 		ModelSnapshotHash:            execution.HashJSONObject(run.ModelSnapshot),
 		CapabilitySnapshotHash:       execution.HashJSONObject(run.CapabilitySnapshot),
 		AgentSnapshotHash:            execution.HashJSONObject(run.AgentSnapshot),
 		EstimatorProfile:             got.Profile,
-		EstimatorVersion:             contextwindow.EstimatorVersionAgenticOpenAIResponsesV1,
+		EstimatorVersion:             estimatorVersion,
 		HardInputCeilingTokens:       hardCeiling,
 		OutputReserveTokens:          outRes,
 		SafetyMarginTokens:           safe,
@@ -1044,7 +1052,7 @@ func (b *Bridge) estimateAndPreflightAgentic(
 		IncludedSegments:             meta.IncludedSegments,
 		OmittedPrefixCount:           meta.OmittedPrefixCount,
 		EstimatedTotalTokens:         got.TotalTokens,
-		ToolSearchMode:               execution.AssemblyToolSearchModeClientBounded,
+		ToolSearchMode:               searchMode,
 		ToolCatalogDigest:            catalogDigest,
 		ImmediateToolCount:           got.ImmediateToolCount,
 		DeferredToolCount:            got.DeferredToolCount,
@@ -1075,7 +1083,10 @@ func assemblyRecordLeaksSensitive(rec execution.ContextAssemblyRecord, job agent
 			// user message id in mode would be odd; ignore short collisions
 		}
 	}
-	// Catalog digest must be exact lowercase 64-hex (no body).
+	// none assemblies persist a NULL digest; every other mode is 64-hex only.
+	if rec.ToolSearchMode == execution.AssemblyToolSearchModeNone {
+		return rec.ToolCatalogDigest != ""
+	}
 	if len(rec.ToolCatalogDigest) != 64 {
 		return true
 	}

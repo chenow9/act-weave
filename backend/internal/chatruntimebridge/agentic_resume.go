@@ -71,6 +71,9 @@ func (b *Bridge) driveAgenticResume(
 		return "", "", err
 	}
 
+	ctx = withFrozenDisclosure(ctx, frozenDisclosure{
+		Mode: plan.toolSearchMode, ToolCalling: plan.toolCalling,
+	})
 	built, err := b.buildAgenticAgentFromPlan(ctx, run, plan)
 	if err != nil {
 		return "", "", err
@@ -136,8 +139,8 @@ func preflightAgenticResume(plan *agenticFrozenPlan, targets map[string]any) err
 		})
 	}
 
-	got, err := est.EstimateAgenticRequest(
-		plan.instruction, toolExposureFromCatalog(plan.catalog), messages)
+	got, err := est.EstimateAgenticRequestV2(
+		plan.instruction, toolExposureForDisclosure(plan.catalog, plan.toolSearchMode), messages)
 	if err != nil {
 		return execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
 	}

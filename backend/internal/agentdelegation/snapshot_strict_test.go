@@ -24,7 +24,11 @@ func producerNodeModelSnap(modelID string) json.RawMessage {
 		`"modelName":"gpt-test",` +
 		`"options":{},` +
 		`"credentialSecretId":null,` +
-		`"lockVersion":1` +
+		`"lockVersion":1,` +
+		`"status":"VERIFIED",` +
+		`"agenticCapabilities":{},` +
+		`"runtimeCapabilities":{},` +
+		`"toolDisclosurePolicy":{}` +
 		`}`)
 }
 
@@ -240,6 +244,10 @@ func TestParseSnapshot_NodeNestedClosedContracts(t *testing.T) {
 		{"node_model_missing_options", mutateNodeNestedKey(t, base, "modelSnapshot", "options", "", true)},
 		{"node_model_null_options", mutateNodeNestedKey(t, base, "modelSnapshot", "options", `null`, false)},
 		{"node_model_missing_credential", mutateNodeNestedKey(t, base, "modelSnapshot", "credentialSecretId", "", true)},
+		{"node_model_missing_status", mutateNodeNestedKey(t, base, "modelSnapshot", "status", "", true)},
+		{"node_model_missing_agentic", mutateNodeNestedKey(t, base, "modelSnapshot", "agenticCapabilities", "", true)},
+		{"node_model_missing_runtime", mutateNodeNestedKey(t, base, "modelSnapshot", "runtimeCapabilities", "", true)},
+		{"node_model_missing_policy", mutateNodeNestedKey(t, base, "modelSnapshot", "toolDisclosurePolicy", "", true)},
 		{"node_model_id_mismatch", mutateNodeNestedKey(t, base, "modelSnapshot", "id", `"00000000-0000-4000-8000-000000000099"`, false)},
 		{"node_model_dup_id", forceNodeModelDupKey(t, base)},
 		// Lock-version identity (cycle 8)

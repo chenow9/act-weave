@@ -31,7 +31,11 @@ func producerNodeModel(modelID string, lock int64, modelName, apiBase string) js
 		`"modelName":"` + modelName + `",` +
 		`"options":{},` +
 		`"credentialSecretId":null,` +
-		`"lockVersion":` + itoa64(lock) +
+		`"lockVersion":` + itoa64(lock) + `,` +
+		`"status":"VERIFIED",` +
+		`"agenticCapabilities":{},` +
+		`"runtimeCapabilities":{},` +
+		`"toolDisclosurePolicy":{}` +
 		`}`)
 }
 

@@ -183,6 +183,9 @@ func (b *Bridge) ExecuteA2AInbound(ctx context.Context, req a2agateway.InboundRu
 		return "", execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
 	}
 
+	ctx = withFrozenDisclosure(ctx, frozenDisclosure{
+		Mode: plan.toolSearchMode, ToolCalling: plan.toolCalling,
+	})
 	built, err := b.buildAgenticAgentFromPlan(ctx, run, plan)
 	if err != nil {
 		return "", err
@@ -228,8 +231,8 @@ func preflightAgenticInboundTurn(plan *agenticFrozenPlan, userText string) error
 	if err != nil {
 		return execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
 	}
-	exposure := toolExposureFromCatalog(plan.catalog)
-	got, err := est.EstimateAgenticRequest(plan.instruction, exposure, []contextwindow.Message{
+	exposure := toolExposureForDisclosure(plan.catalog, plan.toolSearchMode)
+	got, err := est.EstimateAgenticRequestV2(plan.instruction, exposure, []contextwindow.Message{
 		{Role: contextwindow.RoleUser, Content: userText},
 	})
 	if err != nil {

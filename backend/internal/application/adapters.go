@@ -1068,6 +1068,11 @@ func marshalModelSnapshot(config modelconfig.Config) (json.RawMessage, error) {
 	if config.CredentialSecretID != nil {
 		doc["credentialSecretId"] = *config.CredentialSecretID
 	}
+	policy := json.RawMessage(config.ToolDisclosurePolicy)
+	if modelconfig.IsUnsetToolDisclosurePolicy(policy) {
+		policy = json.RawMessage(`{}`)
+	}
+	doc["toolDisclosurePolicy"] = policy
 	return json.Marshal(doc)
 }
 
@@ -1516,9 +1521,8 @@ func (source *agentRunSnapshots) SnapshotAgentRun(
 // Without this the Agentic initial path has no topology authority at all —
 // agent_runs.agent_graph_snapshot defaults to {} and the consumer fail-closes
 // with AGENTIC_GRAPH_SNAPSHOT_REQUIRED, so every new chat session's first turn
-// dies. The three nested snapshots use the node producer shapes from
-// chatruntimebridge.snapshotAgentNode (which is a different, narrower schema
-// than the root run.ModelSnapshot / run.AgentSnapshot documents).
+// dies. Nested model blobs use MarshalNodeModelSnapshot (credentialSecretId is
+// always present; unbound is JSON null), not the root run.ModelSnapshot omit.
 //
 // Root identity is taken from the same model/revision values that build the
 // root run.ModelSnapshot and run.AgentSnapshot, so the consumer's cross-snapshot
@@ -1532,15 +1536,7 @@ func freezeRootChatGraphSnapshot(
 	revision agent.PromptRevision,
 	capabilities []capability.Descriptor,
 ) (json.RawMessage, error) {
-	options := json.RawMessage(model.Options)
-	if len(options) == 0 || string(options) == "null" {
-		options = json.RawMessage(`{}`)
-	}
-	nodeModel, err := json.Marshal(map[string]any{
-		"id": model.ID, "provider": model.Provider, "apiBase": model.APIBase,
-		"modelName": model.ModelName, "options": options,
-		"credentialSecretId": model.CredentialSecretID, "lockVersion": model.LockVersion,
-	})
+	nodeModel, err := chatruntimebridge.MarshalNodeModelSnapshot(model)
 	if err != nil {
 		return nil, err
 	}

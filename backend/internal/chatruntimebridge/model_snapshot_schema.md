@@ -13,6 +13,7 @@ Source: `application.marshalModelSnapshot`.
 | lockVersion | yes | no | integer | ≥ 1 |
 | agenticCapabilities | yes | no | object | empty `{}` = unverified; else full strict doc |
 | runtimeCapabilities | yes | no | object | always emitted (`{}` legal unset) |
+| toolDisclosurePolicy | no | no | object | omit or object; absent treated as `{}` |
 | credentialSecretId | no | no* | string | *absent when no secret; if present must be non-null non-empty string |
 
 Unknown root keys rejected. Nested agenticCapabilities uses modelconfig.ParseAgenticCapabilities.

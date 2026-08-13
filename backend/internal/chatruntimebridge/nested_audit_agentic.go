@@ -21,8 +21,18 @@ import (
 // NewTypedAgentTool while leaving the parent text stream untouched.
 // Fail-closed: permanent MODEL_TURN evidence is required when modelTurns is wired.
 type nestedAuditAgenticModel struct {
-	inner  model.AgenticModel
-	bridge *Bridge
+	inner          model.AgenticModel
+	bridge         *Bridge
+	toolSearchMode string
+	toolCalling    string
+}
+
+func (m *nestedAuditAgenticModel) setDisclosure(mode, calling string) {
+	if m == nil {
+		return
+	}
+	m.toolSearchMode = mode
+	m.toolCalling = calling
 }
 
 func wrapNestedAuditAgenticModel(inner model.AgenticModel, b *Bridge) model.AgenticModel {
@@ -174,6 +184,12 @@ func (m *nestedAuditAgenticModel) record(
 		"source": "chatruntimebridge.nested.agentic", "status": status,
 		"content": content, "errorCode": errCode, "errorMessage": truncateStr(errMsg, 500),
 		"hasToolCalls": hasToolCalls,
+	}
+	if mode := strings.TrimSpace(m.toolSearchMode); mode != "" {
+		payloadMap["toolSearchMode"] = mode
+	}
+	if calling := strings.TrimSpace(m.toolCalling); calling != "" {
+		payloadMap["toolCalling"] = calling
 	}
 	if reasoningForAudit != "" {
 		payloadMap["reasoning"] = reasoningForAudit

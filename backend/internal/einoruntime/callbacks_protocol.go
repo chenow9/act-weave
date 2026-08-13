@@ -50,6 +50,10 @@ type ModelTurn struct {
 	// (tool-only MODEL turns must still be audited even with empty content).
 	HasToolCalls bool
 	ToolCallIDs  []string
+	// ToolSearchMode and ToolCalling are expand-only builder fields. Empty
+	// keeps the historical MODEL_TURN payload.
+	ToolSearchMode string
+	ToolCalling    string
 }
 
 // ModelTurnObserver is an optional ProtocolProjector extension. When the

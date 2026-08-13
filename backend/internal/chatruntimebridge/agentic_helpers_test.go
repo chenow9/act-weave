@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"actweave/backend/internal/agentdelegation"
+	"actweave/backend/internal/config"
 	"actweave/backend/internal/contextwindow"
 	"actweave/backend/internal/einoruntime"
 	"actweave/backend/internal/execution"
@@ -224,24 +225,88 @@ func TestRequireVerifiedAgenticSnapshot_AcceptsV2Tiers(t *testing.T) {
 	}
 }
 
-func TestErrToolBearingNonNativeCodes(t *testing.T) {
+func TestResolveDisclosureModeTable(t *testing.T) {
 	at := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
 	digest := strings.Repeat("ab", 32)
-	fc, err := modelconfig.CanonicalAgenticCapabilitiesV2(modelconfig.ToolCallingFunctionCalling, at, 1, digest)
+	mustCaps := func(calling string) modelconfig.AgenticCapabilities {
+		t.Helper()
+		if calling == modelconfig.ToolCallingNativeClientSearch {
+			doc, err := modelconfig.CanonicalAgenticCapabilities(at, 1, digest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return doc
+		}
+		doc, err := modelconfig.CanonicalAgenticCapabilitiesV2(calling, at, 1, digest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return doc
+	}
+	empty, err := einoruntime.BuildToolCatalog(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fcRaw, _ := json.Marshal(fc)
-	if err := errToolBearingNonNative(modelconfig.Config{AgenticCapabilities: fcRaw}); !errors.Is(err, modelconfig.ErrToolDisclosureRuntimePending) {
-		t.Fatalf("FC: %v", err)
+	tools := []einoruntime.ToolCatalogBuildEntry{
+		{Tool: &stubTool{name: "alpha", desc: "tool a"}, Exposure: einoruntime.ToolExposureDeferred},
 	}
-	none, err := modelconfig.CanonicalAgenticCapabilitiesV2(modelconfig.ToolCallingNone, at, 1, digest)
+	small, err := einoruntime.BuildToolCatalog(context.Background(), tools)
 	if err != nil {
 		t.Fatal(err)
 	}
-	noneRaw, _ := json.Marshal(none)
-	if err := errToolBearingNonNative(modelconfig.Config{AgenticCapabilities: noneRaw}); !errors.Is(err, modelconfig.ErrAgentModelToolsUnsupported) {
-		t.Fatalf("none: %v", err)
+	many := make([]einoruntime.ToolCatalogBuildEntry, modelconfig.CarryAllHardLimit+1)
+	for i := range many {
+		many[i] = einoruntime.ToolCatalogBuildEntry{
+			Tool:     &stubTool{name: "tool_" + itoaLocal(i), desc: "d"},
+			Exposure: einoruntime.ToolExposureDeferred,
+		}
+	}
+	large, err := einoruntime.BuildToolCatalog(context.Background(), many)
+	if err != nil {
+		t.Fatal(err)
+	}
+	onDemand := modelconfig.ToolDisclosurePolicy{
+		SchemaVersion: modelconfig.ToolDisclosureSchemaV1, Mode: modelconfig.DisclosureModePlatformOnDemand,
+	}
+	carry := modelconfig.ToolDisclosurePolicy{
+		SchemaVersion: modelconfig.ToolDisclosureSchemaV1, Mode: modelconfig.DisclosureModeCarryAll,
+	}
+
+	cases := []struct {
+		name    string
+		caps    modelconfig.AgenticCapabilities
+		policy  modelconfig.ToolDisclosurePolicy
+		catalog *einoruntime.ToolCatalogSnapshot
+		want    einoruntime.ToolSearchMode
+		err     error
+	}{
+		{"v1_native_empty", mustCaps(modelconfig.ToolCallingNativeClientSearch), modelconfig.ToolDisclosurePolicy{}, empty, einoruntime.ToolSearchModeClientBounded, nil},
+		{"v1_native_tools", mustCaps(modelconfig.ToolCallingNativeClientSearch), modelconfig.ToolDisclosurePolicy{}, small, einoruntime.ToolSearchModeClientBounded, nil},
+		{"native_nonempty_policy", mustCaps(modelconfig.ToolCallingNativeClientSearch), onDemand, small, "", modelconfig.ErrToolDisclosureInvalid},
+		{"fc_empty_catalog", mustCaps(modelconfig.ToolCallingFunctionCalling), onDemand, empty, einoruntime.ToolSearchModeNone, nil},
+		{"fc_unset_policy", mustCaps(modelconfig.ToolCallingFunctionCalling), modelconfig.ToolDisclosurePolicy{}, small, einoruntime.ToolSearchModePlatformBounded, nil},
+		{"fc_on_demand", mustCaps(modelconfig.ToolCallingFunctionCalling), onDemand, small, einoruntime.ToolSearchModePlatformBounded, nil},
+		{"fc_carry_all", mustCaps(modelconfig.ToolCallingFunctionCalling), carry, small, einoruntime.ToolSearchModeCarryAll, nil},
+		{"fc_carry_all_too_large", mustCaps(modelconfig.ToolCallingFunctionCalling), carry, large, "", modelconfig.ErrToolCarryAllTooLarge},
+		{"none_empty", mustCaps(modelconfig.ToolCallingNone), modelconfig.ToolDisclosurePolicy{}, empty, einoruntime.ToolSearchModeNone, nil},
+		{"none_with_tools", mustCaps(modelconfig.ToolCallingNone), modelconfig.ToolDisclosurePolicy{}, small, "", modelconfig.ErrAgentModelToolsUnsupported},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveDisclosureMode(tc.caps, tc.policy, tc.catalog)
+			if tc.err != nil {
+				if !errors.Is(err, tc.err) {
+					t.Fatalf("err=%v want %v", err, tc.err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.want {
+				t.Fatalf("mode=%q want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -290,10 +355,11 @@ func TestBuildAgenticChildAgent_FailClosedAndToolless(t *testing.T) {
 		AgentID: "child", Name: "child", Description: "d", Instruction: "be brief",
 		Model: stubAgenticModel{}, Tools: nil, CapabilitySnapshot: emptyCaps,
 	}
-	if _, err := b.buildAgenticChildAgent(ctx, toolless, mustV2(modelconfig.ToolCallingFunctionCalling), nil); err != nil {
+	ws := "c08f1f2e-7b5a-7c3d-8e9f-1234567890a1"
+	if _, err := b.buildAgenticChildAgent(ctx, ws, toolless, mustV2(modelconfig.ToolCallingFunctionCalling), nil); err != nil {
 		t.Fatalf("tool-less FC child: %v", err)
 	}
-	if _, err := b.buildAgenticChildAgent(ctx, toolless, mustV2(modelconfig.ToolCallingNone), nil); err != nil {
+	if _, err := b.buildAgenticChildAgent(ctx, ws, toolless, mustV2(modelconfig.ToolCallingNone), nil); err != nil {
 		t.Fatalf("tool-less none child: %v", err)
 	}
 
@@ -301,10 +367,14 @@ func TestBuildAgenticChildAgent_FailClosedAndToolless(t *testing.T) {
 	bearing := toolless
 	bearing.Tools = tools
 	bearing.CapabilitySnapshot = toolCaps
-	if _, err := b.buildAgenticChildAgent(ctx, bearing, mustV2(modelconfig.ToolCallingFunctionCalling), tools); !errors.Is(err, modelconfig.ErrToolDisclosureRuntimePending) {
-		t.Fatalf("tool-bearing FC child: %v", err)
+	if _, err := b.buildAgenticChildAgent(ctx, ws, bearing, mustV2(modelconfig.ToolCallingFunctionCalling), tools); !errors.Is(err, modelconfig.ErrToolDisclosureNotRolledOut) {
+		t.Fatalf("unrolled FC child: %v", err)
 	}
-	if _, err := b.buildAgenticChildAgent(ctx, bearing, mustV2(modelconfig.ToolCallingNone), tools); !errors.Is(err, modelconfig.ErrAgentModelToolsUnsupported) {
+	rolled := &Bridge{maxTools: einoruntime.DefaultMaxToolInvocations, toolDisclosure: config.RuntimeFeatureRollout{Enabled: true, AllowAllWorkspaces: true}}
+	if _, err := rolled.buildAgenticChildAgent(ctx, ws, bearing, mustV2(modelconfig.ToolCallingFunctionCalling), tools); err != nil {
+		t.Fatalf("rolled-out FC child: %v", err)
+	}
+	if _, err := b.buildAgenticChildAgent(ctx, ws, bearing, mustV2(modelconfig.ToolCallingNone), tools); !errors.Is(err, modelconfig.ErrAgentModelToolsUnsupported) {
 		t.Fatalf("tool-bearing none child: %v", err)
 	}
 }
@@ -317,7 +387,7 @@ func TestBuildRunPromptCacheKey_NoPII(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	key, err := buildRunPromptCacheKey(cfg, "system prompt text", empty)
+	key, err := buildRunPromptCacheKey(cfg, "system prompt text", empty, einoruntime.ToolSearchModeClientBounded)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +400,7 @@ func TestBuildRunPromptCacheKey_NoPII(t *testing.T) {
 		}
 	}
 	// Same inputs → same key
-	key2, err := buildRunPromptCacheKey(cfg, "system prompt text", empty)
+	key2, err := buildRunPromptCacheKey(cfg, "system prompt text", empty, einoruntime.ToolSearchModeClientBounded)
 	if err != nil || key != key2 {
 		t.Fatalf("unstable key")
 	}

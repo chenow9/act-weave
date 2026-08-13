@@ -36,6 +36,7 @@ function createStore() {
     })),
     verifyModelConfig: vi.fn(async () => ({ ...model, status: "VERIFIED", lastLatencyMs: 24, lockVersion: 2 })),
     deleteModelConfig: vi.fn(async () => undefined),
+    setDisclosurePolicy: vi.fn(async () => ({ ...model, toolDisclosureUI: "binary" })),
   });
   return store;
 }
@@ -56,6 +57,7 @@ describe("model config v1 behavior", () => {
       activeWorkspaceId: "workspace-1",
       items: [{ id: "workspace-1", name: "Workspace 1" }],
       load: vi.fn(async () => undefined),
+      can: () => true,
     });
     vi.clearAllMocks();
   });
@@ -215,6 +217,27 @@ describe("model config v1 behavior", () => {
 
     const updatedDraft = fixture.store.updateModelConfig.mock.calls[0][1];
     expect(updatedDraft.provider).toBe("openai-compatible");
+  });
+
+  it("shows writable disclosure radios for function-calling models", async () => {
+    fixture.store.items = [
+      modelFixture({
+        status: "VERIFIED",
+        toolDisclosureUI: "binary",
+        toolDisclosurePolicy: { schemaVersion: "tool-disclosure.v1", mode: "platform_on_demand" },
+      }),
+    ];
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('button[aria-label="更多操作"]').trigger("click");
+    await wrapper.get('button[aria-label="编辑"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.get("[data-testid=model-disclosure]").text()).toContain("按需检索");
+    expect(wrapper.get("[data-testid=model-disclosure]").text()).toContain("全量携带");
+    expect(wrapper.text()).not.toContain("Classic");
+    await wrapper.get('[data-action="set-disclosure"]').trigger("click");
+    await flushPromises();
+    expect(fixture.store.setDisclosurePolicy).toHaveBeenCalledWith("model-1", 1, "platform_on_demand");
   });
 
   it("filters with v1 status values", async () => {

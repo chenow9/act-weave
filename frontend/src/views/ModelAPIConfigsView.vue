@@ -11,7 +11,13 @@ import ManagementSegmentedFilter from "../components/ManagementSegmentedFilter.v
 import WorkspaceContextState from "../components/WorkspaceContextState.vue";
 import { useModelConfigStore } from "../stores/modelConfigs";
 import { useWorkspaceStore } from "../stores/workspaces";
-import type { ModelApiConfig, ModelApiConfigListQuery, ModelRuntimeCapabilities } from "../types/domain";
+import type {
+  ModelApiConfig,
+  ModelApiConfigListQuery,
+  ModelRuntimeCapabilities,
+  ToolDisclosureMode,
+  ToolDisclosureUI,
+} from "../types/domain";
 import { resolveToolCapabilityBadge, type ToolCapabilityBadge } from "../utils/model-tool-disclosure";
 import { normalizeRuntimeCapabilities } from "../utils/session-context-config";
 
@@ -76,6 +82,8 @@ const modelDeleteError = ref("");
 const mobileModelActionMenuId = ref<string | null>(null);
 const modelRuntimeSectionOpen = ref(false);
 const modelRuntimeAdvancedOpen = ref(false);
+const disclosureDraftMode = ref<ToolDisclosureMode>("platform_on_demand");
+const savingDisclosure = ref(false);
 const modelModalRef = useTemplateRef<HTMLElement>("modelModalRef");
 const credentialPlaintextInput = useTemplateRef<HTMLInputElement>("credentialPlaintextInput");
 const discardModelDraftRef = useTemplateRef<HTMLElement>("discardModelDraftRef");
@@ -397,8 +405,39 @@ function handleModelRowAction(actionKey: string, item: ModelApiConfig) {
   if (actionKey === "delete") requestModelDeletion(item);
 }
 
+function currentDisclosureMode(item: ModelApiConfig | null | undefined): ToolDisclosureMode {
+  const mode = (item?.toolDisclosurePolicy as { mode?: string } | undefined)?.mode;
+  return mode === "carry_all" ? "carry_all" : "platform_on_demand";
+}
+
+function draftDisclosureUI(): ToolDisclosureUI | undefined {
+  return activeModelDraft.value?.toolDisclosureUI;
+}
+
+async function saveDisclosurePolicy() {
+  const draft = editingModelDraft.value;
+  if (!draft?.id || savingDisclosure.value) return;
+  savingDisclosure.value = true;
+  try {
+    const updated = await modelConfigs.setDisclosurePolicy(draft.id, draft.lockVersion, disclosureDraftMode.value);
+    editingModelDraft.value = {
+      ...updated,
+      provider: OPENAI_COMPATIBLE_PROVIDER,
+      credentialSecretId: "",
+      runtimeCapabilities: normalizeRuntimeCapabilities(updated.runtimeCapabilities),
+    };
+    await loadModelConfigPage();
+    showActionNote(t("modelApis.disclosureSaved", { name: updated.name }));
+  } catch {
+    modelModalFeedback.value = { tone: "error", message: t("modelApis.disclosureSaveFailed") };
+  } finally {
+    savingDisclosure.value = false;
+  }
+}
+
 function openModelEditor(item: ModelApiConfig) {
   selectModel(item);
+  disclosureDraftMode.value = currentDisclosureMode(item);
   editingModelDraft.value = {
     ...item,
     provider: OPENAI_COMPATIBLE_PROVIDER,
@@ -1225,6 +1264,39 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 {{ visibleModelDraftValidationError("modelName") }}
               </span>
             </label>
+            <section
+              v-if="modelModalMode === 'edit' && draftDisclosureUI()"
+              class="model-modal-fieldset model-disclosure-section"
+              data-testid="model-disclosure"
+            >
+              <h3 class="model-disclosure-title">{{ t("modelApis.disclosureSection") }}</h3>
+              <p v-if="draftDisclosureUI() === 'hidden'" class="model-modal-fieldset-help">
+                {{ t("modelApis.disclosureHidden") }}
+              </p>
+              <p v-else-if="draftDisclosureUI() === 'unavailable'" class="model-modal-fieldset-help">
+                {{ t("modelApis.disclosureUnavailable") }}
+              </p>
+              <template v-else-if="draftDisclosureUI() === 'binary'">
+                <p class="model-modal-fieldset-help">{{ t("modelApis.disclosureBinaryHelp") }}</p>
+                <label class="model-disclosure-option">
+                  <input v-model="disclosureDraftMode" type="radio" value="platform_on_demand" />
+                  <span>{{ t("modelApis.disclosureOnDemand") }}</span>
+                </label>
+                <label class="model-disclosure-option">
+                  <input v-model="disclosureDraftMode" type="radio" value="carry_all" />
+                  <span>{{ t("modelApis.disclosureCarryAll") }}</span>
+                </label>
+                <button
+                  type="button"
+                  class="secondary-button"
+                  data-action="set-disclosure"
+                  :disabled="savingDisclosure || !canEditWorkspace"
+                  @click="saveDisclosurePolicy"
+                >
+                  {{ t("modelApis.disclosureSave") }}
+                </button>
+              </template>
+            </section>
             <label class="model-modal-field locked">
               <span class="model-modal-field-label">
                 Created By
@@ -2206,6 +2278,26 @@ function handleModelModalKeydown(event: KeyboardEvent) {
   background: #f8fafc;
   flex: 0 0 auto;
   overflow: visible;
+}
+
+.model-disclosure-section {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.model-disclosure-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.model-disclosure-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
 }
 
 .model-runtime-section {

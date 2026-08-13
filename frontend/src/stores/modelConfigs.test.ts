@@ -71,6 +71,23 @@ describe("v1 model config store", () => {
     expect(apiClient.post).toHaveBeenCalledWith("/workspaces/workspace-1/model-configs/model-1:verify");
     expect(apiClient.delete).toHaveBeenCalledWith("/workspaces/workspace-1/model-configs/model-1?lockVersion=2");
   });
+
+  it("saves disclosure via set-disclosure command", async () => {
+    vi.mocked(apiClient.post).mockResolvedValueOnce({
+      data: modelFixture({
+        lockVersion: 3,
+        toolDisclosureUI: "binary",
+        toolDisclosurePolicy: { schemaVersion: "tool-disclosure.v1", mode: "carry_all" },
+      }),
+    });
+    const store = useModelConfigStore();
+    store.items = [modelFixture()];
+    await store.setDisclosurePolicy("model-1", 2, "carry_all");
+    expect(apiClient.post).toHaveBeenCalledWith("/workspaces/workspace-1/model-configs/model-1:set-disclosure", {
+      lockVersion: 2,
+      toolDisclosurePolicy: { schemaVersion: "tool-disclosure.v1", mode: "carry_all" },
+    });
+  });
 });
 
 function modelFixture(overrides: Partial<ModelApiConfig> = {}): ModelApiConfig {

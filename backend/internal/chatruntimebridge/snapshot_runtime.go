@@ -121,15 +121,16 @@ func parseModelSnapshot(raw json.RawMessage) (modelconfig.Config, string, error)
 		return modelconfig.Config{}, "", nil
 	}
 	var doc struct {
-		ID                  string          `json:"id"`
-		Provider            string          `json:"provider"`
-		APIBase             string          `json:"apiBase"`
-		ModelName           string          `json:"modelName"`
-		Options             json.RawMessage `json:"options"`
-		CredentialSecretID  *string         `json:"credentialSecretId"`
-		LockVersion         int64           `json:"lockVersion"`
-		AgenticCapabilities json.RawMessage `json:"agenticCapabilities"`
-		RuntimeCapabilities json.RawMessage `json:"runtimeCapabilities"`
+		ID                   string          `json:"id"`
+		Provider             string          `json:"provider"`
+		APIBase              string          `json:"apiBase"`
+		ModelName            string          `json:"modelName"`
+		Options              json.RawMessage `json:"options"`
+		CredentialSecretID   *string         `json:"credentialSecretId"`
+		LockVersion          int64           `json:"lockVersion"`
+		AgenticCapabilities  json.RawMessage `json:"agenticCapabilities"`
+		RuntimeCapabilities  json.RawMessage `json:"runtimeCapabilities"`
+		ToolDisclosurePolicy json.RawMessage `json:"toolDisclosurePolicy"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return modelconfig.Config{}, "", err
@@ -139,16 +140,17 @@ func parseModelSnapshot(raw json.RawMessage) (modelconfig.Config, string, error)
 		return modelconfig.Config{}, "", errors.New("model snapshot missing id")
 	}
 	cfg := modelconfig.Config{
-		ID:                  id,
-		Provider:            strings.TrimSpace(doc.Provider),
-		APIBase:             strings.TrimSpace(doc.APIBase),
-		ModelName:           strings.TrimSpace(doc.ModelName),
-		Options:             doc.Options,
-		CredentialSecretID:  doc.CredentialSecretID,
-		LockVersion:         doc.LockVersion,
-		Status:              modelconfig.StatusVerified,
-		AgenticCapabilities: doc.AgenticCapabilities,
-		RuntimeCapabilities: doc.RuntimeCapabilities,
+		ID:                   id,
+		Provider:             strings.TrimSpace(doc.Provider),
+		APIBase:              strings.TrimSpace(doc.APIBase),
+		ModelName:            strings.TrimSpace(doc.ModelName),
+		Options:              doc.Options,
+		CredentialSecretID:   doc.CredentialSecretID,
+		LockVersion:          doc.LockVersion,
+		Status:               modelconfig.StatusVerified,
+		AgenticCapabilities:  doc.AgenticCapabilities,
+		RuntimeCapabilities:  doc.RuntimeCapabilities,
+		ToolDisclosurePolicy: doc.ToolDisclosurePolicy,
 	}
 	if len(cfg.Options) == 0 {
 		cfg.Options = json.RawMessage(`{}`)
@@ -158,6 +160,9 @@ func parseModelSnapshot(raw json.RawMessage) (modelconfig.Config, string, error)
 	}
 	if len(cfg.RuntimeCapabilities) == 0 {
 		cfg.RuntimeCapabilities = json.RawMessage(`{}`)
+	}
+	if len(cfg.ToolDisclosurePolicy) == 0 {
+		cfg.ToolDisclosurePolicy = json.RawMessage(`{}`)
 	}
 	return cfg, id, nil
 }

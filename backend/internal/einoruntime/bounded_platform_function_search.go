@@ -150,6 +150,17 @@ func (m *BoundedPlatformFunctionSearchMiddleware) validateSessionLoadedState(ctx
 	return validateLoadedNamesAgainstCatalog(m.catalog, names)
 }
 
+// PlatformCatalogSearchEstimate returns the search function identity used for
+// token accounting. Name, description, and parameters match the wire contract.
+func PlatformCatalogSearchEstimate() (name, desc string, parameters json.RawMessage) {
+	info := platformCatalogSearchToolInfo()
+	params, err := canonicalParametersJSON(info)
+	if err != nil {
+		params = json.RawMessage(`{"type":"object"}`)
+	}
+	return info.Name, info.Desc, params
+}
+
 func platformCatalogSearchToolInfo() *schema.ToolInfo {
 	return &schema.ToolInfo{
 		Name: PlatformCatalogSearchToolName,

@@ -138,6 +138,18 @@ export const useModelConfigStore = defineStore("modelConfigs", {
       this.upsertConfig(updated);
       return updated;
     },
+    async setDisclosurePolicy(configId: string, lockVersion: number, mode: "platform_on_demand" | "carry_all") {
+      const response = await apiClient.post<ModelApiConfig>(
+        `/workspaces/${this.workspaceID()}/model-configs/${configId}:set-disclosure`,
+        {
+          lockVersion,
+          toolDisclosurePolicy: { schemaVersion: "tool-disclosure.v1", mode },
+        },
+      );
+      const updated = normalizeModelConfig(response.data);
+      this.upsertConfig(updated);
+      return updated;
+    },
     async verifyModelConfig(configId: string) {
       const response = await apiClient.post<ModelApiConfig>(
         `/workspaces/${this.workspaceID()}/model-configs/${configId}:verify`,
@@ -172,6 +184,7 @@ function normalizeModelConfig(config: ModelApiConfig): ModelApiConfig {
     runtimeCapabilities: config.runtimeCapabilities || {},
     agenticCapabilities: config.agenticCapabilities || {},
     toolDisclosurePolicy: config.toolDisclosurePolicy || {},
+    toolDisclosureUI: config.toolDisclosureUI,
     lastLatencyMs: config.lastLatencyMs ?? undefined,
     credentialSecretId: undefined,
   };

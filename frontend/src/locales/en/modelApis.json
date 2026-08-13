@@ -127,5 +127,14 @@
   "validationSecretUuid": "Secret ID must be a valid UUID—do not paste an API Key or Token.",
   "validationModelName": "Enter a model name.",
   "validationApiBase": "Enter an API base URL.",
-  "validationApiBaseUrl": "Enter a valid URL (including http:// or https://)."
+  "validationApiBaseUrl": "Enter a valid URL (including http:// or https://).",
+  "disclosureSection": "Tool disclosure",
+  "disclosureHidden": "This model supports native tool search and already loads tools on demand. No configuration needed.",
+  "disclosureUnavailable": "This model cannot call tools and cannot be bound to an Agent that has tools.",
+  "disclosureBinaryHelp": "Choose how the model sees tools. Saving affects new runs only.",
+  "disclosureOnDemand": "On-demand search (recommended; load at most 5 tools each time)",
+  "disclosureCarryAll": "Carry all (only for Agents with 8 tools or fewer)",
+  "disclosureSave": "Save disclosure policy",
+  "disclosureSaved": "{name}: disclosure policy updated.",
+  "disclosureSaveFailed": "Failed to save the disclosure policy. Check the network or try again later."
 }
