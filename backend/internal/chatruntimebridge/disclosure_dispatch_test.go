@@ -110,6 +110,13 @@ func TestBuildModelTurnAuditPayload_ExpandOnlyDisclosure(t *testing.T) {
 	}
 }
 
+func TestObserveDisclosureAssemblySkipsResumeReplan(t *testing.T) {
+	observeDisclosureAssembly(context.Background(), einoruntime.ToolSearchModeClientBounded, modelconfig.ToolCallingNativeClientSearch)
+	observeDisclosureAssembly(nil, einoruntime.ToolSearchModePlatformBounded, modelconfig.ToolCallingFunctionCalling)
+	ctx := withDisclosureAssemblyObserve(context.Background())
+	observeDisclosureAssembly(ctx, einoruntime.ToolSearchModeNone, modelconfig.ToolCallingNone)
+}
+
 func TestApplyDisclosureRollout_NoNativeFallback(t *testing.T) {
 	b := &Bridge{}
 	ws := "c08f1f2e-7b5a-7c3d-8e9f-1234567890a1"

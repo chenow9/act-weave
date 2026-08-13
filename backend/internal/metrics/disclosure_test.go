@@ -76,6 +76,28 @@ func TestDisclosureMetricsDropHostileLabels(t *testing.T) {
 	}
 }
 
+func TestObserveVerificationSkipsDurationWhenSkippedOrZero(t *testing.T) {
+	t.Parallel()
+	c := NewDisclosureCollector()
+	c.ObserveVerification(DisclosurePhaseFunctionCalling, DisclosureOutcomeSkipped, DisclosureToolCallingNative, 0)
+	c.ObserveVerification(DisclosurePhaseFunctionCalling, DisclosureOutcomeOK, DisclosureToolCallingFunction, 0)
+	text := c.PrometheusText()
+	for _, needle := range []string{
+		`model_verification_total{phase="function_calling",outcome="skipped",tool_calling="native_client_search"} 1`,
+		`model_verification_total{phase="function_calling",outcome="ok",tool_calling="function_calling"} 1`,
+		`model_verification_duration_ms_count{phase="function_calling"} 0`,
+	} {
+		if !strings.Contains(text, needle) {
+			t.Fatalf("missing %q in:\n%s", needle, text)
+		}
+	}
+	c.ObserveVerification(DisclosurePhaseFunctionCalling, DisclosureOutcomeOK, DisclosureToolCallingFunction, 5*time.Millisecond)
+	text = c.PrometheusText()
+	if !strings.Contains(text, `model_verification_duration_ms_count{phase="function_calling"} 1`) {
+		t.Fatalf("positive latency must sample duration:\n%s", text)
+	}
+}
+
 func TestDisclosureObserversTolerateNilCollector(t *testing.T) {
 	t.Parallel()
 	var c *DisclosureCollector

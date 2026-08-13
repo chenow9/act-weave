@@ -168,6 +168,7 @@ func (b *Bridge) ExecuteA2AInbound(ctx context.Context, req a2agateway.InboundRu
 		return "", fmt.Errorf("a2a inbound: empty user text")
 	}
 
+	ctx = withDisclosureAssemblyObserve(ctx)
 	plan, err := b.planAgenticRun(ctx, job, run)
 	if err != nil {
 		return "", err
@@ -190,6 +191,7 @@ func (b *Bridge) ExecuteA2AInbound(ctx context.Context, req a2agateway.InboundRu
 	if err != nil {
 		return "", err
 	}
+	observeDisclosureAssembly(ctx, plan.toolSearchMode, plan.toolCalling)
 	ctx = withDelegationRunContext(ctx, job, run, plan.delBudget)
 
 	text, _, runErr := b.runAgenticTurn(ctx, job, run, built, func(

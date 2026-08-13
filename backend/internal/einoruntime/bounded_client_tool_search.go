@@ -261,6 +261,7 @@ func (t *boundedClientToolSearchExecutor) InvokableRun(
 	_ ...tool.Option,
 ) (*schema.ToolResult, error) {
 	if toolArgument == nil {
+		observeClientSearch(ctx, metrics.DisclosureOutcomeError)
 		return nil, fmt.Errorf("%w: nil tool argument", ErrToolSearchInvalidArgs)
 	}
 	// Run-local loaded-name set (checkpointed via ADK SessionValues).
@@ -270,28 +271,29 @@ func (t *boundedClientToolSearchExecutor) InvokableRun(
 	// native tool_search). Applies on normal run and checkpoint resume alike.
 	already, err := loadedDeferredToolNamesFromSession(ctx, MaxLoadedDefinitionsPerRun)
 	if err != nil {
-		// Propagate stable catalog/search state error; no provider/body disclosure.
+		observeClientSearch(ctx, metrics.DisclosureOutcomeError)
 		return nil, err
 	}
 	if err := validateLoadedNamesAgainstCatalog(t.catalog, already); err != nil {
+		observeClientSearch(ctx, metrics.DisclosureOutcomeError)
 		return nil, err
 	}
 	matches, newlyLoaded, err := executeBoundedToolSearch(t.catalog, toolArgument.Text, already, MaxLoadedDefinitionsPerRun)
 	if err != nil {
-		observeClientSearchOutcome(err)
+		observeClientSearch(ctx, clientSearchOutcome(err))
 		return nil, err
 	}
 	// Atomically update the run-local set before returning output.
 	if len(newlyLoaded) > 0 {
 		merged := mergeLoadedDeferredToolNames(already, newlyLoaded)
 		if len(merged) > MaxLoadedDefinitionsPerRun {
-			observeClientSearchOutcome(ErrToolSearchLoadCapExceeded)
+			observeClientSearch(ctx, metrics.DisclosureOutcomeLoadCap)
 			return nil, fmt.Errorf("%w: cumulative %d > %d", ErrToolSearchLoadCapExceeded, len(merged), MaxLoadedDefinitionsPerRun)
 		}
 		storeLoadedDeferredToolNames(ctx, merged)
 	}
-	metrics.Disclosure().ObserveSearchCall(metrics.DisclosureModeClientBounded, metrics.DisclosureOutcomeOK)
-	metrics.Disclosure().ObserveSearchLoaded(metrics.DisclosureModeClientBounded, len(matches))
+	observeClientSearch(ctx, metrics.DisclosureOutcomeOK)
+	observeClientSearchLoaded(ctx, len(matches))
 	return &schema.ToolResult{
 		Parts: []schema.ToolOutputPart{{
 			Type: schema.ToolPartTypeToolSearchResult,
@@ -302,13 +304,28 @@ func (t *boundedClientToolSearchExecutor) InvokableRun(
 	}, nil
 }
 
-func observeClientSearchOutcome(err error) {
+func clientSearchOutcome(err error) string {
 	if errors.Is(err, ErrToolSearchLoadCapExceeded) {
-		metrics.Disclosure().ObserveSearchCall(metrics.DisclosureModeClientBounded, metrics.DisclosureOutcomeLoadCap)
-		metrics.Disclosure().ObserveRejected(metrics.DisclosureCodeSearchLoadCap)
+		return metrics.DisclosureOutcomeLoadCap
+	}
+	return metrics.DisclosureOutcomeError
+}
+
+func observeClientSearch(ctx context.Context, outcome string) {
+	if isVerificationProbe(ctx) {
 		return
 	}
-	metrics.Disclosure().ObserveSearchCall(metrics.DisclosureModeClientBounded, metrics.DisclosureOutcomeError)
+	metrics.Disclosure().ObserveSearchCall(metrics.DisclosureModeClientBounded, outcome)
+	if outcome == metrics.DisclosureOutcomeLoadCap {
+		metrics.Disclosure().ObserveRejected(metrics.DisclosureCodeSearchLoadCap)
+	}
+}
+
+func observeClientSearchLoaded(ctx context.Context, loaded int) {
+	if isVerificationProbe(ctx) {
+		return
+	}
+	metrics.Disclosure().ObserveSearchLoaded(metrics.DisclosureModeClientBounded, loaded)
 }
 
 // executeBoundedToolSearch parses strict args, searches/selects, and returns

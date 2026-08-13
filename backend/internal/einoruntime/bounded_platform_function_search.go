@@ -241,29 +241,31 @@ func (t *boundedPlatformCatalogSearchExecutor) InvokableRun(
 ) (string, error) {
 	already, err := loadedDeferredToolNamesFromSession(ctx, MaxLoadedToolsPerSearch)
 	if err != nil {
+		observePlatformSearch(ctx, metrics.DisclosureOutcomeError)
 		return "", err
 	}
 	if err := validateLoadedNamesAgainstCatalog(t.catalog, already); err != nil {
+		observePlatformSearch(ctx, metrics.DisclosureOutcomeError)
 		return "", err
 	}
 	// At-cap must not select new names — return stable JSON before the helper.
 	if len(already) >= MaxLoadedToolsPerSearch {
-		observePlatformSearchLoadCap()
+		observePlatformSearch(ctx, metrics.DisclosureOutcomeLoadCap)
 		return platformSearchLoadCapJSON(), nil
 	}
 	matches, newlyLoaded, err := executeBoundedToolSearch(t.catalog, argumentsInJSON, already, MaxLoadedToolsPerSearch)
 	if err != nil {
 		if errIsToolSearchLoadCap(err) {
-			observePlatformSearchLoadCap()
+			observePlatformSearch(ctx, metrics.DisclosureOutcomeLoadCap)
 			return platformSearchLoadCapJSON(), nil
 		}
-		metrics.Disclosure().ObserveSearchCall(metrics.DisclosureModePlatformBounded, metrics.DisclosureOutcomeError)
+		observePlatformSearch(ctx, metrics.DisclosureOutcomeError)
 		return "", err
 	}
 	if len(newlyLoaded) > 0 {
 		merged := mergeLoadedDeferredToolNames(already, newlyLoaded)
 		if len(merged) > MaxLoadedToolsPerSearch {
-			observePlatformSearchLoadCap()
+			observePlatformSearch(ctx, metrics.DisclosureOutcomeLoadCap)
 			return platformSearchLoadCapJSON(), nil
 		}
 		storeLoadedDeferredToolNames(ctx, merged)
@@ -285,17 +287,29 @@ func (t *boundedPlatformCatalogSearchExecutor) InvokableRun(
 		LoadedNames: names,
 	})
 	if err != nil {
-		metrics.Disclosure().ObserveSearchCall(metrics.DisclosureModePlatformBounded, metrics.DisclosureOutcomeError)
+		observePlatformSearch(ctx, metrics.DisclosureOutcomeError)
 		return "", fmt.Errorf("%w: marshal search result: %v", ErrToolSearchInvalidArgs, err)
 	}
-	metrics.Disclosure().ObserveSearchCall(metrics.DisclosureModePlatformBounded, metrics.DisclosureOutcomeOK)
-	metrics.Disclosure().ObserveSearchLoaded(metrics.DisclosureModePlatformBounded, len(names))
+	observePlatformSearch(ctx, metrics.DisclosureOutcomeOK)
+	observePlatformSearchLoaded(ctx, len(names))
 	return string(payload), nil
 }
 
-func observePlatformSearchLoadCap() {
-	metrics.Disclosure().ObserveSearchCall(metrics.DisclosureModePlatformBounded, metrics.DisclosureOutcomeLoadCap)
-	metrics.Disclosure().ObserveRejected(metrics.DisclosureCodeSearchLoadCap)
+func observePlatformSearch(ctx context.Context, outcome string) {
+	if isVerificationProbe(ctx) {
+		return
+	}
+	metrics.Disclosure().ObserveSearchCall(metrics.DisclosureModePlatformBounded, outcome)
+	if outcome == metrics.DisclosureOutcomeLoadCap {
+		metrics.Disclosure().ObserveRejected(metrics.DisclosureCodeSearchLoadCap)
+	}
+}
+
+func observePlatformSearchLoaded(ctx context.Context, loaded int) {
+	if isVerificationProbe(ctx) {
+		return
+	}
+	metrics.Disclosure().ObserveSearchLoaded(metrics.DisclosureModePlatformBounded, loaded)
 }
 
 func errIsToolSearchLoadCap(err error) bool {

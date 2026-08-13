@@ -119,8 +119,27 @@ func (b *Bridge) resolveFrozenDisclosure(
 		}
 		return "", "", err
 	}
-	metrics.Disclosure().ObserveModeRun(string(mode), caps.ToolCalling)
 	return mode, caps.ToolCalling, nil
+}
+
+type observeDisclosureAssemblyKey struct{}
+
+func withDisclosureAssemblyObserve(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, observeDisclosureAssemblyKey{}, true)
+}
+
+func observeDisclosureAssembly(ctx context.Context, mode einoruntime.ToolSearchMode, toolCalling string) {
+	if ctx == nil {
+		return
+	}
+	ok, _ := ctx.Value(observeDisclosureAssemblyKey{}).(bool)
+	if !ok {
+		return
+	}
+	metrics.Disclosure().ObserveModeRun(string(mode), toolCalling)
 }
 
 func disclosureVerifiedFlags(mode einoruntime.ToolSearchMode, hasTools bool) (clientVerified, functionCallingVerified bool) {

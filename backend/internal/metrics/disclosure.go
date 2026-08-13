@@ -105,7 +105,8 @@ func (c *DisclosureCollector) get(metric string, labels map[string]string) uint6
 	return counter.Load()
 }
 
-// ObserveModeRun records one assembled run (root or child) by disclosure mode.
+// ObserveModeRun records one initial assembly or child-build by disclosure
+// mode. Resume re-plans must not call this (the series is run-shaped).
 func (c *DisclosureCollector) ObserveModeRun(mode, toolCalling string) {
 	c.add("agentic_disclosure_mode_runs_total", map[string]string{
 		"mode":         normalizeDisclosureMode(mode),
@@ -154,18 +155,23 @@ func (c *DisclosureCollector) ObserveSearchLoaded(mode string, loaded int) {
 }
 
 // ObserveVerification records one probe phase (or the terminal result).
-// Labels are phase / outcome / tool_calling only.
+// Labels are phase / outcome / tool_calling only. Duration is sampled only
+// for executed phases with a positive latency — skipped / zero stay counters.
 func (c *DisclosureCollector) ObserveVerification(phase, outcome, toolCalling string, latency time.Duration) {
+	normOutcome := normalizeVerificationOutcome(outcome)
 	c.add("model_verification_total", map[string]string{
 		"phase":        normalizeVerificationPhase(phase),
-		"outcome":      normalizeVerificationOutcome(outcome),
+		"outcome":      normOutcome,
 		"tool_calling": normalizeDisclosureToolCalling(toolCalling),
 	}, 1)
 	if c == nil {
 		return
 	}
+	if normOutcome == DisclosureOutcomeSkipped || latency <= 0 {
+		return
+	}
 	idx, ok := verificationPhaseIndex(phase)
-	if !ok || latency < 0 {
+	if !ok {
 		return
 	}
 	ms := uint64(latency.Milliseconds())

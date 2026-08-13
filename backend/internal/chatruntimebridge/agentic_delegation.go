@@ -390,6 +390,7 @@ func (b *Bridge) buildAgenticChildAgent(
 	if err != nil {
 		return nil, fmt.Errorf("build agentic child %s: %w", parts.AgentID, err)
 	}
+	observeDisclosureAssembly(ctx, mode, calling)
 	return built, nil
 }
 

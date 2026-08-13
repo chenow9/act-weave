@@ -341,6 +341,7 @@ func (verifier *modelConfigVerifier) probeClientToolSearch(
 ) error {
 	probeCtx, cancel := context.WithTimeout(ctx, agenticProbeClientToolSearchBudget)
 	defer cancel()
+	probeCtx = einoruntime.WithVerificationProbe(probeCtx)
 
 	// Unpredictable per-verification nonce; model must echo it exactly.
 	nonce, err := newVerificationNonce()

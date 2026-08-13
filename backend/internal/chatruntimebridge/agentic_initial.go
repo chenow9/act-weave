@@ -626,6 +626,7 @@ func (b *Bridge) driveAgenticInitial(
 		return "", "", execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
 	}
 
+	ctx = withDisclosureAssemblyObserve(ctx)
 	plan, err := b.planAgenticRun(ctx, job, run)
 	if err != nil {
 		return "", "", err
@@ -646,6 +647,7 @@ func (b *Bridge) driveAgenticInitial(
 	if err != nil {
 		return "", "", err
 	}
+	observeDisclosureAssembly(ctx, plan.toolSearchMode, plan.toolCalling)
 
 	ctx = withDelegationRunContext(ctx, job, run, plan.delBudget)
 	return b.runAgenticTurn(ctx, job, run, built, func(
