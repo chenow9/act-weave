@@ -172,7 +172,7 @@ func BuildToolCatalog(ctx context.Context, inputs []ToolCatalogBuildEntry) (*Too
 		if err != nil {
 			return nil, fmt.Errorf("entry[%d]: %w", i, err)
 		}
-		if name == ClientToolSearchToolName {
+		if isReservedSearchToolName(name) {
 			return nil, fmt.Errorf("%w: %q", ErrToolCatalogSearchNameCollision, name)
 		}
 		if _, exists := pendingByName[name]; exists {
@@ -419,7 +419,7 @@ func (c *ToolCatalogSnapshot) ValidateExecutableTools(ctx context.Context, tools
 		if nameErr != nil {
 			return fmt.Errorf("%w: tools[%d]: %w", ErrModelToolCatalogMismatch, i, nameErr)
 		}
-		if name == ClientToolSearchToolName {
+		if isReservedSearchToolName(name) {
 			return fmt.Errorf("%w: tools must not include search executor %q", ErrToolCatalogSearchNameCollision, name)
 		}
 		if _, dup := nameSet[name]; dup {
@@ -678,6 +678,17 @@ func validatePlatformSearchExecutorInfo(info *schema.ToolInfo) error {
 	return nil
 }
 
+// isReservedSearchToolName reports whether name is a platform-owned search
+// executor that must never appear as a catalog business tool.
+func isReservedSearchToolName(name string) bool {
+	switch strings.TrimSpace(name) {
+	case ClientToolSearchToolName, PlatformCatalogSearchToolName:
+		return true
+	default:
+		return false
+	}
+}
+
 // requireCanonicalToolName rejects empty and whitespace-padded raw tool names.
 // Executable ToolsNode indexes Info().Name by the raw string; the frozen catalog
 // and model-visible name must therefore equal that raw identity exactly.
@@ -705,7 +716,7 @@ func (c *ToolCatalogSnapshot) LookupInfos(names []string) ([]*schema.ToolInfo, e
 		if name == "" {
 			return nil, fmt.Errorf("%w: empty name in selection", ErrModelToolCatalogMismatch)
 		}
-		if name == ClientToolSearchToolName {
+		if isReservedSearchToolName(name) {
 			return nil, fmt.Errorf("%w: cannot select search executor", ErrModelToolCatalogMismatch)
 		}
 		if _, dup := seen[name]; dup {

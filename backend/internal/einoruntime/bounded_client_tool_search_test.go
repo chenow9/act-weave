@@ -16,7 +16,7 @@ import (
 
 // testExecuteBoundedToolSearch is a test helper for the no-session path (nil loaded set).
 func testExecuteBoundedToolSearch(catalog *ToolCatalogSnapshot, args string) ([]*schema.ToolInfo, error) {
-	infos, _, err := executeBoundedToolSearch(catalog, args, nil)
+	infos, _, err := executeBoundedToolSearch(catalog, args, nil, MaxLoadedDefinitionsPerRun)
 	return infos, err
 }
 
@@ -405,6 +405,9 @@ func TestExecuteBoundedToolSearch_DeferredOnlyExposure(t *testing.T) {
 	if _, err := testExecuteBoundedToolSearch(cat, `{"query":"select:tool_search"}`); !errors.Is(err, ErrToolSearchNotDeferred) {
 		t.Fatalf("select executor: %v", err)
 	}
+	if _, err := testExecuteBoundedToolSearch(cat, `{"query":"select:`+PlatformCatalogSearchToolName+`"}`); !errors.Is(err, ErrToolSearchNotDeferred) {
+		t.Fatalf("select platform search: %v", err)
+	}
 
 	// Deferred select still works.
 	got, err = testExecuteBoundedToolSearch(cat, `{"query":"select:control_plane_action,weather_get"}`)
@@ -470,7 +473,7 @@ func TestBoundedSearch_RunLocalLoadedUniqueness(t *testing.T) {
 	names := []string{"alpha_one", "alpha_two", "beta_one", "beta_two", "gamma_one", "delta_one", "epsilon_one", "zeta_one"}
 	cat, _ := buildTestCatalog(t, names...)
 	// Direct execute with explicit already-loaded set (simulates session).
-	first, newly, err := executeBoundedToolSearch(cat, `{"query":"select:alpha_one,alpha_two","max_results":5}`, nil)
+	first, newly, err := executeBoundedToolSearch(cat, `{"query":"select:alpha_one,alpha_two","max_results":5}`, nil, MaxLoadedDefinitionsPerRun)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -479,11 +482,11 @@ func TestBoundedSearch_RunLocalLoadedUniqueness(t *testing.T) {
 	}
 	loaded := mergeLoadedDeferredToolNames(nil, newly)
 	// Repeat select of same tools → already loaded.
-	if _, _, err := executeBoundedToolSearch(cat, `{"query":"select:alpha_one,alpha_two"}`, loaded); !errors.Is(err, ErrToolSearchAlreadyLoaded) {
+	if _, _, err := executeBoundedToolSearch(cat, `{"query":"select:alpha_one,alpha_two"}`, loaded, MaxLoadedDefinitionsPerRun); !errors.Is(err, ErrToolSearchAlreadyLoaded) {
 		t.Fatalf("repeat select: %v", err)
 	}
 	// Keyword for alpha must omit already-loaded alpha_one/two.
-	kw, newly2, err := executeBoundedToolSearch(cat, `{"query":"alpha","max_results":5}`, loaded)
+	kw, newly2, err := executeBoundedToolSearch(cat, `{"query":"alpha","max_results":5}`, loaded, MaxLoadedDefinitionsPerRun)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -510,17 +513,17 @@ func TestBoundedSearch_RunLocalLoadedUniqueness(t *testing.T) {
 	bigCat, _ := buildTestCatalog(t, bigNames...)
 	preloaded := bigNames[:39]
 	// Select two more would exceed 40.
-	if _, _, err := executeBoundedToolSearch(bigCat, `{"query":"select:tool_039,tool_040"}`, preloaded); !errors.Is(err, ErrToolSearchLoadCapExceeded) {
+	if _, _, err := executeBoundedToolSearch(bigCat, `{"query":"select:tool_039,tool_040"}`, preloaded, MaxLoadedDefinitionsPerRun); !errors.Is(err, ErrToolSearchLoadCapExceeded) {
 		t.Fatalf("cap exceed select: %v", err)
 	}
 	// At exactly 40, further keyword returns cap error.
 	full := bigNames[:40]
-	if _, _, err := executeBoundedToolSearch(bigCat, `{"query":"tool","max_results":5}`, full); !errors.Is(err, ErrToolSearchLoadCapExceeded) {
+	if _, _, err := executeBoundedToolSearch(bigCat, `{"query":"tool","max_results":5}`, full, MaxLoadedDefinitionsPerRun); !errors.Is(err, ErrToolSearchLoadCapExceeded) {
 		t.Fatalf("at cap keyword: %v", err)
 	}
 	// Room for 1 more via keyword.
 	almost := bigNames[:39]
-	got, newly3, err := executeBoundedToolSearch(bigCat, `{"query":"tool","max_results":5}`, almost)
+	got, newly3, err := executeBoundedToolSearch(bigCat, `{"query":"tool","max_results":5}`, almost, MaxLoadedDefinitionsPerRun)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -528,7 +531,7 @@ func TestBoundedSearch_RunLocalLoadedUniqueness(t *testing.T) {
 		t.Fatalf("room=1: got=%d newly=%d", len(got), len(newly3))
 	}
 	// Per-search still <= 5 with empty loaded.
-	got5, _, err := executeBoundedToolSearch(bigCat, `{"query":"tool","max_results":5}`, nil)
+	got5, _, err := executeBoundedToolSearch(bigCat, `{"query":"tool","max_results":5}`, nil, MaxLoadedDefinitionsPerRun)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -549,7 +552,7 @@ func TestBoundedSearch_ConcurrentRunsIsolateLoadedSets(t *testing.T) {
 			defer wg.Done()
 			loaded := []string(nil)
 			for round := 0; round < 3; round++ {
-				infos, newly, err := executeBoundedToolSearch(cat, `{"query":"shared","max_results":1}`, loaded)
+				infos, newly, err := executeBoundedToolSearch(cat, `{"query":"shared","max_results":1}`, loaded, MaxLoadedDefinitionsPerRun)
 				if err != nil {
 					errCh <- err
 					return

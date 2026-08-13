@@ -21,8 +21,14 @@ import (
 type ToolSearchMode string
 
 const (
-	// ToolSearchModeClientBounded is the only production tool-search mode (D3).
+	// ToolSearchModeClientBounded is native client-executed tool search.
 	ToolSearchModeClientBounded ToolSearchMode = "client_bounded"
+	// ToolSearchModePlatformBounded is ordinary-function catalog search (≤5 loaded).
+	ToolSearchModePlatformBounded ToolSearchMode = "platform_bounded"
+	// ToolSearchModeCarryAll discloses the full small catalog with schemas.
+	ToolSearchModeCarryAll ToolSearchMode = "carry_all"
+	// ToolSearchModeNone is the empty-catalog / no-tools path.
+	ToolSearchModeNone ToolSearchMode = "none"
 )
 
 // Agentic agent construction errors.
@@ -33,7 +39,16 @@ var (
 	// client-executed tool-search capability was not explicitly verified.
 	ErrAgenticClientToolSearchUnverified = errors.New("einoruntime agentic builder: client tool-search capability not verified")
 	// ErrAgenticToolSearchMode is returned for empty/unsupported tool-search modes when tools exist.
-	ErrAgenticToolSearchMode = errors.New("einoruntime agentic builder: tool search mode must be client_bounded when tools are present")
+	ErrAgenticToolSearchMode = errors.New("einoruntime agentic builder: unsupported tool search mode")
+	// ErrAgenticFunctionCallingUnverified is returned when platform_bounded or
+	// carry_all is requested without FunctionCallingVerified.
+	ErrAgenticFunctionCallingUnverified = errors.New("einoruntime agentic builder: function-calling capability not verified")
+	// ErrAgenticClientToolSearchNotApplicable is returned when
+	// ClientToolSearchVerified is set for a non-native disclosure mode.
+	ErrAgenticClientToolSearchNotApplicable = errors.New("einoruntime agentic builder: ClientToolSearchVerified applies only to client_bounded")
+	// ErrAgenticCarryAllTooLarge is returned when carry-all is requested with
+	// more than CarryAllHardLimit non-platform-control tools.
+	ErrAgenticCarryAllTooLarge = errors.New("einoruntime agentic builder: carry-all catalog exceeds hard limit")
 	// ErrAgenticMaxIterations is returned when MaxIterations is not 0 (normalize to 8) or 8.
 	ErrAgenticMaxIterations = errors.New("einoruntime agentic builder: MaxIterations must be 8")
 	// ErrAgenticTooManyImmediate is returned when immediate tools exceed the platform ceiling.
@@ -63,7 +78,8 @@ var (
 //     BeforeAgent runs first→last so the LAST handler wins for ToolSearchTool:
 //     a. ExtraHandlers (caller-supplied), if any
 //     b. promptCacheKeyMiddleware — forces deterministic prompt_cache_key on every model call
-//     c. BoundedClientToolSearchMiddleware — FINAL tool-search configuration authority
+//     c. disclosure middleware (client_bounded / platform_bounded / carry_all) — FINAL
+//     authority for ToolSearchTool / ToolInfos / DeferredToolInfos
 //
 // Sequential tool execution is always enabled. MaxIterations is fixed at 8 for
 // the hard 8×5=40 definition proof. No classic model retry/failover.
@@ -96,11 +112,16 @@ type AgenticAgentBuildConfig struct {
 	// Values <0 or >16 are rejected with ErrToolBudgetMaxInvalid.
 	MaxToolInvocations int
 
-	// ToolSearchMode must be client_bounded when tools are present (D3).
+	// ToolSearchMode selects disclosure. client_bounded requires
+	// ClientToolSearchVerified; platform_bounded and carry_all require
+	// FunctionCallingVerified and must not set ClientToolSearchVerified.
+	// none is only valid on the empty-catalog path.
 	ToolSearchMode ToolSearchMode
-	// ClientToolSearchVerified must be true when tools are present. Fail closed
-	// with no runtime fallback when unverified (D2/D3).
+	// ClientToolSearchVerified must be true for client_bounded when tools are
+	// present. Must stay false for platform_bounded / carry_all.
 	ClientToolSearchVerified bool
+	// FunctionCallingVerified must be true for platform_bounded and carry_all.
+	FunctionCallingVerified bool
 
 	// PromptCacheKey is a non-empty deterministic platform key applied on every
 	// model Generate/Stream call. Ordinary caller options cannot override it.
@@ -178,16 +199,9 @@ func BuildAgenticAgent(ctx context.Context, cfg AgenticAgentBuildConfig) (*adk.T
 
 	// Tool-search path when there is any executable tool OR a non-empty catalog.
 	// Truly empty catalog (nil or Len()==0) with no tools is the tool-less path:
-	// no ClientToolSearchVerified / mode / middleware required.
+	// no verified flag / mode / middleware required (including ToolSearchModeNone).
 	// A non-empty catalog with Tools=nil/empty always fails ValidateExecutableTools.
 	if hasTools || catalogNonEmpty {
-		if !cfg.ClientToolSearchVerified {
-			return nil, ErrAgenticClientToolSearchUnverified
-		}
-		mode := ToolSearchMode(strings.TrimSpace(string(cfg.ToolSearchMode)))
-		if mode != ToolSearchModeClientBounded {
-			return nil, fmt.Errorf("%w: got %q", ErrAgenticToolSearchMode, cfg.ToolSearchMode)
-		}
 		if cfg.Catalog == nil {
 			return nil, ErrAgenticCatalogRequired
 		}
@@ -205,21 +219,66 @@ func BuildAgenticAgent(ctx context.Context, cfg AgenticAgentBuildConfig) (*adk.T
 				return nil, fmt.Errorf("%w: %q kind %q", ErrAgenticBusinessToolImmediate, e.Name, e.Kind)
 			}
 		}
-		if n := cfg.Catalog.ImmediateCount(); n > MaxImmediatePlatformTools {
-			return nil, fmt.Errorf("%w: %d > %d", ErrAgenticTooManyImmediate, n, MaxImmediatePlatformTools)
-		}
-		// Collision with search tool name is already rejected in BuildToolCatalog;
+		// Collision with search tool names is already rejected in BuildToolCatalog;
 		// re-check for defense in depth.
 		if cfg.Catalog.hasName(ClientToolSearchToolName) {
 			return nil, fmt.Errorf("%w: %q", ErrToolCatalogSearchNameCollision, ClientToolSearchToolName)
 		}
-
-		bounded, err := NewBoundedClientToolSearchMiddleware(cfg.Catalog)
-		if err != nil {
-			return nil, err
+		if cfg.Catalog.hasName(PlatformCatalogSearchToolName) {
+			return nil, fmt.Errorf("%w: %q", ErrToolCatalogSearchNameCollision, PlatformCatalogSearchToolName)
 		}
-		// Final tool-search configuration handler — later handlers must not overwrite.
-		handlers = append(handlers, bounded)
+
+		mode := ToolSearchMode(strings.TrimSpace(string(cfg.ToolSearchMode)))
+		switch mode {
+		case ToolSearchModeClientBounded:
+			if !cfg.ClientToolSearchVerified {
+				return nil, ErrAgenticClientToolSearchUnverified
+			}
+			if n := cfg.Catalog.ImmediateCount(); n > MaxImmediatePlatformTools {
+				return nil, fmt.Errorf("%w: %d > %d", ErrAgenticTooManyImmediate, n, MaxImmediatePlatformTools)
+			}
+			bounded, err := NewBoundedClientToolSearchMiddleware(cfg.Catalog)
+			if err != nil {
+				return nil, err
+			}
+			handlers = append(handlers, bounded)
+		case ToolSearchModePlatformBounded:
+			if cfg.ClientToolSearchVerified {
+				return nil, ErrAgenticClientToolSearchNotApplicable
+			}
+			if !cfg.FunctionCallingVerified {
+				return nil, ErrAgenticFunctionCallingUnverified
+			}
+			// Search function is an extra immediate platform-control tool.
+			if n := cfg.Catalog.ImmediateCount() + 1; n > MaxImmediatePlatformTools {
+				return nil, fmt.Errorf("%w: %d > %d", ErrAgenticTooManyImmediate, n, MaxImmediatePlatformTools)
+			}
+			plat, err := NewBoundedPlatformFunctionSearchMiddleware(cfg.Catalog)
+			if err != nil {
+				return nil, err
+			}
+			handlers = append(handlers, plat)
+		case ToolSearchModeCarryAll:
+			if cfg.ClientToolSearchVerified {
+				return nil, ErrAgenticClientToolSearchNotApplicable
+			}
+			if !cfg.FunctionCallingVerified {
+				return nil, ErrAgenticFunctionCallingUnverified
+			}
+			if n := businessToolCount(cfg.Catalog); n > CarryAllHardLimit {
+				return nil, fmt.Errorf("%w: %d > %d", ErrAgenticCarryAllTooLarge, n, CarryAllHardLimit)
+			}
+			if n := cfg.Catalog.ImmediateCount(); n > MaxImmediatePlatformTools {
+				return nil, fmt.Errorf("%w: %d > %d", ErrAgenticTooManyImmediate, n, MaxImmediatePlatformTools)
+			}
+			carry, err := NewCarryAllToolDisclosureMiddleware(cfg.Catalog)
+			if err != nil {
+				return nil, err
+			}
+			handlers = append(handlers, carry)
+		default:
+			return nil, fmt.Errorf("%w: got %q", ErrAgenticToolSearchMode, cfg.ToolSearchMode)
+		}
 	}
 
 	middlewares := make([]compose.ToolMiddleware, 0, 1+len(cfg.ExtraToolMiddlewares))

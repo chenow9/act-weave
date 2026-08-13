@@ -20,49 +20,50 @@ import (
 
 func TestDecodeLoadedDeferredToolNames_FailClosed(t *testing.T) {
 	t.Parallel()
+	const cap40 = MaxLoadedDefinitionsPerRun
 	// Absent-equivalent: empty list is valid.
-	got, err := decodeLoadedDeferredToolNames([]string{})
+	got, err := decodeLoadedDeferredToolNames([]string{}, cap40)
 	if err != nil || len(got) != 0 {
 		t.Fatalf("empty list: got=%v err=%v", got, err)
 	}
 	// Valid names.
-	got, err = decodeLoadedDeferredToolNames([]string{"echo_tool", "other_tool"})
+	got, err = decodeLoadedDeferredToolNames([]string{"echo_tool", "other_tool"}, cap40)
 	if err != nil || len(got) != 2 {
 		t.Fatalf("valid: %v %v", got, err)
 	}
 	// Wrong type.
-	if _, err := decodeLoadedDeferredToolNames(map[string]any{"a": 1}); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
+	if _, err := decodeLoadedDeferredToolNames(map[string]any{"a": 1}, cap40); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
 		t.Fatalf("wrong type: %v", err)
 	}
-	if _, err := decodeLoadedDeferredToolNames("echo_tool"); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
+	if _, err := decodeLoadedDeferredToolNames("echo_tool", cap40); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
 		t.Fatalf("string type: %v", err)
 	}
 	// Nil value.
-	if _, err := decodeLoadedDeferredToolNames(nil); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
+	if _, err := decodeLoadedDeferredToolNames(nil, cap40); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
 		t.Fatalf("nil: %v", err)
 	}
 	// Nil element.
-	if _, err := decodeLoadedDeferredToolNames([]any{"a", nil}); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
+	if _, err := decodeLoadedDeferredToolNames([]any{"a", nil}, cap40); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
 		t.Fatalf("nil elem: %v", err)
 	}
 	// Non-string element.
-	if _, err := decodeLoadedDeferredToolNames([]any{"a", 1}); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
+	if _, err := decodeLoadedDeferredToolNames([]any{"a", 1}, cap40); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
 		t.Fatalf("non-string: %v", err)
 	}
 	// Empty name.
-	if _, err := decodeLoadedDeferredToolNames([]string{""}); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
+	if _, err := decodeLoadedDeferredToolNames([]string{""}, cap40); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
 		t.Fatalf("empty name: %v", err)
 	}
 	// Noncanonical surrounding whitespace.
-	if _, err := decodeLoadedDeferredToolNames([]string{" echo "}); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
+	if _, err := decodeLoadedDeferredToolNames([]string{" echo "}, cap40); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
 		t.Fatalf("whitespace name: %v", err)
 	}
 	// Internal whitespace.
-	if _, err := decodeLoadedDeferredToolNames([]string{"echo tool"}); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
+	if _, err := decodeLoadedDeferredToolNames([]string{"echo tool"}, cap40); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
 		t.Fatalf("internal space: %v", err)
 	}
 	// Duplicates.
-	if _, err := decodeLoadedDeferredToolNames([]string{"a", "a"}); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
+	if _, err := decodeLoadedDeferredToolNames([]string{"a", "a"}, cap40); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
 		t.Fatalf("dup: %v", err)
 	}
 	// >40.
@@ -70,7 +71,7 @@ func TestDecodeLoadedDeferredToolNames_FailClosed(t *testing.T) {
 	for i := range big {
 		big[i] = fmt.Sprintf("t%d", i)
 	}
-	if _, err := decodeLoadedDeferredToolNames(big); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
+	if _, err := decodeLoadedDeferredToolNames(big, cap40); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
 		t.Fatalf(">40: %v", err)
 	}
 	// Exactly 40 accepted.
@@ -78,15 +79,24 @@ func TestDecodeLoadedDeferredToolNames_FailClosed(t *testing.T) {
 	for i := range exact {
 		exact[i] = fmt.Sprintf("t%d", i)
 	}
-	if _, err := decodeLoadedDeferredToolNames(exact); err != nil {
+	if _, err := decodeLoadedDeferredToolNames(exact, cap40); err != nil {
 		t.Fatalf("exact 40: %v", err)
+	}
+	// Platform ceiling: >5 rejected, exactly 5 accepted.
+	six := []string{"t0", "t1", "t2", "t3", "t4", "t5"}
+	if _, err := decodeLoadedDeferredToolNames(six, MaxLoadedToolsPerSearch); !errors.Is(err, ErrToolSearchLoadedStateInvalid) {
+		t.Fatalf(">5 platform: %v", err)
+	}
+	five := []string{"t0", "t1", "t2", "t3", "t4"}
+	if _, err := decodeLoadedDeferredToolNames(five, MaxLoadedToolsPerSearch); err != nil {
+		t.Fatalf("exact 5 platform: %v", err)
 	}
 }
 
 func TestLoadedDeferredToolNamesFromSession_AbsentVsCorrupt(t *testing.T) {
 	t.Parallel()
 	// No session / absent key → empty, nil error.
-	got, err := loadedDeferredToolNamesFromSession(context.Background())
+	got, err := loadedDeferredToolNamesFromSession(context.Background(), MaxLoadedDefinitionsPerRun)
 	if err != nil || got != nil {
 		t.Fatalf("absent: got=%v err=%v", got, err)
 	}

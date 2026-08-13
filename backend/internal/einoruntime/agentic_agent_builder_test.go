@@ -84,6 +84,62 @@ func TestBuildAgenticAgent_RejectsUnverifiedCapability(t *testing.T) {
 	}
 }
 
+func TestBuildAgenticAgent_NewDisclosureModes(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	st := &stubTool{name: "t1", desc: "d", params: testParams()}
+	cat, err := BuildToolCatalog(ctx, []ToolCatalogBuildEntry{{Tool: st, Exposure: ToolExposureDeferred}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// platform_bounded requires FunctionCallingVerified and forbids native flag.
+	cfg := baseAgenticCfg(&scriptedAgenticModel{}, []tool.BaseTool{st}, cat)
+	cfg.ToolSearchMode = ToolSearchModePlatformBounded
+	cfg.ClientToolSearchVerified = true
+	cfg.FunctionCallingVerified = true
+	if _, err := BuildAgenticAgent(ctx, cfg); !errors.Is(err, ErrAgenticClientToolSearchNotApplicable) {
+		t.Fatalf("native flag on platform: %v", err)
+	}
+	cfg.ClientToolSearchVerified = false
+	cfg.FunctionCallingVerified = false
+	if _, err := BuildAgenticAgent(ctx, cfg); !errors.Is(err, ErrAgenticFunctionCallingUnverified) {
+		t.Fatalf("unverified platform: %v", err)
+	}
+	cfg.FunctionCallingVerified = true
+	if _, err := BuildAgenticAgent(ctx, cfg); err != nil {
+		t.Fatalf("platform happy: %v", err)
+	}
+
+	// carry_all same verified flags.
+	cfg.ToolSearchMode = ToolSearchModeCarryAll
+	cfg.ClientToolSearchVerified = true
+	if _, err := BuildAgenticAgent(ctx, cfg); !errors.Is(err, ErrAgenticClientToolSearchNotApplicable) {
+		t.Fatalf("native flag on carry_all: %v", err)
+	}
+	cfg.ClientToolSearchVerified = false
+	if _, err := BuildAgenticAgent(ctx, cfg); err != nil {
+		t.Fatalf("carry_all happy: %v", err)
+	}
+
+	// none is only the empty-catalog path.
+	cfg.ToolSearchMode = ToolSearchModeNone
+	if _, err := BuildAgenticAgent(ctx, cfg); !errors.Is(err, ErrAgenticToolSearchMode) {
+		t.Fatalf("none with tools: %v", err)
+	}
+	empty, err := BuildToolCatalog(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg = baseAgenticCfg(&scriptedAgenticModel{}, nil, empty)
+	cfg.ToolSearchMode = ToolSearchModeNone
+	cfg.ClientToolSearchVerified = false
+	cfg.FunctionCallingVerified = false
+	if _, err := BuildAgenticAgent(ctx, cfg); err != nil {
+		t.Fatalf("none empty catalog: %v", err)
+	}
+}
+
 func TestBuildAgenticAgent_RejectsWrongMode(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

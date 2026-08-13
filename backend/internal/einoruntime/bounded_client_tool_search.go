@@ -42,16 +42,16 @@ var (
 	// disclosable via native tool_search.
 	ErrToolSearchNotDeferred = errors.New("einoruntime tool search: tool is not deferred / not disclosable")
 	// ErrToolSearchLoadCapExceeded is returned when a search would load definitions
-	// that push the run-local cumulative loaded-deferred count above
-	// MaxLoadedDefinitionsPerRun (40).
+	// that push the run-local cumulative loaded-deferred count above the caller
+	// maxLoaded ceiling.
 	ErrToolSearchLoadCapExceeded = errors.New("einoruntime tool search: cumulative loaded definitions cap exceeded")
 	// ErrToolSearchAlreadyLoaded is returned when a direct select names only tools
 	// that were already loaded in this run (stable typed omit/reject semantics).
 	ErrToolSearchAlreadyLoaded = errors.New("einoruntime tool search: selected tools already loaded")
 	// ErrToolSearchLoadedStateInvalid is returned when checkpoint/session loaded-set
 	// state is present but corrupt (wrong type, nil elements, non-string, empty/
-	// noncanonical names, duplicates, >40). Only truly absent state means empty.
-	// Fail closed — never silently skip/reset.
+	// noncanonical names, duplicates, or longer than the caller maxLoaded).
+	// Only truly absent state means empty. Fail closed — never silently skip/reset.
 	ErrToolSearchLoadedStateInvalid = errors.New("einoruntime tool search: loaded-state invalid")
 )
 
@@ -211,7 +211,7 @@ func (m *BoundedClientToolSearchMiddleware) validateSessionLoadedState(ctx conte
 	if m == nil {
 		return nil
 	}
-	names, err := loadedDeferredToolNamesFromSession(ctx)
+	names, err := loadedDeferredToolNamesFromSession(ctx, MaxLoadedDefinitionsPerRun)
 	if err != nil {
 		return err
 	}
@@ -266,7 +266,7 @@ func (t *boundedClientToolSearchExecutor) InvokableRun(
 	// After structural decode, every name must exist in the frozen catalog as a
 	// deferred business definition (reject unknown / immediate / platform-control /
 	// native tool_search). Applies on normal run and checkpoint resume alike.
-	already, err := loadedDeferredToolNamesFromSession(ctx)
+	already, err := loadedDeferredToolNamesFromSession(ctx, MaxLoadedDefinitionsPerRun)
 	if err != nil {
 		// Propagate stable catalog/search state error; no provider/body disclosure.
 		return nil, err
@@ -274,7 +274,7 @@ func (t *boundedClientToolSearchExecutor) InvokableRun(
 	if err := validateLoadedNamesAgainstCatalog(t.catalog, already); err != nil {
 		return nil, err
 	}
-	matches, newlyLoaded, err := executeBoundedToolSearch(t.catalog, toolArgument.Text, already)
+	matches, newlyLoaded, err := executeBoundedToolSearch(t.catalog, toolArgument.Text, already, MaxLoadedDefinitionsPerRun)
 	if err != nil {
 		return nil, err
 	}
@@ -301,9 +301,13 @@ func (t *boundedClientToolSearchExecutor) InvokableRun(
 // alreadyLoaded filters/omits names previously loaded in this run. newlyLoaded
 // is the subset of returned names not already in alreadyLoaded (for atomic update).
 // When alreadyLoaded is nil (no session / unit tests), no uniqueness filter applies.
-func executeBoundedToolSearch(catalog *ToolCatalogSnapshot, argumentsJSON string, alreadyLoaded []string) ([]*schema.ToolInfo, []string, error) {
+// maxLoaded is the run-local cumulative ceiling (native 40, platform 5).
+func executeBoundedToolSearch(catalog *ToolCatalogSnapshot, argumentsJSON string, alreadyLoaded []string, maxLoaded int) ([]*schema.ToolInfo, []string, error) {
 	if catalog == nil {
 		return nil, nil, fmt.Errorf("%w: nil catalog", ErrToolCatalogInvalid)
+	}
+	if maxLoaded <= 0 {
+		return nil, nil, fmt.Errorf("%w: maxLoaded must be positive", ErrToolSearchInvalidArgs)
 	}
 	args, err := parseStrictToolSearchArgs(argumentsJSON)
 	if err != nil {
@@ -384,18 +388,17 @@ func executeBoundedToolSearch(catalog *ToolCatalogSnapshot, argumentsJSON string
 		}
 	}
 
-	// Cumulative hard cap: refuse to return definitions that would exceed 40.
-	if len(loadedSet) > 0 {
-		room := MaxLoadedDefinitionsPerRun - len(loadedSet)
-		if room <= 0 {
-			return nil, nil, fmt.Errorf("%w: already at cap %d", ErrToolSearchLoadCapExceeded, MaxLoadedDefinitionsPerRun)
+	// Cumulative hard cap: never return definitions that would exceed maxLoaded.
+	// room is computed even when alreadyLoaded is empty so a tight ceiling binds.
+	room := maxLoaded - len(loadedSet)
+	if room <= 0 {
+		return nil, nil, fmt.Errorf("%w: already at cap %d", ErrToolSearchLoadCapExceeded, maxLoaded)
+	}
+	if len(selected) > room {
+		if isSelect && maxLoaded >= MaxLoadedDefinitionsPerRun {
+			return nil, nil, fmt.Errorf("%w: select would exceed cap", ErrToolSearchLoadCapExceeded)
 		}
-		if len(selected) > room {
-			if isSelect {
-				return nil, nil, fmt.Errorf("%w: select would exceed cap", ErrToolSearchLoadCapExceeded)
-			}
-			selected = selected[:room]
-		}
+		selected = selected[:room]
 	}
 
 	// Build defensive copies; sort by canonical name; never include executor.
@@ -412,8 +415,8 @@ func executeBoundedToolSearch(catalog *ToolCatalogSnapshot, argumentsJSON string
 		if info == nil {
 			return nil, nil, fmt.Errorf("%w: nil result ToolInfo", ErrModelToolCatalogMismatch)
 		}
-		// Native/immediate never enter the loaded set (defense: only deferred).
-		if info.Name == ClientToolSearchToolName {
+		// Search executors never enter the loaded set (defense: only deferred).
+		if isReservedSearchToolName(info.Name) {
 			return nil, nil, fmt.Errorf("%w: search executor must not load", ErrToolSearchNotDeferred)
 		}
 		paramsRaw, err := canonicalParametersJSON(info)
@@ -435,7 +438,7 @@ func executeBoundedToolSearch(catalog *ToolCatalogSnapshot, argumentsJSON string
 // loadedDeferredToolNamesFromSession returns the run-local loaded name list.
 // Truly absent session state means empty (nil, nil). Present-but-corrupt state
 // returns ErrToolSearchLoadedStateInvalid (fail closed; never silent skip/reset).
-func loadedDeferredToolNamesFromSession(ctx context.Context) ([]string, error) {
+func loadedDeferredToolNamesFromSession(ctx context.Context, maxLoaded int) ([]string, error) {
 	if ctx == nil {
 		return nil, nil
 	}
@@ -445,13 +448,16 @@ func loadedDeferredToolNamesFromSession(ctx context.Context) ([]string, error) {
 		return nil, nil
 	}
 	// Key present: decode strictly. nil value is corrupt (not "absent").
-	return decodeLoadedDeferredToolNames(v)
+	return decodeLoadedDeferredToolNames(v, maxLoaded)
 }
 
 // decodeLoadedDeferredToolNames is the strict loaded-state decoder.
 // Rejects wrong type, nil elements, non-string, noncanonical/empty names,
-// duplicates, >40 entries, and other malformed checkpoint payloads.
-func decodeLoadedDeferredToolNames(v any) ([]string, error) {
+// duplicates, more than maxLoaded entries, and other malformed checkpoint payloads.
+func decodeLoadedDeferredToolNames(v any, maxLoaded int) ([]string, error) {
+	if maxLoaded <= 0 {
+		return nil, fmt.Errorf("%w: maxLoaded must be positive", ErrToolSearchLoadedStateInvalid)
+	}
 	if v == nil {
 		return nil, fmt.Errorf("%w: nil loaded-state value", ErrToolSearchLoadedStateInvalid)
 	}
@@ -459,14 +465,14 @@ func decodeLoadedDeferredToolNames(v any) ([]string, error) {
 	switch typed := v.(type) {
 	case []string:
 		// Fast path: validate string slice strictly.
-		return validateLoadedNameList(typed)
+		return validateLoadedNameList(typed, maxLoaded)
 	case []any:
 		raw = typed
 	default:
 		return nil, fmt.Errorf("%w: wrong loaded-state type %T", ErrToolSearchLoadedStateInvalid, v)
 	}
-	if len(raw) > MaxLoadedDefinitionsPerRun {
-		return nil, fmt.Errorf("%w: loaded-state length %d > %d", ErrToolSearchLoadedStateInvalid, len(raw), MaxLoadedDefinitionsPerRun)
+	if len(raw) > maxLoaded {
+		return nil, fmt.Errorf("%w: loaded-state length %d > %d", ErrToolSearchLoadedStateInvalid, len(raw), maxLoaded)
 	}
 	out := make([]string, 0, len(raw))
 	for i, item := range raw {
@@ -479,15 +485,18 @@ func decodeLoadedDeferredToolNames(v any) ([]string, error) {
 		}
 		out = append(out, s)
 	}
-	return validateLoadedNameList(out)
+	return validateLoadedNameList(out, maxLoaded)
 }
 
 // validateLoadedNameList enforces canonical name rules on a decoded string list:
 // nonempty, trimmed-equal (no surrounding whitespace), no empties, no duplicates,
-// length <= 40.
-func validateLoadedNameList(names []string) ([]string, error) {
-	if len(names) > MaxLoadedDefinitionsPerRun {
-		return nil, fmt.Errorf("%w: loaded-state length %d > %d", ErrToolSearchLoadedStateInvalid, len(names), MaxLoadedDefinitionsPerRun)
+// length <= maxLoaded.
+func validateLoadedNameList(names []string, maxLoaded int) ([]string, error) {
+	if maxLoaded <= 0 {
+		return nil, fmt.Errorf("%w: maxLoaded must be positive", ErrToolSearchLoadedStateInvalid)
+	}
+	if len(names) > maxLoaded {
+		return nil, fmt.Errorf("%w: loaded-state length %d > %d", ErrToolSearchLoadedStateInvalid, len(names), maxLoaded)
 	}
 	seen := make(map[string]struct{}, len(names))
 	out := make([]string, 0, len(names))
@@ -537,9 +546,9 @@ func validateLoadedNamesAgainstCatalog(catalog *ToolCatalogSnapshot, names []str
 		return fmt.Errorf("%w: catalog required for loaded-state validation", ErrToolSearchLoadedStateInvalid)
 	}
 	for _, name := range names {
-		// Native executor must never appear in the loaded deferred set.
-		if name == ClientToolSearchToolName {
-			return fmt.Errorf("%w: native %q in loaded-state", ErrToolSearchLoadedStateInvalid, ClientToolSearchToolName)
+		// Search executors must never appear in the loaded deferred set.
+		if isReservedSearchToolName(name) {
+			return fmt.Errorf("%w: search executor %q in loaded-state", ErrToolSearchLoadedStateInvalid, name)
 		}
 		entry, ok := catalog.Entry(name)
 		if !ok {
@@ -699,7 +708,7 @@ func parseStrictMaxResults(raw json.RawMessage) (int, error) {
 // for native tool_search disclosure. Immediate tools and the native executor
 // fail with ErrToolSearchNotDeferred; unknown names fail with ErrToolCatalogUnknownTool.
 func requireDeferredDisclosable(catalog *ToolCatalogSnapshot, name string) error {
-	if name == ClientToolSearchToolName {
+	if isReservedSearchToolName(name) {
 		return fmt.Errorf("%w: cannot select search executor %q", ErrToolSearchNotDeferred, name)
 	}
 	ft, ok := catalog.byName[name]
@@ -708,6 +717,9 @@ func requireDeferredDisclosable(catalog *ToolCatalogSnapshot, name string) error
 	}
 	if ft.entry.Exposure != ToolExposureDeferred {
 		return fmt.Errorf("%w: %q exposure %q", ErrToolSearchNotDeferred, name, ft.entry.Exposure)
+	}
+	if ft.entry.PlatformControl {
+		return fmt.Errorf("%w: %q is platform-control", ErrToolSearchNotDeferred, name)
 	}
 	return nil
 }
@@ -832,11 +844,11 @@ func keywordSearchCatalog(query string, maxResults int, catalog *ToolCatalogSnap
 	var scoredList []scored
 
 	for _, e := range catalog.entries {
-		// Partition/exposure is authoritative: only deferred definitions load.
+		// Partition/exposure is authoritative: only deferred business definitions load.
 		if e.Exposure != ToolExposureDeferred {
 			continue
 		}
-		if e.Name == ClientToolSearchToolName {
+		if e.PlatformControl || isReservedSearchToolName(e.Name) {
 			continue
 		}
 		nameParts := splitToolNameParts(e.Name)

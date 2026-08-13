@@ -147,6 +147,12 @@ func TestBuildToolCatalog_DuplicateAndEmptyAndCollision(t *testing.T) {
 	if !errors.Is(err, ErrToolCatalogSearchNameCollision) {
 		t.Fatalf("collision: %v", err)
 	}
+	_, err = BuildToolCatalog(ctx, []ToolCatalogBuildEntry{
+		{Tool: &stubTool{name: PlatformCatalogSearchToolName, desc: "search"}},
+	})
+	if !errors.Is(err, ErrToolCatalogSearchNameCollision) {
+		t.Fatalf("platform search collision: %v", err)
+	}
 }
 
 // TestBuildToolCatalog_NonCanonicalNameRejectedAndToolsNodeIdentity proves the
