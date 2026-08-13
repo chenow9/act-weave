@@ -67,8 +67,7 @@ func TestV1ModelConfigRoutes(t *testing.T) {
 	var verifiedValue modelConfigDTO
 	decodeResponse(t, verified.Body.Bytes(), &verifiedValue)
 	if len(verifiedValue.AgenticCapabilities) == 0 || string(verifiedValue.AgenticCapabilities) == "{}" {
-		// Stub verifier returns empty probe caps; service stamps canonical on success.
-		// With stub VerifierFunc returning zero caps, service still stamps canonical.
+		// Stub verifier reports native_client_search; service stamps canonical v1.
 		if !strings.Contains(verified.Body.String(), "agentic-model.v1") && !strings.Contains(verified.Body.String(), `"agenticCapabilities":{}`) {
 			t.Fatalf("verify body missing agenticCapabilities: %s", verified.Body.String())
 		}
@@ -560,7 +559,7 @@ func newConfigurationFixtureWithCatalog(t *testing.T, catalog AgentCapabilityLis
 		t.Fatal(err)
 	}
 	modelVerifier, err := modelconfig.NewVerificationService(models, modelconfig.VerifierFunc(func(context.Context, modelconfig.Config) (modelconfig.AgenticCapabilities, error) {
-		return modelconfig.AgenticCapabilities{}, nil
+		return modelconfig.AgenticCapabilities{ToolCalling: modelconfig.ToolCallingNativeClientSearch}, nil
 	}), time.Second)
 	if err != nil {
 		t.Fatal(err)

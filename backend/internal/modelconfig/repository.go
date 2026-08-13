@@ -268,9 +268,13 @@ func (r *Repository) RecordVerification(ctx context.Context, input VerificationU
 	if err != nil {
 		return Config{}, ErrInvalid
 	}
-	policy, err := NormalizeToolDisclosurePolicyRaw(input.ToolDisclosurePolicy)
-	if err != nil {
-		return Config{}, ErrInvalid
+	policy := json.RawMessage(`{}`)
+	if input.Status == StatusVerified {
+		normalized, normErr := NormalizeToolDisclosurePolicyRaw(input.ToolDisclosurePolicy)
+		if normErr != nil {
+			return Config{}, ErrInvalid
+		}
+		policy = normalized
 	}
 	if !validUUID(input.WorkspaceID) || !validUUID(input.ConfigID) ||
 		!validUUID(input.VerifiedBy) || input.ExpectedLockVersion < 1 || input.LatencyMS < 0 ||
@@ -306,9 +310,7 @@ func (r *Repository) RecordVerification(ctx context.Context, input VerificationU
 	} else {
 		// ERROR path: canonical verification-attempt timestamp (UTC second).
 		// Prefer caller VerifiedAt when set; otherwise clock. Always non-nil.
-		if !IsUnsetToolDisclosurePolicy(policy) {
-			return Config{}, ErrInvalid
-		}
+		// tool_disclosure_policy is left unchanged (see UPDATE CASE).
 		if !input.VerifiedAt.IsZero() {
 			lastVerifiedAt = input.VerifiedAt.UTC().Truncate(time.Second)
 		} else {
@@ -323,7 +325,10 @@ func (r *Repository) RecordVerification(ctx context.Context, input VerificationU
 				last_latency_ms = $4,
 				last_error_code = $5,
 				agentic_capabilities = $6::jsonb,
-				tool_disclosure_policy = $10::jsonb,
+				tool_disclosure_policy = CASE
+					WHEN $3 = 'ERROR' THEN tool_disclosure_policy
+					ELSE $10::jsonb
+				END,
 				updated_by = $7,
 				updated_at = clock_timestamp(),
 				lock_version = lock_version + 1

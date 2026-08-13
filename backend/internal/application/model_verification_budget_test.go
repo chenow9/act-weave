@@ -169,7 +169,7 @@ func TestModelVerificationTimeoutWiring(t *testing.T) {
 	verifier := modelconfig.VerifierFunc(
 		func(context.Context, modelconfig.Config) (modelconfig.AgenticCapabilities, error) {
 			t.Fatal("verifier must never run for a rejected budget")
-			return modelconfig.AgenticCapabilities{}, nil
+			return modelconfig.AgenticCapabilities{ToolCalling: modelconfig.ToolCallingNativeClientSearch}, nil
 		},
 	)
 	if _, err := modelconfig.NewVerificationService(&modelconfig.Repository{}, verifier, negative); err == nil {

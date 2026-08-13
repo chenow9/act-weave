@@ -69,8 +69,10 @@ func NewVerificationService(repository *Repository, verifier Verifier, timeout t
 
 // Verify performs no database transaction around the external call. The final
 // CAS write is intentionally small and refuses to apply a stale result after a
-// concurrent edit. Success persists canonical AgenticCapabilities; failure
-// persists "{}" plus a stable error code (never raw provider bodies).
+// concurrent edit. Success persists canonical AgenticCapabilities and the
+// disclosure policy for that tier; failure persists "{}" capabilities plus a
+// stable error code (never raw provider bodies) and leaves an existing policy
+// unchanged.
 func (s *VerificationService) Verify(ctx context.Context, workspaceID, configID, verifiedBy string) (Config, error) {
 	config, err := s.repository.Get(ctx, workspaceID, configID)
 	if err != nil {
@@ -97,6 +99,8 @@ func (s *VerificationService) Verify(ctx context.Context, workspaceID, configID,
 		code := classifyVerificationError(upstreamErr)
 		errorCode = &code
 		capsRaw = json.RawMessage(`{}`)
+		// Leave the existing policy column unchanged on ERROR.
+		policyRaw = nil
 	} else {
 		// Stamp lock/config identity so runtime can detect staleness after CAS.
 		evidenceAt = s.now().UTC().Truncate(time.Second)
@@ -107,7 +111,7 @@ func (s *VerificationService) Verify(ctx context.Context, workspaceID, configID,
 			code := ErrorCodeUpstream
 			errorCode = &code
 			capsRaw = json.RawMessage(`{}`)
-			policyRaw = json.RawMessage(`{}`)
+			policyRaw = nil
 			evidenceAt = time.Time{}
 		} else {
 			normalized, normErr := NormalizeAgenticCapabilitiesRaw(mustMarshalAgentic(canonical))
@@ -116,7 +120,7 @@ func (s *VerificationService) Verify(ctx context.Context, workspaceID, configID,
 				code := ErrorCodeUpstream
 				errorCode = &code
 				capsRaw = json.RawMessage(`{}`)
-				policyRaw = json.RawMessage(`{}`)
+				policyRaw = nil
 				evidenceAt = time.Time{}
 			} else {
 				capsRaw = normalized
@@ -148,9 +152,6 @@ func stampVerificationDocuments(
 	evidenceAt time.Time,
 ) (AgenticCapabilities, json.RawMessage, error) {
 	toolCalling := probeCaps.ToolCalling
-	if toolCalling == "" {
-		toolCalling = ToolCallingNativeClientSearch
-	}
 	digest := WireConfigDigest(config)
 	switch toolCalling {
 	case ToolCallingNativeClientSearch:

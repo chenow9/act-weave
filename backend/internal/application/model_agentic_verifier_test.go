@@ -1176,6 +1176,43 @@ func TestAgenticVerifierPhase3ExactEchoIsFunctionCalling(t *testing.T) {
 	}
 }
 
+func TestAgenticVerifierPhase2HTTP400EntersPhase3(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusUnprocessableEntity} {
+		status := status
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			fake := &contractFakeResponsesServer{handler: func(turn int, body map[string]any, w http.ResponseWriter, r *http.Request) {
+				switch turn {
+				case 1:
+					writeContractResponse(w, body, contractTextResponse("ack", false))
+				case 2:
+					w.WriteHeader(status)
+					_, _ = w.Write([]byte(`{"error":"tool_search not supported"}`))
+				default:
+					if !isFunctionCallingProbeRequest(body) {
+						t.Errorf("turn %d must be the function-calling probe after HTTP %d", turn, status)
+					}
+					nonce := extractVerificationNonceFromBody(body)
+					writeContractResponse(w, body, contractEchoCallResponse(nonce))
+				}
+			}}
+			srv := fake.start(t)
+			v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+				return nil
+			})}
+			caps, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
+			if err != nil {
+				t.Fatalf("Phase 2 HTTP %d must enter Phase 3, got %v", status, err)
+			}
+			if caps.ToolCalling != modelconfig.ToolCallingFunctionCalling {
+				t.Fatalf("got toolCalling=%q want function_calling", caps.ToolCalling)
+			}
+			if countFunctionCallingProbeBodies(fake.snapshotBodies()) != 1 {
+				t.Fatal("Phase 2 400/422 must run the function-calling probe")
+			}
+		})
+	}
+}
+
 func TestAgenticVerifierPhase2InfraDoesNotEnterPhase3(t *testing.T) {
 	fake := &contractFakeResponsesServer{handler: func(turn int, body map[string]any, w http.ResponseWriter, r *http.Request) {
 		switch turn {
@@ -1278,6 +1315,34 @@ func TestMapAgenticFunctionCallingProbeError(t *testing.T) {
 	}
 	if got := mapAgenticFunctionCallingProbeError(errors.New("model refused tools")); got != nil {
 		t.Fatalf("unrecognized capability reject must be none, got %v", got)
+	}
+}
+
+func TestIsAgenticToolSearchCapabilityMissHTTP(t *testing.T) {
+	t.Parallel()
+	if !isAgenticToolSearchCapabilityMiss(fmt.Errorf("%w: HTTP_STATUS_400", modelconfig.ErrVerificationUpstream)) {
+		t.Fatal("400 must be a Phase 2 capability miss")
+	}
+	if !isAgenticToolSearchCapabilityMiss(fmt.Errorf("%w: HTTP_STATUS_422", modelconfig.ErrVerificationUpstream)) {
+		t.Fatal("422 must be a Phase 2 capability miss")
+	}
+	if isAgenticToolSearchCapabilityMiss(modelconfig.ErrUpstreamAuthentication) {
+		t.Fatal("401/403 auth must stay infra")
+	}
+	if isAgenticToolSearchCapabilityMiss(fmt.Errorf("%w: HTTP_STATUS_401", modelconfig.ErrVerificationUpstream)) {
+		t.Fatal("401 must stay infra")
+	}
+	if isAgenticToolSearchCapabilityMiss(fmt.Errorf("%w: HTTP_STATUS_429", modelconfig.ErrVerificationUpstream)) {
+		t.Fatal("429 must stay infra")
+	}
+	if isAgenticToolSearchCapabilityMiss(fmt.Errorf("%w: HTTP_STATUS_500", modelconfig.ErrVerificationUpstream)) {
+		t.Fatal("500 must stay infra")
+	}
+	if isAgenticToolSearchCapabilityMiss(modelconfig.ErrAgenticStreamInvalid) {
+		t.Fatal("unparseable wire must stay infra")
+	}
+	if isAgenticToolSearchCapabilityMiss(modelconfig.ErrAgenticUsageInvalid) {
+		t.Fatal("usage invalid must stay infra")
 	}
 }
 

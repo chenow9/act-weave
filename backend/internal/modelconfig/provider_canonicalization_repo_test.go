@@ -138,7 +138,7 @@ func TestVerificationDigestUsesCanonicalProvider(t *testing.T) {
 	}
 	service, err := NewVerificationService(repository, VerifierFunc(
 		func(context.Context, Config) (AgenticCapabilities, error) {
-			return AgenticCapabilities{}, nil
+			return AgenticCapabilities{ToolCalling: ToolCallingNativeClientSearch}, nil
 		}), time.Second)
 	if err != nil {
 		t.Fatal(err)

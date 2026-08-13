@@ -786,10 +786,21 @@ func mapAgenticToolSearchError(err error) error {
 }
 
 // isAgenticToolSearchCapabilityMiss reports a Phase 2 contract miss (no search,
-// hosted, arg drift, unexpected text/function, bad search output). Infra
-// failures stay ERROR and must not enter Phase 3.
+// hosted, arg drift, unexpected text/function, bad search output) or an HTTP
+// 400/422 reject of the native-search request. Infra failures stay ERROR and
+// must not enter Phase 3.
 func isAgenticToolSearchCapabilityMiss(err error) bool {
-	return errors.Is(err, modelconfig.ErrToolSearchUnsupported)
+	return errors.Is(err, modelconfig.ErrToolSearchUnsupported) || isPhase2CapabilityHTTPReject(err)
+}
+
+// isPhase2CapabilityHTTPReject is only 400/422. Auth, missing route, rate
+// limits, and 5xx stay infrastructure.
+func isPhase2CapabilityHTTPReject(err error) bool {
+	if !errors.Is(err, modelconfig.ErrVerificationUpstream) {
+		return false
+	}
+	status := verificationHTTPStatus(err)
+	return status == http.StatusBadRequest || status == http.StatusUnprocessableEntity
 }
 
 // mapAgenticFunctionCallingProbeError maps Phase 3 Generate failures.

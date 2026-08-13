@@ -357,7 +357,7 @@ func TestListAgentsByModelConfig(t *testing.T) {
 func verifyRepositoryConfig(t *testing.T, repository *Repository, created Config) Config {
 	t.Helper()
 	service, err := NewVerificationService(repository, VerifierFunc(func(context.Context, Config) (AgenticCapabilities, error) {
-		return AgenticCapabilities{}, nil
+		return AgenticCapabilities{ToolCalling: ToolCallingNativeClientSearch}, nil
 	}), time.Second)
 	if err != nil {
 		t.Fatal(err)

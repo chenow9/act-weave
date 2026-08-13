@@ -190,6 +190,10 @@ func TestCheckedInDevelopmentConfigurationIsValid(t *testing.T) {
 	if err := loaded.ValidateServer(); err != nil {
 		t.Fatalf("validate checked-in development configuration: %v", err)
 	}
+	if loaded.Runtime.ModelVerification.TimeoutSeconds != DefaultModelVerificationTimeoutSeconds {
+		t.Fatalf("checked-in modelVerification.timeoutSeconds=%d want %d",
+			loaded.Runtime.ModelVerification.TimeoutSeconds, DefaultModelVerificationTimeoutSeconds)
+	}
 }
 
 func TestLoadRejectsUnknownFieldsAndMultipleDocuments(t *testing.T) {

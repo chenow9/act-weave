@@ -21,7 +21,7 @@ func TestVerifyModelConfigCallsUpstreamWithoutDatabaseTransaction(t *testing.T) 
 			UPDATE model_configs SET updated_at = updated_at
 			WHERE workspace_id = $1 AND id = $2
 		`, config.WorkspaceID, config.ID)
-		return AgenticCapabilities{}, probeErr
+		return AgenticCapabilities{ToolCalling: ToolCallingNativeClientSearch}, probeErr
 	}), time.Second)
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +88,7 @@ func TestVerifyAppliesConfiguredOuterBudgetToUpstreamContext(t *testing.T) {
 				if ok {
 					remaining = time.Until(deadline)
 				}
-				return AgenticCapabilities{}, nil
+				return AgenticCapabilities{ToolCalling: ToolCallingNativeClientSearch}, nil
 			}), budget)
 			if err != nil {
 				t.Fatal(err)
@@ -111,7 +111,7 @@ func TestVerifiedReadEvidenceCorruptRowsFailClosed(t *testing.T) {
 	repository, db := newModelConfigRepositoryTest(t, nil)
 	created := createRepositoryConfig(t, repository, repositoryConfigID, "Corrupt Evidence Model")
 	service, err := NewVerificationService(repository, VerifierFunc(func(context.Context, Config) (AgenticCapabilities, error) {
-		return AgenticCapabilities{}, nil
+		return AgenticCapabilities{ToolCalling: ToolCallingNativeClientSearch}, nil
 	}), time.Second)
 	if err != nil {
 		t.Fatal(err)
@@ -362,6 +362,76 @@ func TestVerifyNoneDoesNotLeaveToolSearchUnsupported(t *testing.T) {
 	}
 }
 
+func TestVerifyEmptyToolCallingFailsClosed(t *testing.T) {
+	repository, _ := newModelConfigRepositoryTest(t, nil)
+	created := createRepositoryConfig(t, repository, repositoryConfigID, "Empty Probe Caps")
+	service, err := NewVerificationService(repository, VerifierFunc(func(context.Context, Config) (AgenticCapabilities, error) {
+		return AgenticCapabilities{}, nil
+	}), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := service.Verify(context.Background(), created.WorkspaceID, created.ID, repositoryOwnerID)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if got.Status != StatusError || got.LastErrorCode == nil || *got.LastErrorCode != ErrorCodeUpstream {
+		t.Fatalf("empty ToolCalling must not stamp native, got %+v", got)
+	}
+	if !IsUnverifiedAgenticCapabilities(got.AgenticCapabilities) {
+		t.Fatalf("empty ToolCalling must persist {{}}, got %s", got.AgenticCapabilities)
+	}
+}
+
+func TestVerifyErrorLeavesExistingDisclosurePolicy(t *testing.T) {
+	repository, _ := newModelConfigRepositoryTest(t, nil)
+	created := createRepositoryConfig(t, repository, repositoryConfigID, "Keep Policy On Error")
+	ok, err := NewVerificationService(repository, VerifierFunc(func(context.Context, Config) (AgenticCapabilities, error) {
+		return AgenticCapabilities{ToolCalling: ToolCallingFunctionCalling}, nil
+	}), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := ok.Verify(context.Background(), created.WorkspaceID, created.ID, repositoryOwnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	carry, err := CanonicalToolDisclosurePolicy(DisclosureModeCarryAll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := repository.UpdateDisclosurePolicy(context.Background(), DisclosurePolicyUpdate{
+		WorkspaceID: first.WorkspaceID, ConfigID: first.ID, Policy: carry,
+		UpdatedBy: repositoryOwnerID, ExpectedLockVersion: first.LockVersion,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fail, err := NewVerificationService(repository, VerifierFunc(func(context.Context, Config) (AgenticCapabilities, error) {
+		return AgenticCapabilities{}, ErrVerificationUpstream
+	}), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errored, err := fail.Verify(context.Background(), updated.WorkspaceID, updated.ID, repositoryOwnerID)
+	if err != nil {
+		t.Fatalf("error verify: %v", err)
+	}
+	if errored.Status != StatusError || errored.LastErrorCode == nil {
+		t.Fatalf("want ERROR, got %+v", errored)
+	}
+	if !IsUnverifiedAgenticCapabilities(errored.AgenticCapabilities) {
+		t.Fatalf("ERROR must clear caps, got %s", errored.AgenticCapabilities)
+	}
+	policy, _, err := ParseToolDisclosurePolicy(errored.ToolDisclosurePolicy)
+	if err != nil || policy.Mode != DisclosureModeCarryAll {
+		t.Fatalf("ERROR must keep carry_all, got %+v err=%v raw=%s", policy, err, errored.ToolDisclosurePolicy)
+	}
+	if errored.LockVersion != updated.LockVersion+1 {
+		t.Fatalf("ERROR must still bump lock once, got %d want %d", errored.LockVersion, updated.LockVersion+1)
+	}
+}
+
 func TestVerifyModelConfigRejectsStaleResult(t *testing.T) {
 	repository, _ := newModelConfigRepositoryTest(t, nil)
 	created := createRepositoryConfig(t, repository, repositoryConfigID, "Verify Stale Model")
@@ -372,7 +442,7 @@ func TestVerifyModelConfigRejectsStaleResult(t *testing.T) {
 			Options: config.Options, Status: StatusUnverified, UpdatedBy: repositoryOwnerID,
 			ExpectedLockVersion: config.LockVersion,
 		})
-		return AgenticCapabilities{}, updateErr
+		return AgenticCapabilities{ToolCalling: ToolCallingNativeClientSearch}, updateErr
 	}), time.Second)
 	if err != nil {
 		t.Fatal(err)
@@ -394,7 +464,7 @@ func TestUpdateClearsAgenticCapabilities(t *testing.T) {
 	repository, db := newModelConfigRepositoryTest(t, nil)
 	created := createRepositoryConfig(t, repository, repositoryConfigID, "Clear Caps Model")
 	service, err := NewVerificationService(repository, VerifierFunc(func(context.Context, Config) (AgenticCapabilities, error) {
-		return AgenticCapabilities{}, nil
+		return AgenticCapabilities{ToolCalling: ToolCallingNativeClientSearch}, nil
 	}), time.Second)
 	if err != nil {
 		t.Fatal(err)
