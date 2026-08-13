@@ -18,12 +18,12 @@ const (
 	// DefaultModelVerificationTimeoutSeconds is the outer budget for one model
 	// config verification attempt (modelconfig.VerificationService.Verify wraps
 	// the whole upstream call in it). It must stay at or above the sum of the
-	// inner Task 3 probe budgets — Responses streaming 30s plus client
-	// tool_search 45s — so those budgets remain reachable rather than dead code,
-	// with the remaining 15s covering the GET /models auth probe.
+	// inner probe budgets — Responses streaming 30s, client tool_search 45s,
+	// and function-calling 30s — so those budgets remain reachable rather than
+	// dead code, with the remaining 15s covering the GET /models auth probe.
 	// application.TestModelVerificationOuterBudgetCoversInnerProbeBudgets pins
 	// that relation against the real probe constants.
-	DefaultModelVerificationTimeoutSeconds = 90
+	DefaultModelVerificationTimeoutSeconds = 120
 
 	// MaxModelVerificationTimeoutSeconds bounds the operator-configurable outer
 	// budget. A larger value would hold an HTTP verification request (and its
@@ -280,7 +280,7 @@ func validateEinoMaxToolInvocations(max int) error {
 // verification attempt.
 //
 // Contract (no silent clamp, mirroring EinoRuntimeTuning):
-//   - 0 → DefaultModelVerificationTimeoutSeconds (90) via Normalized /
+//   - 0 → DefaultModelVerificationTimeoutSeconds (120) via Normalized /
 //     applyRuntimeDefaults
 //   - 1..MaxModelVerificationTimeoutSeconds accepted as-is
 //   - negative or above the maximum fail closed (Validate /
@@ -314,7 +314,7 @@ func (tuning ModelVerificationTuning) Validate() error {
 	return validateModelVerificationTimeoutSeconds(tuning.TimeoutSeconds)
 }
 
-// validateModelVerificationTimeoutSeconds enforces 0 (default 90) or
+// validateModelVerificationTimeoutSeconds enforces 0 (default 120) or
 // 1..MaxModelVerificationTimeoutSeconds.
 func validateModelVerificationTimeoutSeconds(seconds int) error {
 	if seconds == 0 {
@@ -343,7 +343,7 @@ type RuntimeConfig struct {
 	Workflow WorkflowRuntimeConfig `yaml:"workflow"`
 	Eino     EinoRuntimeTuning     `yaml:"eino"`
 	// ModelVerification is the outer budget for model config verification.
-	// Omitted / zero maps to DefaultModelVerificationTimeoutSeconds (90s).
+	// Omitted / zero maps to DefaultModelVerificationTimeoutSeconds (120s).
 	ModelVerification ModelVerificationTuning `yaml:"modelVerification"`
 	// SessionContext is the fail-closed gate for session context window management
 	// (ZKL-74). Default remains disabled unless explicitly enabled + allowlisted.
@@ -546,7 +546,7 @@ func (config *Config) applyRuntimeDefaults() {
 	if config.Runtime.Eino.MaxToolInvocations == 0 {
 		config.Runtime.Eino.MaxToolInvocations = DefaultEinoMaxToolInvocations
 	}
-	// Exactly 0 → default 90s. Negative and above-maximum values are left for
+	// Exactly 0 → default 120s. Negative and above-maximum values are left for
 	// validateRuntimeConfig to reject.
 	if config.Runtime.ModelVerification.TimeoutSeconds == 0 {
 		config.Runtime.ModelVerification.TimeoutSeconds = DefaultModelVerificationTimeoutSeconds

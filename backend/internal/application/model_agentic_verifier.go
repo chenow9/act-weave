@@ -32,15 +32,15 @@ import (
 // Fixed non-sensitive probe prompt (no tenant content).
 const agenticVerificationPrompt = "ActWeave model verification probe. Reply with a short acknowledgement."
 
-// Inner probe budgets (Task 3 accepted contract — values unchanged; named so the
-// outer configurable budget can be checked against them instead of against
-// duplicated literals). The outer budget lives in
-// config.DefaultModelVerificationTimeoutSeconds and must stay at or above their
-// sum, otherwise VerificationService.Verify cancels the whole upstream call
-// before either inner deadline can ever be reached.
+// Inner probe budgets. The outer budget in
+// config.DefaultModelVerificationTimeoutSeconds must stay at or above their
+// sequential sum plus a connectivity allowance, otherwise
+// VerificationService.Verify cancels the whole upstream call before an inner
+// deadline can fire.
 const (
 	agenticProbeResponsesStreamBudget  = 30 * time.Second
 	agenticProbeClientToolSearchBudget = 45 * time.Second
+	agenticProbeFunctionCallingBudget  = 30 * time.Second
 )
 
 // modelVerificationMinClientTimeout is the shortest overall http.Client.Timeout
@@ -58,7 +58,7 @@ const modelVerificationMinClientTimeout = agenticProbeClientToolSearchBudget
 
 // modelVerificationTimeout resolves the outer verification budget Open hands to
 // modelconfig.NewVerificationService. Zero (config omitted, or a RuntimeConfig
-// built without config.Load) becomes the 90s default; every other value is
+// built without config.Load) becomes the 120s default; every other value is
 // passed through unchanged, so a hostile negative reaches
 // NewVerificationService's guard and fails Open closed instead of being
 // silently repaired here.
@@ -145,15 +145,10 @@ func (verifier *modelConfigVerifier) Verify(ctx context.Context, config modelcon
 		return modelconfig.AgenticCapabilities{}, err
 	}
 
-	// 2–4) Responses streaming, client tool-search, and usage/content probes
-	// via the real Agentic adapter with raw usage wire validation.
-	if err := verifier.probeAgenticCapabilities(ctx, config); err != nil {
-		return modelconfig.AgenticCapabilities{}, err
-	}
-
-	// Canonical document is stamped by VerificationService; return zero probe
-	// payload (service builds CanonicalAgenticCapabilities).
-	return modelconfig.AgenticCapabilities{}, nil
+	// 2–4) Responses streaming, then native client tool-search, then (on a
+	// capability miss only) ordinary function calling. ToolCalling is the only
+	// probe field the service uses; lock/digest/timestamp are stamped there.
+	return verifier.probeAgenticCapabilities(ctx, config)
 }
 
 func (verifier *modelConfigVerifier) probeAuthConnectivity(ctx context.Context, config modelconfig.Config) error {
@@ -210,7 +205,7 @@ func (verifier *modelConfigVerifier) probeAuthConnectivity(ctx context.Context, 
 	return verifier.secrets.WithActiveSecret(ctx, config.WorkspaceID, *config.CredentialSecretID, invoke)
 }
 
-func (verifier *modelConfigVerifier) probeAgenticCapabilities(ctx context.Context, config modelconfig.Config) error {
+func (verifier *modelConfigVerifier) probeAgenticCapabilities(ctx context.Context, config modelconfig.Config) (modelconfig.AgenticCapabilities, error) {
 	client := verifier.probeHTTPClient()
 	// Verification-only: wrap with strict raw usage validator around the real
 	// pinned adapter HTTP path. Wrong JSON types classify USAGE_INVALID before
@@ -218,11 +213,11 @@ func (verifier *modelConfigVerifier) probeAgenticCapabilities(ctx context.Contex
 	client = wrapClientWithVerificationUsageValidator(client)
 
 	if verifier.secrets == nil {
-		return errors.New("model verification secrets are required")
+		return modelconfig.AgenticCapabilities{}, errors.New("model verification secrets are required")
 	}
 	am, err := modelapi.NewOpenAIAgenticModel(ctx, client, verifier.secrets, config)
 	if err != nil {
-		return mapAgenticConstructionError(err)
+		return modelconfig.AgenticCapabilities{}, mapAgenticConstructionError(err)
 	}
 
 	// Build a one-tool frozen catalog + bounded client search executor.
@@ -231,16 +226,16 @@ func (verifier *modelConfigVerifier) probeAgenticCapabilities(ctx context.Contex
 		{Tool: echo, Exposure: einoruntime.ToolExposureDeferred, Kind: einoruntime.ToolKindTool},
 	})
 	if err != nil {
-		return fmt.Errorf("%w: catalog: %v", modelconfig.ErrToolSearchUnsupported, err)
+		return modelconfig.AgenticCapabilities{}, fmt.Errorf("%w: catalog: %v", modelconfig.ErrToolSearchUnsupported, err)
 	}
 	mw, err := einoruntime.NewBoundedClientToolSearchMiddleware(cat)
 	if err != nil {
-		return fmt.Errorf("%w: search middleware: %v", modelconfig.ErrToolSearchUnsupported, err)
+		return modelconfig.AgenticCapabilities{}, fmt.Errorf("%w: search middleware: %v", modelconfig.ErrToolSearchUnsupported, err)
 	}
 	searchInfo := mw.SearchToolInfo()
 	echoInfo, err := echo.Info(ctx)
 	if err != nil || echoInfo == nil {
-		return fmt.Errorf("%w: echo tool info", modelconfig.ErrToolSearchUnsupported)
+		return modelconfig.AgenticCapabilities{}, fmt.Errorf("%w: echo tool info", modelconfig.ErrToolSearchUnsupported)
 	}
 
 	opts := []model.Option{
@@ -250,14 +245,18 @@ func (verifier *modelConfigVerifier) probeAgenticCapabilities(ctx context.Contex
 
 	// --- Probe A: Responses streaming with fixed non-sensitive prompt ---
 	if err := verifier.probeResponsesStream(ctx, am); err != nil {
-		return err
+		return modelconfig.AgenticCapabilities{}, err
 	}
 
 	// --- Probe B: Client tool-search + echo function call (ordered contract) ---
 	if err := verifier.probeClientToolSearch(ctx, am, mw, opts); err != nil {
-		return err
+		if !isAgenticToolSearchCapabilityMiss(err) {
+			return modelconfig.AgenticCapabilities{}, err
+		}
+		// Native search is not available; classify ordinary function calling.
+		return verifier.probeFunctionCalling(ctx, am, echoInfo)
 	}
-	return nil
+	return modelconfig.AgenticCapabilities{ToolCalling: modelconfig.ToolCallingNativeClientSearch}, nil
 }
 
 func (verifier *modelConfigVerifier) probeResponsesStream(ctx context.Context, am model.AgenticModel) error {
@@ -434,6 +433,51 @@ func (verifier *modelConfigVerifier) probeClientToolSearch(
 		return err
 	}
 	return nil
+}
+
+// probeFunctionCalling is Phase 3: ordinary Responses function tools only.
+// Native tool-search options must not be applied. Capability-style misses
+// persist as toolCalling=none; infrastructure stays a typed ERROR.
+func (verifier *modelConfigVerifier) probeFunctionCalling(
+	ctx context.Context,
+	am model.AgenticModel,
+	echoInfo *schema.ToolInfo,
+) (modelconfig.AgenticCapabilities, error) {
+	probeCtx, cancel := context.WithTimeout(ctx, agenticProbeFunctionCallingBudget)
+	defer cancel()
+
+	nonce, err := newVerificationNonce()
+	if err != nil {
+		return modelconfig.AgenticCapabilities{}, fmt.Errorf("%w: nonce: %v", modelconfig.ErrVerificationUpstream, err)
+	}
+
+	opts := []model.Option{
+		model.WithTools([]*schema.ToolInfo{echoInfo}),
+	}
+	input := []*schema.AgenticMessage{
+		agenticmsg.UserText(fmt.Sprintf(
+			"Call %s exactly once with token %s exactly as JSON object with only that field "+
+				`({"token":"%s"}). Do not emit any other text or tool calls.`,
+			agenticVerificationEchoTool, nonce, nonce,
+		)),
+	}
+	assistant, err := am.Generate(probeCtx, input, opts...)
+	if err != nil {
+		if mapped := mapAgenticFunctionCallingProbeError(err); mapped != nil {
+			return modelconfig.AgenticCapabilities{}, mapped
+		}
+		return modelconfig.AgenticCapabilities{ToolCalling: modelconfig.ToolCallingNone}, nil
+	}
+	if assistant == nil {
+		return modelconfig.AgenticCapabilities{ToolCalling: modelconfig.ToolCallingNone}, nil
+	}
+	if err := requireExactEchoFunctionCall(assistant, nonce); err != nil {
+		return modelconfig.AgenticCapabilities{ToolCalling: modelconfig.ToolCallingNone}, nil
+	}
+	if err := requireProbeUsage(assistant); err != nil {
+		return modelconfig.AgenticCapabilities{}, err
+	}
+	return modelconfig.AgenticCapabilities{ToolCalling: modelconfig.ToolCallingFunctionCalling}, nil
 }
 
 // probeToolSearchExactQuery is the only accepted client search query for the
@@ -733,9 +777,104 @@ func mapAgenticToolSearchError(err error) error {
 		return modelconfig.ErrAgenticUsageInvalid
 	}
 	mapped := mapAgenticStreamError(err)
-	if !errors.Is(mapped, modelconfig.ErrAgenticStreamInvalid) {
-		return mapped
+	// Unparseable wire is infrastructure: do not treat it as a capability miss
+	// or the function-calling probe would run against a broken stream.
+	if errors.Is(mapped, modelconfig.ErrAgenticStreamInvalid) {
+		return modelconfig.ErrAgenticStreamInvalid
 	}
-	// Do not embed original error text (may contain provider body).
-	return modelconfig.ErrToolSearchUnsupported
+	return mapped
+}
+
+// isAgenticToolSearchCapabilityMiss reports a Phase 2 contract miss (no search,
+// hosted, arg drift, unexpected text/function, bad search output). Infra
+// failures stay ERROR and must not enter Phase 3.
+func isAgenticToolSearchCapabilityMiss(err error) bool {
+	return errors.Is(err, modelconfig.ErrToolSearchUnsupported)
+}
+
+// mapAgenticFunctionCallingProbeError maps Phase 3 Generate failures.
+// Infrastructure stays a typed ERROR. Capability-style rejects (400/422,
+// unrecognized 4xx, other non-infra) return nil so the caller persists none.
+// Must not call mapAgenticToolSearchError.
+func mapAgenticFunctionCallingProbeError(err error) error {
+	if err == nil {
+		return nil
+	}
+	switch {
+	case errors.Is(err, modelconfig.ErrAgenticUsageInvalid):
+		return modelconfig.ErrAgenticUsageInvalid
+	case errors.Is(err, modelconfig.ErrAgenticStreamInvalid):
+		return modelconfig.ErrAgenticStreamInvalid
+	case errors.Is(err, modelconfig.ErrUpstreamAuthentication):
+		return modelconfig.ErrUpstreamAuthentication
+	case errors.Is(err, modelconfig.ErrResponsesUnsupported):
+		return modelconfig.ErrResponsesUnsupported
+	case errors.Is(err, modelconfig.ErrVerificationNetwork):
+		return modelconfig.ErrVerificationNetwork
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
+		return err
+	case errors.Is(err, modelconfig.ErrVerificationUpstream):
+		if isFunctionCallingCapabilityHTTPReject(err) {
+			return nil
+		}
+		return err
+	}
+	var networkError net.Error
+	if errors.As(err, &networkError) {
+		return modelconfig.ErrVerificationNetwork
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "401") || strings.Contains(msg, "403") ||
+		strings.Contains(msg, "unauthorized") || strings.Contains(msg, "forbidden") {
+		return modelconfig.ErrUpstreamAuthentication
+	}
+	if strings.Contains(msg, "404") || strings.Contains(msg, "not found") {
+		return modelconfig.ErrResponsesUnsupported
+	}
+	if strings.Contains(msg, "429") || strings.Contains(msg, "too many") ||
+		strings.Contains(msg, "500") || strings.Contains(msg, "502") ||
+		strings.Contains(msg, "503") || strings.Contains(msg, "504") {
+		return modelconfig.ErrVerificationUpstream
+	}
+	if strings.Contains(msg, "usage") || strings.Contains(msg, "input_tokens") ||
+		strings.Contains(msg, "output_tokens") || strings.Contains(msg, "total_tokens") {
+		return modelconfig.ErrAgenticUsageInvalid
+	}
+	if strings.Contains(msg, "stream") || strings.Contains(msg, "unmarshal") ||
+		strings.Contains(msg, "invalid json") {
+		return modelconfig.ErrAgenticStreamInvalid
+	}
+	// Unrecognized 4xx and other capability-style rejects persist as none.
+	return nil
+}
+
+func isFunctionCallingCapabilityHTTPReject(err error) bool {
+	if !errors.Is(err, modelconfig.ErrVerificationUpstream) {
+		return false
+	}
+	status := verificationHTTPStatus(err)
+	if status == 0 {
+		return false
+	}
+	if status == http.StatusTooManyRequests || status >= 500 {
+		return false
+	}
+	return status >= 400 && status < 500
+}
+
+func verificationHTTPStatus(err error) int {
+	if err == nil {
+		return 0
+	}
+	const prefix = "HTTP_STATUS_"
+	msg := err.Error()
+	idx := strings.LastIndex(msg, prefix)
+	if idx < 0 {
+		return 0
+	}
+	n, convErr := strconv.Atoi(msg[idx+len(prefix):])
+	if convErr != nil || n < 100 || n > 599 {
+		return 0
+	}
+	return n
 }

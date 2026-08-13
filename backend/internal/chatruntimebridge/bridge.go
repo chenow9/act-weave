@@ -20,6 +20,7 @@ import (
 	"actweave/backend/internal/contextwindow"
 	"actweave/backend/internal/einoruntime"
 	"actweave/backend/internal/execution"
+	"actweave/backend/internal/modelconfig"
 	"actweave/backend/internal/sessioncontext"
 	"actweave/backend/internal/tooltranslator"
 
@@ -1548,6 +1549,12 @@ func executionErrorCode(err error) string {
 	if errors.Is(err, ErrClassicResumeRemoved) {
 		return "CLASSIC_RESUME_REMOVED"
 	}
+	if errors.Is(err, modelconfig.ErrToolDisclosureRuntimePending) {
+		return modelconfig.ErrorCodeToolDisclosureRuntimePending
+	}
+	if errors.Is(err, modelconfig.ErrAgentModelToolsUnsupported) {
+		return modelconfig.ErrorCodeAgentModelToolsUnsupported
+	}
 	var ctxErr *execution.ContextError
 	if errors.As(err, &ctxErr) && ctxErr != nil && strings.TrimSpace(ctxErr.Code) != "" {
 		return ctxErr.Code
@@ -1569,6 +1576,8 @@ func executionErrorCode(err error) string {
 		"AGENTIC_PROMPT_REVISION_MISMATCH",
 		"AGENTIC_RESUME_GENERATION_MISMATCH",
 		"AGENTIC_RESUME_CLASSIC_ON_FROZEN_RUN",
+		modelconfig.ErrorCodeToolDisclosureRuntimePending,
+		modelconfig.ErrorCodeAgentModelToolsUnsupported,
 	} {
 		if strings.Contains(msg, code) {
 			return code

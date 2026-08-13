@@ -364,6 +364,10 @@ func (b *Bridge) buildAgenticChildAgent(
 		return nil, err
 	}
 	hasToolsOrCatalog := len(tools) > 0 || (catalog != nil && catalog.Len() > 0)
+	native := frozenCapsAreNative(cfg)
+	if hasToolsOrCatalog && !native {
+		return nil, errToolBearingNonNative(cfg)
+	}
 	built, err := einoruntime.BuildAgenticAgent(ctx, einoruntime.AgenticAgentBuildConfig{
 		Name:                     parts.Name,
 		Description:              parts.Description,
@@ -374,7 +378,7 @@ func (b *Bridge) buildAgenticChildAgent(
 		MaxIterations:            einoruntime.DefaultMaxIterations,
 		MaxToolInvocations:       b.maxTools,
 		ToolSearchMode:           einoruntime.ToolSearchModeClientBounded,
-		ClientToolSearchVerified: hasToolsOrCatalog,
+		ClientToolSearchVerified: hasToolsOrCatalog && native,
 		PromptCacheKey:           promptCacheKey,
 	})
 	if err != nil {

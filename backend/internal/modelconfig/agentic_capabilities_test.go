@@ -230,6 +230,34 @@ func TestParseAgenticCapabilitiesV1NormalizeRemainsV1Bytes(t *testing.T) {
 	}
 }
 
+func TestCanonicalAgenticCapabilitiesV2(t *testing.T) {
+	at := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	digest := strings.Repeat("e", 64)
+	for _, calling := range []string{
+		modelconfig.ToolCallingFunctionCalling,
+		modelconfig.ToolCallingNone,
+	} {
+		doc, err := modelconfig.CanonicalAgenticCapabilitiesV2(calling, at, 2, digest)
+		if err != nil {
+			t.Fatalf("%s: %v", calling, err)
+		}
+		raw, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), "toolSearchModes") {
+			t.Fatalf("%s must omit toolSearchModes: %s", calling, raw)
+		}
+		parsed, _, err := modelconfig.ParseAgenticCapabilities(raw)
+		if err != nil || parsed.ToolCalling != calling || parsed.SchemaVersion != modelconfig.AgenticCapabilitiesSchemaV2 {
+			t.Fatalf("%s parse: %+v err=%v", calling, parsed, err)
+		}
+	}
+	if _, err := modelconfig.CanonicalAgenticCapabilitiesV2(modelconfig.ToolCallingNativeClientSearch, at, 2, digest); err == nil {
+		t.Fatal("v2 canonical must not accept native_client_search")
+	}
+}
+
 func TestParseAgenticCapabilitiesV2Rules(t *testing.T) {
 	digest := strings.Repeat("d", 64)
 	base := func(extra string) string {

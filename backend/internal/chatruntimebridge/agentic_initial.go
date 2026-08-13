@@ -91,8 +91,9 @@ func requireFrozenModelConfig(modelSnapshot json.RawMessage, workspaceID string)
 }
 
 // requireVerifiedAgenticSnapshot fails closed unless the frozen model snapshot
-// carries verified agentic-model.v1 bound to the exact supported OpenAI Responses
-// provider tuple. Never falls back to live capabilities.
+// carries a well-formed VERIFIED capability document bound to the supported
+// OpenAI Responses provider tuple. Catalog contents and disclosure mode are
+// not consulted here. Never falls back to live capabilities.
 func requireVerifiedAgenticSnapshot(modelSnapshot json.RawMessage, cfg modelconfig.Config) error {
 	if len(modelSnapshot) == 0 || string(modelSnapshot) == "null" || string(modelSnapshot) == "{}" {
 		return fmt.Errorf("%w: model snapshot missing", ErrAgenticModelSnapshotRequired)
@@ -115,16 +116,15 @@ func requireVerifiedAgenticSnapshot(modelSnapshot json.RawMessage, cfg modelconf
 		// Structural capability errors are snapshot-required for initial Agentic.
 		return fmt.Errorf("%w: agenticCapabilities", ErrAgenticModelSnapshotRequired)
 	}
-	if doc.SchemaVersion != modelconfig.AgenticCapabilitiesSchemaV1 {
+	switch doc.SchemaVersion {
+	case modelconfig.AgenticCapabilitiesSchemaV1, modelconfig.AgenticCapabilitiesSchemaV2:
+	default:
 		return execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
 	}
 	if doc.Protocol != modelconfig.AgenticProtocolOpenAIResponsesV1 {
 		return execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
 	}
 	if doc.VerifiedAdapter != modelconfig.VerifiedAdapterAgenticOpenAIV022 {
-		return execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
-	}
-	if len(doc.ToolSearchModes) != 1 || doc.ToolSearchModes[0] != modelconfig.AgenticToolSearchModeClient {
 		return execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
 	}
 	if !doc.Streaming || !doc.Usage {
@@ -145,6 +145,28 @@ func requireVerifiedAgenticSnapshot(modelSnapshot json.RawMessage, cfg modelconf
 		return execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
 	}
 	return nil
+}
+
+// frozenCapsAreNative reports whether the frozen capability document is native
+// client-search (v1, or v2 toolCalling=native_client_search). Parse failure is
+// not native.
+func frozenCapsAreNative(cfg modelconfig.Config) bool {
+	doc, _, err := modelconfig.ParseAgenticCapabilities(cfg.AgenticCapabilities)
+	if err != nil {
+		return false
+	}
+	return doc.ToolCalling == modelconfig.ToolCallingNativeClientSearch
+}
+
+// errToolBearingNonNative is the caller-side gate: BuildAgenticAgent must not
+// see tools on a function_calling or none snapshot (it would treat them as
+// native tool_search).
+func errToolBearingNonNative(cfg modelconfig.Config) error {
+	doc, _, err := modelconfig.ParseAgenticCapabilities(cfg.AgenticCapabilities)
+	if err != nil || doc.ToolCalling == modelconfig.ToolCallingNone {
+		return modelconfig.ErrAgentModelToolsUnsupported
+	}
+	return modelconfig.ErrToolDisclosureRuntimePending
 }
 
 // requireSupportedAgenticProvider enforces the exact frozen Provider values that
@@ -563,6 +585,10 @@ func (b *Bridge) buildAgenticAgentFromPlan(
 	if d := strings.TrimSpace(plan.configuredAgent.RoleDescription); d != "" {
 		desc = d
 	}
+	native := frozenCapsAreNative(plan.cfg)
+	if plan.hasToolsOrCatalog && !native {
+		return nil, errToolBearingNonNative(plan.cfg)
+	}
 	built, err := einoruntime.BuildAgenticAgent(ctx, einoruntime.AgenticAgentBuildConfig{
 		Name:                     name,
 		Description:              desc,
@@ -572,7 +598,7 @@ func (b *Bridge) buildAgenticAgentFromPlan(
 		MaxIterations:            einoruntime.DefaultMaxIterations,
 		MaxToolInvocations:       b.maxTools,
 		ToolSearchMode:           einoruntime.ToolSearchModeClientBounded,
-		ClientToolSearchVerified: plan.hasToolsOrCatalog,
+		ClientToolSearchVerified: plan.hasToolsOrCatalog && native,
 		PromptCacheKey:           plan.promptCacheKey,
 		// Instruction deliberately empty: frozen system prompt is the leading
 		// assembled message. Children under AgentTool set Instruction themselves.

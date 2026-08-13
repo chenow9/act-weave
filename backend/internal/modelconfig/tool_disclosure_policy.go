@@ -17,19 +17,23 @@ const (
 	ToolDisclosureUIUnavailable = "unavailable"
 	ToolDisclosureUIUnverified  = "unverified"
 
-	ErrorCodeToolDisclosureInvalid      = "MODEL_TOOL_DISCLOSURE_INVALID"
-	ErrorCodeToolCarryAllTooLarge       = "MODEL_TOOL_CARRY_ALL_TOO_LARGE"
-	ErrorCodeToolCarryAllSoft           = "MODEL_TOOL_CARRY_ALL_SOFT"
-	ErrorCodeToolDisclosureNotRolledOut = "MODEL_TOOL_DISCLOSURE_NOT_ROLLED_OUT"
+	ErrorCodeToolDisclosureInvalid        = "MODEL_TOOL_DISCLOSURE_INVALID"
+	ErrorCodeToolCarryAllTooLarge         = "MODEL_TOOL_CARRY_ALL_TOO_LARGE"
+	ErrorCodeToolCarryAllSoft             = "MODEL_TOOL_CARRY_ALL_SOFT"
+	ErrorCodeToolDisclosureNotRolledOut   = "MODEL_TOOL_DISCLOSURE_NOT_ROLLED_OUT"
+	ErrorCodeToolDisclosureRuntimePending = "MODEL_TOOL_DISCLOSURE_RUNTIME_PENDING"
+	ErrorCodeAgentModelToolsUnsupported   = "AGENT_MODEL_TOOLS_UNSUPPORTED"
 
 	CarryAllSoftLimit = 5
 	CarryAllHardLimit = 8
 )
 
 var (
-	ErrToolDisclosureInvalid      = fmt.Errorf("%w: %s", ErrInvalid, ErrorCodeToolDisclosureInvalid)
-	ErrToolCarryAllTooLarge       = fmt.Errorf("%w: %s", ErrInvalid, ErrorCodeToolCarryAllTooLarge)
-	ErrToolDisclosureNotRolledOut = fmt.Errorf("%w: %s", ErrInvalid, ErrorCodeToolDisclosureNotRolledOut)
+	ErrToolDisclosureInvalid        = fmt.Errorf("%w: %s", ErrInvalid, ErrorCodeToolDisclosureInvalid)
+	ErrToolCarryAllTooLarge         = fmt.Errorf("%w: %s", ErrInvalid, ErrorCodeToolCarryAllTooLarge)
+	ErrToolDisclosureNotRolledOut   = fmt.Errorf("%w: %s", ErrInvalid, ErrorCodeToolDisclosureNotRolledOut)
+	ErrToolDisclosureRuntimePending = fmt.Errorf("%w: %s", ErrInvalid, ErrorCodeToolDisclosureRuntimePending)
+	ErrAgentModelToolsUnsupported   = fmt.Errorf("%w: %s", ErrInvalid, ErrorCodeAgentModelToolsUnsupported)
 )
 
 // ToolDisclosurePolicy is the strict user-writable disclosure document.

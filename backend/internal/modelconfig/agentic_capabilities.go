@@ -91,9 +91,10 @@ func (a AgenticCapabilities) MarshalJSON() ([]byte, error) {
 	return json.Marshal(w)
 }
 
-// CanonicalAgenticCapabilities builds the only accepted successful verification document.
-// verifiedAt is normalized to UTC second precision on construction; lockVersion must be >= 1;
-// configDigest must be lowercase 64-hex (no whitespace).
+// CanonicalAgenticCapabilities builds the native client-search verification
+// document (agentic-model.v1). verifiedAt is normalized to UTC second precision
+// on construction; lockVersion must be >= 1; configDigest must be lowercase
+// 64-hex (no whitespace).
 func CanonicalAgenticCapabilities(verifiedAt time.Time, lockVersion int64, configDigest string) (AgenticCapabilities, error) {
 	if verifiedAt.IsZero() {
 		return AgenticCapabilities{}, fmt.Errorf("%w: verifiedAt is required", ErrInvalid)
@@ -110,6 +111,38 @@ func CanonicalAgenticCapabilities(verifiedAt time.Time, lockVersion int64, confi
 		Streaming:            true,
 		Usage:                true,
 		ToolSearchModes:      []string{AgenticToolSearchModeClient},
+		ReasoningReplay:      AgenticReasoningReplayEncryptedOrNone,
+		VerifiedAdapter:      VerifiedAdapterAgenticOpenAIV022,
+		VerifiedAt:           verifiedAt.UTC().Truncate(time.Second),
+		VerifiedLockVersion:  lockVersion,
+		VerifiedConfigDigest: configDigest,
+	}, nil
+}
+
+// CanonicalAgenticCapabilitiesV2 builds a function_calling or none verification
+// document. Native client-search must keep using CanonicalAgenticCapabilities
+// so existing v1 snapshots stay byte-compatible.
+func CanonicalAgenticCapabilitiesV2(toolCalling string, verifiedAt time.Time, lockVersion int64, configDigest string) (AgenticCapabilities, error) {
+	switch toolCalling {
+	case ToolCallingFunctionCalling, ToolCallingNone:
+	default:
+		return AgenticCapabilities{}, fmt.Errorf("%w: unsupported toolCalling", ErrInvalid)
+	}
+	if verifiedAt.IsZero() {
+		return AgenticCapabilities{}, fmt.Errorf("%w: verifiedAt is required", ErrInvalid)
+	}
+	if lockVersion < 1 {
+		return AgenticCapabilities{}, fmt.Errorf("%w: verifiedLockVersion must be >= 1", ErrInvalid)
+	}
+	if !isHex64(configDigest) {
+		return AgenticCapabilities{}, fmt.Errorf("%w: verifiedConfigDigest must be 64 lowercase hex chars", ErrInvalid)
+	}
+	return AgenticCapabilities{
+		SchemaVersion:        AgenticCapabilitiesSchemaV2,
+		Protocol:             AgenticProtocolOpenAIResponsesV1,
+		Streaming:            true,
+		Usage:                true,
+		ToolCalling:          toolCalling,
 		ReasoningReplay:      AgenticReasoningReplayEncryptedOrNone,
 		VerifiedAdapter:      VerifiedAdapterAgenticOpenAIV022,
 		VerifiedAt:           verifiedAt.UTC().Truncate(time.Second),

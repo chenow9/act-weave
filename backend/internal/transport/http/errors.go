@@ -492,6 +492,12 @@ func mapError(err error) mappedError {
 	case errors.Is(err, modelconfig.ErrToolDisclosureNotRolledOut):
 		return mappedError{http.StatusUnprocessableEntity, modelconfig.ErrorCodeToolDisclosureNotRolledOut,
 			"Platform tool disclosure is not enabled for this workspace."}
+	case errors.Is(err, modelconfig.ErrToolDisclosureRuntimePending):
+		return mappedError{http.StatusUnprocessableEntity, modelconfig.ErrorCodeToolDisclosureRuntimePending,
+			"This model supports function calling, but platform tool disclosure is not available yet."}
+	case errors.Is(err, modelconfig.ErrAgentModelToolsUnsupported):
+		return mappedError{http.StatusUnprocessableEntity, modelconfig.ErrorCodeAgentModelToolsUnsupported,
+			"This model cannot call tools and cannot be used with a tool-bearing Agent."}
 	case errors.Is(err, modelconfig.ErrToolDisclosureInvalid):
 		return mappedError{http.StatusUnprocessableEntity, modelconfig.ErrorCodeToolDisclosureInvalid,
 			"The tool disclosure policy is not valid for this model configuration."}

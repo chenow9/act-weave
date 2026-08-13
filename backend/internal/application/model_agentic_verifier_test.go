@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -425,11 +426,16 @@ func TestAgenticVerifierSuccess_StoreFalseEchoFlowCanonical(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
-	_ = caps // stamped by VerificationService
+	if caps.ToolCalling != modelconfig.ToolCallingNativeClientSearch {
+		t.Fatalf("native success must report native_client_search, got %q", caps.ToolCalling)
+	}
 
 	bodies := fake.snapshotBodies()
 	if len(bodies) < 3 {
 		t.Fatalf("expected >=3 responses bodies, got %d", len(bodies))
+	}
+	if countFunctionCallingProbeBodies(bodies) != 0 {
+		t.Fatal("native success must skip the function-calling probe")
 	}
 	for i, body := range bodies {
 		if store, ok := body["store"].(bool); !ok || store {
@@ -508,16 +514,19 @@ func TestAgenticVerifierHostedSearchRejected(t *testing.T) {
 	v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})}
-	_, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
-	if !errors.Is(err, modelconfig.ErrToolSearchUnsupported) {
-		t.Fatalf("err=%v", err)
+	caps, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
+	if err != nil {
+		t.Fatalf("hosted search is a capability miss, got %v", err)
+	}
+	if caps.ToolCalling != modelconfig.ToolCallingNone {
+		t.Fatalf("hosted then non-echo FC must persist none, got %q", caps.ToolCalling)
 	}
 }
 
 func TestAgenticVerifierNoSearch(t *testing.T) {
 	fake := &contractFakeResponsesServer{
 		handler: func(turn int, body map[string]any, w http.ResponseWriter, r *http.Request) {
-			// Always plain text — never tool_search.
+			// Always plain text — never tool_search or echo.
 			writeContractResponse(w, body, contractTextResponse("no tools", true))
 		},
 	}
@@ -525,9 +534,12 @@ func TestAgenticVerifierNoSearch(t *testing.T) {
 	v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})}
-	_, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
-	if !errors.Is(err, modelconfig.ErrToolSearchUnsupported) {
-		t.Fatalf("err=%v", err)
+	caps, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
+	if err != nil {
+		t.Fatalf("text-only is a capability miss, got %v", err)
+	}
+	if caps.ToolCalling != modelconfig.ToolCallingNone {
+		t.Fatalf("text-only must persist none, got %q", caps.ToolCalling)
 	}
 }
 
@@ -901,13 +913,12 @@ func TestAgenticVerifierEchoAdversarial(t *testing.T) {
 			v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 				return nil
 			})}
-			_, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
-			if err == nil {
-				t.Fatal("expected echo adversarial failure")
+			caps, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
+			if err != nil {
+				t.Fatalf("echo near-miss is a capability miss, got %v", err)
 			}
-			if !errors.Is(err, modelconfig.ErrToolSearchUnsupported) &&
-				!errors.Is(err, modelconfig.ErrAgenticStreamInvalid) {
-				t.Fatalf("want tool-search/stream fail-closed, got %v", err)
+			if caps.ToolCalling != modelconfig.ToolCallingNone {
+				t.Fatalf("echo near-miss must persist none, got %q", caps.ToolCalling)
 			}
 		})
 	}
@@ -994,7 +1005,9 @@ func TestAgenticVerifier_RejectsInvalidModelSearchArgsNoRewrite(t *testing.T) {
 						"usage": contractUsage(false),
 					})
 				default:
-					t.Errorf("must not proceed past invalid search args (turn %d)", turn)
+					if !isFunctionCallingProbeRequest(body) {
+						t.Errorf("turn %d must be the function-calling probe after invalid search args", turn)
+					}
 					writeContractResponse(w, body, contractTextResponse("nope", false))
 				}
 			}}
@@ -1002,9 +1015,12 @@ func TestAgenticVerifier_RejectsInvalidModelSearchArgsNoRewrite(t *testing.T) {
 			v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 				return nil
 			})}
-			_, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
-			if !errors.Is(err, modelconfig.ErrToolSearchUnsupported) {
-				t.Fatalf("want TOOL_SEARCH_UNSUPPORTED (no rewrite), got %v", err)
+			caps, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
+			if err != nil {
+				t.Fatalf("invalid search args must not rewrite native; got err %v", err)
+			}
+			if caps.ToolCalling != modelconfig.ToolCallingNone {
+				t.Fatalf("invalid search args must not become native, got %q", caps.ToolCalling)
 			}
 		})
 	}
@@ -1092,6 +1108,178 @@ func TestValidateProbeUsageConsistency(t *testing.T) {
 
 // Ensure modelapi import used for interface satisfaction in production wiring.
 var _ modelapi.SecretOpener = secretOpenerFunc(nil)
+
+func countFunctionCallingProbeBodies(bodies []map[string]any) int {
+	n := 0
+	for _, body := range bodies {
+		if isFunctionCallingProbeRequest(body) {
+			n++
+		}
+	}
+	return n
+}
+
+func isFunctionCallingProbeRequest(body map[string]any) bool {
+	tools, ok := body["tools"].([]any)
+	if !ok || len(tools) == 0 {
+		return false
+	}
+	var echo int
+	for _, raw := range tools {
+		tm, ok := raw.(map[string]any)
+		if !ok {
+			return false
+		}
+		switch tm["type"] {
+		case "tool_search":
+			return false
+		case "function":
+			if name, _ := tm["name"].(string); name == agenticVerificationEchoTool {
+				if def, _ := tm["defer_loading"].(bool); def {
+					return false
+				}
+				echo++
+			}
+		}
+	}
+	return echo == 1
+}
+
+func TestAgenticVerifierPhase3ExactEchoIsFunctionCalling(t *testing.T) {
+	fake := &contractFakeResponsesServer{handler: func(turn int, body map[string]any, w http.ResponseWriter, r *http.Request) {
+		switch turn {
+		case 1:
+			writeContractResponse(w, body, contractTextResponse("ack", false))
+		case 2:
+			writeContractResponse(w, body, contractTextResponse("no search", true))
+		default:
+			if !isFunctionCallingProbeRequest(body) {
+				t.Errorf("turn %d must be the function-calling probe", turn)
+			}
+			nonce := extractVerificationNonceFromBody(body)
+			writeContractResponse(w, body, contractEchoCallResponse(nonce))
+		}
+	}}
+	srv := fake.start(t)
+	v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+		return nil
+	})}
+	caps, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if caps.ToolCalling != modelconfig.ToolCallingFunctionCalling {
+		t.Fatalf("got toolCalling=%q want function_calling", caps.ToolCalling)
+	}
+	if countFunctionCallingProbeBodies(fake.snapshotBodies()) != 1 {
+		t.Fatalf("function-calling probe requests=%d want 1", countFunctionCallingProbeBodies(fake.snapshotBodies()))
+	}
+}
+
+func TestAgenticVerifierPhase2InfraDoesNotEnterPhase3(t *testing.T) {
+	fake := &contractFakeResponsesServer{handler: func(turn int, body map[string]any, w http.ResponseWriter, r *http.Request) {
+		switch turn {
+		case 1:
+			writeContractResponse(w, body, contractTextResponse("ack", false))
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":"upstream"}`))
+		}
+	}}
+	srv := fake.start(t)
+	v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+		return nil
+	})}
+	_, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
+	if !errors.Is(err, modelconfig.ErrVerificationUpstream) {
+		t.Fatalf("want upstream ERROR, got %v", err)
+	}
+	if countFunctionCallingProbeBodies(fake.snapshotBodies()) != 0 {
+		t.Fatal("Phase 2 infra must not enter Phase 3")
+	}
+}
+
+func TestAgenticVerifierPhase3HTTP400IsNone(t *testing.T) {
+	fake := &contractFakeResponsesServer{handler: func(turn int, body map[string]any, w http.ResponseWriter, r *http.Request) {
+		switch turn {
+		case 1:
+			writeContractResponse(w, body, contractTextResponse("ack", false))
+		case 2:
+			writeContractResponse(w, body, contractTextResponse("no search", true))
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"tools not supported"}`))
+		}
+	}}
+	srv := fake.start(t)
+	v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+		return nil
+	})}
+	caps, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
+	if err != nil {
+		t.Fatalf("400 on FC probe is capability none, got %v", err)
+	}
+	if caps.ToolCalling != modelconfig.ToolCallingNone {
+		t.Fatalf("got toolCalling=%q want none", caps.ToolCalling)
+	}
+}
+
+func TestAgenticVerifierPhase3AuthStaysError(t *testing.T) {
+	fake := &contractFakeResponsesServer{handler: func(turn int, body map[string]any, w http.ResponseWriter, r *http.Request) {
+		switch turn {
+		case 1:
+			writeContractResponse(w, body, contractTextResponse("ack", false))
+		case 2:
+			writeContractResponse(w, body, contractTextResponse("no search", true))
+		default:
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"nope"}`))
+		}
+	}}
+	srv := fake.start(t)
+	v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+		return nil
+	})}
+	_, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
+	if !errors.Is(err, modelconfig.ErrUpstreamAuthentication) {
+		t.Fatalf("want AUTH, got %v", err)
+	}
+}
+
+func TestAgenticVerifierHasNoModelNameCapabilityBranch(t *testing.T) {
+	raw, err := os.ReadFile("model_agentic_verifier.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	for _, needle := range []string{"config.ModelName", ".ModelName"} {
+		if strings.Contains(text, needle) {
+			t.Fatalf("verifier must not branch on ModelName (%q)", needle)
+		}
+	}
+}
+
+func TestMapAgenticFunctionCallingProbeError(t *testing.T) {
+	t.Parallel()
+	if got := mapAgenticFunctionCallingProbeError(modelconfig.ErrAgenticUsageInvalid); !errors.Is(got, modelconfig.ErrAgenticUsageInvalid) {
+		t.Fatalf("usage: %v", got)
+	}
+	if got := mapAgenticFunctionCallingProbeError(modelconfig.ErrAgenticStreamInvalid); !errors.Is(got, modelconfig.ErrAgenticStreamInvalid) {
+		t.Fatalf("stream: %v", got)
+	}
+	if got := mapAgenticFunctionCallingProbeError(fmt.Errorf("%w: HTTP_STATUS_500", modelconfig.ErrVerificationUpstream)); !errors.Is(got, modelconfig.ErrVerificationUpstream) {
+		t.Fatalf("500: %v", got)
+	}
+	if got := mapAgenticFunctionCallingProbeError(fmt.Errorf("%w: HTTP_STATUS_400", modelconfig.ErrVerificationUpstream)); got != nil {
+		t.Fatalf("400 must be capability none, got %v", got)
+	}
+	if got := mapAgenticFunctionCallingProbeError(fmt.Errorf("%w: HTTP_STATUS_422", modelconfig.ErrVerificationUpstream)); got != nil {
+		t.Fatalf("422 must be capability none, got %v", got)
+	}
+	if got := mapAgenticFunctionCallingProbeError(errors.New("model refused tools")); got != nil {
+		t.Fatalf("unrecognized capability reject must be none, got %v", got)
+	}
+}
 
 func TestVerificationServiceCASWithAgenticVerifier(t *testing.T) {
 	// Integration-style: repository CAS after concurrent edit during probe.

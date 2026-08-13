@@ -45,6 +45,9 @@ func TestVerifyModelConfigCallsUpstreamWithoutDatabaseTransaction(t *testing.T) 
 	if !doc.Streaming || !doc.Usage || len(doc.ToolSearchModes) != 1 || doc.ToolSearchModes[0] != AgenticToolSearchModeClient {
 		t.Fatalf("unexpected capability flags: %+v", doc)
 	}
+	if !IsUnsetToolDisclosurePolicy(verified.ToolDisclosurePolicy) {
+		t.Fatalf("native verify must persist empty policy, got %s", verified.ToolDisclosurePolicy)
+	}
 	// Evidence relationship: capability VerifiedAt equals LastVerifiedAt at UTC second.
 	if verified.LastVerifiedAt == nil ||
 		!doc.VerifiedAt.UTC().Truncate(time.Second).Equal(verified.LastVerifiedAt.UTC().Truncate(time.Second)) {
@@ -63,16 +66,17 @@ func TestVerifyModelConfigCallsUpstreamWithoutDatabaseTransaction(t *testing.T) 
 // TestVerifyAppliesConfiguredOuterBudgetToUpstreamContext proves the timeout
 // passed to NewVerificationService is the deadline the verifier actually sees on
 // its context (R11-1). Before the fix application.Open hardcoded 20s here, which
-// silently capped the 30s Responses-stream and 45s client tool_search probe
-// budgets nested inside it; with the configured 90s default those inner budgets
-// are reachable, and a small configured budget is still honoured exactly.
+// silently capped the 30s Responses-stream, 45s client tool_search, and 30s
+// function-calling probe budgets nested inside it; with the configured 120s
+// default those inner budgets are reachable, and a small configured budget is
+// still honoured exactly.
 func TestVerifyAppliesConfiguredOuterBudgetToUpstreamContext(t *testing.T) {
 	repository, _ := newModelConfigRepositoryTest(t, nil)
 	created := createRepositoryConfig(t, repository, repositoryConfigID, "Outer Budget Model")
 	for _, budget := range []time.Duration{
 		750 * time.Millisecond,
-		75 * time.Second,  // sum of the inner probe budgets
-		90 * time.Second,  // config.DefaultModelVerificationTimeoutSeconds
+		75 * time.Second,  // smaller configured budget still honoured
+		120 * time.Second, // config.DefaultModelVerificationTimeoutSeconds
 		600 * time.Second, // config.MaxModelVerificationTimeoutSeconds
 	} {
 		t.Run(budget.String(), func(t *testing.T) {
@@ -218,6 +222,143 @@ func TestVerifyModelConfigPersistsStableRedactedErrors(t *testing.T) {
 				t.Fatalf("unsafe stored capabilities %s", storedCaps)
 			}
 		})
+	}
+}
+
+func TestVerifyPersistsTieredCapabilitiesAndPolicy(t *testing.T) {
+	repository, _ := newModelConfigRepositoryTest(t, nil)
+	cases := []struct {
+		name        string
+		probe       AgenticCapabilities
+		wantVersion string
+		wantCalling string
+		wantPolicy  string
+	}{
+		{
+			name:        "native",
+			probe:       AgenticCapabilities{ToolCalling: ToolCallingNativeClientSearch},
+			wantVersion: AgenticCapabilitiesSchemaV1,
+			wantCalling: ToolCallingNativeClientSearch,
+			wantPolicy:  "",
+		},
+		{
+			name:        "function_calling",
+			probe:       AgenticCapabilities{ToolCalling: ToolCallingFunctionCalling},
+			wantVersion: AgenticCapabilitiesSchemaV2,
+			wantCalling: ToolCallingFunctionCalling,
+			wantPolicy:  DisclosureModePlatformOnDemand,
+		},
+		{
+			name:        "none",
+			probe:       AgenticCapabilities{ToolCalling: ToolCallingNone},
+			wantVersion: AgenticCapabilitiesSchemaV2,
+			wantCalling: ToolCallingNone,
+			wantPolicy:  "",
+		},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			id := fmt.Sprintf("018f1f2e-7b5a-7c3d-8e9f-e23456789%03d", i+40)
+			created := createRepositoryConfig(t, repository, id, "Tier "+tc.name)
+			service, err := NewVerificationService(repository, VerifierFunc(func(context.Context, Config) (AgenticCapabilities, error) {
+				return tc.probe, nil
+			}), time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			verified, err := service.Verify(context.Background(), created.WorkspaceID, created.ID, repositoryOwnerID)
+			if err != nil {
+				t.Fatalf("verify: %v", err)
+			}
+			if verified.Status != StatusVerified || verified.LastErrorCode != nil {
+				t.Fatalf("verified row: %+v", verified)
+			}
+			doc, _, err := ParseAgenticCapabilities(verified.AgenticCapabilities)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if doc.SchemaVersion != tc.wantVersion || doc.ToolCalling != tc.wantCalling {
+				t.Fatalf("caps version=%s calling=%s want %s/%s", doc.SchemaVersion, doc.ToolCalling, tc.wantVersion, tc.wantCalling)
+			}
+			if tc.wantVersion == AgenticCapabilitiesSchemaV1 && strings.Contains(string(verified.AgenticCapabilities), "toolCalling") {
+				t.Fatalf("native persist must stay v1 bytes: %s", verified.AgenticCapabilities)
+			}
+			if tc.wantVersion == AgenticCapabilitiesSchemaV2 && strings.Contains(string(verified.AgenticCapabilities), "toolSearchModes") {
+				t.Fatalf("v2 persist must omit toolSearchModes: %s", verified.AgenticCapabilities)
+			}
+			policy, _, err := ParseToolDisclosurePolicy(verified.ToolDisclosurePolicy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if policy.Mode != tc.wantPolicy {
+				t.Fatalf("policy mode=%q want %q raw=%s", policy.Mode, tc.wantPolicy, verified.ToolDisclosurePolicy)
+			}
+		})
+	}
+}
+
+func TestVerifyFunctionCallingKeepsLegalCarryAllPolicy(t *testing.T) {
+	repository, _ := newModelConfigRepositoryTest(t, nil)
+	created := createRepositoryConfig(t, repository, repositoryConfigID, "Keep Carry All")
+	service, err := NewVerificationService(repository, VerifierFunc(func(context.Context, Config) (AgenticCapabilities, error) {
+		return AgenticCapabilities{ToolCalling: ToolCallingFunctionCalling}, nil
+	}), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := service.Verify(context.Background(), created.WorkspaceID, created.ID, repositoryOwnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	carry, err := CanonicalToolDisclosurePolicy(DisclosureModeCarryAll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := repository.UpdateDisclosurePolicy(context.Background(), DisclosurePolicyUpdate{
+		WorkspaceID: first.WorkspaceID, ConfigID: first.ID, Policy: carry,
+		UpdatedBy: repositoryOwnerID, ExpectedLockVersion: first.LockVersion,
+	})
+	if err != nil {
+		t.Fatalf("set carry_all: %v", err)
+	}
+	again, err := service.Verify(context.Background(), updated.WorkspaceID, updated.ID, repositoryOwnerID)
+	if err != nil {
+		t.Fatalf("re-verify: %v", err)
+	}
+	if again.Status != StatusVerified || again.LastErrorCode != nil {
+		t.Fatalf("re-verify must stay VERIFIED with nil error: %+v", again)
+	}
+	if again.LockVersion != updated.LockVersion+1 {
+		t.Fatalf("re-verify must bump lock once, got %d want %d", again.LockVersion, updated.LockVersion+1)
+	}
+	policy, _, err := ParseToolDisclosurePolicy(again.ToolDisclosurePolicy)
+	if err != nil || policy.Mode != DisclosureModeCarryAll {
+		t.Fatalf("legal carry_all must be kept, got %+v err=%v raw=%s", policy, err, again.ToolDisclosurePolicy)
+	}
+	doc, _, err := ParseAgenticCapabilities(again.AgenticCapabilities)
+	if err != nil || doc.ToolCalling != ToolCallingFunctionCalling {
+		t.Fatalf("caps: %+v err=%v", doc, err)
+	}
+}
+
+func TestVerifyNoneDoesNotLeaveToolSearchUnsupported(t *testing.T) {
+	repository, _ := newModelConfigRepositoryTest(t, nil)
+	created := createRepositoryConfig(t, repository, repositoryConfigID, "None No Stale Code")
+	service, err := NewVerificationService(repository, VerifierFunc(func(context.Context, Config) (AgenticCapabilities, error) {
+		return AgenticCapabilities{ToolCalling: ToolCallingNone}, nil
+	}), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verified, err := service.Verify(context.Background(), created.WorkspaceID, created.ID, repositoryOwnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verified.LastErrorCode != nil {
+		t.Fatalf("none VERIFIED must have nil last_error_code, got %v", *verified.LastErrorCode)
+	}
+	if !IsUnsetToolDisclosurePolicy(verified.ToolDisclosurePolicy) {
+		t.Fatalf("none policy must be empty, got %s", verified.ToolDisclosurePolicy)
 	}
 }
 

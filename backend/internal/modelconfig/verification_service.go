@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"time"
 )
@@ -87,6 +88,7 @@ func (s *VerificationService) Verify(ctx context.Context, workspaceID, configID,
 	status := StatusVerified
 	var errorCode *string
 	var capsRaw json.RawMessage
+	policyRaw := json.RawMessage(`{}`)
 	// Shared evidence timestamp for capability.VerifiedAt and last_verified_at
 	// (UTC second). Written only on VERIFIED success.
 	var evidenceAt time.Time
@@ -98,46 +100,89 @@ func (s *VerificationService) Verify(ctx context.Context, workspaceID, configID,
 	} else {
 		// Stamp lock/config identity so runtime can detect staleness after CAS.
 		evidenceAt = s.now().UTC().Truncate(time.Second)
-		canonical, stampErr := CanonicalAgenticCapabilities(
-			evidenceAt,
-			config.LockVersion,
-			WireConfigDigest(config),
-		)
+		canonical, policy, stampErr := stampVerificationDocuments(probeCaps, config, evidenceAt)
 		if stampErr != nil {
 			// Fail closed: treat stamp failure as upstream classification error.
 			status = StatusError
 			code := ErrorCodeUpstream
 			errorCode = &code
 			capsRaw = json.RawMessage(`{}`)
+			policyRaw = json.RawMessage(`{}`)
 			evidenceAt = time.Time{}
 		} else {
-			// Prefer probe-reported fields only when they already match the
-			// canonical constants; CanonicalAgenticCapabilities is the source of truth.
-			_ = probeCaps
 			normalized, normErr := NormalizeAgenticCapabilitiesRaw(mustMarshalAgentic(canonical))
 			if normErr != nil {
 				status = StatusError
 				code := ErrorCodeUpstream
 				errorCode = &code
 				capsRaw = json.RawMessage(`{}`)
+				policyRaw = json.RawMessage(`{}`)
 				evidenceAt = time.Time{}
 			} else {
 				capsRaw = normalized
+				policyRaw = policy
 			}
 		}
 	}
 
 	return s.repository.RecordVerification(ctx, VerificationUpdate{
-		WorkspaceID:         workspaceID,
-		ConfigID:            configID,
-		Status:              status,
-		LatencyMS:           latencyMS,
-		ErrorCode:           errorCode,
-		AgenticCapabilities: capsRaw,
-		VerifiedAt:          evidenceAt,
-		VerifiedBy:          verifiedBy,
-		ExpectedLockVersion: config.LockVersion,
+		WorkspaceID:          workspaceID,
+		ConfigID:             configID,
+		Status:               status,
+		LatencyMS:            latencyMS,
+		ErrorCode:            errorCode,
+		AgenticCapabilities:  capsRaw,
+		ToolDisclosurePolicy: policyRaw,
+		VerifiedAt:           evidenceAt,
+		VerifiedBy:           verifiedBy,
+		ExpectedLockVersion:  config.LockVersion,
 	})
+}
+
+// stampVerificationDocuments builds the persisted capability document and the
+// disclosure policy for one successful probe. Native stays v1; function_calling
+// / none write v2. Policy is chosen in the same CAS as the capability write.
+func stampVerificationDocuments(
+	probeCaps AgenticCapabilities,
+	config Config,
+	evidenceAt time.Time,
+) (AgenticCapabilities, json.RawMessage, error) {
+	toolCalling := probeCaps.ToolCalling
+	if toolCalling == "" {
+		toolCalling = ToolCallingNativeClientSearch
+	}
+	digest := WireConfigDigest(config)
+	switch toolCalling {
+	case ToolCallingNativeClientSearch:
+		canonical, err := CanonicalAgenticCapabilities(evidenceAt, config.LockVersion, digest)
+		if err != nil {
+			return AgenticCapabilities{}, nil, err
+		}
+		return canonical, json.RawMessage(`{}`), nil
+	case ToolCallingFunctionCalling, ToolCallingNone:
+		canonical, err := CanonicalAgenticCapabilitiesV2(toolCalling, evidenceAt, config.LockVersion, digest)
+		if err != nil {
+			return AgenticCapabilities{}, nil, err
+		}
+		return canonical, disclosurePolicyAfterVerification(toolCalling, config.ToolDisclosurePolicy), nil
+	default:
+		return AgenticCapabilities{}, nil, fmt.Errorf("%w: unsupported toolCalling", ErrInvalid)
+	}
+}
+
+func disclosurePolicyAfterVerification(toolCalling string, existing json.RawMessage) json.RawMessage {
+	if toolCalling != ToolCallingFunctionCalling {
+		return json.RawMessage(`{}`)
+	}
+	doc, normalized, err := ParseToolDisclosurePolicy(existing)
+	if err == nil && (doc.Mode == DisclosureModePlatformOnDemand || doc.Mode == DisclosureModeCarryAll) {
+		return normalized
+	}
+	raw, err := CanonicalToolDisclosurePolicy(DisclosureModePlatformOnDemand)
+	if err != nil {
+		return json.RawMessage(`{}`)
+	}
+	return raw
 }
 
 func mustMarshalAgentic(doc AgenticCapabilities) json.RawMessage {

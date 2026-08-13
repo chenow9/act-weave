@@ -3,15 +3,18 @@ package chatruntimebridge
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"actweave/backend/internal/agentdelegation"
 	"actweave/backend/internal/contextwindow"
 	"actweave/backend/internal/einoruntime"
 	"actweave/backend/internal/execution"
 	"actweave/backend/internal/modelconfig"
 
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 )
@@ -146,6 +149,163 @@ func TestRequireVerifiedAgenticSnapshot_RejectsEmptyAndStale(t *testing.T) {
 	}
 	if err := requireVerifiedAgenticSnapshot(okSnap, parsed); err != nil {
 		t.Fatalf("valid snapshot: %v", err)
+	}
+}
+
+func TestRequireVerifiedAgenticSnapshot_AcceptsV2Tiers(t *testing.T) {
+	at := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	base := modelconfig.Config{
+		ID:       "c08f1f2e-7b5a-7c3d-8e9f-1234567890a1",
+		Provider: "openai", APIBase: "https://api.example.com/v1", ModelName: "m",
+		Options: json.RawMessage(`{}`), RuntimeCapabilities: json.RawMessage(`{}`),
+		LockVersion: 2, Status: modelconfig.StatusVerified,
+	}
+	digest := modelconfig.WireConfigDigest(base)
+	buildSnap := func(cfg modelconfig.Config, caps json.RawMessage) json.RawMessage {
+		raw, err := json.Marshal(map[string]any{
+			"id": cfg.ID, "provider": cfg.Provider, "apiBase": cfg.APIBase,
+			"modelName": cfg.ModelName, "options": cfg.Options, "lockVersion": cfg.LockVersion,
+			"agenticCapabilities": caps, "runtimeCapabilities": json.RawMessage(`{}`),
+			"status": cfg.Status,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	mustAccept := func(name string, raw json.RawMessage) {
+		t.Helper()
+		cfg := base
+		cfg.AgenticCapabilities = raw
+		if err := requireVerifiedAgenticSnapshot(buildSnap(cfg, raw), cfg); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !frozenCapsAreNative(cfg) && name == "v1" {
+			t.Fatal("v1 must be native")
+		}
+	}
+
+	v1, err := modelconfig.CanonicalAgenticCapabilities(at, 1, digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v1Raw, _ := json.Marshal(v1)
+	mustAccept("v1", v1Raw)
+	if !frozenCapsAreNative(modelconfig.Config{AgenticCapabilities: v1Raw}) {
+		t.Fatal("v1 must be native")
+	}
+
+	v2Native := modelconfig.AgenticCapabilities{
+		SchemaVersion: modelconfig.AgenticCapabilitiesSchemaV2,
+		Protocol:      modelconfig.AgenticProtocolOpenAIResponsesV1,
+		Streaming:     true, Usage: true,
+		ToolCalling:     modelconfig.ToolCallingNativeClientSearch,
+		ToolSearchModes: []string{modelconfig.AgenticToolSearchModeClient},
+		ReasoningReplay: modelconfig.AgenticReasoningReplayEncryptedOrNone,
+		VerifiedAdapter: modelconfig.VerifiedAdapterAgenticOpenAIV022,
+		VerifiedAt:      at, VerifiedLockVersion: 1, VerifiedConfigDigest: digest,
+	}
+	v2NativeRaw, _ := json.Marshal(v2Native)
+	mustAccept("v2 native", v2NativeRaw)
+	if !frozenCapsAreNative(modelconfig.Config{AgenticCapabilities: v2NativeRaw}) {
+		t.Fatal("v2 native must be native")
+	}
+
+	for _, calling := range []string{modelconfig.ToolCallingFunctionCalling, modelconfig.ToolCallingNone} {
+		doc, err := modelconfig.CanonicalAgenticCapabilitiesV2(calling, at, 1, digest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(doc)
+		mustAccept("v2 "+calling, raw)
+		if frozenCapsAreNative(modelconfig.Config{AgenticCapabilities: raw}) {
+			t.Fatalf("%s must not be native", calling)
+		}
+	}
+}
+
+func TestErrToolBearingNonNativeCodes(t *testing.T) {
+	at := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	digest := strings.Repeat("ab", 32)
+	fc, err := modelconfig.CanonicalAgenticCapabilitiesV2(modelconfig.ToolCallingFunctionCalling, at, 1, digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fcRaw, _ := json.Marshal(fc)
+	if err := errToolBearingNonNative(modelconfig.Config{AgenticCapabilities: fcRaw}); !errors.Is(err, modelconfig.ErrToolDisclosureRuntimePending) {
+		t.Fatalf("FC: %v", err)
+	}
+	none, err := modelconfig.CanonicalAgenticCapabilitiesV2(modelconfig.ToolCallingNone, at, 1, digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noneRaw, _ := json.Marshal(none)
+	if err := errToolBearingNonNative(modelconfig.Config{AgenticCapabilities: noneRaw}); !errors.Is(err, modelconfig.ErrAgentModelToolsUnsupported) {
+		t.Fatalf("none: %v", err)
+	}
+}
+
+type stubAgenticModel struct{}
+
+func (stubAgenticModel) Generate(context.Context, []*schema.AgenticMessage, ...model.Option) (*schema.AgenticMessage, error) {
+	return nil, errors.New("unused")
+}
+func (stubAgenticModel) Stream(context.Context, []*schema.AgenticMessage, ...model.Option) (*schema.StreamReader[*schema.AgenticMessage], error) {
+	return nil, errors.New("unused")
+}
+
+var _ model.AgenticModel = stubAgenticModel{}
+
+func TestBuildAgenticChildAgent_FailClosedAndToolless(t *testing.T) {
+	at := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	base := modelconfig.Config{
+		ID: "c08f1f2e-7b5a-7c3d-8e9f-1234567890a1", LockVersion: 2,
+	}
+	digest := modelconfig.WireConfigDigest(base)
+	emptyCaps := json.RawMessage(`{"schemaVersion":"capability-snapshot.v1","releases":[]}`)
+	toolCaps := json.RawMessage(`{
+		"schemaVersion":"capability-snapshot.v1",
+		"releases":[{
+			"capabilityId":"a77ce000-0000-4000-8000-000000000007","releaseId":"b88ce000-0000-4000-8000-000000000008","kind":"TOOL",
+			"callableName":"alpha","callableDescription":"tool a",
+			"inputSchema":{"type":"object"},"outputSchema":{},
+			"riskLevel":"LOW","sideEffectLevel":"NONE","requiresConfirmation":false
+		}]
+	}`)
+	b := &Bridge{maxTools: einoruntime.DefaultMaxToolInvocations}
+	ctx := context.Background()
+
+	mustV2 := func(calling string) modelconfig.Config {
+		doc, err := modelconfig.CanonicalAgenticCapabilitiesV2(calling, at, 1, digest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(doc)
+		cfg := base
+		cfg.AgenticCapabilities = raw
+		return cfg
+	}
+
+	toolless := agentdelegation.AgenticAgentParts{
+		AgentID: "child", Name: "child", Description: "d", Instruction: "be brief",
+		Model: stubAgenticModel{}, Tools: nil, CapabilitySnapshot: emptyCaps,
+	}
+	if _, err := b.buildAgenticChildAgent(ctx, toolless, mustV2(modelconfig.ToolCallingFunctionCalling), nil); err != nil {
+		t.Fatalf("tool-less FC child: %v", err)
+	}
+	if _, err := b.buildAgenticChildAgent(ctx, toolless, mustV2(modelconfig.ToolCallingNone), nil); err != nil {
+		t.Fatalf("tool-less none child: %v", err)
+	}
+
+	tools := []tool.BaseTool{&stubTool{name: "alpha", desc: "tool a"}}
+	bearing := toolless
+	bearing.Tools = tools
+	bearing.CapabilitySnapshot = toolCaps
+	if _, err := b.buildAgenticChildAgent(ctx, bearing, mustV2(modelconfig.ToolCallingFunctionCalling), tools); !errors.Is(err, modelconfig.ErrToolDisclosureRuntimePending) {
+		t.Fatalf("tool-bearing FC child: %v", err)
+	}
+	if _, err := b.buildAgenticChildAgent(ctx, bearing, mustV2(modelconfig.ToolCallingNone), tools); !errors.Is(err, modelconfig.ErrAgentModelToolsUnsupported) {
+		t.Fatalf("tool-bearing none child: %v", err)
 	}
 }
 

@@ -268,6 +268,10 @@ func (r *Repository) RecordVerification(ctx context.Context, input VerificationU
 	if err != nil {
 		return Config{}, ErrInvalid
 	}
+	policy, err := NormalizeToolDisclosurePolicyRaw(input.ToolDisclosurePolicy)
+	if err != nil {
+		return Config{}, ErrInvalid
+	}
 	if !validUUID(input.WorkspaceID) || !validUUID(input.ConfigID) ||
 		!validUUID(input.VerifiedBy) || input.ExpectedLockVersion < 1 || input.LatencyMS < 0 ||
 		(input.Status != StatusVerified && input.Status != StatusError) ||
@@ -281,6 +285,9 @@ func (r *Repository) RecordVerification(ctx context.Context, input VerificationU
 	if input.Status == StatusVerified {
 		doc, _, parseErr := ParseAgenticCapabilities(caps)
 		if parseErr != nil || doc.VerifiedLockVersion != input.ExpectedLockVersion {
+			return Config{}, ErrInvalid
+		}
+		if err := validateVerificationPolicy(doc, policy); err != nil {
 			return Config{}, ErrInvalid
 		}
 		if input.VerifiedAt.IsZero() {
@@ -299,6 +306,9 @@ func (r *Repository) RecordVerification(ctx context.Context, input VerificationU
 	} else {
 		// ERROR path: canonical verification-attempt timestamp (UTC second).
 		// Prefer caller VerifiedAt when set; otherwise clock. Always non-nil.
+		if !IsUnsetToolDisclosurePolicy(policy) {
+			return Config{}, ErrInvalid
+		}
 		if !input.VerifiedAt.IsZero() {
 			lastVerifiedAt = input.VerifiedAt.UTC().Truncate(time.Second)
 		} else {
@@ -313,6 +323,7 @@ func (r *Repository) RecordVerification(ctx context.Context, input VerificationU
 				last_latency_ms = $4,
 				last_error_code = $5,
 				agentic_capabilities = $6::jsonb,
+				tool_disclosure_policy = $10::jsonb,
 				updated_by = $7,
 				updated_at = clock_timestamp(),
 				lock_version = lock_version + 1
@@ -326,7 +337,7 @@ func (r *Repository) RecordVerification(ctx context.Context, input VerificationU
 		  ON s.workspace_id = m.workspace_id
 		 AND s.id = m.credential_secret_id
 	`, input.WorkspaceID, input.ConfigID, input.Status, input.LatencyMS,
-		input.ErrorCode, []byte(caps), input.VerifiedBy, input.ExpectedLockVersion, lastVerifiedAt))
+		input.ErrorCode, []byte(caps), input.VerifiedBy, input.ExpectedLockVersion, lastVerifiedAt, []byte(policy)))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Config{}, r.classifyMissingOrConflict(ctx, input.WorkspaceID, input.ConfigID)
 	}
@@ -334,6 +345,25 @@ func (r *Repository) RecordVerification(ctx context.Context, input VerificationU
 		return Config{}, mapWriteError("record model config verification", err)
 	}
 	return config, nil
+}
+
+func validateVerificationPolicy(doc AgenticCapabilities, policy json.RawMessage) error {
+	parsed, _, err := ParseToolDisclosurePolicy(policy)
+	if err != nil {
+		return err
+	}
+	switch doc.ToolCalling {
+	case ToolCallingFunctionCalling:
+		if parsed.Mode != DisclosureModePlatformOnDemand && parsed.Mode != DisclosureModeCarryAll {
+			return ErrInvalid
+		}
+		return nil
+	default:
+		if !IsUnsetToolDisclosurePolicy(policy) {
+			return ErrInvalid
+		}
+		return nil
+	}
 }
 
 func (r *Repository) UpdateDisclosurePolicy(ctx context.Context, input DisclosurePolicyUpdate) (Config, error) {

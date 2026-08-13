@@ -20,11 +20,12 @@ import (
 // neither inner deadline could ever fire and every slow upstream was reported as
 // MODEL_CONFIG_VERIFICATION_TIMEOUT by the outer context instead.
 //
-// The two probes run sequentially inside one Verify call
-// (probeAgenticCapabilities: probe A then probe B), so the outer budget must be
-// at least their sum. The inner budgets are Task 3 contract and must stay as
-// they are — this test pins them so the relation can never be "fixed" by
-// shrinking a probe budget instead of raising the outer one.
+// The three probes run sequentially inside one Verify call
+// (probeAgenticCapabilities: stream, tool-search, then function-calling on a
+// capability miss), so the outer budget must be at least their sum. The inner
+// budgets are the probe contract and must stay as they are — this test pins
+// them so the relation can never be "fixed" by shrinking a probe budget
+// instead of raising the outer one.
 func TestModelVerificationOuterBudgetCoversInnerProbeBudgets(t *testing.T) {
 	if agenticProbeResponsesStreamBudget != 30*time.Second {
 		t.Fatalf("inner Responses-stream probe budget must stay 30s, got %v",
@@ -34,21 +35,25 @@ func TestModelVerificationOuterBudgetCoversInnerProbeBudgets(t *testing.T) {
 		t.Fatalf("inner client tool_search probe budget must stay 45s, got %v",
 			agenticProbeClientToolSearchBudget)
 	}
+	if agenticProbeFunctionCallingBudget != 30*time.Second {
+		t.Fatalf("inner function-calling probe budget must stay 30s, got %v",
+			agenticProbeFunctionCallingBudget)
+	}
 
-	innerTotal := agenticProbeResponsesStreamBudget + agenticProbeClientToolSearchBudget
+	innerTotal := agenticProbeResponsesStreamBudget + agenticProbeClientToolSearchBudget + agenticProbeFunctionCallingBudget
 	defaultOuter := modelVerificationTimeout(config.RuntimeConfig{})
 	if defaultOuter < innerTotal {
 		t.Fatalf("default outer verification budget %v cannot contain sequential inner budgets %v",
 			defaultOuter, innerTotal)
 	}
 	// The default also has to leave room for the GET /models auth probe that runs
-	// before both agentic probes and has no deadline of its own.
+	// before the agentic probes and has no deadline of its own (30+45+30+15).
 	if defaultOuter <= innerTotal {
 		t.Fatalf("default outer budget %v leaves nothing for the auth/connectivity probe (inner total %v)",
 			defaultOuter, innerTotal)
 	}
-	if defaultOuter != 90*time.Second {
-		t.Fatalf("default outer verification budget: got %v want 90s", defaultOuter)
+	if defaultOuter != 120*time.Second {
+		t.Fatalf("default outer verification budget: got %v want 120s", defaultOuter)
 	}
 }
 
@@ -130,7 +135,7 @@ func TestVerifierAuthProbeClassifiesStatusBeforeBody(t *testing.T) {
 }
 
 // TestModelVerificationTimeoutWiring locks how Open resolves the outer budget:
-// omitted config defaults to 90s, an explicit value is used verbatim, and a
+// omitted config defaults to 120s, an explicit value is used verbatim, and a
 // hostile value is not repaired here but rejected by the consuming boundary.
 func TestModelVerificationTimeoutWiring(t *testing.T) {
 	for _, test := range []struct {
@@ -138,7 +143,7 @@ func TestModelVerificationTimeoutWiring(t *testing.T) {
 		seconds int
 		want    time.Duration
 	}{
-		{name: "omitted defaults to 90s", seconds: 0, want: 90 * time.Second},
+		{name: "omitted defaults to 120s", seconds: 0, want: 120 * time.Second},
 		{name: "explicit smaller value honoured", seconds: 1, want: time.Second},
 		{name: "explicit larger value honoured", seconds: 120, want: 120 * time.Second},
 		{name: "maximum honoured", seconds: config.MaxModelVerificationTimeoutSeconds, want: 600 * time.Second},
@@ -181,7 +186,7 @@ func TestModelVerificationTimeoutWiring(t *testing.T) {
 }
 
 // TestVerifierProbeClientCannotCutBelowTheBudgets closes the second half of the
-// R11-1 defect. Raising the outer budget to 90s did not make the inner budgets
+// R11-1 defect. Raising the outer budget to 120s did not make the inner budgets
 // reachable, because Open injects the shared 15s application HTTP client into
 // the verifier: http.Client.Timeout applies per request and is not extended by
 // the surrounding context, so every probe died at 15s and the configured budget

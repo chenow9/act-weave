@@ -97,6 +97,10 @@ type VerificationUpdate struct {
 	// AgenticCapabilities is required: non-empty canonical document on VERIFIED,
 	// or empty object on ERROR. Never raw provider bodies.
 	AgenticCapabilities json.RawMessage
+	// ToolDisclosurePolicy is written in the same CAS as capabilities.
+	// Native / none / ERROR persist "{}"; function_calling persists a
+	// canonical tool-disclosure.v1 document.
+	ToolDisclosurePolicy json.RawMessage
 	// VerifiedAt is the UTC-second evidence timestamp written to both
 	// last_verified_at and capability verifiedAt on VERIFIED. Required for
 	// VERIFIED so read invariants can enforce equal UTC-second relationship.

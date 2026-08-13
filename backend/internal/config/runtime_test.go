@@ -444,18 +444,19 @@ func testRuntimeMaxToolInvocationsContract(t *testing.T) {
 }
 
 // testRuntimeModelVerificationTimeoutContract locks R11-1's outer verification
-// budget contract on the value itself: 0 → default 90s; 1..600 preserved;
+// budget contract on the value itself: 0 → default 120s; 1..600 preserved;
 // negative and >600 are neither defaulted nor clamped, they fail closed.
 func testRuntimeModelVerificationTimeoutContract(t *testing.T) {
-	if DefaultModelVerificationTimeoutSeconds != 90 {
-		t.Fatalf("default outer verification budget must stay 90s, got %d",
+	if DefaultModelVerificationTimeoutSeconds != 120 {
+		t.Fatalf("default outer verification budget must stay 120s, got %d",
 			DefaultModelVerificationTimeoutSeconds)
 	}
-	// The default must be able to contain the inner Task 3 probe budgets
-	// (Responses stream 30s + client tool_search 45s). The application package
-	// pins this against the real probe constants; this is the config-side floor.
-	if DefaultModelVerificationTimeoutSeconds < 75 {
-		t.Fatalf("default %ds cannot contain the 30s+45s inner probe budgets",
+	// The default must be able to contain the inner probe budgets
+	// (Responses stream 30s + client tool_search 45s + function calling 30s).
+	// The application package pins this against the real probe constants; this
+	// is the config-side floor.
+	if DefaultModelVerificationTimeoutSeconds < 105 {
+		t.Fatalf("default %ds cannot contain the 30s+45s+30s inner probe budgets",
 			DefaultModelVerificationTimeoutSeconds)
 	}
 
@@ -463,7 +464,7 @@ func testRuntimeModelVerificationTimeoutContract(t *testing.T) {
 	if n := (ModelVerificationTuning{}).Normalized(); n.TimeoutSeconds != DefaultModelVerificationTimeoutSeconds {
 		t.Fatalf("0 normalize: got %d want %d", n.TimeoutSeconds, DefaultModelVerificationTimeoutSeconds)
 	}
-	for _, preserved := range []int{1, 75, 90, MaxModelVerificationTimeoutSeconds} {
+	for _, preserved := range []int{1, 75, 90, 120, MaxModelVerificationTimeoutSeconds} {
 		if n := (ModelVerificationTuning{TimeoutSeconds: preserved}).Normalized(); n.TimeoutSeconds != preserved {
 			t.Fatalf("%d normalize: got %d", preserved, n.TimeoutSeconds)
 		}
@@ -475,8 +476,8 @@ func testRuntimeModelVerificationTimeoutContract(t *testing.T) {
 	}
 
 	// Timeout(): seconds → duration, no hidden default, no hidden clamp.
-	if got := (ModelVerificationTuning{}).Normalized().Timeout(); got != 90*time.Second {
-		t.Fatalf("normalized zero Timeout(): got %v want 90s", got)
+	if got := (ModelVerificationTuning{}).Normalized().Timeout(); got != 120*time.Second {
+		t.Fatalf("normalized zero Timeout(): got %v want 120s", got)
 	}
 	if got := (ModelVerificationTuning{TimeoutSeconds: 120}).Timeout(); got != 120*time.Second {
 		t.Fatalf("Timeout(120): got %v", got)
@@ -492,7 +493,7 @@ func testRuntimeModelVerificationTimeoutContract(t *testing.T) {
 	}
 
 	// Validate(): 0 (default applied later) and 1..600 pass; the rest fail.
-	for _, ok := range []int{0, 1, 75, 90, MaxModelVerificationTimeoutSeconds} {
+	for _, ok := range []int{0, 1, 75, 90, 120, MaxModelVerificationTimeoutSeconds} {
 		if err := validateModelVerificationTimeoutSeconds(ok); err != nil {
 			t.Fatalf("validate(%d) unexpected: %v", ok, err)
 		}
@@ -519,7 +520,7 @@ func testRuntimeModelVerificationTimeoutContract(t *testing.T) {
 func testRuntimeModelVerificationTimeoutLoadPaths(t *testing.T) {
 	path := writeConfig(t, validConfigYAML)
 
-	// Omitted yaml → 90s default applied by applyRuntimeDefaults, and valid.
+	// Omitted yaml → 120s default applied by applyRuntimeDefaults, and valid.
 	loaded, err := Load(path, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -528,8 +529,8 @@ func testRuntimeModelVerificationTimeoutLoadPaths(t *testing.T) {
 		t.Fatalf("omitted modelVerification must default to %d, got %d",
 			DefaultModelVerificationTimeoutSeconds, loaded.Runtime.ModelVerification.TimeoutSeconds)
 	}
-	if got := loaded.Runtime.ModelVerification.Timeout(); got != 90*time.Second {
-		t.Fatalf("loaded default timeout: got %v want 90s", got)
+	if got := loaded.Runtime.ModelVerification.Timeout(); got != 120*time.Second {
+		t.Fatalf("loaded default timeout: got %v want 120s", got)
 	}
 	if err := loaded.ValidateServer(); err != nil {
 		t.Fatalf("default modelVerification must validate: %v", err)

@@ -268,6 +268,24 @@ func mustAgenticCaps(t *testing.T, cfg modelconfig.Config) json.RawMessage {
 	return raw
 }
 
+func mustAgenticCapsV2(t *testing.T, cfg modelconfig.Config, toolCalling string) json.RawMessage {
+	t.Helper()
+	doc, err := modelconfig.CanonicalAgenticCapabilitiesV2(
+		toolCalling,
+		time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC),
+		cfg.LockVersion-1,
+		modelconfig.WireConfigDigest(cfg),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
 func testModelCfg(t *testing.T) modelconfig.Config {
 	t.Helper()
 	cfg := modelconfig.Config{
@@ -693,6 +711,54 @@ func (f *agenticFixture) assertNoSideEffects(t *testing.T) {
 }
 
 // --- cumulative first-cycle + repair-cycle ledger ---
+
+func TestAgenticInitial_ToollessFunctionCallingAndNoneCanPlan(t *testing.T) {
+	for _, calling := range []string{
+		modelconfig.ToolCallingFunctionCalling,
+		modelconfig.ToolCallingNone,
+	} {
+		t.Run(calling, func(t *testing.T) {
+			f := newAgenticFixture(t, func(f *agenticFixture) {
+				f.cfg.AgenticCapabilities = mustAgenticCapsV2(t, f.cfg, calling)
+				f.run.ModelSnapshot = marshalTestModelSnapshot(t, f.cfg)
+			})
+			if err := f.bridge(t).Execute(context.Background(), f.job()); err != nil {
+				t.Fatalf("tool-less %s must plan and run: %v", calling, err)
+			}
+			if f.agentic.calls.Load() != 1 {
+				t.Fatalf("agentic builder=%d", f.agentic.calls.Load())
+			}
+		})
+	}
+}
+
+func TestAgenticInitial_ToolBearingNonNativeFailClosed(t *testing.T) {
+	cases := []struct {
+		calling string
+		want    error
+	}{
+		{modelconfig.ToolCallingFunctionCalling, modelconfig.ErrToolDisclosureRuntimePending},
+		{modelconfig.ToolCallingNone, modelconfig.ErrAgentModelToolsUnsupported},
+	}
+	for _, tc := range cases {
+		t.Run(tc.calling, func(t *testing.T) {
+			f := newAgenticFixture(t, func(f *agenticFixture) {
+				f.cfg.AgenticCapabilities = mustAgenticCapsV2(t, f.cfg, tc.calling)
+				f.run.ModelSnapshot = marshalTestModelSnapshot(t, f.cfg)
+				f.run.CapabilitySnapshot = toolCapSnap("lookup_order", "find order",
+					`{"type":"object","properties":{"id":{"type":"string"}}}`)
+				f.invoker = &bridgeToolInvoker{spy: &spyInvoker{}, free: true}
+			})
+			err := f.bridge(t).Execute(context.Background(), f.job())
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("got %v want %v", err, tc.want)
+			}
+			if f.mdl.calls.Load() != 0 {
+				t.Fatal("model must not be invoked for fail-closed tool-bearing non-native")
+			}
+		})
+	}
+}
 
 func TestAgenticInitial_NeverCallsClassicBuilder(t *testing.T) {
 	f := newAgenticFixture(t, nil)
