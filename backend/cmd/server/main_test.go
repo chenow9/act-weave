@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +22,85 @@ type fakeStartupMigrator struct {
 	upCalls  int
 	upErr    error
 	closeErr error
+}
+
+type fakeManagedHTTPServer struct {
+	serveStarted chan struct{}
+	serveDone    chan struct{}
+	serveErr     error
+	shutdownErr  error
+	closeErr     error
+	shutdowns    int
+	closes       int
+}
+
+func newFakeManagedHTTPServer(serveErr error) *fakeManagedHTTPServer {
+	return &fakeManagedHTTPServer{
+		serveStarted: make(chan struct{}), serveDone: make(chan struct{}), serveErr: serveErr,
+	}
+}
+
+func (server *fakeManagedHTTPServer) ListenAndServe() error {
+	close(server.serveStarted)
+	<-server.serveDone
+	return server.serveErr
+}
+
+func (server *fakeManagedHTTPServer) Shutdown(context.Context) error {
+	server.shutdowns++
+	close(server.serveDone)
+	return server.shutdownErr
+}
+
+func (server *fakeManagedHTTPServer) Close() error {
+	server.closes++
+	select {
+	case <-server.serveDone:
+	default:
+		close(server.serveDone)
+	}
+	return server.closeErr
+}
+
+func TestServeHTTPShutsDownOnContextCancellation(t *testing.T) {
+	server := newFakeManagedHTTPServer(http.ErrServerClosed)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- serveHTTP(ctx, server, time.Second) }()
+	<-server.serveStarted
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("graceful shutdown: %v", err)
+	}
+	if server.shutdowns != 1 || server.closes != 0 {
+		t.Fatalf("unexpected lifecycle calls: shutdowns=%d closes=%d", server.shutdowns, server.closes)
+	}
+}
+
+func TestServeHTTPForceClosesWhenGracefulShutdownFails(t *testing.T) {
+	shutdownErr := errors.New("shutdown timed out")
+	server := newFakeManagedHTTPServer(http.ErrServerClosed)
+	server.shutdownErr = shutdownErr
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- serveHTTP(ctx, server, time.Second) }()
+	<-server.serveStarted
+	cancel()
+	if err := <-done; !errors.Is(err, shutdownErr) {
+		t.Fatalf("expected shutdown error, got %v", err)
+	}
+	if server.shutdowns != 1 || server.closes != 1 {
+		t.Fatalf("unexpected lifecycle calls: shutdowns=%d closes=%d", server.shutdowns, server.closes)
+	}
+}
+
+func TestServeHTTPReturnsListenFailure(t *testing.T) {
+	listenErr := errors.New("bind failed")
+	server := newFakeManagedHTTPServer(listenErr)
+	close(server.serveDone)
+	if err := serveHTTP(context.Background(), server, time.Second); !errors.Is(err, listenErr) {
+		t.Fatalf("expected listen error, got %v", err)
+	}
 }
 
 func (f *fakeStartupMigrator) Up() error {

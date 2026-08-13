@@ -26,6 +26,7 @@ type Config struct {
 	Logging        LoggingConfig        `yaml:"logging"`
 	Database       DatabaseConfig       `yaml:"database"`
 	Authentication AuthenticationConfig `yaml:"authentication"`
+	Models         ModelsConfig         `yaml:"models"`
 	AgentAccess    AgentAccessConfig    `yaml:"agentAccess"`
 	// OutboundIdentity is the T1=A Subject Assertion signing domain.
 	// Completely separate from agentAccess.signingKeys (AAP inbound trust).
@@ -55,6 +56,19 @@ type ToolsConfig struct {
 	// AllowForcePublish enables PLATFORM_ADMIN force-publish without live invoke.
 	// Env: ACTWEAVE_TOOLS_ALLOW_FORCE_PUBLISH. Default false.
 	AllowForcePublish bool `yaml:"allowForcePublish"`
+}
+
+// ModelsConfig controls deployment-owned model networking exceptions. Model
+// API bases are otherwise restricted to public addresses.
+type ModelsConfig struct {
+	Egress ModelEgressConfig `yaml:"egress"`
+}
+
+type ModelEgressConfig struct {
+	// AllowedCIDRs explicitly permits trusted private model gateways. Keep empty
+	// in production unless the deployment owns the destination network.
+	// Env: ACTWEAVE_MODEL_EGRESS_ALLOWED_CIDRS (comma-separated).
+	AllowedCIDRs []string `yaml:"allowedCidrs"`
 }
 
 // AgentPromptConfig configures create-preview purge worker pacing only.
@@ -430,6 +444,9 @@ func (config *Config) applyEnvironment(lookup LookupEnv) error {
 			*override.target = value
 		}
 	}
+	if raw, ok := lookup("ACTWEAVE_MODEL_EGRESS_ALLOWED_CIDRS"); ok {
+		config.Models.Egress.AllowedCIDRs = splitCSV(raw)
+	}
 	if raw, ok := lookup("ACTWEAVE_MINIO_USE_SSL"); ok {
 		value, err := strconv.ParseBool(strings.TrimSpace(raw))
 		if err != nil {
@@ -601,6 +618,11 @@ func (config Config) ValidateServer() error {
 	}
 	if len(config.Authentication.JWTSecret) < 32 {
 		return errors.New("authentication.jwtSecret must contain at least 32 bytes")
+	}
+	for _, rawCIDR := range config.Models.Egress.AllowedCIDRs {
+		if _, _, err := net.ParseCIDR(strings.TrimSpace(rawCIDR)); err != nil {
+			return errors.New("models.egress.allowedCidrs must contain valid CIDR values")
+		}
 	}
 	if err := validateAgentAccessSigningKeys(config.AgentAccess.SigningKeys); err != nil {
 		return err

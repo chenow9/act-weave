@@ -124,6 +124,7 @@ func TestLoadAppliesEnvironmentOverridesAfterFile(t *testing.T) {
 		"ACTWEAVE_LOG_FORMAT":                        "json",
 		"ACTWEAVE_POSTGRES_DSN":                      "postgres://environment-database",
 		"ACTWEAVE_JWT_SECRET":                        "environment-jwt-secret-at-least-32-bytes",
+		"ACTWEAVE_MODEL_EGRESS_ALLOWED_CIDRS":        "10.0.0.0/8, ::1/128",
 		"ACTWEAVE_AAP_TOKEN_ENDPOINT":                "https://api.example.test/api/agent-access/v1/oauth/token",
 		"ACTWEAVE_AAP_SIGNING_ACTIVE_KID":            "environment-aap-key",
 		"ACTWEAVE_AAP_SIGNING_PRIVATE_KEY_FILE":      "/run/secrets/environment-aap-key.pem",
@@ -150,6 +151,9 @@ func TestLoadAppliesEnvironmentOverridesAfterFile(t *testing.T) {
 		loaded.Authentication.JWTSecret != "environment-jwt-secret-at-least-32-bytes" ||
 		loaded.Encryption.MasterKey != "environment-master-key" {
 		t.Fatalf("top-level environment overrides were not applied: %+v", loaded)
+	}
+	if strings.Join(loaded.Models.Egress.AllowedCIDRs, ",") != "10.0.0.0/8,::1/128" {
+		t.Fatalf("model egress CIDR override was not applied: %+v", loaded.Models.Egress)
 	}
 	keys := loaded.AgentAccess.SigningKeys
 	if keys.ActiveKeyID != "environment-aap-key" || keys.PrivateKeyFile != "/run/secrets/environment-aap-key.pem" ||
@@ -284,6 +288,17 @@ func TestValidationSeparatesMigrationAndServerRequirements(t *testing.T) {
 	loaded.BootstrapAdmin = BootstrapAdminConfig{}
 	if err := loaded.ValidateServer(); err != nil {
 		t.Fatalf("disabled bootstrap configuration should be valid: %v", err)
+	}
+}
+
+func TestValidationRejectsInvalidModelEgressCIDR(t *testing.T) {
+	loaded, err := Load(writeConfig(t, validConfigYAML), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded.Models.Egress.AllowedCIDRs = []string{"not-a-cidr"}
+	if err := loaded.ValidateServer(); err == nil || !strings.Contains(err.Error(), "models.egress.allowedCidrs") {
+		t.Fatalf("expected invalid model egress CIDR error, got %v", err)
 	}
 }
 

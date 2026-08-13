@@ -13,6 +13,15 @@ database:
 authentication:
   jwtSecret: actweave-development-jwt-secret-change-me
 
+# Local development explicitly permits model gateways bound to loopback.
+# Production copies should remove these CIDRs unless a trusted private model
+# gateway is intentionally deployed there.
+models:
+  egress:
+    allowedCidrs:
+      - 127.0.0.0/8
+      - ::1/128
+
 agentAccess:
   tokenEndpoint: http://127.0.0.1:8082/api/agent-access/v1/oauth/token
   # Local/dev: open AAP fully. Production should default enabled=false and use

@@ -123,14 +123,28 @@ func (s *RunService) StartWorkflowExecution(
 	ctx context.Context,
 	request StartWorkflowExecutionRequest,
 ) (WorkflowExecution, error) {
+	input, err := s.PrepareWorkflowExecution(ctx, request)
+	if err != nil {
+		return WorkflowExecution{}, err
+	}
+	return s.repository.StartWorkflowExecution(ctx, input)
+}
+
+// PrepareWorkflowExecution performs authorization and snapshot construction
+// without writing. It is used when the caller must create the execution inside
+// a larger transaction, such as production idempotency claim + start.
+func (s *RunService) PrepareWorkflowExecution(
+	ctx context.Context,
+	request StartWorkflowExecutionRequest,
+) (StartWorkflowExecutionInput, error) {
 	authorization, err := s.authorizer.AuthorizeRun(
 		ctx, request.TriggeredByType, request.TriggeredByID, request.WorkspaceID,
 		"workflow.execute", request.WorkflowID,
 	)
 	if err != nil {
-		return WorkflowExecution{}, err
+		return StartWorkflowExecutionInput{}, err
 	}
-	return s.repository.StartWorkflowExecution(ctx, StartWorkflowExecutionInput{
+	return StartWorkflowExecutionInput{
 		ID: request.ID, WorkspaceID: request.WorkspaceID, WorkflowID: request.WorkflowID,
 		RevisionID: request.RevisionID, AgentRunID: request.AgentRunID,
 		TriggerType: request.TriggerType, TriggeredByType: request.TriggeredByType,
@@ -138,5 +152,5 @@ func (s *RunService) StartWorkflowExecution(
 		SnapshotSchemaVersion: "run.v1", AuthorizationSnapshot: authorization,
 		InputSummary:      request.InputSummary,
 		PrincipalSnapshot: request.PrincipalSnapshot,
-	})
+	}, nil
 }

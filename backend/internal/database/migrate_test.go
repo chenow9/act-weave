@@ -38,8 +38,8 @@ func TestEmbeddedMigrationSetStartsWithBaselineThenSessionContext(t *testing.T) 
 		current = next
 		last = next
 	}
-	// Latest embedded migration (000020_model_config_provider_canonicalization).
-	const wantLatest = 20
+	// Latest embedded migration (000022_workflow_production_idempotency).
+	const wantLatest = 22
 	if last != wantLatest {
 		t.Fatalf("expected latest embedded migration version %d, got %d (update wantLatest when adding migrations)", wantLatest, last)
 	}

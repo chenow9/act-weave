@@ -22,6 +22,15 @@ import (
 	"actweave/backend/internal/modelconfig"
 )
 
+func newTestOpenAIAgenticModel(
+	ctx context.Context,
+	client *http.Client,
+	secrets SecretOpener,
+	config modelconfig.Config,
+) (model.AgenticModel, error) {
+	return NewOpenAIAgenticModelWithEgress(ctx, client, secrets, config, testModelEgress)
+}
+
 func TestMapAgenticOptionsReasoning(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -127,20 +136,20 @@ func TestNewOpenAIAgenticModelValidation(t *testing.T) {
 	secrets := secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})
-	if _, err := NewOpenAIAgenticModel(ctx, nil, nil, testConfig("http://example.com/v1")); err == nil {
+	if _, err := newTestOpenAIAgenticModel(ctx, nil, nil, testConfig("http://example.com/v1")); err == nil {
 		t.Fatal("expected secrets required")
 	}
-	if _, err := NewOpenAIAgenticModel(ctx, nil, secrets, modelconfig.Config{ModelName: "m"}); err == nil ||
+	if _, err := newTestOpenAIAgenticModel(ctx, nil, secrets, modelconfig.Config{ModelName: "m"}); err == nil ||
 		!strings.Contains(err.Error(), "API base") {
 		t.Fatalf("expected API base error, got %v", err)
 	}
-	if _, err := NewOpenAIAgenticModel(ctx, nil, secrets, modelconfig.Config{APIBase: "http://example.com/v1"}); err == nil ||
+	if _, err := newTestOpenAIAgenticModel(ctx, nil, secrets, modelconfig.Config{APIBase: "http://example.com/v1"}); err == nil ||
 		!strings.Contains(err.Error(), "model name") {
 		t.Fatalf("expected model name error, got %v", err)
 	}
 	cfg := testConfig("http://example.com/v1")
 	cfg.Options = json.RawMessage(`{"reasoningEffort":"extreme"}`)
-	if _, err := NewOpenAIAgenticModel(ctx, nil, secrets, cfg); err == nil || !strings.Contains(err.Error(), "reasoningEffort") {
+	if _, err := newTestOpenAIAgenticModel(ctx, nil, secrets, cfg); err == nil || !strings.Contains(err.Error(), "reasoningEffort") {
 		t.Fatalf("expected reasoningEffort validation error, got %v", err)
 	}
 }
@@ -272,7 +281,7 @@ func TestNewOpenAIAgenticModelRejectsInvalidAPIBaseBeforeNetwork(t *testing.T) {
 				return errors.New("secrets must not be opened for invalid API base")
 			})
 			cfg := testConfig(tc.base)
-			_, err := NewOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, cfg)
+			_, err := newTestOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, cfg)
 			if err == nil {
 				t.Fatal("expected construction error")
 			}
@@ -296,7 +305,7 @@ func TestNewOpenAIAgenticModelRejectsInvalidAPIBaseBeforeNetwork(t *testing.T) {
 		okSecrets := secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 			return nil
 		})
-		m, err := NewOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), okSecrets, testConfig("https://api.example.com/v1"))
+		m, err := newTestOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), okSecrets, testConfig("https://api.example.com/v1"))
 		if err != nil || m == nil {
 			t.Fatalf("valid base construct: m=%v err=%v", m, err)
 		}
@@ -312,7 +321,7 @@ func TestNewOpenAIAgenticModelRejectsAzure(t *testing.T) {
 	for _, provider := range []string{"azure", "azure_openai", "Azure_OpenAI", "azure-openai"} {
 		cfg := testConfig("https://example.openai.azure.com")
 		cfg.Provider = provider
-		_, err := NewOpenAIAgenticModel(ctx, nil, secrets, cfg)
+		_, err := newTestOpenAIAgenticModel(ctx, nil, secrets, cfg)
 		if !errors.Is(err, ErrAgenticAzureUnsupported) {
 			t.Fatalf("provider=%q: got %v want ErrAgenticAzureUnsupported", provider, err)
 		}
@@ -339,7 +348,7 @@ func TestNewOpenAIAgenticModelWithSecretAndEmptyKey(t *testing.T) {
 		}
 		return use([]byte("sk-test-key"))
 	})
-	m, err := NewOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, cfg)
+	m, err := newTestOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +361,7 @@ func TestNewOpenAIAgenticModelWithSecretAndEmptyKey(t *testing.T) {
 
 	// Empty credential path (compatible gateways).
 	cfgNoSecret := testConfig("http://example.com/v1")
-	m2, err := NewOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, cfgNoSecret)
+	m2, err := newTestOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, cfgNoSecret)
 	if err != nil || m2 == nil {
 		t.Fatalf("empty key path: m=%v err=%v", m2, err)
 	}
@@ -394,7 +403,7 @@ func TestNewOpenAIAgenticModelResponsesRequestSemantics(t *testing.T) {
 	secrets := secretOpenerFunc(func(_ context.Context, _, _ string, use func([]byte) error) error {
 		return use([]byte("sk-agentic-test"))
 	})
-	m, err := NewOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, cfg)
+	m, err := newTestOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,7 +490,7 @@ func TestGuardedAgenticModelAdversarialGenerateAndStream(t *testing.T) {
 		return nil
 	})
 	cfg := testConfig(server.URL + "/v1")
-	m, err := NewOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, cfg)
+	m, err := newTestOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -637,7 +646,7 @@ func TestWithPromptCacheKeyOnRequest(t *testing.T) {
 		return nil
 	})
 	cfg := testConfig(server.URL + "/v1")
-	m, err := NewOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, cfg)
+	m, err := newTestOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -679,7 +688,7 @@ func TestProtectedPromptCacheKey_ExtraFieldsCannotOverride_GenerateAndStream(t *
 	secrets := secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})
-	m, err := NewOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, testConfig(server.URL+"/v1"))
+	m, err := newTestOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, testConfig(server.URL+"/v1"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -745,7 +754,7 @@ func TestProtectedPromptCacheKey_AbsentPreservesTask1Behavior(t *testing.T) {
 	secrets := secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})
-	m, err := NewOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, testConfig(server.URL+"/v1"))
+	m, err := newTestOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, testConfig(server.URL+"/v1"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -777,7 +786,7 @@ func TestGuardedAgenticModelRejectsInvalidConversation(t *testing.T) {
 	secrets := secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})
-	m, err := NewOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, testConfig(server.URL+"/v1"))
+	m, err := newTestOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, testConfig(server.URL+"/v1"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -861,7 +870,7 @@ func TestNewOpenAIAgenticModelSecretNotInError(t *testing.T) {
 	secrets := secretOpenerFunc(func(_ context.Context, _, _ string, use func([]byte) error) error {
 		return use([]byte(secretPlain))
 	})
-	m, err := NewOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, cfg)
+	m, err := newTestOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -927,7 +936,7 @@ func TestResponsesGuardRejectsRedirects307And308(t *testing.T) {
 			cfg := testConfig(first.URL + "/v1")
 			// Adversarial call-time options that would be dangerous if an
 			// unguarded body followed the redirect.
-			m, err := NewOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, cfg)
+			m, err := newTestOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1181,7 +1190,7 @@ func TestGuardedModelRejectsIncompleteReasoningBeforeNetwork(t *testing.T) {
 		return nil
 	})
 	cfg := testConfig(server.URL + "/v1")
-	m, err := NewOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, cfg)
+	m, err := newTestOpenAIAgenticModel(ctx, NewStreamingHTTPClient(), secrets, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

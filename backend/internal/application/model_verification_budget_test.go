@@ -81,7 +81,7 @@ func TestVerifierAuthProbeFailsClosedOnStalledBody(t *testing.T) {
 
 	// A context-bound client is honoured verbatim, so only the drain and the
 	// context can end this probe — this is about the drain, not the client.
-	verifier := &modelConfigVerifier{client: &http.Client{Timeout: 0}}
+	verifier := &modelConfigVerifier{client: &http.Client{Timeout: 0}, egress: loopbackModelEgress}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -119,7 +119,7 @@ func TestVerifierAuthProbeClassifiesStatusBeforeBody(t *testing.T) {
 	t.Cleanup(server.Close)
 	t.Cleanup(func() { close(stall) })
 
-	verifier := &modelConfigVerifier{client: &http.Client{Timeout: 0}}
+	verifier := &modelConfigVerifier{client: &http.Client{Timeout: 0}, egress: loopbackModelEgress}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

@@ -101,6 +101,7 @@ func (verificationEchoTool) InvokableRun(_ context.Context, _ string, _ ...tool.
 type modelConfigVerifier struct {
 	client  *http.Client
 	secrets modelapi.SecretOpener
+	egress  modelapi.EgressPolicy
 
 	// Built at most once per verifier; see probeHTTPClient.
 	fallbackOnce   sync.Once
@@ -171,6 +172,12 @@ func (verifier *modelConfigVerifier) probeAuthConnectivity(ctx context.Context, 
 	if err != nil {
 		return fmt.Errorf("%w: %v", modelconfig.ErrResponsesUnsupported, err)
 	}
+	client, err := modelapi.ProtectHTTPClientForAPIBase(
+		ctx, verifier.probeHTTPClient(), config.APIBase, verifier.egress,
+	)
+	if err != nil {
+		return fmt.Errorf("%w: %v", modelconfig.ErrResponsesUnsupported, err)
+	}
 	invoke := func(token []byte) error {
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 		if err != nil {
@@ -180,7 +187,7 @@ func (verifier *modelConfigVerifier) probeAuthConnectivity(ctx context.Context, 
 		if len(token) > 0 {
 			request.Header.Set("Authorization", "Bearer "+string(token))
 		}
-		response, err := verifier.probeHTTPClient().Do(request)
+		response, err := client.Do(request)
 		if err != nil {
 			return mapNetworkError(err)
 		}
@@ -230,7 +237,7 @@ func (verifier *modelConfigVerifier) probeAgenticCapabilities(ctx context.Contex
 	if verifier.secrets == nil {
 		return modelconfig.AgenticCapabilities{}, errors.New("model verification secrets are required")
 	}
-	am, err := modelapi.NewOpenAIAgenticModel(ctx, client, verifier.secrets, config)
+	am, err := modelapi.NewOpenAIAgenticModelWithEgress(ctx, client, verifier.secrets, config, verifier.egress)
 	if err != nil {
 		return modelconfig.AgenticCapabilities{}, mapAgenticConstructionError(err)
 	}

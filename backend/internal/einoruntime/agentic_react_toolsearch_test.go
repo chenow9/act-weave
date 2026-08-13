@@ -246,7 +246,9 @@ func TestAgenticopenaiRequestCapture_ClientToolSearch(t *testing.T) {
 		return nil
 	})
 	// Real pinned adapter — not a production-result mock.
-	am, err := modelapi.NewOpenAIAgenticModel(ctx, server.Client(), secrets, cfg)
+	am, err := modelapi.NewOpenAIAgenticModelWithEgress(
+		ctx, server.Client(), secrets, cfg, modelapi.LoopbackEgressPolicy(),
+	)
 	if err != nil {
 		t.Fatalf("NewOpenAIAgenticModel: %v", err)
 	}

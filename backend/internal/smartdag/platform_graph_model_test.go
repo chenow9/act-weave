@@ -160,9 +160,9 @@ func TestPlatformChatGraphModelUsesRealAgenticHTTP(t *testing.T) {
 			ActiveReleaseID: strPtr("rel-1"),
 		}}},
 		Build: func(_ context.Context, cfg modelconfig.Config) (ChatModel, error) {
-			return modelapi.NewOpenAIAgenticModel(context.Background(), server.Client(), secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+			return modelapi.NewOpenAIAgenticModelWithEgress(context.Background(), server.Client(), secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 				return nil
-			}), cfg)
+			}), cfg, modelapi.LoopbackEgressPolicy())
 		},
 	})
 	if err != nil {

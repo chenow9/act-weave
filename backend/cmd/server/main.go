@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"actweave/backend/internal/agent"
@@ -20,7 +22,19 @@ import (
 	"actweave/backend/internal/storedobject"
 )
 
-const localSecretMasterKey = "local-master-v1"
+const (
+	localSecretMasterKey     = "local-master-v1"
+	serverReadHeaderTimeout  = 10 * time.Second
+	serverIdleTimeout        = 2 * time.Minute
+	serverShutdownTimeout    = 20 * time.Second
+	serverMaximumHeaderBytes = 1 << 20
+)
+
+type managedHTTPServer interface {
+	ListenAndServe() error
+	Shutdown(context.Context) error
+	Close() error
+}
 
 type startupMigrator interface {
 	Up() error
@@ -30,6 +44,8 @@ type startupMigrator interface {
 type openStartupMigrator func(context.Context, string) (startupMigrator, error)
 
 func main() {
+	startupContext, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	runtimeConfig, configPath, configErr := backendconfig.LoadFromEnvironment(os.LookupEnv)
 	logLevel, logFormat := "info", "text"
 	if configErr == nil {
@@ -48,7 +64,7 @@ func main() {
 	serverLogger.Info("configuration loaded", "event", "server.configuration.loaded", "path", configPath)
 
 	err := runStartup(
-		context.Background(),
+		startupContext,
 		runtimeConfig,
 		migrateDatabase,
 		func(config backendconfig.Config) error {
@@ -84,6 +100,9 @@ func main() {
 				) * time.Second,
 				AgentAccessFeature: config.AgentAccess.Feature,
 				AgentAccessFiles:   config.AgentAccess.Files,
+				ModelEgressAllowedCIDRs: append(
+					[]string(nil), config.Models.Egress.AllowedCIDRs...,
+				),
 				MetricsBearerToken:     config.Server.MetricsBearerToken,
 				AgentAuditDebug:        config.AgentAudit.Debug,
 				ToolsAllowForcePublish: config.Tools.AllowForcePublish,
@@ -107,7 +126,14 @@ func main() {
 
 			addr := config.Server.Address
 			serverLogger.Info("server listening", "event", "server.listening", "addr", addr)
-			if err := http.ListenAndServe(addr, app.Handler()); err != nil {
+			server := &http.Server{
+				Addr:              addr,
+				Handler:           app.Handler(),
+				ReadHeaderTimeout: serverReadHeaderTimeout,
+				IdleTimeout:       serverIdleTimeout,
+				MaxHeaderBytes:    serverMaximumHeaderBytes,
+			}
+			if err := serveHTTP(startupContext, server, serverShutdownTimeout); err != nil {
 				return fmt.Errorf("serve HTTP: %w", err)
 			}
 			return nil
@@ -116,6 +142,36 @@ func main() {
 	if err != nil {
 		serverLogger.Error("startup failed", "event", "server.startup.failed", "error", err.Error())
 		os.Exit(1)
+	}
+}
+
+func serveHTTP(ctx context.Context, server managedHTTPServer, shutdownTimeout time.Duration) error {
+	if ctx == nil || server == nil || shutdownTimeout <= 0 {
+		return errors.New("HTTP server lifecycle is not configured")
+	}
+	serveErrors := make(chan error, 1)
+	go func() {
+		serveErrors <- server.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serveErrors:
+		if err == nil || errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+		shutdownContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		shutdownErr := server.Shutdown(shutdownContext)
+		cancel()
+		if shutdownErr != nil {
+			shutdownErr = errors.Join(shutdownErr, server.Close())
+		}
+		serveErr := <-serveErrors
+		if errors.Is(serveErr, http.ErrServerClosed) {
+			serveErr = nil
+		}
+		return errors.Join(shutdownErr, serveErr)
 	}
 }
 

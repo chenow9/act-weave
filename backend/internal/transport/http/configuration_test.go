@@ -111,6 +111,52 @@ func TestV1ModelConfigRoutes(t *testing.T) {
 	}
 }
 
+func TestModelEndpointTrustChangesRequireWorkspaceManager(t *testing.T) {
+	f := newConfigurationFixture(t)
+	createdUser := f.request(t, http.MethodPost, "/api/v1/admin/users", map[string]any{
+		"username": "model.editor", "displayName": "Model Editor",
+		"password": "Temporary-model-editor-1", "platformRole": "USER",
+	}, f.token, nil)
+	if createdUser.Code != http.StatusCreated {
+		t.Fatalf("create editor user: %d %s", createdUser.Code, createdUser.Body.String())
+	}
+	var editor userDTO
+	decodeResponse(t, createdUser.Body.Bytes(), &editor)
+	if _, err := f.db.Exec(`
+		INSERT INTO workspace_members(workspace_id,user_id,role,invited_by)
+		VALUES($1,$2,'EDITOR',$3)
+	`, f.workspaceID, editor.ID, v1AdminUserID); err != nil {
+		t.Fatal(err)
+	}
+	editorTokens := f.loginAndClearMustChange(
+		t, "model.editor", "Temporary-model-editor-1", "Permanent-model-editor-2",
+	)
+
+	deniedCreate := f.request(t, http.MethodPost, f.base+"/model-configs", map[string]any{
+		"name": "editor-model", "provider": "openai", "apiBase": "https://models.example/v1",
+		"modelName": "m",
+	}, editorTokens.AccessToken, nil)
+	assertErrorResponse(t, deniedCreate, http.StatusForbidden, "FORBIDDEN")
+
+	created := f.request(t, http.MethodPost, f.base+"/model-configs", map[string]any{
+		"name": "managed-model", "provider": "openai", "apiBase": "https://models.example/v1",
+		"modelName": "m",
+	}, f.token, nil)
+	var modelValue modelConfigDTO
+	decodeResponse(t, created.Body.Bytes(), &modelValue)
+	metadataUpdate := f.request(t, http.MethodPatch, f.base+"/model-configs/"+modelValue.ID, map[string]any{
+		"name": "editor-renamed-model", "lockVersion": modelValue.LockVersion,
+	}, editorTokens.AccessToken, nil)
+	if metadataUpdate.Code != http.StatusOK {
+		t.Fatalf("editor metadata update: %d %s", metadataUpdate.Code, metadataUpdate.Body.String())
+	}
+	decodeResponse(t, metadataUpdate.Body.Bytes(), &modelValue)
+	deniedEndpointUpdate := f.request(t, http.MethodPatch, f.base+"/model-configs/"+modelValue.ID, map[string]any{
+		"apiBase": "http://127.0.0.1:8080/v1", "lockVersion": modelValue.LockVersion,
+	}, editorTokens.AccessToken, nil)
+	assertErrorResponse(t, deniedEndpointUpdate, http.StatusForbidden, "FORBIDDEN")
+}
+
 func TestV1ModelConfigSetDisclosure(t *testing.T) {
 	catalog := &stubAgentCatalog{counts: map[string]int{}}
 	f := newConfigurationFixtureWithCatalog(t, catalog)

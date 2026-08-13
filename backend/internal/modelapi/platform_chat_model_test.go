@@ -18,6 +18,16 @@ import (
 	"actweave/backend/internal/tooltranslator"
 )
 
+func newTestPlatformChatModel(
+	client *http.Client,
+	secrets SecretOpener,
+	config modelconfig.Config,
+) (*PlatformChatModel, error) {
+	return NewPlatformChatModelWithEgress(
+		context.Background(), client, secrets, config, testModelEgress,
+	)
+}
+
 type secretOpenerFunc func(context.Context, string, string, func([]byte) error) error
 
 func (fn secretOpenerFunc) WithActiveSecret(
@@ -101,7 +111,7 @@ func TestGenerateHonorsToolsFromOptions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cm, err := NewPlatformChatModel(server.Client(), secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+	cm, err := newTestPlatformChatModel(server.Client(), secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		t.Fatal("secret should not be opened without CredentialSecretID")
 		return nil
 	}), testConfig(server.URL+"/v1"))
@@ -167,7 +177,7 @@ func TestStreamYieldsMultipleContentDeltas(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cm, err := NewPlatformChatModel(server.Client(), noopSecrets(), testConfig(server.URL+"/v1"))
+	cm, err := newTestPlatformChatModel(server.Client(), noopSecrets(), testConfig(server.URL+"/v1"))
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -232,7 +242,7 @@ func TestStreamToolCallArgumentDeltasAccumulate(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cm, err := NewPlatformChatModel(server.Client(), noopSecrets(), testConfig(server.URL+"/v1"))
+	cm, err := newTestPlatformChatModel(server.Client(), noopSecrets(), testConfig(server.URL+"/v1"))
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -304,7 +314,7 @@ func TestWithToolsReturnsIndependentCopy(t *testing.T) {
 	}))
 	defer server.Close()
 
-	base, err := NewPlatformChatModel(server.Client(), noopSecrets(), testConfig(server.URL+"/v1"))
+	base, err := newTestPlatformChatModel(server.Client(), noopSecrets(), testConfig(server.URL+"/v1"))
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -382,7 +392,7 @@ func TestSecretPathAttachesBearerToken(t *testing.T) {
 		return use([]byte("tok_test_123"))
 	})
 
-	cm, err := NewPlatformChatModel(server.Client(), secrets, cfg)
+	cm, err := newTestPlatformChatModel(server.Client(), secrets, cfg)
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -403,13 +413,13 @@ func TestSecretPathAttachesBearerToken(t *testing.T) {
 
 func TestNewPlatformChatModelValidation(t *testing.T) {
 	t.Parallel()
-	if _, err := NewPlatformChatModel(nil, nil, testConfig("http://example.com/v1")); err == nil {
+	if _, err := newTestPlatformChatModel(nil, nil, testConfig("http://example.com/v1")); err == nil {
 		t.Fatal("expected secrets required")
 	}
-	if _, err := NewPlatformChatModel(nil, noopSecrets(), modelconfig.Config{ModelName: "m"}); err == nil {
+	if _, err := newTestPlatformChatModel(nil, noopSecrets(), modelconfig.Config{ModelName: "m"}); err == nil {
 		t.Fatal("expected api base required")
 	}
-	if _, err := NewPlatformChatModel(nil, noopSecrets(), modelconfig.Config{APIBase: "http://example.com/v1"}); err == nil {
+	if _, err := newTestPlatformChatModel(nil, noopSecrets(), modelconfig.Config{APIBase: "http://example.com/v1"}); err == nil {
 		t.Fatal("expected model name required")
 	}
 }
@@ -437,7 +447,7 @@ func TestGenerateToolCallsResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cm, err := NewPlatformChatModel(server.Client(), noopSecrets(), testConfig(server.URL+"/v1"))
+	cm, err := newTestPlatformChatModel(server.Client(), noopSecrets(), testConfig(server.URL+"/v1"))
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -490,7 +500,7 @@ func TestGenerateWithEmptyObjectToolSchemaDoesNotFailParameters(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cm, err := NewPlatformChatModel(server.Client(), noopSecrets(), testConfig(server.URL+"/v1"))
+	cm, err := newTestPlatformChatModel(server.Client(), noopSecrets(), testConfig(server.URL+"/v1"))
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
@@ -562,7 +572,7 @@ func TestGenerateMapsUserInputMultiContentToImageURL(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cm, err := NewPlatformChatModel(server.Client(), noopSecrets(), testConfig(server.URL+"/v1"))
+	cm, err := newTestPlatformChatModel(server.Client(), noopSecrets(), testConfig(server.URL+"/v1"))
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}

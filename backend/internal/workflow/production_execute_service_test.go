@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -115,6 +116,88 @@ func TestProductionExecuteIdempotencyKeyNoDoubleRun(t *testing.T) {
 	input.Input = json.RawMessage(`{"orderId":"other"}`)
 	if _, err := service.Execute(context.Background(), input); !errors.Is(err, ErrIdempotencyConflict) {
 		t.Fatalf("expected idempotency conflict, got %v", err)
+	}
+}
+
+func TestPostgresProductionIdempotencyStoreSurvivesInstancesAndRejectsDrift(t *testing.T) {
+	repository, db, _, _ := prepareWorkflowPublish(t, false)
+	runRepository, err := execution.NewRunRepository(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstStore, err := NewPostgresProductionIdempotencyStore(db, runRepository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondStore, err := NewPostgresProductionIdempotencyStore(repository.db, runRepository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestHash := strings.Repeat("a", 64)
+	executionID := uuid.NewString()
+	claimedID, created, err := firstStore.Claim(
+		context.Background(), draftWorkspaceID, workflowPublishEditorID,
+		"durable-idem", requestHash, executionID,
+	)
+	if err != nil || !created || claimedID != executionID {
+		t.Fatalf("first claim id=%q created=%t err=%v", claimedID, created, err)
+	}
+	replayedID, replayCreated, err := secondStore.Claim(
+		context.Background(), draftWorkspaceID, workflowPublishEditorID,
+		"durable-idem", requestHash, uuid.NewString(),
+	)
+	if err != nil || replayCreated || replayedID != executionID {
+		t.Fatalf("replay id=%q created=%t err=%v", replayedID, replayCreated, err)
+	}
+	if _, _, err := secondStore.Claim(
+		context.Background(), draftWorkspaceID, workflowPublishEditorID,
+		"durable-idem", strings.Repeat("b", 64), uuid.NewString(),
+	); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("expected request drift conflict, got %v", err)
+	}
+}
+
+func TestPostgresProductionIdempotencyClaimAndExecutionAreAtomic(t *testing.T) {
+	repository, db, _, compilation := prepareWorkflowPublish(t, true)
+	events := newWorkflowPublishEventWriter(t, db)
+	publisher := newWorkflowPublishService(t, repository, db, events)
+	published, err := publisher.Publish(context.Background(), validWorkflowPublishInput(compilation.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runRepository, err := execution.NewRunRepository(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewPostgresProductionIdempotencyStore(db, runRepository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestHash := strings.Repeat("c", 64)
+	executionID := uuid.NewString()
+	started, created, err := store.ClaimExecution(
+		context.Background(), draftWorkspaceID, workflowPublishEditorID,
+		"atomic-claim", requestHash, execution.StartWorkflowExecutionInput{
+			ID: executionID, WorkspaceID: draftWorkspaceID, WorkflowID: draftCapabilityID,
+			RevisionID: published.Revision.ID, TriggerType: "CONSOLE",
+			TriggeredByType: "USER", TriggeredByID: workflowPublishEditorID,
+			TraceID: "trace-atomic-claim", SnapshotSchemaVersion: "run.v1",
+			AuthorizationSnapshot: json.RawMessage(`{}`), InputSummary: json.RawMessage(`{}`),
+		},
+	)
+	if err != nil || !created || started.ID != executionID {
+		t.Fatalf("atomic claim execution=%+v created=%t err=%v", started, created, err)
+	}
+	var claimRows, executionRows int
+	if err := db.QueryRow(`
+		SELECT
+		 (SELECT count(*) FROM workflow_production_idempotency WHERE execution_id=$1),
+		 (SELECT count(*) FROM workflow_executions WHERE id=$1)
+	`, executionID).Scan(&claimRows, &executionRows); err != nil {
+		t.Fatal(err)
+	}
+	if claimRows != 1 || executionRows != 1 {
+		t.Fatalf("claim and execution diverged: claims=%d executions=%d", claimRows, executionRows)
 	}
 }
 

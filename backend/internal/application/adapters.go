@@ -1093,6 +1093,7 @@ type promptGenerator struct {
 	models  modelConfigReader
 	secrets modelapi.SecretOpener
 	client  *http.Client
+	egress  modelapi.EgressPolicy
 }
 
 func (generator *promptGenerator) llmHTTPClient() *http.Client {
@@ -1131,7 +1132,9 @@ func (generator *promptGenerator) Generate(
 	// Bound wall time even when HTTP client has Timeout=0 (stream-safe client).
 	genCtx, cancel := context.WithTimeout(ctx, promptGenerationTimeout)
 	defer cancel()
-	agenticModel, err := modelapi.NewOpenAIAgenticModel(genCtx, generator.llmHTTPClient(), generator.secrets, cfg)
+	agenticModel, err := modelapi.NewOpenAIAgenticModelWithEgress(
+		genCtx, generator.llmHTTPClient(), generator.secrets, cfg, generator.egress,
+	)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", agent.ErrPromptGeneration, err)
 	}
@@ -1662,6 +1665,13 @@ func (p *productionRuns) StartWorkflowExecution(
 	request execution.StartWorkflowExecutionRequest,
 ) (execution.WorkflowExecution, error) {
 	return p.service.StartWorkflowExecution(ctx, request)
+}
+
+func (p *productionRuns) PrepareWorkflowExecution(
+	ctx context.Context,
+	request execution.StartWorkflowExecutionRequest,
+) (execution.StartWorkflowExecutionInput, error) {
+	return p.service.PrepareWorkflowExecution(ctx, request)
 }
 
 func (p *productionRuns) TransitionWorkflowExecution(

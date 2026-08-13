@@ -396,7 +396,9 @@ func (r *ConfigurationRoutes) listModels(c *gin.Context) {
 	c.JSON(200, gin.H{"items": items})
 }
 func (r *ConfigurationRoutes) createModel(c *gin.Context) {
-	if !r.authorize(c, authz.ActionEdit) {
+	// API base and credential binding determine where workspace secrets are sent;
+	// only workspace managers may establish that trust boundary.
+	if !r.authorize(c, authz.ActionManage) {
 		return
 	}
 	var q createModelRequest
@@ -446,6 +448,11 @@ func (r *ConfigurationRoutes) updateModel(c *gin.Context) {
 			return
 		}
 		RespondError(c, modelconfig.ErrInvalid)
+		return
+	}
+	// Metadata remains editable by Editors, but changing the upstream endpoint
+	// or credential binding is a network/secret trust decision.
+	if (q.APIBase != nil || q.CredentialSecretID != nil) && !r.authorize(c, authz.ActionManage) {
 		return
 	}
 	old, e := r.models.Get(c.Request.Context(), c.Param("wid"), c.Param("id"))

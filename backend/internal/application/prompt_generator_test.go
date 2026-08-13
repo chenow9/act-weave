@@ -66,6 +66,7 @@ func TestPromptGeneratorGenerateUsesAgenticModel(t *testing.T) {
 		}},
 		secrets: stubSecretOpener{},
 		client:  server.Client(),
+		egress:  loopbackModelEgress,
 	}
 	out, err := gen.Generate(context.Background(), agent.PromptGenerationRequest{
 		Agent: agent.Agent{WorkspaceID: "ws-prompt", ModelConfigID: "mc-1"},
@@ -102,6 +103,7 @@ func TestPromptGeneratorGenerateRejectsEmptyModelContent(t *testing.T) {
 		}},
 		secrets: stubSecretOpener{},
 		client:  server.Client(),
+		egress:  loopbackModelEgress,
 	}
 	_, err := gen.Generate(context.Background(), agent.PromptGenerationRequest{
 		Agent: agent.Agent{WorkspaceID: "ws", ModelConfigID: "mc"},

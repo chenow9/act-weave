@@ -45,7 +45,7 @@ func TestConcurrentServerStartupAppliesMigrationsOnce(t *testing.T) {
 	if err := migrator.Close(); err != nil {
 		t.Fatalf("close migration version reader: %v", err)
 	}
-	if !version.Applied || version.Number != 21 || version.Dirty {
+	if !version.Applied || version.Number != 22 || version.Dirty {
 		t.Fatalf("expected one clean latest migration state, got %+v", version)
 	}
 

@@ -417,7 +417,7 @@ func TestAgenticVerifierSuccess_StoreFalseEchoFlowCanonical(t *testing.T) {
 	secrets := secretOpenerFunc(func(_ context.Context, _, _ string, use func([]byte) error) error {
 		return use([]byte("sk-test-secret"))
 	})
-	v := &modelConfigVerifier{client: srv.Client(), secrets: secrets}
+	v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secrets}
 	cfg := newVerifierConfig(srv.URL)
 	sid := "018f1f2e-7b5a-7c3d-8e9f-e234567890ae"
 	cfg.CredentialSecretID = &sid
@@ -460,7 +460,7 @@ func mustJSON(v any) []byte {
 func TestAgenticVerifierAuth401(t *testing.T) {
 	fake := &contractFakeResponsesServer{modelsStatus: http.StatusUnauthorized}
 	srv := fake.start(t)
-	v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+	v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})}
 	_, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
@@ -472,7 +472,7 @@ func TestAgenticVerifierAuth401(t *testing.T) {
 func TestAgenticVerifierAuth403(t *testing.T) {
 	fake := &contractFakeResponsesServer{modelsStatus: http.StatusForbidden}
 	srv := fake.start(t)
-	v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+	v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})}
 	_, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
@@ -489,7 +489,7 @@ func TestAgenticVerifierResponsesMissing(t *testing.T) {
 		},
 	}
 	srv := fake.start(t)
-	v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+	v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})}
 	_, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
@@ -511,7 +511,7 @@ func TestAgenticVerifierHostedSearchRejected(t *testing.T) {
 		},
 	}
 	srv := fake.start(t)
-	v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+	v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})}
 	caps, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
@@ -531,7 +531,7 @@ func TestAgenticVerifierNoSearch(t *testing.T) {
 		},
 	}
 	srv := fake.start(t)
-	v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+	v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})}
 	caps, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
@@ -551,7 +551,7 @@ func TestAgenticVerifierMalformedStream(t *testing.T) {
 		},
 	}
 	srv := fake.start(t)
-	v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+	v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})}
 	_, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
@@ -583,7 +583,7 @@ func TestAgenticVerifierSecretNotPersistedInError(t *testing.T) {
 				},
 			}
 			srv := fake.start(t)
-			v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(_ context.Context, _, _ string, use func([]byte) error) error {
+			v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(_ context.Context, _, _ string, use func([]byte) error) error {
 				return use([]byte(secret))
 			})}
 			cfg := newVerifierConfig(srv.URL)
@@ -620,7 +620,7 @@ func TestAgenticVerifierCancellation(t *testing.T) {
 		},
 	}
 	srv := fake.start(t)
-	v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+	v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -641,7 +641,7 @@ func TestAgenticVerifier429And5xx(t *testing.T) {
 		t.Run("models_"+http.StatusText(status), func(t *testing.T) {
 			fake := &contractFakeResponsesServer{modelsStatus: status}
 			srv := fake.start(t)
-			v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+			v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 				return nil
 			})}
 			_, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
@@ -661,7 +661,7 @@ func TestAgenticVerifier429And5xx(t *testing.T) {
 				},
 			}
 			srv := fake.start(t)
-			v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+			v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 				return nil
 			})}
 			_, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
@@ -677,7 +677,7 @@ func TestAgenticVerifierUsageWithoutOptionalDetails(t *testing.T) {
 	// focused unit of the usage probe via full success handler.
 	fake := &contractFakeResponsesServer{handler: successHandler(t)}
 	srv := fake.start(t)
-	v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+	v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})}
 	if _, err := v.Verify(context.Background(), newVerifierConfig(srv.URL)); err != nil {
@@ -815,7 +815,7 @@ func TestAgenticVerifierUsageAdversarial(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			fake := &contractFakeResponsesServer{handler: tc.handler}
 			srv := fake.start(t)
-			v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+			v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 				return nil
 			})}
 			_, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
@@ -910,7 +910,7 @@ func TestAgenticVerifierEchoAdversarial(t *testing.T) {
 				},
 			}
 			srv := fake.start(t)
-			v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+			v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 				return nil
 			})}
 			caps, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
@@ -1012,7 +1012,7 @@ func TestAgenticVerifier_RejectsInvalidModelSearchArgsNoRewrite(t *testing.T) {
 				}
 			}}
 			srv := fake.start(t)
-			v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+			v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 				return nil
 			})}
 			caps, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
@@ -1031,7 +1031,7 @@ func TestAgenticVerifierExactClientSearchWireProof(t *testing.T) {
 	// tool_search_output, third/echo response pair with exact nonce args.
 	fake := &contractFakeResponsesServer{handler: successHandler(t)}
 	srv := fake.start(t)
-	v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+	v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})}
 	if _, err := v.Verify(context.Background(), newVerifierConfig(srv.URL)); err != nil {
@@ -1161,7 +1161,7 @@ func TestAgenticVerifierPhase3ExactEchoIsFunctionCalling(t *testing.T) {
 		}
 	}}
 	srv := fake.start(t)
-	v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+	v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})}
 	caps, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
@@ -1196,7 +1196,7 @@ func TestAgenticVerifierPhase2HTTP400EntersPhase3(t *testing.T) {
 				}
 			}}
 			srv := fake.start(t)
-			v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+			v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 				return nil
 			})}
 			caps, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
@@ -1224,7 +1224,7 @@ func TestAgenticVerifierPhase2InfraDoesNotEnterPhase3(t *testing.T) {
 		}
 	}}
 	srv := fake.start(t)
-	v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+	v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})}
 	_, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
@@ -1249,7 +1249,7 @@ func TestAgenticVerifierPhase3HTTP400IsNone(t *testing.T) {
 		}
 	}}
 	srv := fake.start(t)
-	v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+	v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})}
 	caps, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
@@ -1274,7 +1274,7 @@ func TestAgenticVerifierPhase3AuthStaysError(t *testing.T) {
 		}
 	}}
 	srv := fake.start(t)
-	v := &modelConfigVerifier{client: srv.Client(), secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+	v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})}
 	_, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))

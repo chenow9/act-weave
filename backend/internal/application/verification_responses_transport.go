@@ -53,6 +53,12 @@ type verificationUsageTransport struct {
 	base http.RoundTripper
 }
 
+func (t *verificationUsageTransport) WrappedRoundTripper() http.RoundTripper { return t.base }
+
+func (t *verificationUsageTransport) WithWrappedRoundTripper(base http.RoundTripper) http.RoundTripper {
+	return &verificationUsageTransport{base: base}
+}
+
 func (t *verificationUsageTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	base := t.base
 	if base == nil {

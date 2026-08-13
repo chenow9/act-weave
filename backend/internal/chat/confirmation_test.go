@@ -195,7 +195,7 @@ func TestPrincipalAwareConfirmationProjection(t *testing.T) {
 	)
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 21 || version.Dirty {
+	if !version.Applied || version.Number != 22 || version.Dirty {
 		t.Fatalf("expected Interaction decision binding migration 4, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -547,7 +547,7 @@ func TestChatConfirmationProjectionMigration(t *testing.T) {
 	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 21 || version.Dirty {
+	if !version.Applied || version.Number != 22 || version.Dirty {
 		t.Fatalf("migration version = %+v", version)
 	}
 	db := testDatabase.Open(t)

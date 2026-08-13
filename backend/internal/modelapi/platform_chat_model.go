@@ -65,6 +65,12 @@ type dumpModelHTTPTransport struct {
 	base http.RoundTripper
 }
 
+func (t *dumpModelHTTPTransport) WrappedRoundTripper() http.RoundTripper { return t.base }
+
+func (t *dumpModelHTTPTransport) WithWrappedRoundTripper(base http.RoundTripper) http.RoundTripper {
+	return &dumpModelHTTPTransport{base: base}
+}
+
 func (t *dumpModelHTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	base := t.base
 	if base == nil {
@@ -141,6 +147,18 @@ func NewPlatformChatModel(
 	secrets SecretOpener,
 	config modelconfig.Config,
 ) (*PlatformChatModel, error) {
+	return NewPlatformChatModelWithEgress(context.Background(), client, secrets, config, EgressPolicy{})
+}
+
+// NewPlatformChatModelWithEgress applies the same host, port, and address
+// restrictions as the production Agentic Responses client.
+func NewPlatformChatModelWithEgress(
+	ctx context.Context,
+	client *http.Client,
+	secrets SecretOpener,
+	config modelconfig.Config,
+	egress EgressPolicy,
+) (*PlatformChatModel, error) {
 	if secrets == nil {
 		return nil, errors.New("modelapi secrets are required")
 	}
@@ -155,8 +173,12 @@ func NewPlatformChatModel(
 		// ResponseHeaderTimeout + request context; Stream needs no overall Timeout.
 		client = NewStreamingHTTPClient()
 	}
+	protected, err := ProtectHTTPClientForAPIBase(ctx, client, config.APIBase, egress)
+	if err != nil {
+		return nil, err
+	}
 	return &PlatformChatModel{
-		client:  client,
+		client:  protected,
 		secrets: secrets,
 		config:  config,
 	}, nil

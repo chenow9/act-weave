@@ -225,7 +225,9 @@ func TestCatalogDigest_WireCapture_ExactEquality(t *testing.T) {
 		APIBase:     srv.URL + "/v1",
 		ModelName:   "test-model",
 	}
-	m, err := modelapi.NewOpenAIAgenticModel(ctx, modelapi.NewStreamingHTTPClient(), secrets, cfg)
+	m, err := modelapi.NewOpenAIAgenticModelWithEgress(
+		ctx, modelapi.NewStreamingHTTPClient(), secrets, cfg, modelapi.LoopbackEgressPolicy(),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

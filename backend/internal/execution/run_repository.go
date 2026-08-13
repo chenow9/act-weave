@@ -482,6 +482,25 @@ func (r *RunRepository) StartWorkflowExecution(
 	ctx context.Context,
 	input StartWorkflowExecutionInput,
 ) (WorkflowExecution, error) {
+	return startWorkflowExecution(ctx, r.db, input)
+}
+
+func (r *RunRepository) StartWorkflowExecutionInTransaction(
+	ctx context.Context,
+	tx *sql.Tx,
+	input StartWorkflowExecutionInput,
+) (WorkflowExecution, error) {
+	if tx == nil {
+		return WorkflowExecution{}, ErrRunInvalid
+	}
+	return startWorkflowExecution(ctx, tx, input)
+}
+
+func startWorkflowExecution(
+	ctx context.Context,
+	queryer runQueryRower,
+	input StartWorkflowExecutionInput,
+) (WorkflowExecution, error) {
 	input = normalizeStartWorkflowExecution(input)
 	authorization, authorizationErr := canonicalRunObject(input.AuthorizationSnapshot)
 	inputSummary, inputErr := canonicalRunObject(input.InputSummary)
@@ -496,7 +515,7 @@ func (r *RunRepository) StartWorkflowExecution(
 		return WorkflowExecution{}, ErrRunInvalid
 	}
 	snapshotArguments := executionSnapshotArguments(principalSnapshot)
-	value, err := scanWorkflowExecution(r.db.QueryRowContext(ctx, `
+	value, err := scanWorkflowExecution(queryer.QueryRowContext(ctx, `
 		INSERT INTO workflow_executions AS we(
 		 id,workspace_id,workflow_id,revision_id,agent_run_id,trigger_type,
 		 triggered_by_type,triggered_by_id,trace_id,status,snapshot_schema_version,

@@ -10,8 +10,8 @@ import (
 func TestLatestAssemblyCouplingRejectsNullCatalogDigest(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 21 || version.Dirty {
-		t.Fatalf("expected clean latest migration 21, got %+v", version)
+	if !version.Applied || version.Number != 22 || version.Dirty {
+		t.Fatalf("expected clean latest migration 22, got %+v", version)
 	}
 	db := testDatabase.Open(t)
 

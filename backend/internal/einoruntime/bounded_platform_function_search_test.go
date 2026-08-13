@@ -545,7 +545,9 @@ func TestAgenticopenaiRequestCapture_PlatformCatalogSearch(t *testing.T) {
 	secrets := secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
 		return nil
 	})
-	am, err := modelapi.NewOpenAIAgenticModel(ctx, server.Client(), secrets, cfg)
+	am, err := modelapi.NewOpenAIAgenticModelWithEgress(
+		ctx, server.Client(), secrets, cfg, modelapi.LoopbackEgressPolicy(),
+	)
 	if err != nil {
 		t.Fatalf("NewOpenAIAgenticModel: %v", err)
 	}

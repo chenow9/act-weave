@@ -85,7 +85,7 @@ func setupProtocolEventCapacity(t testing.TB) (*sql.DB, time.Duration) {
 	t.Helper()
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 21 || version.Dirty {
+	if !version.Applied || version.Number != 22 || version.Dirty {
 		t.Fatalf("expected query-plan schema version 4, got %+v", version)
 	}
 	db := testDatabase.Open(t)

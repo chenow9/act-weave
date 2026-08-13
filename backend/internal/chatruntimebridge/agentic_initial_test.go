@@ -949,7 +949,9 @@ func TestAgenticInitial_WireCapture_ClientToolSearch(t *testing.T) {
 		AgenticEngine: einoruntime.NewAgenticEngine(einoruntime.AgenticEngineConfig{Store: store}),
 		BuildAgenticModel: func(ctx context.Context, c modelconfig.Config) (model.AgenticModel, error) {
 			agenticBuilds.Add(1)
-			return modelapi.NewOpenAIAgenticModel(ctx, modelapi.NewStreamingHTTPClient(), opener, c)
+			return modelapi.NewOpenAIAgenticModelWithEgress(
+				ctx, modelapi.NewStreamingHTTPClient(), opener, c, modelapi.LoopbackEgressPolicy(),
+			)
 		},
 		Assemblies:      assemblies,
 		TextSinkFactory: (&sinkCounter{}).Factory,

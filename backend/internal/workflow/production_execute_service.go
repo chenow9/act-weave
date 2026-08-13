@@ -75,6 +75,16 @@ type ProductionExecutionRecord interface {
 	GetWorkflowExecution(context.Context, string, string) (execution.WorkflowExecution, error)
 }
 
+// ProductionExecutionPreparer authorizes and canonicalizes a workflow start
+// without writing it. Production adapters use the prepared input in the same
+// transaction as the durable idempotency claim.
+type ProductionExecutionPreparer interface {
+	PrepareWorkflowExecution(
+		context.Context,
+		execution.StartWorkflowExecutionRequest,
+	) (execution.StartWorkflowExecutionInput, error)
+}
+
 // ProductionPlanRunner executes an immutable published revision plan.
 type ProductionPlanRunner interface {
 	Run(ctx context.Context, request ProductionPlanRunRequest) (ProductionPlanRunResult, error)
@@ -121,6 +131,17 @@ type ProductionIdempotencyStore interface {
 		ctx context.Context,
 		workspaceID, actorID, key, requestHash, newExecutionID string,
 	) (executionID string, created bool, err error)
+}
+
+// ProductionIdempotencyExecutionStore atomically claims an idempotency key and
+// creates its durable execution row. Implementations prevent another replica
+// from observing a claim before the execution exists.
+type ProductionIdempotencyExecutionStore interface {
+	ClaimExecution(
+		context.Context,
+		string, string, string, string,
+		execution.StartWorkflowExecutionInput,
+	) (execution.WorkflowExecution, bool, error)
 }
 
 // MemoryProductionIdempotencyStore is process-local (sufficient for unit tests and
@@ -258,30 +279,6 @@ func (s *ProductionExecuteService) Execute(
 			return ProductionExecuteResult{}, err
 		}
 	}
-
-	executionID, err := uuid.NewV7()
-	if err != nil {
-		return ProductionExecuteResult{}, fmt.Errorf("create workflow production execution id: %w", err)
-	}
-	if input.IdempotencyKey != "" {
-		claimedID, created, claimErr := s.idem.Claim(
-			ctx, input.WorkspaceID, input.ActorID, input.IdempotencyKey, requestHash, executionID.String(),
-		)
-		if claimErr != nil {
-			return ProductionExecuteResult{}, claimErr
-		}
-		if !created {
-			existing, getErr := s.executions.GetWorkflowExecution(ctx, input.WorkspaceID, claimedID)
-			if getErr != nil {
-				return ProductionExecuteResult{}, getErr
-			}
-			return productionResultFromExecution(existing), nil
-		}
-		executionID, err = uuid.Parse(claimedID)
-		if err != nil {
-			return ProductionExecuteResult{}, ErrInvalid
-		}
-	}
 	var inputObject map[string]any
 	if err := json.Unmarshal(input.Input, &inputObject); err != nil {
 		return ProductionExecuteResult{}, ErrInvalid
@@ -293,14 +290,83 @@ func (s *ProductionExecuteService) Execute(
 		return ProductionExecuteResult{}, ErrInvalid
 	}
 
-	started, err := s.executions.StartWorkflowExecution(ctx, execution.StartWorkflowExecutionRequest{
-		ID: executionID.String(), WorkspaceID: input.WorkspaceID, WorkflowID: input.WorkflowID,
-		RevisionID: input.RevisionID, TriggerType: productionTriggerType(input.Trigger),
-		TriggeredByType: "USER", TriggeredByID: input.ActorID, TraceID: input.TraceID,
-		InputSummary: inputSummary,
-	})
+	executionID, err := uuid.NewV7()
 	if err != nil {
-		return ProductionExecuteResult{}, err
+		return ProductionExecuteResult{}, fmt.Errorf("create workflow production execution id: %w", err)
+	}
+	var started execution.WorkflowExecution
+	startedByIdempotency := false
+	if input.IdempotencyKey != "" {
+		if atomicStore, ok := s.idem.(ProductionIdempotencyExecutionStore); ok {
+			preparer, ok := s.executions.(ProductionExecutionPreparer)
+			if !ok {
+				return ProductionExecuteResult{}, errors.New("workflow production execution preparer is required")
+			}
+			prepared, prepareErr := preparer.PrepareWorkflowExecution(
+				ctx, execution.StartWorkflowExecutionRequest{
+					ID: executionID.String(), WorkspaceID: input.WorkspaceID,
+					WorkflowID: input.WorkflowID, RevisionID: input.RevisionID,
+					TriggerType: productionTriggerType(input.Trigger), TriggeredByType: "USER",
+					TriggeredByID: input.ActorID, TraceID: input.TraceID, InputSummary: inputSummary,
+				},
+			)
+			if prepareErr != nil {
+				return ProductionExecuteResult{}, prepareErr
+			}
+			started, startedByIdempotency, err = atomicStore.ClaimExecution(
+				ctx, input.WorkspaceID, input.ActorID, input.IdempotencyKey, requestHash,
+				prepared,
+			)
+			if err != nil {
+				return ProductionExecuteResult{}, err
+			}
+			if !startedByIdempotency {
+				return productionResultFromExecution(started), nil
+			}
+			executionID, err = uuid.Parse(started.ID)
+			if err != nil {
+				return ProductionExecuteResult{}, ErrInvalid
+			}
+		} else {
+			claimedID, created, claimErr := s.idem.Claim(
+				ctx, input.WorkspaceID, input.ActorID, input.IdempotencyKey, requestHash, executionID.String(),
+			)
+			if claimErr != nil {
+				return ProductionExecuteResult{}, claimErr
+			}
+			if !created {
+				existing, getErr := s.executions.GetWorkflowExecution(ctx, input.WorkspaceID, claimedID)
+				if getErr == nil {
+					return productionResultFromExecution(existing), nil
+				}
+				if !errors.Is(getErr, execution.ErrRunNotFound) {
+					return ProductionExecuteResult{}, getErr
+				}
+				// Memory/test stores can still expose a claim-before-start window.
+				// Production uses the atomic PostgreSQL implementation above.
+			}
+			executionID, err = uuid.Parse(claimedID)
+			if err != nil {
+				return ProductionExecuteResult{}, ErrInvalid
+			}
+		}
+	}
+
+	if !startedByIdempotency {
+		started, err = s.executions.StartWorkflowExecution(ctx, execution.StartWorkflowExecutionRequest{
+			ID: executionID.String(), WorkspaceID: input.WorkspaceID, WorkflowID: input.WorkflowID,
+			RevisionID: input.RevisionID, TriggerType: productionTriggerType(input.Trigger),
+			TriggeredByType: "USER", TriggeredByID: input.ActorID, TraceID: input.TraceID,
+			InputSummary: inputSummary,
+		})
+		if err != nil {
+			if input.IdempotencyKey != "" && errors.Is(err, execution.ErrRunConflict) {
+				if existing, getErr := s.executions.GetWorkflowExecution(ctx, input.WorkspaceID, executionID.String()); getErr == nil {
+					return productionResultFromExecution(existing), nil
+				}
+			}
+			return ProductionExecuteResult{}, err
+		}
 	}
 
 	// Console production actor is USER subject (no independent Token envelope).

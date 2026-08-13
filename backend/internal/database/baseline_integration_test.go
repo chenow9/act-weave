@@ -19,15 +19,13 @@ func TestPostgresBaselineMigration(t *testing.T) {
 		if err := migrator.Up(); err != nil {
 			t.Fatalf("apply migrations: %v", err)
 		}
-		// Latest: 1 init + 2 session context + 3 summaries + 4 LLM compact +
-		// 5 cors loopback + 6 aap files.
-		assertMigrationVersion(t, migrator, 20)
+		assertMigrationVersion(t, migrator, 22)
 	})
 	assertPostgresBaseline(t, testDSN, true)
 
 	applyMigrations(t, testDSN, func(migrator *database.Migrator) {
-		// 20 applied versions → Down(20) leaves an empty migration table.
-		if err := migrator.Down(20); err != nil {
+		// 22 applied versions → Down(22) leaves an empty migration table.
+		if err := migrator.Down(22); err != nil {
 			t.Fatalf("roll back all migrations: %v", err)
 		}
 		version, err := migrator.Version()
@@ -44,7 +42,7 @@ func TestPostgresBaselineMigration(t *testing.T) {
 		if err := migrator.Up(); err != nil {
 			t.Fatalf("reapply migrations: %v", err)
 		}
-		assertMigrationVersion(t, migrator, 20)
+		assertMigrationVersion(t, migrator, 22)
 		if err := migrator.Up(); err != nil {
 			t.Fatalf("reapply latest as no-op: %v", err)
 		}

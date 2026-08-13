@@ -80,6 +80,19 @@ func NewOpenAIAgenticModel(
 	secrets SecretOpener,
 	config modelconfig.Config,
 ) (model.AgenticModel, error) {
+	return NewOpenAIAgenticModelWithEgress(ctx, client, secrets, config, EgressPolicy{})
+}
+
+// NewOpenAIAgenticModelWithEgress builds an AgenticModel with deployment-owned
+// private-network exceptions. The zero-value policy allows public endpoints
+// only and is the secure default used by NewOpenAIAgenticModel.
+func NewOpenAIAgenticModelWithEgress(
+	ctx context.Context,
+	client *http.Client,
+	secrets SecretOpener,
+	config modelconfig.Config,
+	egress EgressPolicy,
+) (model.AgenticModel, error) {
 	if secrets == nil {
 		return nil, errors.New("modelapi secrets are required")
 	}
@@ -99,6 +112,10 @@ func NewOpenAIAgenticModel(
 	}
 	if client == nil {
 		client = NewStreamingHTTPClient()
+	}
+	client, err = ProtectHTTPClientForAPIBase(ctx, client, apiBase, egress)
+	if err != nil {
+		return nil, err
 	}
 	// Enforce wire-level invariants after agenticopenai applies options/extra
 	// fields (ExtraFields use JSON-set and would otherwise overwrite store).

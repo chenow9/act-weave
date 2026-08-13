@@ -81,6 +81,9 @@ type Config struct {
 	AgentAccessFiles config.AgentAccessFilesConfig
 	// MetricsBearerToken protects GET /metrics when set; empty = loopback only.
 	MetricsBearerToken string
+	// ModelEgressAllowedCIDRs permits deployment-owned private model gateways.
+	// Empty keeps model traffic restricted to public addresses.
+	ModelEgressAllowedCIDRs []string
 	// AgentAuditDebug enables agent full-trace debug audit capture/exposure.
 	AgentAuditDebug bool
 	// ToolsAllowForcePublish enables PLATFORM_ADMIN force-publish without live invoke.
@@ -176,6 +179,9 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	client := config.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
+	}
+	modelEgress := modelapi.EgressPolicy{
+		AllowedCIDRs: append([]string(nil), config.ModelEgressAllowedCIDRs...),
 	}
 	db, err := sql.Open("postgres", config.PostgresDSN)
 	if err != nil {
@@ -460,7 +466,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		return nil, err
 	}
 	modelVerifier, err := modelconfig.NewVerificationService(modelRepository,
-		&modelConfigVerifier{client: client, secrets: secretService},
+		&modelConfigVerifier{client: client, secrets: secretService, egress: modelEgress},
 		modelVerificationTimeout(config.Runtime))
 	if err != nil {
 		return nil, err
@@ -536,7 +542,10 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	// shared 15s application HTTP client — that yields PROMPT_GENERATION_TIMEOUT.
 	promptService, err := agent.NewPromptService(agentRepository, promptObjects,
 		&modelSnapshotSource{models: modelRepository},
-		&promptGenerator{models: modelRepository, secrets: secretService, client: modelapi.NewStreamingHTTPClient()})
+		&promptGenerator{
+			models: modelRepository, secrets: secretService,
+			client: modelapi.NewStreamingHTTPClient(), egress: modelEgress,
+		})
 	if err != nil {
 		return nil, err
 	}
@@ -816,7 +825,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		Models: modelRepository,
 		Tools:  toolRepository,
 		Build: func(ctx context.Context, cfg modelconfig.Config) (smartdag.ChatModel, error) {
-			return modelapi.NewOpenAIAgenticModel(ctx, modelHTTP, secretService, cfg)
+			return modelapi.NewOpenAIAgenticModelWithEgress(ctx, modelHTTP, secretService, cfg, modelEgress)
 		},
 	})
 	if err != nil {
@@ -878,11 +887,15 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if err != nil {
 		return nil, err
 	}
+	productionIdempotency, err := workflow.NewPostgresProductionIdempotencyStore(db, runRepository)
+	if err != nil {
+		return nil, err
+	}
 	productionExecute, err := workflow.NewProductionExecuteService(
 		workflowRepository,
 		&productionRuns{service: runService, repo: runRepository},
 		productionPlanRunner,
-		workflow.NewMemoryProductionIdempotencyStore(),
+		productionIdempotency,
 	)
 	if err != nil {
 		return nil, err
@@ -1226,7 +1239,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	}
 	// Production AgenticModel (Responses; store=false; parallel=false).
 	buildAgenticModel := func(ctx context.Context, cfg modelconfig.Config) (model.AgenticModel, error) {
-		return modelapi.NewOpenAIAgenticModel(ctx, modelHTTP, secretService, cfg)
+		return modelapi.NewOpenAIAgenticModelWithEgress(ctx, modelHTTP, secretService, cfg, modelEgress)
 	}
 	// Compact DI (ZKL-81): full Coordinator + lifecycle + T4-B projector path.
 	// Production compaction gate remains default-off via runtime.sessionContext.compaction.
