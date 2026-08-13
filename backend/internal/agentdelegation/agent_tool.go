@@ -349,18 +349,29 @@ func (t *AuditedAgentTool) InvokableRun(ctx context.Context, argumentsInJSON str
 	// Real agent dispatch: count attempt only immediately before Inner.InvokableRun.
 	if aerr := t.cfg.Audit.RecordDispatchAttempt(ctx, workspaceID, del.ID); aerr != nil {
 		// Attempt failed: never call Inner; release reservation (defer) + clean child/del.
+		// Parent cancel/timeout can surface here (ExecContext / fake audit waiting
+		// on ctx.Done()) after StartChild — classify from ctx, not as a generic
+		// audit failure, or TASK child/delegation/step disagree (FAILED vs CANCELLED).
+		finalStatus, errCode, errMsg := attemptRecordAbort(ctx, aerr)
 		var finChildErr error
 		if mode == ModeTask && childRunID != "" && t.cfg.ChildRuns != nil {
 			finChildErr = t.cfg.ChildRuns.FinishChild(context.WithoutCancel(ctx), workspaceID, childRunID,
-				StatusFailed, "DELEGATION_ATTEMPT_RECORD_FAILED", json.RawMessage(`{}`))
+				finalStatus, errCode, json.RawMessage(`{}`))
 		}
 		var childPtr *string
 		if childRunID != "" {
 			childPtr = &childRunID
 		}
 		finErr := t.finalizeWithRetry(context.WithoutCancel(ctx), workspaceID, del.ID, firstNonEmpty(del.StepID, stepID),
-			StatusFailed, "DELEGATION_ATTEMPT_RECORD_FAILED", truncate(aerr.Error(), 500), childPtr, nil)
-		return formatDelegationError(errors.Join(fmt.Errorf("dispatch attempt record: %w", aerr), finChildErr, finErr)), nil
+			finalStatus, errCode, errMsg, childPtr, nil)
+		cause := aerr
+		switch finalStatus {
+		case StatusCancelled:
+			cause = errors.Join(ErrCancelled, aerr)
+		case StatusTimedOut:
+			cause = errors.Join(ErrTimedOut, aerr)
+		}
+		return formatDelegationError(errors.Join(cause, finChildErr, finErr)), nil
 	}
 	// Dispatch is real: reservation is permanently consumed (AttemptCount already incremented).
 	reserved = false
@@ -677,6 +688,25 @@ func extractResultString(payload json.RawMessage) string {
 		}
 	}
 	return string(payload)
+}
+
+// attemptRecordAbort classifies a failed RecordDispatchAttempt after StartChild.
+// Cancel/timeout of the parent (or TASK bound) must not be recorded as a generic
+// audit failure: that is the window where child_run / delegation / step disagree.
+func attemptRecordAbort(ctx context.Context, aerr error) (status, errCode, errMsg string) {
+	if ctx != nil {
+		switch {
+		case errors.Is(ctx.Err(), context.DeadlineExceeded):
+			return StatusTimedOut, "DELEGATION_TIMED_OUT", "delegation timed out"
+		case errors.Is(ctx.Err(), context.Canceled):
+			return StatusCancelled, "DELEGATION_CANCELLED", "parent context cancelled"
+		}
+	}
+	msg := "dispatch attempt record failed"
+	if aerr != nil && strings.TrimSpace(aerr.Error()) != "" {
+		msg = truncate(aerr.Error(), 500)
+	}
+	return StatusFailed, "DELEGATION_ATTEMPT_RECORD_FAILED", msg
 }
 
 func formatDelegationError(err error) string {
