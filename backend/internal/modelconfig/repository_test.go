@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"actweave/backend/internal/database/dbtest"
 )
@@ -192,12 +193,215 @@ func TestConfigurationSecurityAcceptanceRejectsSecretsInModelOptions(t *testing.
 	}
 }
 
+func TestCreateRejectsNonEmptyDisclosurePolicy(t *testing.T) {
+	repository, _ := newModelConfigRepositoryTest(t, nil)
+	input := validNewConfig(repositoryConfigID, "Policy Create")
+	raw, err := CanonicalToolDisclosurePolicy(DisclosureModeCarryAll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.ToolDisclosurePolicy = raw
+	if _, err := repository.Create(context.Background(), input); !errors.Is(err, ErrToolDisclosureInvalid) {
+		t.Fatalf("expected ErrToolDisclosureInvalid, got %v", err)
+	}
+}
+
+func TestGenericUpdateClearsDisclosurePolicy(t *testing.T) {
+	repository, db := newModelConfigRepositoryTest(t, nil)
+	created := createRepositoryConfig(t, repository, repositoryConfigID, "Clear Policy")
+	verified := verifyRepositoryConfig(t, repository, created)
+	plantFunctionCallingCaps(t, db, verified)
+	policy, err := CanonicalToolDisclosurePolicy(DisclosureModeCarryAll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE model_configs SET tool_disclosure_policy = $2::jsonb WHERE id = $1`, verified.ID, []byte(policy)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repository.Get(context.Background(), repositoryWorkspaceID, verified.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if IsUnsetToolDisclosurePolicy(got.ToolDisclosurePolicy) {
+		t.Fatal("planted policy missing")
+	}
+	updated, err := repository.Update(context.Background(), repositoryWorkspaceID, got.ID, UpdateConfig{
+		Name: got.Name, Provider: got.Provider, APIBase: got.APIBase, ModelName: got.ModelName,
+		CredentialSecretID: got.CredentialSecretID, Options: got.Options,
+		RuntimeCapabilities: got.RuntimeCapabilities, Status: StatusUnverified,
+		UpdatedBy: repositoryOwnerID, ExpectedLockVersion: got.LockVersion,
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if !IsUnsetToolDisclosurePolicy(updated.ToolDisclosurePolicy) {
+		t.Fatalf("generic update must force policy {{}}, got %s", updated.ToolDisclosurePolicy)
+	}
+	if !IsUnverifiedAgenticCapabilities(updated.AgenticCapabilities) || updated.Status != StatusUnverified {
+		t.Fatalf("generic update must clear caps: %+v", updated)
+	}
+}
+
+func TestUpdateDisclosurePolicyCAS(t *testing.T) {
+	repository, db := newModelConfigRepositoryTest(t, nil)
+	created := createRepositoryConfig(t, repository, repositoryConfigID, "Disclosure CAS")
+	verified := verifyRepositoryConfig(t, repository, created)
+	lastVerified := *verified.LastVerifiedAt
+	lastLatency := *verified.LastLatencyMS
+	plantFunctionCallingCaps(t, db, verified)
+	fc, err := repository.Get(context.Background(), repositoryWorkspaceID, verified.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeCaps, _, err := ParseAgenticCapabilities(fc.AgenticCapabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, err := CanonicalToolDisclosurePolicy(DisclosureModePlatformOnDemand)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := repository.UpdateDisclosurePolicy(context.Background(), DisclosurePolicyUpdate{
+		WorkspaceID: repositoryWorkspaceID, ConfigID: fc.ID, Policy: policy,
+		UpdatedBy: repositoryOwnerID, ExpectedLockVersion: fc.LockVersion,
+	})
+	if err != nil {
+		t.Fatalf("update disclosure: %v", err)
+	}
+	if updated.LockVersion != fc.LockVersion+1 {
+		t.Fatalf("lock must bump once, got %d want %d", updated.LockVersion, fc.LockVersion+1)
+	}
+	if updated.Status != StatusVerified {
+		t.Fatalf("status changed: %s", updated.Status)
+	}
+	if updated.LastErrorCode != nil || updated.LastLatencyMS == nil || *updated.LastLatencyMS != lastLatency {
+		t.Fatalf("evidence mutated: %+v", updated)
+	}
+	if updated.LastVerifiedAt == nil || !updated.LastVerifiedAt.Equal(lastVerified) {
+		t.Fatalf("last_verified_at mutated: %v vs %v", updated.LastVerifiedAt, lastVerified)
+	}
+	gotPolicy, _, err := ParseToolDisclosurePolicy(updated.ToolDisclosurePolicy)
+	if err != nil || gotPolicy.Mode != DisclosureModePlatformOnDemand {
+		t.Fatalf("policy: %+v err=%v", gotPolicy, err)
+	}
+	afterCaps, _, err := ParseAgenticCapabilities(updated.AgenticCapabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterCaps.ToolCalling != ToolCallingFunctionCalling {
+		t.Fatalf("caps toolCalling changed: %+v", afterCaps)
+	}
+	if afterCaps.VerifiedConfigDigest != beforeCaps.VerifiedConfigDigest ||
+		!afterCaps.VerifiedAt.Equal(beforeCaps.VerifiedAt) {
+		t.Fatalf("caps identity changed: %+v", afterCaps)
+	}
+	if afterCaps.VerifiedLockVersion != fc.LockVersion {
+		t.Fatalf("verifiedLockVersion restamp: got %d want %d", afterCaps.VerifiedLockVersion, fc.LockVersion)
+	}
+
+	if _, err := repository.UpdateDisclosurePolicy(context.Background(), DisclosurePolicyUpdate{
+		WorkspaceID: repositoryWorkspaceID, ConfigID: fc.ID, Policy: policy,
+		UpdatedBy: repositoryOwnerID, ExpectedLockVersion: fc.LockVersion,
+	}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale lock want conflict, got %v", err)
+	}
+
+	native := verifyRepositoryConfig(t, repository, createRepositoryConfig(t, repository, repositorySecondID, "Native Disclosure"))
+	if _, err := repository.UpdateDisclosurePolicy(context.Background(), DisclosurePolicyUpdate{
+		WorkspaceID: repositoryWorkspaceID, ConfigID: native.ID, Policy: policy,
+		UpdatedBy: repositoryOwnerID, ExpectedLockVersion: native.LockVersion,
+	}); !errors.Is(err, ErrToolDisclosureInvalid) {
+		t.Fatalf("native want disclosure invalid, got %v", err)
+	}
+	unverified := createRepositoryConfig(t, repository, "018f1f2e-7b5a-7c3d-8e9f-e234567890b2", "Unverified Disclosure")
+	if _, err := repository.UpdateDisclosurePolicy(context.Background(), DisclosurePolicyUpdate{
+		WorkspaceID: repositoryWorkspaceID, ConfigID: unverified.ID, Policy: policy,
+		UpdatedBy: repositoryOwnerID, ExpectedLockVersion: unverified.LockVersion,
+	}); !errors.Is(err, ErrToolDisclosureInvalid) {
+		t.Fatalf("unverified want disclosure invalid, got %v", err)
+	}
+}
+
+func TestListAgentsByModelConfig(t *testing.T) {
+	repository, db := newModelConfigRepositoryTest(t, nil)
+	created := createRepositoryConfig(t, repository, repositoryConfigID, "List Agents")
+	keepA := "018f1f2e-7b5a-7c3d-8e9f-e234567890c1"
+	keepB := "018f1f2e-7b5a-7c3d-8e9f-e234567890c2"
+	deleted := "018f1f2e-7b5a-7c3d-8e9f-e234567890c3"
+	for _, row := range []struct {
+		id, name string
+	}{
+		{keepA, "Agent A"},
+		{keepB, "Agent B"},
+		{deleted, "Agent Deleted"},
+	} {
+		if _, err := db.Exec(`
+			INSERT INTO agents (id, workspace_id, name, model_config_id, created_by, updated_by)
+			VALUES ($1, $2, $3, $4, $5, $5)
+		`, row.id, repositoryWorkspaceID, row.name, created.ID, repositoryOwnerID); err != nil {
+			t.Fatalf("insert agent %s: %v", row.name, err)
+		}
+	}
+	if _, err := db.Exec(`UPDATE agents SET deleted_at = clock_timestamp() WHERE id = $1`, deleted); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := repository.ListAgentsByModelConfig(context.Background(), repositoryWorkspaceID, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 2 || ids[0] != keepA || ids[1] != keepB {
+		t.Fatalf("ids=%v", ids)
+	}
+}
+
+func verifyRepositoryConfig(t *testing.T, repository *Repository, created Config) Config {
+	t.Helper()
+	service, err := NewVerificationService(repository, VerifierFunc(func(context.Context, Config) (AgenticCapabilities, error) {
+		return AgenticCapabilities{}, nil
+	}), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verified, err := service.Verify(context.Background(), created.WorkspaceID, created.ID, repositoryOwnerID)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	return verified
+}
+
+func plantFunctionCallingCaps(t *testing.T, db *sql.DB, verified Config) {
+	t.Helper()
+	doc, _, err := ParseAgenticCapabilities(verified.AgenticCapabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2 := AgenticCapabilities{
+		SchemaVersion:        AgenticCapabilitiesSchemaV2,
+		Protocol:             AgenticProtocolOpenAIResponsesV1,
+		Streaming:            true,
+		Usage:                true,
+		ToolCalling:          ToolCallingFunctionCalling,
+		ReasoningReplay:      AgenticReasoningReplayEncryptedOrNone,
+		VerifiedAdapter:      VerifiedAdapterAgenticOpenAIV022,
+		VerifiedAt:           doc.VerifiedAt,
+		VerifiedLockVersion:  doc.VerifiedLockVersion,
+		VerifiedConfigDigest: doc.VerifiedConfigDigest,
+	}
+	raw, err := json.Marshal(v2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE model_configs SET agentic_capabilities = $2::jsonb WHERE id = $1`, verified.ID, raw); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func newModelConfigRepositoryTest(t *testing.T, checker UsageChecker) (*Repository, *sql.DB) {
 	t.Helper()
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 20 || version.Dirty {
-		t.Fatalf("expected clean model config repository migration version 20, got %+v", version)
+	if !version.Applied || version.Number != 21 || version.Dirty {
+		t.Fatalf("expected clean model config repository migration version 21, got %+v", version)
 	}
 	db := testDatabase.Open(t)
 	if _, err := db.Exec(`

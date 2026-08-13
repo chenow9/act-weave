@@ -514,6 +514,16 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		return nil, err
 	}
 
+	capabilityRepository, err := capability.NewRepository(db)
+	if err != nil {
+		return nil, err
+	}
+	capabilityCatalog, err := capability.NewCatalog(capabilityRepository, capabilityRepository)
+	if err != nil {
+		return nil, err
+	}
+	configurationRoutes = configurationRoutes.WithAgentCatalog(capabilityCatalog)
+
 	agentRepository, err := agent.NewRepository(db)
 	if err != nil {
 		return nil, err
@@ -539,16 +549,8 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		return nil, err
 	}
 	agentCreationService = agentCreationService.WithAuditor(auditRecorder)
-	capabilityRepository, err := capability.NewRepository(db)
-	if err != nil {
-		return nil, err
-	}
 	bindingService, err := capability.NewBindingService(capabilityRepository,
 		&bindingConnectionCompatibility{db: db})
-	if err != nil {
-		return nil, err
-	}
-	capabilityCatalog, err := capability.NewCatalog(capabilityRepository, capabilityRepository)
 	if err != nil {
 		return nil, err
 	}

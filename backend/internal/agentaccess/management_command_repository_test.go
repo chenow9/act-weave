@@ -16,7 +16,7 @@ import (
 func TestManagementCommandRepository(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 20 || version.Dirty {
+	if !version.Applied || version.Number != 21 || version.Dirty {
 		t.Fatalf("expected clean latest schema (migration 6), got %+v", version)
 	}
 	db := testDatabase.Open(t)

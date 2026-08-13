@@ -95,6 +95,13 @@ func RespondError(c *gin.Context, err error) {
 	request, _ := RequestContextFrom(c.Request.Context())
 	retryable := mappedRetryable(mapped)
 	details := []map[string]any{}
+	if tooLarge, ok := modelconfig.AsCarryAllTooLarge(err); ok {
+		details = append(details, map[string]any{
+			"agentId": tooLarge.AgentID,
+			"count":   tooLarge.Count,
+			"limit":   tooLarge.Limit,
+		})
+	}
 	// Prefer TurnFailure public message when present (never include Cause).
 	if tf, ok := smartdag.AsTurnFailure(err); ok && tf != nil {
 		if strings.TrimSpace(tf.Message) != "" {
@@ -479,6 +486,15 @@ func mapError(err error) mappedError {
 		// Do not fold into general model validation (422).
 		return mappedError{http.StatusBadRequest, "AGENTIC_CAPABILITIES_READ_ONLY",
 			"agenticCapabilities is verification-owned and read-only on create/update."}
+	case errors.Is(err, modelconfig.ErrToolCarryAllTooLarge):
+		return mappedError{http.StatusUnprocessableEntity, modelconfig.ErrorCodeToolCarryAllTooLarge,
+			"Carry-all disclosure is not allowed because an Agent catalog exceeds the hard limit."}
+	case errors.Is(err, modelconfig.ErrToolDisclosureNotRolledOut):
+		return mappedError{http.StatusUnprocessableEntity, modelconfig.ErrorCodeToolDisclosureNotRolledOut,
+			"Platform tool disclosure is not enabled for this workspace."}
+	case errors.Is(err, modelconfig.ErrToolDisclosureInvalid):
+		return mappedError{http.StatusUnprocessableEntity, modelconfig.ErrorCodeToolDisclosureInvalid,
+			"The tool disclosure policy is not valid for this model configuration."}
 	case isNotFound(err):
 		return mappedError{http.StatusNotFound, "NOT_FOUND", "The requested resource was not found."}
 	case isConflict(err):

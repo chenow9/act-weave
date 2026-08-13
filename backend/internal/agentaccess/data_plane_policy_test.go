@@ -19,7 +19,7 @@ func TestAAPIdempotencyAndQuota(t *testing.T) {
 	t.Run("durable command receipt retains hash and result for at least 24 hours", func(t *testing.T) {
 		testDatabase := dbtest.New(t)
 		version := testDatabase.MigrateToLatest(t)
-		if !version.Applied || version.Number != 20 || version.Dirty {
+		if !version.Applied || version.Number != 21 || version.Dirty {
 			t.Fatalf("latest migration=%+v", version)
 		}
 		db := testDatabase.Open(t)
@@ -78,7 +78,7 @@ func TestAAPIdempotencyAndQuota(t *testing.T) {
 			t.Fatalf("receipt stored unexpected request evidence %q", rawKey)
 		}
 		version = testDatabase.MigrateToLatest(t)
-		if !version.Applied || version.Number != 20 || version.Dirty {
+		if !version.Applied || version.Number != 21 || version.Dirty {
 			t.Fatalf("rollback=%+v", version)
 		}
 		var exists bool

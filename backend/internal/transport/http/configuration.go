@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"actweave/backend/internal/authz"
+	"actweave/backend/internal/capability"
 	"actweave/backend/internal/connection"
 	"actweave/backend/internal/modelconfig"
 	"actweave/backend/internal/outboundidentity"
@@ -27,7 +28,14 @@ type ModelConfigStore interface {
 	Get(context.Context, string, string) (modelconfig.Config, error)
 	List(context.Context, string) ([]modelconfig.Config, error)
 	Update(context.Context, string, string, modelconfig.UpdateConfig) (modelconfig.Config, error)
+	UpdateDisclosurePolicy(context.Context, modelconfig.DisclosurePolicyUpdate) (modelconfig.Config, error)
+	ListAgentsByModelConfig(context.Context, string, string) ([]string, error)
 	SoftDelete(context.Context, string, string, string, int64) error
+}
+
+// AgentCapabilityLister is the bind-path catalog used by set-disclosure carry_all.
+type AgentCapabilityLister interface {
+	ListForAgent(context.Context, string, string) ([]capability.Descriptor, error)
 }
 type ModelConfigVerifier interface {
 	Verify(context.Context, string, string, string) (modelconfig.Config, error)
@@ -66,6 +74,7 @@ type SecretStore interface {
 type ConfigurationRoutes struct {
 	authorizer         WorkspaceAuthorizer
 	models             ModelConfigStore
+	agentCatalog       AgentCapabilityLister
 	modelVerifier      ModelConfigVerifier
 	providers          ProviderStore
 	providerSyncer     ProviderSyncer
@@ -80,6 +89,7 @@ type ConfigurationRoutes struct {
 type ConfigurationDependencies struct {
 	Authorizer         WorkspaceAuthorizer
 	Models             ModelConfigStore
+	AgentCatalog       AgentCapabilityLister
 	ModelVerifier      ModelConfigVerifier
 	Providers          ProviderStore
 	ProviderSyncer     ProviderSyncer
@@ -108,9 +118,18 @@ func NewConfigurationRoutes(d ConfigurationDependencies) (*ConfigurationRoutes, 
 			return nil, err
 		}
 	}
-	return &ConfigurationRoutes{authorizer: d.Authorizer, models: d.Models, modelVerifier: d.ModelVerifier,
-		providers: d.Providers, providerSyncer: d.ProviderSyncer, materializer: d.Materializer, providerRegistry: d.ProviderRegistry,
+	return &ConfigurationRoutes{authorizer: d.Authorizer, models: d.Models, agentCatalog: d.AgentCatalog,
+		modelVerifier: d.ModelVerifier,
+		providers:     d.Providers, providerSyncer: d.ProviderSyncer, materializer: d.Materializer, providerRegistry: d.ProviderRegistry,
 		connections: d.Connections, connectionVerifier: d.ConnectionVerifier, secrets: d.Secrets, impactProofs: impact}, nil
+}
+
+// WithAgentCatalog attaches the bind-path catalog used by set-disclosure.
+func (r *ConfigurationRoutes) WithAgentCatalog(catalog AgentCapabilityLister) *ConfigurationRoutes {
+	if r != nil {
+		r.agentCatalog = catalog
+	}
+	return r
 }
 
 func (r *ConfigurationRoutes) RegisterV1(v1 V1Routes) {
@@ -121,6 +140,7 @@ func (r *ConfigurationRoutes) RegisterV1(v1 V1Routes) {
 	g.PATCH("/workspaces/:wid/model-configs/:id", r.updateModel)
 	g.DELETE("/workspaces/:wid/model-configs/:id", r.deleteModel)
 	g.POST("/workspaces/:wid/model-configs/:id/__command/verify", r.verifyModel)
+	g.POST("/workspaces/:wid/model-configs/:id/__command/set-disclosure", r.setModelDisclosure)
 	g.GET("/workspaces/:wid/providers", r.listProviders)
 	g.POST("/workspaces/:wid/providers", r.createProvider)
 	g.GET("/workspaces/:wid/providers/:pid", r.getProvider)
@@ -219,16 +239,21 @@ type modelConfigDTO struct {
 	// AgenticCapabilities is verification-owned and read-only on the wire.
 	// Create/update request DTOs intentionally omit this field so DisallowUnknownFields
 	// rejects any client write attempt (including {}, null, or nonempty data).
-	AgenticCapabilities json.RawMessage    `json:"agenticCapabilities"`
-	Status              modelconfig.Status `json:"status"`
-	LastVerifiedAt      *time.Time         `json:"lastVerifiedAt,omitempty"`
-	LastLatencyMS       *int               `json:"lastLatencyMs,omitempty"`
-	LastErrorCode       *string            `json:"lastErrorCode,omitempty"`
-	CreatedBy           string             `json:"createdBy"`
-	UpdatedBy           string             `json:"updatedBy"`
-	CreatedAt           time.Time          `json:"createdAt"`
-	UpdatedAt           time.Time          `json:"updatedAt"`
-	LockVersion         int64              `json:"lockVersion"`
+	AgenticCapabilities json.RawMessage `json:"agenticCapabilities"`
+	// ToolDisclosurePolicy is read-only on GET/list. Create/update request DTOs
+	// omit this field so DisallowUnknownFields rejects client writes.
+	ToolDisclosurePolicy json.RawMessage `json:"toolDisclosurePolicy"`
+	// ToolDisclosureUI is derived from status + caps; never client-writable.
+	ToolDisclosureUI string             `json:"toolDisclosureUI"`
+	Status           modelconfig.Status `json:"status"`
+	LastVerifiedAt   *time.Time         `json:"lastVerifiedAt,omitempty"`
+	LastLatencyMS    *int               `json:"lastLatencyMs,omitempty"`
+	LastErrorCode    *string            `json:"lastErrorCode,omitempty"`
+	CreatedBy        string             `json:"createdBy"`
+	UpdatedBy        string             `json:"updatedBy"`
+	CreatedAt        time.Time          `json:"createdAt"`
+	UpdatedAt        time.Time          `json:"updatedAt"`
+	LockVersion      int64              `json:"lockVersion"`
 }
 
 func modelDTO(v modelconfig.Config) modelConfigDTO {
@@ -240,13 +265,36 @@ func modelDTO(v modelconfig.Config) modelConfigDTO {
 	if len(agentic) == 0 {
 		agentic = json.RawMessage(`{}`)
 	}
+	policy := v.ToolDisclosurePolicy
+	if len(policy) == 0 {
+		policy = json.RawMessage(`{}`)
+	}
 	return modelConfigDTO{
 		ID: v.ID, Name: v.Name, Provider: v.Provider, APIBase: v.APIBase, ModelName: v.ModelName,
 		CredentialConfigured: v.CredentialConfigured, Options: v.Options, RuntimeCapabilities: caps,
-		AgenticCapabilities: agentic, Status: v.Status, LastVerifiedAt: v.LastVerifiedAt,
+		AgenticCapabilities: agentic, ToolDisclosurePolicy: policy,
+		ToolDisclosureUI: modelconfig.DeriveToolDisclosureUI(v.Status, agentic),
+		Status:           v.Status, LastVerifiedAt: v.LastVerifiedAt,
 		LastLatencyMS: v.LastLatencyMS, LastErrorCode: v.LastErrorCode, CreatedBy: v.CreatedBy,
 		UpdatedBy: v.UpdatedBy, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, LockVersion: v.LockVersion,
 	}
+}
+
+type disclosureWarningDTO struct {
+	Code    string `json:"code"`
+	Limit   int    `json:"limit"`
+	Count   int    `json:"count"`
+	AgentID string `json:"agentId"`
+}
+
+type setDisclosureRequest struct {
+	LockVersion          int64           `json:"lockVersion"`
+	ToolDisclosurePolicy json.RawMessage `json:"toolDisclosurePolicy"`
+}
+
+type setDisclosureResponse struct {
+	modelConfigDTO
+	Warnings []disclosureWarningDTO `json:"warnings,omitempty"`
 }
 
 type createModelRequest struct {
@@ -461,6 +509,79 @@ func (r *ConfigurationRoutes) verifyModel(c *gin.Context) {
 		return
 	}
 	c.JSON(200, modelDTO(v))
+}
+
+func (r *ConfigurationRoutes) setModelDisclosure(c *gin.Context) {
+	if !r.authorize(c, authz.ActionEdit) {
+		return
+	}
+	var q setDisclosureRequest
+	if decodeJSON(c, &q) != nil {
+		RespondError(c, modelconfig.ErrInvalid)
+		return
+	}
+	policy, policyRaw, err := modelconfig.ParseToolDisclosurePolicy(q.ToolDisclosurePolicy)
+	if err != nil || policy.Mode == "" {
+		RespondError(c, modelconfig.ErrToolDisclosureInvalid)
+		return
+	}
+	warnings, err := r.evaluateCarryAllCatalog(c.Request.Context(), c.Param("wid"), c.Param("id"), policy.Mode)
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+	updated, err := r.models.UpdateDisclosurePolicy(c.Request.Context(), modelconfig.DisclosurePolicyUpdate{
+		WorkspaceID:         c.Param("wid"),
+		ConfigID:            c.Param("id"),
+		Policy:              policyRaw,
+		UpdatedBy:           actor(c),
+		ExpectedLockVersion: q.LockVersion,
+	})
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, setDisclosureResponse{modelConfigDTO: modelDTO(updated), Warnings: warnings})
+}
+
+func (r *ConfigurationRoutes) evaluateCarryAllCatalog(ctx context.Context, workspaceID, configID, mode string) ([]disclosureWarningDTO, error) {
+	if mode != modelconfig.DisclosureModeCarryAll {
+		return nil, nil
+	}
+	if r.agentCatalog == nil {
+		return nil, modelconfig.ErrToolDisclosureInvalid
+	}
+	agentIDs, err := r.models.ListAgentsByModelConfig(ctx, workspaceID, configID)
+	if err != nil {
+		return nil, err
+	}
+	warnings := make([]disclosureWarningDTO, 0)
+	for _, agentID := range agentIDs {
+		descriptors, listErr := r.agentCatalog.ListForAgent(ctx, workspaceID, agentID)
+		if listErr != nil {
+			return nil, listErr
+		}
+		count := len(descriptors)
+		if count > modelconfig.CarryAllHardLimit {
+			return nil, modelconfig.CarryAllTooLargeError{
+				AgentID: agentID,
+				Count:   count,
+				Limit:   modelconfig.CarryAllHardLimit,
+			}
+		}
+		if count > modelconfig.CarryAllSoftLimit {
+			warnings = append(warnings, disclosureWarningDTO{
+				Code:    modelconfig.ErrorCodeToolCarryAllSoft,
+				Limit:   modelconfig.CarryAllSoftLimit,
+				Count:   count,
+				AgentID: agentID,
+			})
+		}
+	}
+	if len(warnings) == 0 {
+		return nil, nil
+	}
+	return warnings, nil
 }
 
 type providerDTO struct {

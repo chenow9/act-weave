@@ -11,8 +11,10 @@ import (
 )
 
 const (
-	// AgenticCapabilitiesSchemaV1 is the only supported Agentic capability schema.
+	// AgenticCapabilitiesSchemaV1 is the native client-search capability schema.
 	AgenticCapabilitiesSchemaV1 = "agentic-model.v1"
+	// AgenticCapabilitiesSchemaV2 is the function_calling / none / explicit-native schema.
+	AgenticCapabilitiesSchemaV2 = "agentic-model.v2"
 
 	// AgenticProtocolOpenAIResponsesV1 is the only accepted OpenAI Responses protocol id.
 	AgenticProtocolOpenAIResponsesV1 = "openai-responses-v1"
@@ -20,6 +22,10 @@ const (
 	// AgenticToolSearchModeClient is the Provider protocol capability for client-executed tool search.
 	// Runtime strategy client_bounded is recorded on assembly manifests, not here (D10).
 	AgenticToolSearchModeClient = "client"
+
+	ToolCallingNativeClientSearch = "native_client_search"
+	ToolCallingFunctionCalling    = "function_calling"
+	ToolCallingNone               = "none"
 
 	// AgenticReasoningReplayEncryptedOrNone is the only accepted reasoning-replay policy.
 	AgenticReasoningReplayEncryptedOrNone = "encrypted-or-none"
@@ -39,6 +45,7 @@ type AgenticCapabilities struct {
 	Protocol             string    `json:"protocol,omitempty"`
 	Streaming            bool      `json:"streaming"`
 	Usage                bool      `json:"usage"`
+	ToolCalling          string    `json:"toolCalling,omitempty"`
 	ToolSearchModes      []string  `json:"toolSearchModes,omitempty"`
 	ReasoningReplay      string    `json:"reasoningReplay,omitempty"`
 	VerifiedAdapter      string    `json:"verifiedAdapter,omitempty"`
@@ -55,6 +62,7 @@ func (a AgenticCapabilities) MarshalJSON() ([]byte, error) {
 		Protocol             string   `json:"protocol,omitempty"`
 		Streaming            bool     `json:"streaming"`
 		Usage                bool     `json:"usage"`
+		ToolCalling          string   `json:"toolCalling,omitempty"`
 		ToolSearchModes      []string `json:"toolSearchModes,omitempty"`
 		ReasoningReplay      string   `json:"reasoningReplay,omitempty"`
 		VerifiedAdapter      string   `json:"verifiedAdapter,omitempty"`
@@ -72,6 +80,10 @@ func (a AgenticCapabilities) MarshalJSON() ([]byte, error) {
 		VerifiedAdapter:      a.VerifiedAdapter,
 		VerifiedLockVersion:  a.VerifiedLockVersion,
 		VerifiedConfigDigest: a.VerifiedConfigDigest,
+	}
+	// v1 normalize must stay v1 bytes: never emit the in-memory toolCalling fill.
+	if a.SchemaVersion == AgenticCapabilitiesSchemaV2 {
+		w.ToolCalling = a.ToolCalling
 	}
 	if !a.VerifiedAt.IsZero() {
 		w.VerifiedAt = a.VerifiedAt.UTC().Truncate(time.Second).Format(canonicalVerifiedAtLayout)
@@ -157,6 +169,11 @@ func ParseAgenticCapabilities(raw json.RawMessage) (AgenticCapabilities, json.Ra
 		return AgenticCapabilities{}, json.RawMessage(`{}`), nil
 	}
 
+	schemaVersion, err := parseRequiredJSONString(top["schemaVersion"])
+	if err != nil {
+		return AgenticCapabilities{}, nil, fmt.Errorf("%w: missing or invalid agenticCapabilities field %q", ErrInvalid, "schemaVersion")
+	}
+
 	allowed := map[string]struct{}{
 		"schemaVersion":        {},
 		"protocol":             {},
@@ -169,32 +186,41 @@ func ParseAgenticCapabilities(raw json.RawMessage) (AgenticCapabilities, json.Ra
 		"verifiedLockVersion":  {},
 		"verifiedConfigDigest": {},
 	}
+	if schemaVersion == AgenticCapabilitiesSchemaV2 {
+		allowed["toolCalling"] = struct{}{}
+	}
 	for key := range top {
 		if _, ok := allowed[key]; !ok {
 			return AgenticCapabilities{}, nil, fmt.Errorf("%w: unknown agenticCapabilities field %q", ErrInvalid, key)
 		}
 	}
 
-	// All required fields must be present for a non-empty document.
-	for _, required := range []string{
+	required := []string{
 		"schemaVersion", "protocol", "streaming", "usage",
-		"toolSearchModes", "reasoningReplay", "verifiedAdapter",
+		"reasoningReplay", "verifiedAdapter",
 		"verifiedAt", "verifiedLockVersion", "verifiedConfigDigest",
-	} {
-		if _, ok := top[required]; !ok {
-			return AgenticCapabilities{}, nil, fmt.Errorf("%w: missing agenticCapabilities field %q", ErrInvalid, required)
+	}
+	switch schemaVersion {
+	case AgenticCapabilitiesSchemaV1:
+		required = append(required, "toolSearchModes")
+	case AgenticCapabilitiesSchemaV2:
+		required = append(required, "toolCalling")
+	default:
+		return AgenticCapabilities{}, nil, fmt.Errorf("%w: unsupported agenticCapabilities schemaVersion", ErrInvalid)
+	}
+	for _, key := range required {
+		if _, ok := top[key]; !ok {
+			return AgenticCapabilities{}, nil, fmt.Errorf("%w: missing agenticCapabilities field %q", ErrInvalid, key)
 		}
 	}
 
-	// Reject JSON null for required scalar fields.
-	for _, key := range []string{
-		"schemaVersion", "protocol", "streaming", "usage",
-		"toolSearchModes", "reasoningReplay", "verifiedAdapter",
-		"verifiedAt", "verifiedLockVersion", "verifiedConfigDigest",
-	} {
+	for _, key := range required {
 		if bytes.Equal(bytes.TrimSpace(top[key]), []byte("null")) {
 			return AgenticCapabilities{}, nil, fmt.Errorf("%w: agenticCapabilities field %q must not be null", ErrInvalid, key)
 		}
+	}
+	if rawModes, ok := top["toolSearchModes"]; ok && bytes.Equal(bytes.TrimSpace(rawModes), []byte("null")) {
+		return AgenticCapabilities{}, nil, fmt.Errorf("%w: agenticCapabilities field %q must not be null", ErrInvalid, "toolSearchModes")
 	}
 
 	// Strict verifiedAt: exact UTC seconds with Z before any time.Time decode.
@@ -217,7 +243,7 @@ func ParseAgenticCapabilities(raw json.RawMessage) (AgenticCapabilities, json.Ra
 	doc.VerifiedAt = verifiedAt
 
 	// No whitespace/case normalization on string fields — reject non-canonical forms.
-	if doc.SchemaVersion != AgenticCapabilitiesSchemaV1 {
+	if doc.SchemaVersion != schemaVersion {
 		return AgenticCapabilities{}, nil, fmt.Errorf("%w: unsupported agenticCapabilities schemaVersion", ErrInvalid)
 	}
 	if doc.Protocol != AgenticProtocolOpenAIResponsesV1 {
@@ -246,11 +272,9 @@ func ParseAgenticCapabilities(raw json.RawMessage) (AgenticCapabilities, json.Ra
 		return AgenticCapabilities{}, nil, fmt.Errorf("%w: verifiedConfigDigest must be 64 lowercase hex chars", ErrInvalid)
 	}
 
-	if err := validateToolSearchModes(doc.ToolSearchModes); err != nil {
+	if err := applyAgenticToolCallingRules(&doc); err != nil {
 		return AgenticCapabilities{}, nil, err
 	}
-	// Canonical single-element client mode only.
-	doc.ToolSearchModes = []string{AgenticToolSearchModeClient}
 
 	normalized, err := json.Marshal(doc)
 	if err != nil {
@@ -356,6 +380,56 @@ func validateToolSearchModes(modes []string) error {
 		return fmt.Errorf("%w: unknown toolSearchMode %q", ErrInvalid, modes[0])
 	}
 	return nil
+}
+
+func applyAgenticToolCallingRules(doc *AgenticCapabilities) error {
+	if doc == nil {
+		return ErrInvalid
+	}
+	switch doc.SchemaVersion {
+	case AgenticCapabilitiesSchemaV1:
+		if err := validateToolSearchModes(doc.ToolSearchModes); err != nil {
+			return err
+		}
+		doc.ToolSearchModes = []string{AgenticToolSearchModeClient}
+		// Memory fill only; MarshalJSON omits toolCalling for v1.
+		doc.ToolCalling = ToolCallingNativeClientSearch
+		return nil
+	case AgenticCapabilitiesSchemaV2:
+		switch doc.ToolCalling {
+		case ToolCallingNativeClientSearch:
+			if err := validateToolSearchModes(doc.ToolSearchModes); err != nil {
+				return err
+			}
+			doc.ToolSearchModes = []string{AgenticToolSearchModeClient}
+			return nil
+		case ToolCallingFunctionCalling, ToolCallingNone:
+			if len(doc.ToolSearchModes) != 0 {
+				return fmt.Errorf("%w: toolSearchModes must be omitted for toolCalling %q", ErrInvalid, doc.ToolCalling)
+			}
+			doc.ToolSearchModes = nil
+			return nil
+		default:
+			return fmt.Errorf("%w: unsupported toolCalling", ErrInvalid)
+		}
+	default:
+		return fmt.Errorf("%w: unsupported agenticCapabilities schemaVersion", ErrInvalid)
+	}
+}
+
+func parseRequiredJSONString(raw json.RawMessage) (string, error) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return "", ErrInvalid
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return "", ErrInvalid
+	}
+	if s == "" {
+		return "", ErrInvalid
+	}
+	return s, nil
 }
 
 func isHex64(v string) bool {

@@ -42,7 +42,7 @@ func TestBridge_EinoAB_INLINE_PersistsNestedModelAndToolOnParentRun(t *testing.T
 func TestBridge_NewSession_EmptyGraphFreezeNoRunStateConflict(t *testing.T) {
 	harness := dbtest.New(t)
 	version := harness.MigrateToLatest(t)
-	if !version.Applied || version.Number != 20 || version.Dirty {
+	if !version.Applied || version.Number != 21 || version.Dirty {
 		t.Fatalf("migration = %+v", version)
 	}
 	db := harness.Open(t)

@@ -198,6 +198,104 @@ func TestParseAgenticCapabilitiesRejects(t *testing.T) {
 	}
 }
 
+func TestParseAgenticCapabilitiesV1NormalizeRemainsV1Bytes(t *testing.T) {
+	at := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	digest := strings.Repeat("c", 64)
+	docIn, err := modelconfig.CanonicalAgenticCapabilities(at, 4, digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(docIn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "toolCalling") {
+		t.Fatalf("canonical v1 write must not emit toolCalling: %s", raw)
+	}
+	doc, normalized, err := modelconfig.ParseAgenticCapabilities(raw)
+	if err != nil {
+		t.Fatalf("parse v1: %v", err)
+	}
+	if doc.ToolCalling != modelconfig.ToolCallingNativeClientSearch {
+		t.Fatalf("v1 must fill toolCalling in memory, got %q", doc.ToolCalling)
+	}
+	if strings.Contains(string(normalized), "toolCalling") {
+		t.Fatalf("v1 normalize must remain v1 bytes: %s", normalized)
+	}
+	if !strings.Contains(string(normalized), `"schemaVersion":"agentic-model.v1"`) {
+		t.Fatalf("v1 normalize lost schema: %s", normalized)
+	}
+	if string(normalized) != string(raw) {
+		t.Fatalf("v1 normalize must round-trip canonical bytes\n got %s\nwant %s", normalized, raw)
+	}
+}
+
+func TestParseAgenticCapabilitiesV2Rules(t *testing.T) {
+	digest := strings.Repeat("d", 64)
+	base := func(extra string) string {
+		return `{"schemaVersion":"agentic-model.v2","protocol":"openai-responses-v1","streaming":true,"usage":true,` + extra + `"reasoningReplay":"encrypted-or-none","verifiedAdapter":"agenticopenai/v0.2.2","verifiedAt":"2026-08-10T12:00:00Z","verifiedLockVersion":2,"verifiedConfigDigest":"` + digest + `"}`
+	}
+
+	t.Run("function_calling omits toolSearchModes", func(t *testing.T) {
+		doc, normalized, err := modelconfig.ParseAgenticCapabilities(json.RawMessage(base(`"toolCalling":"function_calling",`)))
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if doc.ToolCalling != modelconfig.ToolCallingFunctionCalling || len(doc.ToolSearchModes) != 0 {
+			t.Fatalf("unexpected doc: %+v", doc)
+		}
+		if strings.Contains(string(normalized), "toolSearchModes") {
+			t.Fatalf("normalize must omit toolSearchModes: %s", normalized)
+		}
+	})
+	t.Run("none omits empty toolSearchModes", func(t *testing.T) {
+		doc, normalized, err := modelconfig.ParseAgenticCapabilities(json.RawMessage(base(`"toolCalling":"none","toolSearchModes":[],`)))
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if doc.ToolCalling != modelconfig.ToolCallingNone || doc.ToolSearchModes != nil {
+			t.Fatalf("unexpected doc: %+v", doc)
+		}
+		if strings.Contains(string(normalized), "toolSearchModes") {
+			t.Fatalf("normalize must omit empty toolSearchModes: %s", normalized)
+		}
+	})
+	t.Run("native requires client modes", func(t *testing.T) {
+		doc, normalized, err := modelconfig.ParseAgenticCapabilities(json.RawMessage(base(`"toolCalling":"native_client_search","toolSearchModes":["client"],`)))
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if doc.ToolCalling != modelconfig.ToolCallingNativeClientSearch ||
+			len(doc.ToolSearchModes) != 1 || doc.ToolSearchModes[0] != modelconfig.AgenticToolSearchModeClient {
+			t.Fatalf("unexpected doc: %+v", doc)
+		}
+		if !strings.Contains(string(normalized), `"toolCalling":"native_client_search"`) ||
+			!strings.Contains(string(normalized), `"schemaVersion":"agentic-model.v2"`) {
+			t.Fatalf("v2 native normalize: %s", normalized)
+		}
+	})
+
+	rejects := []struct {
+		name string
+		raw  string
+	}{
+		{"unknown field", base(`"toolCalling":"function_calling","extra":1,`)},
+		{"missing toolCalling", `{"schemaVersion":"agentic-model.v2","protocol":"openai-responses-v1","streaming":true,"usage":true,"reasoningReplay":"encrypted-or-none","verifiedAdapter":"agenticopenai/v0.2.2","verifiedAt":"2026-08-10T12:00:00Z","verifiedLockVersion":2,"verifiedConfigDigest":"` + digest + `"}`},
+		{"case fold toolCalling", base(`"toolCalling":"Function_Calling",`)},
+		{"native missing modes", base(`"toolCalling":"native_client_search",`)},
+		{"function_calling with client modes", base(`"toolCalling":"function_calling","toolSearchModes":["client"],`)},
+		{"v1 with toolCalling", `{"schemaVersion":"agentic-model.v1","protocol":"openai-responses-v1","streaming":true,"usage":true,"toolCalling":"native_client_search","toolSearchModes":["client"],"reasoningReplay":"encrypted-or-none","verifiedAdapter":"agenticopenai/v0.2.2","verifiedAt":"2026-08-10T12:00:00Z","verifiedLockVersion":2,"verifiedConfigDigest":"` + digest + `"}`},
+	}
+	for _, tc := range rejects {
+		t.Run("reject "+tc.name, func(t *testing.T) {
+			_, _, err := modelconfig.ParseAgenticCapabilities(json.RawMessage(tc.raw))
+			if err == nil || !errors.Is(err, modelconfig.ErrInvalid) {
+				t.Fatalf("expected ErrInvalid, got %v", err)
+			}
+		})
+	}
+}
+
 func TestWireConfigDigestStableAndSensitiveFree(t *testing.T) {
 	a := modelconfig.Config{
 		Provider: "openai", APIBase: "https://api.example/v1", ModelName: "gpt",

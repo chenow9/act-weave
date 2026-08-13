@@ -42,29 +42,33 @@ type Config struct {
 	// AgenticCapabilities is verification-owned (D10). Empty "{}" means unverified.
 	// Never client-writable; never merged into RuntimeCapabilities or Options.
 	AgenticCapabilities json.RawMessage
-	Status              Status
-	LastVerifiedAt      *time.Time
-	LastLatencyMS       *int
-	LastErrorCode       *string
-	CreatedBy           string
-	UpdatedBy           string
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
-	LockVersion         int64
-	DeletedAt           *time.Time
+	// ToolDisclosurePolicy is the raw JSON object from model_configs.tool_disclosure_policy.
+	// Empty object "{}" means unset. Generic create/update always persist "{}".
+	ToolDisclosurePolicy json.RawMessage
+	Status               Status
+	LastVerifiedAt       *time.Time
+	LastLatencyMS        *int
+	LastErrorCode        *string
+	CreatedBy            string
+	UpdatedBy            string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	LockVersion          int64
+	DeletedAt            *time.Time
 }
 
 type NewConfig struct {
-	ID                  string
-	WorkspaceID         string
-	Name                string
-	Provider            string
-	APIBase             string
-	ModelName           string
-	CredentialSecretID  *string
-	Options             json.RawMessage
-	RuntimeCapabilities json.RawMessage
-	CreatedBy           string
+	ID                   string
+	WorkspaceID          string
+	Name                 string
+	Provider             string
+	APIBase              string
+	ModelName            string
+	CredentialSecretID   *string
+	Options              json.RawMessage
+	RuntimeCapabilities  json.RawMessage
+	ToolDisclosurePolicy json.RawMessage
+	CreatedBy            string
 }
 
 type UpdateConfig struct {
@@ -99,5 +103,16 @@ type VerificationUpdate struct {
 	// On ERROR may be zero (repository uses clock_timestamp).
 	VerifiedAt          time.Time
 	VerifiedBy          string
+	ExpectedLockVersion int64
+}
+
+// DisclosurePolicyUpdate is the compare-and-swap write for set-disclosure.
+// It restamps verifiedLockVersion onto the existing capability document and
+// does not clear verification evidence or change status.
+type DisclosurePolicyUpdate struct {
+	WorkspaceID         string
+	ConfigID            string
+	Policy              json.RawMessage
+	UpdatedBy           string
 	ExpectedLockVersion int64
 }

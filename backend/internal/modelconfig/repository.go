@@ -47,6 +47,7 @@ const configColumns = `
 	m.options,
 	m.runtime_capabilities,
 	m.agentic_capabilities,
+	m.tool_disclosure_policy,
 	m.status,
 	m.last_verified_at,
 	m.last_latency_ms,
@@ -110,8 +111,9 @@ func (r *Repository) Create(ctx context.Context, input NewConfig) (Config, error
 		WITH inserted AS (
 			INSERT INTO model_configs (
 				id, workspace_id, name, provider, api_base, model_name,
-				credential_secret_id, options, runtime_capabilities, created_by, updated_by
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+				credential_secret_id, options, runtime_capabilities,
+				tool_disclosure_policy, created_by, updated_by
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, '{}'::jsonb, $10, $10)
 			RETURNING *
 		)
 		SELECT `+configColumns+`
@@ -217,6 +219,7 @@ func (r *Repository) Update(
 				options = $8,
 				runtime_capabilities = $9,
 				agentic_capabilities = '{}'::jsonb,
+				tool_disclosure_policy = '{}'::jsonb,
 				last_verified_at = NULL,
 				last_latency_ms = NULL,
 				last_error_code = NULL,
@@ -333,6 +336,95 @@ func (r *Repository) RecordVerification(ctx context.Context, input VerificationU
 	return config, nil
 }
 
+func (r *Repository) UpdateDisclosurePolicy(ctx context.Context, input DisclosurePolicyUpdate) (Config, error) {
+	input.WorkspaceID = strings.TrimSpace(input.WorkspaceID)
+	input.ConfigID = strings.TrimSpace(input.ConfigID)
+	input.UpdatedBy = strings.TrimSpace(input.UpdatedBy)
+	if !validUUID(input.WorkspaceID) || !validUUID(input.ConfigID) ||
+		!validUUID(input.UpdatedBy) || input.ExpectedLockVersion < 1 {
+		return Config{}, ErrInvalid
+	}
+	policyDoc, policyRaw, err := ParseToolDisclosurePolicy(input.Policy)
+	if err != nil || policyDoc.Mode == "" {
+		return Config{}, ErrToolDisclosureInvalid
+	}
+	current, err := r.Get(ctx, input.WorkspaceID, input.ConfigID)
+	if err != nil {
+		return Config{}, err
+	}
+	if current.LockVersion != input.ExpectedLockVersion {
+		return Config{}, ErrConflict
+	}
+	if current.Status != StatusVerified {
+		return Config{}, ErrToolDisclosureInvalid
+	}
+	caps, _, err := ParseAgenticCapabilities(current.AgenticCapabilities)
+	if err != nil || caps.ToolCalling != ToolCallingFunctionCalling {
+		return Config{}, ErrToolDisclosureInvalid
+	}
+	caps.VerifiedLockVersion = current.LockVersion
+	restamped, err := json.Marshal(caps)
+	if err != nil {
+		return Config{}, ErrInvalid
+	}
+	config, err := scanConfig(r.db.QueryRowContext(ctx, `
+		WITH updated AS (
+			UPDATE model_configs
+			SET tool_disclosure_policy = $3::jsonb,
+				agentic_capabilities = $4::jsonb,
+				updated_by = $5,
+				updated_at = clock_timestamp(),
+				lock_version = lock_version + 1
+			WHERE workspace_id = $1 AND id = $2
+			  AND deleted_at IS NULL AND lock_version = $6
+			  AND status = 'VERIFIED'
+			RETURNING *
+		)
+		SELECT `+configColumns+`
+		FROM updated AS m
+		LEFT JOIN secrets AS s
+		  ON s.workspace_id = m.workspace_id
+		 AND s.id = m.credential_secret_id
+	`, input.WorkspaceID, input.ConfigID, []byte(policyRaw), restamped,
+		input.UpdatedBy, input.ExpectedLockVersion))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Config{}, r.classifyMissingOrConflict(ctx, input.WorkspaceID, input.ConfigID)
+	}
+	if err != nil {
+		return Config{}, mapWriteError("update model config disclosure policy", err)
+	}
+	return config, nil
+}
+
+func (r *Repository) ListAgentsByModelConfig(ctx context.Context, workspaceID, configID string) ([]string, error) {
+	workspaceID, configID = strings.TrimSpace(workspaceID), strings.TrimSpace(configID)
+	if !validUUID(workspaceID) || !validUUID(configID) {
+		return nil, ErrInvalid
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id
+		FROM agents
+		WHERE workspace_id = $1 AND model_config_id = $2 AND deleted_at IS NULL
+		ORDER BY id
+	`, workspaceID, configID)
+	if err != nil {
+		return nil, fmt.Errorf("list agents by model config: %w", err)
+	}
+	defer rows.Close()
+	ids := make([]string, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan agent id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate agents by model config: %w", err)
+	}
+	return ids, nil
+}
+
 func (r *Repository) SoftDelete(
 	ctx context.Context,
 	workspaceID string,
@@ -420,6 +512,7 @@ func scanConfig(row rowScanner) (Config, error) {
 	var options []byte
 	var runtimeCapabilities []byte
 	var agenticCapabilities []byte
+	var toolDisclosurePolicy []byte
 	err := row.Scan(
 		&config.ID,
 		&config.WorkspaceID,
@@ -432,6 +525,7 @@ func scanConfig(row rowScanner) (Config, error) {
 		&options,
 		&runtimeCapabilities,
 		&agenticCapabilities,
+		&toolDisclosurePolicy,
 		&config.Status,
 		&config.LastVerifiedAt,
 		&config.LastLatencyMS,
@@ -462,6 +556,15 @@ func scanConfig(row rowScanner) (Config, error) {
 	if err := validateAgenticCapabilitiesCrossField(config, doc); err != nil {
 		return Config{}, err
 	}
+	policyRaw := json.RawMessage(toolDisclosurePolicy)
+	if len(policyRaw) == 0 {
+		policyRaw = json.RawMessage(`{}`)
+	}
+	_, policyNormalized, policyErr := ParseToolDisclosurePolicy(policyRaw)
+	if policyErr != nil {
+		return Config{}, fmt.Errorf("%w: corrupt tool_disclosure_policy", ErrInvalid)
+	}
+	config.ToolDisclosurePolicy = policyNormalized
 	return config, nil
 }
 
@@ -635,6 +738,9 @@ func validateNewConfig(input NewConfig) error {
 	// Runtime capabilities must never appear inside provider Options.
 	if containsRuntimeCapabilityLeak(input.Options) {
 		return ErrInvalid
+	}
+	if !IsUnsetToolDisclosurePolicy(input.ToolDisclosurePolicy) {
+		return ErrToolDisclosureInvalid
 	}
 	return nil
 }

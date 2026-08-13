@@ -201,6 +201,57 @@ func TestContextAssemblyAgenticValidation(t *testing.T) {
 		t.Fatal("expected uppercase catalog digest reject")
 	}
 
+	// Expand-only: platform_bounded / carry_all are accepted when predicates match.
+	runPlat := "b08f1f2e-7b5a-7c3d-8e9f-12345678901b"
+	execSQL(t, db, `
+		INSERT INTO agent_runs(id,workspace_id,agent_id,status,trigger_type,triggered_by_type,triggered_by_id,trace_id,model_snapshot,capability_snapshot)
+		VALUES($1,$2,$3,'RUNNING','CHAT','USER',$4,'tplat','{}','{}')`, runPlat, ws, agent, owner)
+	platform := execution.ContextAssemblyRecord{
+		WorkspaceID: ws, RunID: runPlat, Mode: "token_window",
+		PolicySnapshotHash: hash, ModelSnapshotHash: hash, CapabilitySnapshotHash: hash, AgentSnapshotHash: hash,
+		EstimatorProfile: "o200k_base", EstimatorVersion: "contextwindow-estimator.agentic-openai-responses.v2",
+		HardInputCeilingTokens: 1000, OutputReserveTokens: 100, SafetyMarginTokens: 10,
+		ToolsOverheadTokens: 12, // 2+0+10
+		SystemPromptHash:    hash, IncludedSegments: json.RawMessage(`[]`), EstimatedTotalTokens: 50,
+		ToolSearchMode:               execution.AssemblyToolSearchModePlatformBounded,
+		ToolCatalogDigest:            hash,
+		ImmediateToolCount:           1,
+		DeferredToolCount:            9,
+		MaxLoadedToolCount:           5,
+		ImmediateToolsTokens:         2,
+		DeferredMetadataTokens:       0,
+		DynamicToolLoadReserveTokens: 10,
+	}
+	platform.AssemblyDigest = execution.ComputeAssemblyDigest(platform)
+	if _, err := repo.InsertImmutable(context.Background(), platform); err != nil {
+		t.Fatalf("platform_bounded allow: %v", err)
+	}
+
+	runCarry := "b08f1f2e-7b5a-7c3d-8e9f-12345678901c"
+	execSQL(t, db, `
+		INSERT INTO agent_runs(id,workspace_id,agent_id,status,trigger_type,triggered_by_type,triggered_by_id,trace_id,model_snapshot,capability_snapshot)
+		VALUES($1,$2,$3,'RUNNING','CHAT','USER',$4,'tcarry','{}','{}')`, runCarry, ws, agent, owner)
+	carry := execution.ContextAssemblyRecord{
+		WorkspaceID: ws, RunID: runCarry, Mode: "token_window",
+		PolicySnapshotHash: hash, ModelSnapshotHash: hash, CapabilitySnapshotHash: hash, AgentSnapshotHash: hash,
+		EstimatorProfile: "o200k_base", EstimatorVersion: "contextwindow-estimator.agentic-openai-responses.v2",
+		HardInputCeilingTokens: 1000, OutputReserveTokens: 100, SafetyMarginTokens: 10,
+		ToolsOverheadTokens: 8,
+		SystemPromptHash:    hash, IncludedSegments: json.RawMessage(`[]`), EstimatedTotalTokens: 50,
+		ToolSearchMode:               execution.AssemblyToolSearchModeCarryAll,
+		ToolCatalogDigest:            hash,
+		ImmediateToolCount:           4,
+		DeferredToolCount:            0,
+		MaxLoadedToolCount:           0,
+		ImmediateToolsTokens:         8,
+		DeferredMetadataTokens:       0,
+		DynamicToolLoadReserveTokens: 0,
+	}
+	carry.AssemblyDigest = execution.ComputeAssemblyDigest(carry)
+	if _, err := repo.InsertImmutable(context.Background(), carry); err != nil {
+		t.Fatalf("carry_all allow: %v", err)
+	}
+
 	// Whitespace-padded catalog digest rejected.
 	run6 := "b08f1f2e-7b5a-7c3d-8e9f-12345678901a"
 	execSQL(t, db, `

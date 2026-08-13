@@ -22,6 +22,25 @@ func TestRuntimeConfig(t *testing.T) {
 	t.Run("MaxToolInvocationsContract", testRuntimeMaxToolInvocationsContract)
 	t.Run("ModelVerificationTimeoutContract", testRuntimeModelVerificationTimeoutContract)
 	t.Run("ModelVerificationTimeoutLoadPaths", testRuntimeModelVerificationTimeoutLoadPaths)
+	t.Run("ToolDisclosureOmittedDeniesAllWorkspaces", testRuntimeToolDisclosureOmittedDeniesAllWorkspaces)
+}
+
+func testRuntimeToolDisclosureOmittedDeniesAllWorkspaces(t *testing.T) {
+	path := writeConfig(t, validConfigYAML)
+	loaded, err := Load(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Runtime.ToolDisclosure.Enabled {
+		t.Fatal("omitted runtime.toolDisclosure must stay Enabled=false")
+	}
+	ws := "a0000000-0000-4000-8000-000000000001"
+	if loaded.Runtime.ToolDisclosure.AllowsWorkspace(ws) {
+		t.Fatal("omitted runtime.toolDisclosure must deny any workspace")
+	}
+	if !loaded.Runtime.Agent.Enabled || !loaded.Runtime.Agent.AllowsWorkspace(ws) {
+		t.Fatal("agent promotion must still apply when toolDisclosure is omitted")
+	}
 }
 
 func testRuntimeZeroValueStructFailClosed(t *testing.T) {

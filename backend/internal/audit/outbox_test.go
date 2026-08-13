@@ -24,7 +24,7 @@ const (
 func TestTransactionalOutbox(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 20 || version.Dirty {
+	if !version.Applied || version.Number != 21 || version.Dirty {
 		t.Fatalf("transactional outbox migration = %+v", version)
 	}
 	db := testDatabase.Open(t)

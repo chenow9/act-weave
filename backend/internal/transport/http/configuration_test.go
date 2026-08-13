@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"actweave/backend/internal/authz"
+	"actweave/backend/internal/capability"
 	"actweave/backend/internal/connection"
 	"actweave/backend/internal/modelconfig"
 	"actweave/backend/internal/provider"
@@ -32,6 +33,10 @@ func TestV1ModelConfigRoutes(t *testing.T) {
 	}
 	if !strings.Contains(created.Body.String(), `"agenticCapabilities":{}`) {
 		t.Fatalf("create must return read-only empty agenticCapabilities: %s", created.Body.String())
+	}
+	if !strings.Contains(created.Body.String(), `"toolDisclosurePolicy":{}`) ||
+		!strings.Contains(created.Body.String(), `"toolDisclosureUI":"unverified"`) {
+		t.Fatalf("create must return empty policy + unverified UI: %s", created.Body.String())
 	}
 	var value modelConfigDTO
 	decodeResponse(t, created.Body.Bytes(), &value)
@@ -92,6 +97,142 @@ func TestV1ModelConfigRoutes(t *testing.T) {
 		"workspaceId": f.workspaceID, "name": "escalation", "provider": "x", "apiBase": "https://x.example", "modelName": "x", "status": "VERIFIED",
 	}, f.token, nil)
 	assertErrorResponse(t, rejected, http.StatusUnprocessableEntity, "VALIDATION_ERROR")
+
+	for _, key := range []string{"toolDisclosurePolicy", "toolDisclosureUI"} {
+		payload := map[string]any{
+			"name": "x", "provider": "openai-compatible", "apiBase": "https://models.example/v1", "modelName": "m",
+			key: map[string]any{},
+		}
+		rej := f.request(t, http.MethodPost, f.base+"/model-configs", payload, f.token, nil)
+		assertErrorResponse(t, rej, http.StatusUnprocessableEntity, "VALIDATION_ERROR")
+		patch := f.request(t, http.MethodPatch, f.base+"/model-configs/"+value.ID, map[string]any{
+			"lockVersion": 1, key: nil,
+		}, f.token, nil)
+		assertErrorResponse(t, patch, http.StatusUnprocessableEntity, "VALIDATION_ERROR")
+	}
+}
+
+func TestV1ModelConfigSetDisclosure(t *testing.T) {
+	catalog := &stubAgentCatalog{counts: map[string]int{}}
+	f := newConfigurationFixtureWithCatalog(t, catalog)
+	created := f.request(t, http.MethodPost, f.base+"/model-configs", map[string]any{
+		"name": "fc-model", "provider": "openai-compatible", "apiBase": "https://models.example/v1",
+		"modelName": "fc", "options": map[string]any{},
+	}, f.token, nil)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", created.Code, created.Body.String())
+	}
+	var value modelConfigDTO
+	decodeResponse(t, created.Body.Bytes(), &value)
+
+	verified := f.request(t, http.MethodPost, f.base+"/model-configs/"+value.ID+":verify", nil, f.token, nil)
+	if verified.Code != http.StatusOK {
+		t.Fatalf("verify: %d %s", verified.Code, verified.Body.String())
+	}
+	var verifiedValue modelConfigDTO
+	decodeResponse(t, verified.Body.Bytes(), &verifiedValue)
+	if verifiedValue.ToolDisclosureUI != modelconfig.ToolDisclosureUIHidden {
+		t.Fatalf("native UI want hidden, got %s", verifiedValue.ToolDisclosureUI)
+	}
+
+	nativeReject := f.request(t, http.MethodPost, f.base+"/model-configs/"+value.ID+":set-disclosure", map[string]any{
+		"lockVersion": verifiedValue.LockVersion,
+		"toolDisclosurePolicy": map[string]any{
+			"schemaVersion": "tool-disclosure.v1", "mode": "carry_all",
+		},
+	}, f.token, nil)
+	assertErrorResponse(t, nativeReject, http.StatusUnprocessableEntity, modelconfig.ErrorCodeToolDisclosureInvalid)
+
+	plantHTTPFunctionCalling(t, f, verifiedValue)
+	fcGet := f.request(t, http.MethodGet, f.base+"/model-configs/"+value.ID, nil, f.token, nil)
+	if fcGet.Code != http.StatusOK {
+		t.Fatalf("get after plant: %d %s", fcGet.Code, fcGet.Body.String())
+	}
+	var fcValue modelConfigDTO
+	decodeResponse(t, fcGet.Body.Bytes(), &fcValue)
+	if fcValue.ToolDisclosureUI != modelconfig.ToolDisclosureUIBinary {
+		t.Fatalf("fc UI want binary, got %s body=%s", fcValue.ToolDisclosureUI, fcGet.Body.String())
+	}
+
+	okDemand := f.request(t, http.MethodPost, f.base+"/model-configs/"+value.ID+":set-disclosure", map[string]any{
+		"lockVersion": fcValue.LockVersion,
+		"toolDisclosurePolicy": map[string]any{
+			"schemaVersion": "tool-disclosure.v1", "mode": "platform_on_demand",
+		},
+	}, f.token, nil)
+	if okDemand.Code != http.StatusOK {
+		t.Fatalf("platform_on_demand: %d %s", okDemand.Code, okDemand.Body.String())
+	}
+	if strings.Contains(okDemand.Body.String(), `"warnings"`) {
+		t.Fatalf("platform_on_demand must not emit warnings: %s", okDemand.Body.String())
+	}
+	var afterDemand setDisclosureResponse
+	decodeResponse(t, okDemand.Body.Bytes(), &afterDemand)
+
+	emptyCarry := f.request(t, http.MethodPost, f.base+"/model-configs/"+value.ID+":set-disclosure", map[string]any{
+		"lockVersion": afterDemand.LockVersion,
+		"toolDisclosurePolicy": map[string]any{
+			"schemaVersion": "tool-disclosure.v1", "mode": "carry_all",
+		},
+	}, f.token, nil)
+	if emptyCarry.Code != http.StatusOK || strings.Contains(emptyCarry.Body.String(), `"warnings"`) {
+		t.Fatalf("zero agents carry_all: %d %s", emptyCarry.Code, emptyCarry.Body.String())
+	}
+	var afterEmpty setDisclosureResponse
+	decodeResponse(t, emptyCarry.Body.Bytes(), &afterEmpty)
+
+	smallID := insertHTTPAgent(t, f, value.ID, "small-agent")
+	warnID := insertHTTPAgent(t, f, value.ID, "warn-agent")
+	bigID := insertHTTPAgent(t, f, value.ID, "big-agent")
+	catalog.counts[smallID] = 3
+	catalog.counts[warnID] = 7
+	catalog.counts[bigID] = 9
+
+	tooBig := f.request(t, http.MethodPost, f.base+"/model-configs/"+value.ID+":set-disclosure", map[string]any{
+		"lockVersion": afterEmpty.LockVersion,
+		"toolDisclosurePolicy": map[string]any{
+			"schemaVersion": "tool-disclosure.v1", "mode": "carry_all",
+		},
+	}, f.token, nil)
+	assertErrorResponse(t, tooBig, http.StatusUnprocessableEntity, modelconfig.ErrorCodeToolCarryAllTooLarge)
+	if !strings.Contains(tooBig.Body.String(), bigID) || !strings.Contains(tooBig.Body.String(), `"limit":8`) {
+		t.Fatalf("too-large details missing: %s", tooBig.Body.String())
+	}
+
+	delete(catalog.counts, bigID)
+	if _, err := f.db.Exec(`UPDATE agents SET deleted_at = clock_timestamp() WHERE id = $1`, bigID); err != nil {
+		t.Fatal(err)
+	}
+	soft := f.request(t, http.MethodPost, f.base+"/model-configs/"+value.ID+":set-disclosure", map[string]any{
+		"lockVersion": afterEmpty.LockVersion,
+		"toolDisclosurePolicy": map[string]any{
+			"schemaVersion": "tool-disclosure.v1", "mode": "carry_all",
+		},
+	}, f.token, nil)
+	if soft.Code != http.StatusOK {
+		t.Fatalf("soft warning: %d %s", soft.Code, soft.Body.String())
+	}
+	if !strings.Contains(soft.Body.String(), modelconfig.ErrorCodeToolCarryAllSoft) ||
+		!strings.Contains(soft.Body.String(), warnID) ||
+		!strings.Contains(soft.Body.String(), `"limit":5`) {
+		t.Fatalf("soft warning missing: %s", soft.Body.String())
+	}
+	var afterSoft setDisclosureResponse
+	decodeResponse(t, soft.Body.Bytes(), &afterSoft)
+
+	delete(catalog.counts, warnID)
+	if _, err := f.db.Exec(`UPDATE agents SET deleted_at = clock_timestamp() WHERE id = $1`, warnID); err != nil {
+		t.Fatal(err)
+	}
+	okSmall := f.request(t, http.MethodPost, f.base+"/model-configs/"+value.ID+":set-disclosure", map[string]any{
+		"lockVersion": afterSoft.LockVersion,
+		"toolDisclosurePolicy": map[string]any{
+			"schemaVersion": "tool-disclosure.v1", "mode": "carry_all",
+		},
+	}, f.token, nil)
+	if okSmall.Code != http.StatusOK || strings.Contains(okSmall.Body.String(), `"warnings"`) {
+		t.Fatalf("small catalog: %d %s", okSmall.Code, okSmall.Body.String())
+	}
 }
 
 func TestV1ProviderRoutes(t *testing.T) {
@@ -324,7 +465,67 @@ type configurationFixture struct {
 	secretService            *secret.Service
 }
 
+type stubAgentCatalog struct {
+	counts map[string]int
+}
+
+func (s *stubAgentCatalog) ListForAgent(_ context.Context, _, agentID string) ([]capability.Descriptor, error) {
+	n := 0
+	if s != nil && s.counts != nil {
+		n = s.counts[agentID]
+	}
+	out := make([]capability.Descriptor, n)
+	for i := range out {
+		out[i] = capability.Descriptor{CallableName: "tool-" + strconv.Itoa(i)}
+	}
+	return out, nil
+}
+
+func plantHTTPFunctionCalling(t *testing.T, f *configurationFixture, cfg modelConfigDTO) {
+	t.Helper()
+	doc, _, err := modelconfig.ParseAgenticCapabilities(cfg.AgenticCapabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2 := modelconfig.AgenticCapabilities{
+		SchemaVersion:        modelconfig.AgenticCapabilitiesSchemaV2,
+		Protocol:             modelconfig.AgenticProtocolOpenAIResponsesV1,
+		Streaming:            true,
+		Usage:                true,
+		ToolCalling:          modelconfig.ToolCallingFunctionCalling,
+		ReasoningReplay:      modelconfig.AgenticReasoningReplayEncryptedOrNone,
+		VerifiedAdapter:      modelconfig.VerifiedAdapterAgenticOpenAIV022,
+		VerifiedAt:           doc.VerifiedAt,
+		VerifiedLockVersion:  doc.VerifiedLockVersion,
+		VerifiedConfigDigest: doc.VerifiedConfigDigest,
+	}
+	raw, err := json.Marshal(v2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Exec(`UPDATE model_configs SET agentic_capabilities = $2::jsonb WHERE id = $1`, cfg.ID, raw); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func insertHTTPAgent(t *testing.T, f *configurationFixture, modelID, name string) string {
+	t.Helper()
+	id := uuid.NewString()
+	if _, err := f.db.Exec(`
+		INSERT INTO agents (id, workspace_id, name, model_config_id, created_by, updated_by)
+		VALUES ($1, $2, $3, $4, $5, $5)
+	`, id, f.workspaceID, name, modelID, v1AdminUserID); err != nil {
+		t.Fatalf("insert agent: %v", err)
+	}
+	return id
+}
+
 func newConfigurationFixture(t *testing.T) *configurationFixture {
+	t.Helper()
+	return newConfigurationFixtureWithCatalog(t, nil)
+}
+
+func newConfigurationFixtureWithCatalog(t *testing.T, catalog AgentCapabilityLister) *configurationFixture {
 	t.Helper()
 	authFixture := newV1AuthFixture(t)
 	ctx := context.Background()
@@ -390,7 +591,7 @@ func newConfigurationFixture(t *testing.T) *configurationFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	routes, err := NewConfigurationRoutes(ConfigurationDependencies{Authorizer: authorizer, Models: models, ModelVerifier: modelVerifier,
+	routes, err := NewConfigurationRoutes(ConfigurationDependencies{Authorizer: authorizer, Models: models, AgentCatalog: catalog, ModelVerifier: modelVerifier,
 		Providers: providers, ProviderSyncer: syncer, Materializer: materializer, ProviderRegistry: registry,
 		Connections: connections, ConnectionVerifier: connectionVerifier, Secrets: secretService})
 	if err != nil {

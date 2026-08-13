@@ -350,6 +350,10 @@ type RuntimeConfig struct {
 	// Nested Compaction is the independent LLM compact gate (ZKL-81 / T6-A),
 	// default-off and evaluated only at run creation.
 	SessionContext SessionContextRollout `yaml:"sessionContext"`
+	// ToolDisclosure gates platform_bounded / carry_all (not native client_bounded).
+	// Follows SessionContext: omitted / Enabled=false ⇒ AllowsWorkspace is false.
+	// Must not be promoted in applyRuntimeDefaults (unlike runtime.agent).
+	ToolDisclosure RuntimeFeatureRollout `yaml:"toolDisclosure"`
 }
 
 // SessionContextRollout controls whether new agent runs write session-context.v1
@@ -501,6 +505,7 @@ func (cfg RuntimeConfig) Normalized() RuntimeConfig {
 		Eino:              cfg.Eino.Normalized(),
 		ModelVerification: cfg.ModelVerification.Normalized(),
 		SessionContext:    cfg.SessionContext.Normalized(),
+		ToolDisclosure:    cfg.ToolDisclosure.Normalized(),
 	}
 }
 
@@ -643,6 +648,9 @@ func (config *Config) applyRuntimeEnvironment(lookup LookupEnv) error {
 
 func validateRuntimeConfig(cfg RuntimeConfig) error {
 	if err := validateRuntimeFeatureRollout("runtime.agent", cfg.Agent); err != nil {
+		return err
+	}
+	if err := validateRuntimeFeatureRollout("runtime.toolDisclosure", cfg.ToolDisclosure); err != nil {
 		return err
 	}
 	if err := validateWorkflowRuntimeConfig(cfg.Workflow); err != nil {

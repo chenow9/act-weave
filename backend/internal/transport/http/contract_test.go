@@ -290,6 +290,7 @@ func v1ContractRoutes() []v1ContractRoute {
 		{http.MethodPatch, root + "/workspaces/:wid/model-configs/:id", false},
 		{http.MethodDelete, root + "/workspaces/:wid/model-configs/:id", false},
 		{http.MethodPost, root + "/workspaces/:wid/model-configs/:id:verify", false},
+		{http.MethodPost, root + "/workspaces/:wid/model-configs/:id:set-disclosure", false},
 		{http.MethodGet, root + "/workspaces/:wid/providers", false},
 		{http.MethodPost, root + "/workspaces/:wid/providers", false},
 		{http.MethodGet, root + "/workspaces/:wid/providers/:pid", false},

@@ -73,6 +73,13 @@ const (
 	AssemblyToolSearchModeNone = "none"
 	// AssemblyToolSearchModeClientBounded is required for new Agentic assemblies.
 	AssemblyToolSearchModeClientBounded = "client_bounded"
+	// AssemblyToolSearchModePlatformBounded is accepted (not yet written by production).
+	AssemblyToolSearchModePlatformBounded = "platform_bounded"
+	// AssemblyToolSearchModeCarryAll is accepted (not yet written by production).
+	AssemblyToolSearchModeCarryAll = "carry_all"
+
+	assemblyEstimatorAgenticOpenAIV1 = "contextwindow-estimator.agentic-openai-responses.v1"
+	assemblyEstimatorAgenticOpenAIV2 = "contextwindow-estimator.agentic-openai-responses.v2"
 )
 
 // ContextAssemblyRecord is the immutable assembly manifest row (no body text).
@@ -452,7 +459,8 @@ func validateAssemblyRecord(rec ContextAssemblyRecord) error {
 		return ErrRunInvalid
 	}
 	switch rec.ToolSearchMode {
-	case AssemblyToolSearchModeNone, AssemblyToolSearchModeClientBounded:
+	case AssemblyToolSearchModeNone, AssemblyToolSearchModeClientBounded,
+		AssemblyToolSearchModePlatformBounded, AssemblyToolSearchModeCarryAll:
 	default:
 		return ErrRunInvalid
 	}
@@ -470,41 +478,77 @@ func validateAssemblyRecord(rec ContextAssemblyRecord) error {
 			return ErrRunInvalid
 		}
 		// Classic estimator version must not claim agentic.
-		if rec.EstimatorVersion == "contextwindow-estimator.agentic-openai-responses.v1" {
+		if rec.EstimatorVersion == assemblyEstimatorAgenticOpenAIV1 ||
+			rec.EstimatorVersion == assemblyEstimatorAgenticOpenAIV2 {
 			return ErrRunInvalid
 		}
 		return nil
 	}
 
-	// client_bounded: exact estimator version, lowercase 64-hex digest, structural bounds.
-	if rec.ToolSearchMode != AssemblyToolSearchModeClientBounded {
-		return ErrRunInvalid
-	}
-	if rec.EstimatorVersion != "contextwindow-estimator.agentic-openai-responses.v1" {
-		return ErrRunInvalid
-	}
-	// Catalog digest: exact lowercase 64-hex; no trim/case normalization on input.
 	if !isHex64(rec.ToolCatalogDigest) {
 		return ErrRunInvalid
 	}
-	// MaxLoadedToolCount == min(DeferredToolCount, 40)
-	wantMax := rec.DeferredToolCount
-	if wantMax > 40 {
-		wantMax = 40
-	}
-	if rec.MaxLoadedToolCount != wantMax || rec.MaxLoadedToolCount > 40 {
+
+	switch rec.ToolSearchMode {
+	case AssemblyToolSearchModeClientBounded:
+		if rec.EstimatorVersion != assemblyEstimatorAgenticOpenAIV1 {
+			return ErrRunInvalid
+		}
+		wantMax := rec.DeferredToolCount
+		if wantMax > 40 {
+			wantMax = 40
+		}
+		if rec.MaxLoadedToolCount != wantMax || rec.MaxLoadedToolCount > 40 {
+			return ErrRunInvalid
+		}
+		sum, err := addAssemblyTokens(
+			rec.ImmediateToolsTokens,
+			rec.DeferredMetadataTokens,
+			rec.DynamicToolLoadReserveTokens,
+		)
+		if err != nil || rec.ToolsOverheadTokens != sum {
+			return ErrRunInvalid
+		}
+		return nil
+	case AssemblyToolSearchModePlatformBounded:
+		// Allow later writers; production still only writes none/client_bounded.
+		if rec.EstimatorVersion != assemblyEstimatorAgenticOpenAIV2 {
+			return ErrRunInvalid
+		}
+		if rec.DeferredMetadataTokens != 0 {
+			return ErrRunInvalid
+		}
+		wantMax := rec.DeferredToolCount
+		if wantMax > 5 {
+			wantMax = 5
+		}
+		if rec.MaxLoadedToolCount != wantMax {
+			return ErrRunInvalid
+		}
+		sum, err := addAssemblyTokens(
+			rec.ImmediateToolsTokens,
+			rec.DeferredMetadataTokens,
+			rec.DynamicToolLoadReserveTokens,
+		)
+		if err != nil || rec.ToolsOverheadTokens != sum {
+			return ErrRunInvalid
+		}
+		return nil
+	case AssemblyToolSearchModeCarryAll:
+		if rec.EstimatorVersion != assemblyEstimatorAgenticOpenAIV2 {
+			return ErrRunInvalid
+		}
+		if rec.DeferredToolCount != 0 || rec.DeferredMetadataTokens != 0 ||
+			rec.MaxLoadedToolCount != 0 || rec.DynamicToolLoadReserveTokens != 0 {
+			return ErrRunInvalid
+		}
+		if rec.ToolsOverheadTokens != rec.ImmediateToolsTokens {
+			return ErrRunInvalid
+		}
+		return nil
+	default:
 		return ErrRunInvalid
 	}
-	// ToolsOverheadTokens == immediate+metadata+reserve (overflow-safe).
-	sum, err := addAssemblyTokens(
-		rec.ImmediateToolsTokens,
-		rec.DeferredMetadataTokens,
-		rec.DynamicToolLoadReserveTokens,
-	)
-	if err != nil || rec.ToolsOverheadTokens != sum {
-		return ErrRunInvalid
-	}
-	return nil
 }
 
 // addAssemblyTokens is overflow-safe sum of nonnegative int64 token components.

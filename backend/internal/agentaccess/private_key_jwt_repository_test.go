@@ -16,7 +16,7 @@ import (
 func TestPrivateKeyJWTAuthenticationRepository(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 20 || version.Dirty {
+	if !version.Applied || version.Number != 21 || version.Dirty {
 		t.Fatalf("expected clean latest schema for private_key_jwt, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -113,11 +113,11 @@ func TestPrivateKeyJWTAuthenticationRepository(t *testing.T) {
 	})
 
 	version = testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 20 || version.Dirty {
+	if !version.Applied || version.Number != 21 || version.Dirty {
 		t.Fatalf("expected latest migration still clean after test, got %+v", version)
 	}
 	version = testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 20 || version.Dirty {
+	if !version.Applied || version.Number != 21 || version.Dirty {
 		t.Fatalf("expected latest migration reapply, got %+v", version)
 	}
 }
