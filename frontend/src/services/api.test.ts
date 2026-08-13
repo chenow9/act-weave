@@ -7,6 +7,7 @@ import {
   apiErrorMessage,
   authRefreshClient,
   getAuthToken,
+  refreshAuthSession,
   setAuthSessionHooks,
   setAuthToken,
   toAPIError,
@@ -69,6 +70,28 @@ describe("v1 API client", () => {
     expect(protectedCalls).toBe(2);
     expect(getAuthToken()).toBe("fresh-access-token");
     expect(onRefreshed).toHaveBeenCalledWith(refreshed);
+  });
+
+  it("shares the same refresh promise with raw fetch clients", async () => {
+    let refreshCalls = 0;
+    let resolveRefresh!: (response: AxiosResponse<AuthTokenResponse>) => void;
+    const pending = new Promise<AxiosResponse<AuthTokenResponse>>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    authRefreshClient.defaults.adapter = async (config) => {
+      refreshCalls += 1;
+      return pending.then((response) => ({ ...response, config }));
+    };
+
+    const first = refreshAuthSession();
+    const second = refreshAuthSession();
+    resolveRefresh(axiosResponse({ headers: {} } as InternalAxiosRequestConfig, 200, authSession("shared-token")));
+
+    await expect(Promise.all([first, second])).resolves.toMatchObject([
+      { accessToken: "shared-token" },
+      { accessToken: "shared-token" },
+    ]);
+    expect(refreshCalls).toBe(1);
   });
 
   it("coalesces identical concurrent GET requests", async () => {

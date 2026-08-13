@@ -12,6 +12,9 @@
   "runtimeStatus": "Runtime status",
   "notificationsAudit": "Notifications & audit",
   "signOut": "Sign out",
+  "signingOut": "Signing out…",
+  "signOutFailed": "Could not sign out safely",
+  "retrySignOut": "Retry sign out",
   "allWorkspaces": "All workspaces",
   "platformAdmin": "Platform admin",
   "user": "User"

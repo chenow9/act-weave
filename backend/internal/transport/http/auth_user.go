@@ -53,7 +53,9 @@ func NewAuthUserRoutes(service AuthUserService) (*AuthUserRoutes, error) {
 func (routes *AuthUserRoutes) RegisterV1(v1 V1Routes) {
 	v1.Public.POST("/auth/login", routes.login)
 	v1.Public.POST("/auth/refresh", routes.refresh)
-	v1.Protected.POST("/auth/logout", routes.logout)
+	// Cookie-driven and idempotent: logout must remain possible after the
+	// in-memory Access Token has expired or was cleared by the client.
+	v1.Public.POST("/auth/logout", routes.logout)
 	v1.Protected.GET("/users/me", routes.me)
 	v1.Protected.PATCH("/users/me", routes.updateMe)
 	v1.Protected.POST("/users/me/__command/change-password", routes.changePassword)
@@ -123,7 +125,9 @@ func (routes *AuthUserRoutes) refresh(c *gin.Context) {
 	}
 	result, err := routes.service.Refresh(c.Request.Context(), token)
 	if err != nil {
-		clearRefreshCookie(c)
+		// Do not clear the cookie on refresh failure. A concurrent request may
+		// already have rotated it and written the replacement; a stale failure
+		// response must not delete the winner's valid cookie.
 		RespondError(c, err)
 		return
 	}
@@ -134,10 +138,16 @@ func (routes *AuthUserRoutes) refresh(c *gin.Context) {
 func (routes *AuthUserRoutes) logout(c *gin.Context) {
 	token, err := c.Cookie(refreshCookieName)
 	if err != nil || token == "" {
-		RespondError(c, ErrUnauthenticated)
+		clearRefreshCookie(c)
+		c.Status(http.StatusNoContent)
 		return
 	}
 	if err := routes.service.Logout(c.Request.Context(), token); err != nil {
+		if errors.Is(err, authn.ErrRefreshRejected) {
+			clearRefreshCookie(c)
+			c.Status(http.StatusNoContent)
+			return
+		}
 		RespondError(c, err)
 		return
 	}

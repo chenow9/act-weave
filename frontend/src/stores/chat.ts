@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 
 import { tt } from "../i18n/tt";
-import { apiClient, authRefreshClient, getAuthToken, setAuthToken } from "../services/api";
+import { apiClient, getAuthToken, refreshAuthSession } from "../services/api";
 import {
   applyStreamFrame as projectStreamFrame,
   createProjectionState,
@@ -632,8 +632,7 @@ async function* readSSEFrames(stream: ReadableStream<Uint8Array>, runId: string)
  * Uses the same /auth/refresh cookie path as apiClient.
  */
 async function refreshAuthForStream() {
-  const response = await authRefreshClient.post<{ accessToken: string }>("/auth/refresh");
-  if (response.data?.accessToken) setAuthToken(response.data.accessToken);
+  await refreshAuthSession();
 }
 
 function isAbortError(error: unknown) {

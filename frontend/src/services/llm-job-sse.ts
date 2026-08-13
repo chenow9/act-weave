@@ -3,7 +3,7 @@
  * POST with Accept: text/event-stream, wait for completed|failed (+ heartbeats).
  */
 
-import { APIError, authRefreshClient, getAuthToken, setAuthToken, toAPIError, type AuthTokenResponse } from "./api";
+import { APIError, getAuthToken, refreshAuthSession, toAPIError } from "./api";
 
 const apiBaseURL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 
@@ -106,9 +106,8 @@ export async function postLlmJobSse<T extends object = Record<string, unknown>>(
   let response = await doFetch();
   if (response.status === 401) {
     try {
-      const session = await authRefreshClient.post<AuthTokenResponse>("/auth/refresh");
-      setAuthToken(session.data.accessToken);
-      headers.Authorization = `Bearer ${session.data.accessToken}`;
+      const session = await refreshAuthSession();
+      headers.Authorization = `Bearer ${session.accessToken}`;
       response = await doFetch();
     } catch (error) {
       throw toAPIError(error);

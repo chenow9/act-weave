@@ -292,7 +292,7 @@ async function loadWorkspacePage() {
   } catch (error) {
     workspacePageError.value = workspaceLoadErrorMessage(error);
     if (getHttpStatus(error) === 401) {
-      auth.logout();
+      auth.clearSession();
     }
   } finally {
     pageInitialLoading.value = false;
@@ -784,7 +784,7 @@ async function confirmDeleteWorkspace() {
 }
 
 function goLogin() {
-  auth.logout();
+  auth.clearSession();
   void router.push({ name: "login" });
 }
 

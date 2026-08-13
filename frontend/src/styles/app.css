@@ -930,6 +930,51 @@ a[href]:focus-visible {
   flex-direction: column;
 }
 
+.session-action-error {
+  position: fixed;
+  z-index: 1200;
+  top: 76px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, #dc2626 35%, transparent);
+  border-radius: 12px;
+  background: #fff7f7;
+  color: #991b1b;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.16);
+}
+
+.session-action-error > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.session-action-error small {
+  color: #7f1d1d;
+}
+
+.session-action-error button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #dc2626;
+  border-radius: 8px;
+  background: #fff;
+  color: #991b1b;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.session-action-error button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .topbar {
   height: 64px;
   flex: 0 0 64px;

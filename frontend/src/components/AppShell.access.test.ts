@@ -8,7 +8,10 @@ const fixtures = vi.hoisted(() => ({
   auth: {
     user: { username: "access.user", role: "User", platformRole: "USER", lockVersion: 1 },
     logout: vi.fn(),
+    clearSession: vi.fn(),
     applyUser: vi.fn(),
+    loading: false,
+    error: "",
   },
   workspaces: {
     activeWorkspace: null as any,
@@ -37,6 +40,9 @@ describe("AppShell platform-administrator navigation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fixtures.auth.user.platformRole = "USER";
+    fixtures.auth.loading = false;
+    fixtures.auth.error = "";
+    fixtures.auth.logout.mockResolvedValue(undefined);
     fixtures.route.path = "/overview";
     fixtures.workspaces.activeWorkspace = null;
     fixtures.workspaces.activeWorkspaceId = "";
@@ -122,6 +128,28 @@ describe("AppShell platform-administrator navigation", () => {
     expect(wrapper.text()).toContain("Run Console");
     expect(wrapper.text()).toContain("ActWeave");
     expect(wrapper.text()).not.toContain("织行");
+  });
+
+  it("waits for server logout before navigating to login", async () => {
+    const wrapper = mountShell();
+    await wrapper.get('[data-testid="user-menu-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="sign-out"]').trigger("click");
+
+    await vi.waitFor(() => expect(fixtures.auth.logout).toHaveBeenCalledTimes(1));
+    expect(fixtures.router.push).toHaveBeenCalledWith({ name: "login" });
+    expect(wrapper.find('[data-testid="sign-out-error"]').exists()).toBe(false);
+  });
+
+  it("keeps the app visible and offers retry when server logout fails", async () => {
+    fixtures.auth.error = "退出失败，会话尚未撤销，请重试。";
+    fixtures.auth.logout.mockRejectedValueOnce(new Error("offline"));
+    const wrapper = mountShell();
+    await wrapper.get('[data-testid="user-menu-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="sign-out"]').trigger("click");
+
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="sign-out-error"]').exists()).toBe(true));
+    expect(fixtures.router.push).not.toHaveBeenCalledWith({ name: "login" });
+    expect(wrapper.get('[data-testid="sign-out-error"]').text()).toContain("会话尚未撤销");
   });
 });
 

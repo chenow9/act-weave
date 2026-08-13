@@ -1,7 +1,7 @@
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { apiClient, getAuthToken } from "../services/api";
+import { apiClient, getAuthToken, refreshAuthSession } from "../services/api";
 import type {
   AgentRun,
   ChatConfirmation,
@@ -18,11 +18,8 @@ vi.mock("../services/api", () => ({
     get: vi.fn(),
     post: vi.fn(),
   },
-  authRefreshClient: {
-    post: vi.fn(),
-  },
+  refreshAuthSession: vi.fn(),
   getAuthToken: vi.fn(() => ""),
-  setAuthToken: vi.fn(),
 }));
 
 const workspaceId = "01911111-1111-7111-8111-111111111111";
@@ -202,6 +199,36 @@ describe("chat v1 store", () => {
       `/api/v1/workspaces/${workspaceId}/agent-runs/${runFixture().id}/events`,
       expect.objectContaining({ credentials: "include", headers: { Accept: "text/event-stream" } }),
     );
+    chat.closeRunStream();
+  });
+
+  it("uses the shared session refresher when Run SSE returns 401", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(sseResponse("", 401))
+      .mockResolvedValueOnce(
+        sseResponse(
+          protocolSSE("run.completed", 1, {
+            run: {
+              id: runFixture().id,
+              conversationId,
+              agentId,
+              status: "completed",
+              trigger: "message",
+              startedAt: "2026-07-20T01:00:00Z",
+            },
+          }),
+        ),
+      );
+    vi.mocked(refreshAuthSession).mockResolvedValue({} as never);
+    vi.mocked(apiClient.get).mockResolvedValue({ data: { run: runFixture({ status: "SUCCEEDED" }), steps: [] } });
+    const chat = useChatStore();
+    chat.sessions = [scopedSession({ latestRunId: runFixture().id })];
+    chat.activeSessionId = sessionFixture().id;
+
+    chat.subscribeRunStream(runFixture().id);
+
+    await vi.waitFor(() => expect(refreshAuthSession).toHaveBeenCalledTimes(1), { timeout: 5000 });
+    await vi.waitFor(() => expect(chat.runStatus).toBe("SUCCEEDED"), { timeout: 5000 });
     chat.closeRunStream();
   });
 

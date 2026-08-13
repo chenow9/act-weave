@@ -109,11 +109,12 @@ function userForKey(key: SmokeUserKey) {
 /** Track list GET counts so mutation → fresh reload is observable. */
 type RequestLog = { method: string; path: string; at: number };
 
-async function mockApiV1(page: Page, options?: { workspaceRoleForAdmin?: string }) {
+async function mockApiV1(page: Page, options?: { workspaceRoleForAdmin?: string; logoutFailures?: number }) {
   const log: RequestLog[] = [];
   let sessionUser: ReturnType<typeof smokeUser> | null = null;
   let mustChange = false;
   const workspaceRole = options?.workspaceRoleForAdmin || "EDITOR";
+  let logoutFailures = options?.logoutFailures || 0;
   const created: Array<ReturnType<typeof smokeWorkspace>> = [];
 
   const catalog = () => {
@@ -191,6 +192,10 @@ async function mockApiV1(page: Page, options?: { workspaceRoleForAdmin?: string 
     }
 
     if (method === "POST" && path === "/auth/logout") {
+      if (logoutFailures > 0) {
+        logoutFailures -= 1;
+        return err(503, "INTERNAL", "logout temporarily unavailable");
+      }
       sessionUser = null;
       mustChange = false;
       return route.fulfill({
@@ -339,6 +344,24 @@ test.describe("console smoke (mocked API)", () => {
     await expect(page.getByTestId("workspace-switcher")).toContainText("Workspace ws-2", {
       timeout: 10_000,
     });
+  });
+
+  test("failed logout stays authenticated and succeeds on explicit retry", async ({ page }) => {
+    const api = await mockApiV1(page, { logoutFailures: 1 });
+    await loginAs(page, "admin");
+    await expect(page).toHaveURL(/overview|workspaces|agents/, { timeout: 15_000 });
+
+    await page.getByTestId("user-menu-trigger").click();
+    await page.getByTestId("sign-out").click();
+
+    await expect(page.getByTestId("sign-out-error")).toBeVisible({ timeout: 10_000 });
+    await expect(page).not.toHaveURL(/login/);
+    await expect.poll(() => api.countPosts("/auth/logout"), { timeout: 10_000 }).toBe(1);
+
+    await page.getByTestId("sign-out-error").getByRole("button", { name: "重试退出" }).click();
+
+    await expect.poll(() => api.countPosts("/auth/logout"), { timeout: 10_000 }).toBe(2);
+    await expect(page).toHaveURL(/login/, { timeout: 15_000 });
   });
 
   test("must-change-password users are forced onto change-password and can complete", async ({ page }) => {

@@ -130,6 +130,7 @@ interface AuthSessionHooks {
 
 let refreshInFlight: Promise<AuthTokenResponse> | null = null;
 let authSessionHooks: AuthSessionHooks = {};
+const authRefreshLockName = "actweave:auth-refresh:v1";
 
 export function setAuthSessionHooks(hooks: AuthSessionHooks) {
   authSessionHooks = hooks;
@@ -221,7 +222,7 @@ apiClient.interceptors.response.use(
 
     config._actweaveAuthRetried = true;
     try {
-      const session = await refreshAccessToken();
+      const session = await refreshAuthSession();
       config.headers.Authorization = `Bearer ${session.accessToken}`;
       return await apiClient.request(config);
     } catch {
@@ -230,10 +231,16 @@ apiClient.interceptors.response.use(
   },
 );
 
-async function refreshAccessToken() {
+/**
+ * The only Refresh Token rotation entrypoint in the browser.
+ *
+ * The module-level promise coalesces Axios/fetch callers in one tab. Web Locks
+ * serializes rotations across same-origin tabs so the backend's one-time
+ * Refresh Token compare-and-swap never receives parallel uses from this browser.
+ */
+export function refreshAuthSession(): Promise<AuthTokenResponse> {
   if (!refreshInFlight) {
-    refreshInFlight = authRefreshClient
-      .post<AuthTokenResponse>("/auth/refresh")
+    refreshInFlight = withCrossTabRefreshLock(() => authRefreshClient.post<AuthTokenResponse>("/auth/refresh"))
       .then((response: AxiosResponse<AuthTokenResponse>) => {
         setAuthToken(response.data.accessToken);
         authSessionHooks.onRefreshed?.(response.data);
@@ -249,6 +256,13 @@ async function refreshAccessToken() {
       });
   }
   return refreshInFlight;
+}
+
+function withCrossTabRefreshLock<T>(operation: () => Promise<T>): Promise<T> {
+  if (typeof navigator !== "undefined" && navigator.locks) {
+    return navigator.locks.request(authRefreshLockName, { mode: "exclusive" }, operation);
+  }
+  return operation();
 }
 
 function isAuthLifecycleRequest(url?: string) {

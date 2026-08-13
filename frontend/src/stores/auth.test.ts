@@ -1,7 +1,7 @@
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { APIError, apiClient, setAuthToken, type AuthTokenResponse } from "../services/api";
+import { APIError, apiClient, refreshAuthSession, setAuthToken, type AuthTokenResponse } from "../services/api";
 import { useAuthStore } from "./auth";
 
 vi.mock("../services/api", async () => {
@@ -9,6 +9,7 @@ vi.mock("../services/api", async () => {
   return {
     ...actual,
     apiClient: { post: vi.fn(), get: vi.fn() },
+    refreshAuthSession: vi.fn(),
     setAuthSessionHooks: vi.fn(),
     setAuthToken: vi.fn(),
   };
@@ -41,13 +42,12 @@ describe("v1 auth store", () => {
 
   it("restores from the HttpOnly refresh cookie once for concurrent callers", async () => {
     localStorage.setItem("actweave.session", JSON.stringify({ token: "legacy-token" }));
-    vi.mocked(apiClient.post).mockResolvedValueOnce({ data: authSession("restored.jwt") });
+    vi.mocked(refreshAuthSession).mockResolvedValueOnce(authSession("restored.jwt"));
     const auth = useAuthStore();
 
     await Promise.all([auth.restoreSession(), auth.restoreSession()]);
 
-    expect(apiClient.post).toHaveBeenCalledTimes(1);
-    expect(apiClient.post).toHaveBeenCalledWith("/auth/refresh");
+    expect(refreshAuthSession).toHaveBeenCalledTimes(1);
     expect(auth.token).toBe("restored.jwt");
     expect(auth.initialized).toBe(true);
     expect(localStorage.getItem("actweave.session")).toBeNull();
@@ -76,6 +76,32 @@ describe("v1 auth store", () => {
     expect(auth.token).toBe("");
     expect(auth.user).toBeNull();
     expect(setAuthToken).toHaveBeenLastCalledWith("");
+  });
+
+  it("always calls Cookie-backed logout even when the Access Token is absent", async () => {
+    vi.mocked(apiClient.post).mockResolvedValueOnce({ status: 204, data: undefined });
+    const auth = useAuthStore();
+
+    await auth.logout();
+
+    expect(apiClient.post).toHaveBeenCalledWith("/auth/logout");
+    expect(auth.initialized).toBe(true);
+  });
+
+  it("keeps the authenticated session and surfaces an error when logout fails", async () => {
+    vi.mocked(apiClient.post).mockResolvedValueOnce({ data: authSession("still-signed-in") });
+    const auth = useAuthStore();
+    await auth.login("chen.ops", "actweave-demo");
+    vi.mocked(apiClient.post).mockRejectedValueOnce(
+      new APIError({ status: 503, code: "INTERNAL", message: "temporarily unavailable" }),
+    );
+
+    await expect(auth.logout()).rejects.toBeInstanceOf(APIError);
+
+    expect(auth.token).toBe("still-signed-in");
+    expect(auth.user?.username).toBe("chen.ops");
+    expect(auth.error).not.toBe("");
+    expect(setAuthToken).not.toHaveBeenLastCalledWith("");
   });
 
   it("shows the backend requestId when login fails", async () => {

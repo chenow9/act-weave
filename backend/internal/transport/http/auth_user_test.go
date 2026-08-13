@@ -57,11 +57,18 @@ func TestV1AuthLoginRefreshLogoutAndMe(t *testing.T) {
 	}
 	replayed := fixture.request(t, http.MethodPost, "/api/v1/auth/refresh", nil, "", refresh)
 	assertErrorResponse(t, replayed, http.StatusUnauthorized, "UNAUTHENTICATED")
+	if responseHasCookie(replayed, refreshCookieName) {
+		t.Fatalf("stale refresh response must not clear a concurrently rotated cookie: headers=%v", replayed.Header())
+	}
 
-	loggedOut := fixture.request(t, http.MethodPost, "/api/v1/auth/logout", nil,
-		refreshedTokens.AccessToken, rotated)
+	// Cookie-backed logout remains available without an in-memory Access Token.
+	loggedOut := fixture.request(t, http.MethodPost, "/api/v1/auth/logout", nil, "", rotated)
 	if loggedOut.Code != http.StatusNoContent || responseCookie(t, loggedOut, refreshCookieName).MaxAge != -1 {
 		t.Fatalf("logout status=%d headers=%v body=%s", loggedOut.Code, loggedOut.Header(), loggedOut.Body.String())
+	}
+	replayedLogout := fixture.request(t, http.MethodPost, "/api/v1/auth/logout", nil, "", rotated)
+	if replayedLogout.Code != http.StatusNoContent || responseCookie(t, replayedLogout, refreshCookieName).MaxAge != -1 {
+		t.Fatalf("replayed logout status=%d headers=%v body=%s", replayedLogout.Code, replayedLogout.Header(), replayedLogout.Body.String())
 	}
 	afterLogout := fixture.request(t, http.MethodPost, "/api/v1/auth/refresh", nil, "", rotated)
 	assertErrorResponse(t, afterLogout, http.StatusUnauthorized, "UNAUTHENTICATED")
@@ -397,4 +404,13 @@ func responseCookie(t *testing.T, response *httptest.ResponseRecorder, name stri
 	}
 	t.Fatalf("cookie %s missing from headers %v", name, response.Header())
 	return nil
+}
+
+func responseHasCookie(response *httptest.ResponseRecorder, name string) bool {
+	for _, cookie := range response.Result().Cookies() {
+		if cookie.Name == name {
+			return true
+		}
+	}
+	return false
 }

@@ -3,6 +3,7 @@ import { defineStore } from "pinia";
 import {
   apiClient,
   apiErrorMessage,
+  refreshAuthSession,
   setAuthSessionHooks,
   setAuthToken,
   type AuthTokenResponse,
@@ -99,8 +100,8 @@ export const useAuthStore = defineStore("auth", {
       if (!restoreInFlight) {
         restoreInFlight = (async () => {
           try {
-            const response = await apiClient.post<AuthTokenResponse>("/auth/refresh");
-            this.applySession(response.data);
+            const session = await refreshAuthSession();
+            this.applySession(session);
           } catch {
             this.clearSession();
           } finally {
@@ -113,13 +114,22 @@ export const useAuthStore = defineStore("auth", {
     },
     async logout() {
       this.bindAPIClient();
-      const revoke = this.token ? apiClient.post("/auth/logout") : Promise.resolve();
-      this.clearSession();
+      this.loading = true;
+      this.error = "";
       try {
-        await revoke;
-      } catch {
-        // Local logout is authoritative; the HttpOnly refresh cookie is short-lived
-        // and the server request is best effort when connectivity is unavailable.
+        // Always ask the Cookie-backed endpoint to revoke the server session. A
+        // Refresh Cookie can still exist even when the in-memory Access Token was
+        // cleared by a prior failed request.
+        await apiClient.post("/auth/logout");
+        this.clearSession();
+        this.initialized = true;
+      } catch (error) {
+        // Keep the authenticated UI intact: claiming success while the HttpOnly
+        // Refresh Cookie remains valid would allow a silent login after reload.
+        this.error = apiErrorMessage(error, tt("auth.signOutFailed"));
+        throw error;
+      } finally {
+        this.loading = false;
       }
     },
     /**

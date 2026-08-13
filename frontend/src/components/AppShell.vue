@@ -32,6 +32,7 @@ const switcherResults = ref(workspaces.items);
 const switcherSearching = ref(false);
 let workspaceSearchTimer: ReturnType<typeof setTimeout> | null = null;
 const profileMenuOpen = ref(false);
+const signOutError = ref("");
 const navigationRef = ref<HTMLElement | null>(null);
 const navigationSearchInput = ref<HTMLInputElement | null>(null);
 const workspaceSwitcherRef = ref<HTMLElement | null>(null);
@@ -112,7 +113,7 @@ onMounted(async () => {
     }
   } catch (error) {
     if (getHttpStatus(error) === 401) {
-      auth.logout();
+      auth.clearSession();
       void router.push({ name: "login" });
     }
   } finally {
@@ -259,10 +260,16 @@ function goNotifications() {
   void router.push({ name: "logs" });
 }
 
-function logout() {
+async function logout() {
+  if (auth.loading) return;
   profileMenuOpen.value = false;
-  auth.logout();
-  void router.push({ name: "login" });
+  signOutError.value = "";
+  try {
+    await auth.logout();
+    await router.push({ name: "login" });
+  } catch {
+    signOutError.value = auth.error || t("auth.signOutFailed");
+  }
 }
 
 async function switchLanguage(next: AppLocale) {
@@ -525,10 +532,14 @@ function handleDocumentKeydown(event: KeyboardEvent) {
               class="logout-button"
               type="button"
               :aria-label="t('shell.signOut')"
+              :disabled="auth.loading"
+              :aria-busy="auth.loading"
               data-testid="sign-out"
               @click="logout"
             >
-              <i class="fa-solid fa-power-off" aria-hidden="true" />{{ t("shell.signOut") }}
+              <i class="fa-solid fa-power-off" aria-hidden="true" />{{
+                auth.loading ? t("shell.signingOut") : t("shell.signOut")
+              }}
             </button>
           </section>
         </div>
@@ -542,6 +553,17 @@ function handleDocumentKeydown(event: KeyboardEvent) {
       :aria-label="t('nav.closeNav')"
       @click="closeNavigation(true)"
     />
+
+    <section v-if="signOutError" class="session-action-error" role="alert" data-testid="sign-out-error">
+      <i class="fa-solid fa-triangle-exclamation" aria-hidden="true" />
+      <span
+        ><strong>{{ t("shell.signOutFailed") }}</strong
+        ><small>{{ signOutError }}</small></span
+      >
+      <button type="button" :disabled="auth.loading" @click="logout">
+        {{ auth.loading ? t("shell.signingOut") : t("shell.retrySignOut") }}
+      </button>
+    </section>
 
     <main class="main-shell">
       <section :class="['content-area', { 'content-area--workspace': activeModule === 'chat' }]">

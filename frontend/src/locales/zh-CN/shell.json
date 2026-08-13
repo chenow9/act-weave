@@ -12,6 +12,9 @@
   "runtimeStatus": "运行时状态",
   "notificationsAudit": "通知与审计",
   "signOut": "退出登录",
+  "signingOut": "正在退出…",
+  "signOutFailed": "未能安全退出",
+  "retrySignOut": "重试退出",
   "allWorkspaces": "全部业务空间",
   "platformAdmin": "平台管理员",
   "user": "用户"

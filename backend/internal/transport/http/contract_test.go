@@ -60,6 +60,8 @@ func TestV1ContractAuthenticationAndPublicCommandPaths(t *testing.T) {
 			switch {
 			case route.public && route.path == "/api/v1/auth/login":
 				want = http.StatusUnprocessableEntity
+			case route.public && route.path == "/api/v1/auth/logout":
+				want = http.StatusNoContent
 			// A public document must be readable with no credentials at all;
 			// anything else here is a route that only looks public.
 			case route.public && route.method == http.MethodGet:
@@ -242,7 +244,7 @@ func v1ContractRoutes() []v1ContractRoute {
 	return []v1ContractRoute{
 		{http.MethodPost, root + "/auth/login", true},
 		{http.MethodPost, root + "/auth/refresh", true},
-		{http.MethodPost, root + "/auth/logout", false},
+		{http.MethodPost, root + "/auth/logout", true},
 		{http.MethodGet, root + "/users/me", false},
 		{http.MethodPatch, root + "/users/me", false},
 		{http.MethodPost, root + "/users/me:change-password", false},
