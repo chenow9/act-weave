@@ -327,17 +327,17 @@ func (t *AuditedAgentTool) InvokableRun(ctx context.Context, argumentsInJSON str
 		cid, startErr := t.cfg.ChildRuns.StartChild(ctx, startIn)
 		if startErr != nil {
 			// No attempt yet — child never dispatched; release budget via defer.
-			finErr := t.finalizeWithRetry(ctx, workspaceID, del.ID, del.StepID, StatusFailed,
-				"DELEGATION_CHILD_START_FAILED", truncate(startErr.Error(), 500), nil, nil)
-			return formatDelegationError(errors.Join(startErr, finErr)), nil
+			// Parent cancel/timeout can fail StartChild the same way as attempt
+			// record; classify from ctx so the delegation is not FAILED.
+			return t.abortPreDispatch(ctx, workspaceID, del.ID, firstNonEmpty(del.StepID, stepID),
+				"", startErr, "DELEGATION_CHILD_START_FAILED"), nil
 		}
 		childRunID = cid
 		if err := t.cfg.Audit.SetChildRunID(ctx, workspaceID, del.ID, childRunID); err != nil {
-			// No attempt yet — terminate child consistently, then delegation.
-			finChildErr := t.cfg.ChildRuns.FinishChild(ctx, workspaceID, childRunID, StatusFailed, "DELEGATION_LINK_FAILED", json.RawMessage(`{}`))
-			finErr := t.finalizeWithRetry(ctx, workspaceID, del.ID, del.StepID, StatusFailed,
-				"DELEGATION_LINK_FAILED", truncate(err.Error(), 500), &childRunID, nil)
-			return formatDelegationError(errors.Join(err, finChildErr, finErr)), nil
+			// Child exists; link/audit failed or parent cancelled during the link.
+			// Persist with WithoutCancel so a cancelled drive ctx cannot skip FinishChild.
+			return t.abortPreDispatch(ctx, workspaceID, del.ID, firstNonEmpty(del.StepID, stepID),
+				childRunID, err, "DELEGATION_LINK_FAILED"), nil
 		}
 		execRunID = childRunID
 		// Bound TASK execution by timeout; parent cancel still cancels via ctx.
@@ -348,30 +348,8 @@ func (t *AuditedAgentTool) InvokableRun(ctx context.Context, argumentsInJSON str
 
 	// Real agent dispatch: count attempt only immediately before Inner.InvokableRun.
 	if aerr := t.cfg.Audit.RecordDispatchAttempt(ctx, workspaceID, del.ID); aerr != nil {
-		// Attempt failed: never call Inner; release reservation (defer) + clean child/del.
-		// Parent cancel/timeout can surface here (ExecContext / fake audit waiting
-		// on ctx.Done()) after StartChild — classify from ctx, not as a generic
-		// audit failure, or TASK child/delegation/step disagree (FAILED vs CANCELLED).
-		finalStatus, errCode, errMsg := attemptRecordAbort(ctx, aerr)
-		var finChildErr error
-		if mode == ModeTask && childRunID != "" && t.cfg.ChildRuns != nil {
-			finChildErr = t.cfg.ChildRuns.FinishChild(context.WithoutCancel(ctx), workspaceID, childRunID,
-				finalStatus, errCode, json.RawMessage(`{}`))
-		}
-		var childPtr *string
-		if childRunID != "" {
-			childPtr = &childRunID
-		}
-		finErr := t.finalizeWithRetry(context.WithoutCancel(ctx), workspaceID, del.ID, firstNonEmpty(del.StepID, stepID),
-			finalStatus, errCode, errMsg, childPtr, nil)
-		cause := aerr
-		switch finalStatus {
-		case StatusCancelled:
-			cause = errors.Join(ErrCancelled, aerr)
-		case StatusTimedOut:
-			cause = errors.Join(ErrTimedOut, aerr)
-		}
-		return formatDelegationError(errors.Join(cause, finChildErr, finErr)), nil
+		return t.abortPreDispatch(ctx, workspaceID, del.ID, firstNonEmpty(del.StepID, stepID),
+			childRunID, aerr, "DELEGATION_ATTEMPT_RECORD_FAILED"), nil
 	}
 	// Dispatch is real: reservation is permanently consumed (AttemptCount already incremented).
 	reserved = false
@@ -690,10 +668,10 @@ func extractResultString(payload json.RawMessage) string {
 	return string(payload)
 }
 
-// attemptRecordAbort classifies a failed RecordDispatchAttempt after StartChild.
-// Cancel/timeout of the parent (or TASK bound) must not be recorded as a generic
-// audit failure: that is the window where child_run / delegation / step disagree.
-func attemptRecordAbort(ctx context.Context, aerr error) (status, errCode, errMsg string) {
+// preDispatchAbort classifies a failed StartChild / SetChildRunID /
+// RecordDispatchAttempt. Cancel/timeout of the parent must not be recorded as a
+// generic start/link/audit failure, or TASK child / delegation / step disagree.
+func preDispatchAbort(ctx context.Context, err error, failedCode string) (status, errCode, errMsg string) {
 	if ctx != nil {
 		switch {
 		case errors.Is(ctx.Err(), context.DeadlineExceeded):
@@ -702,11 +680,51 @@ func attemptRecordAbort(ctx context.Context, aerr error) (status, errCode, errMs
 			return StatusCancelled, "DELEGATION_CANCELLED", "parent context cancelled"
 		}
 	}
-	msg := "dispatch attempt record failed"
-	if aerr != nil && strings.TrimSpace(aerr.Error()) != "" {
-		msg = truncate(aerr.Error(), 500)
+	msg := failedCode
+	if err != nil && strings.TrimSpace(err.Error()) != "" {
+		msg = truncate(err.Error(), 500)
 	}
-	return StatusFailed, "DELEGATION_ATTEMPT_RECORD_FAILED", msg
+	if failedCode == "" {
+		failedCode = "DELEGATION_FAILED"
+	}
+	return StatusFailed, failedCode, msg
+}
+
+// attemptRecordAbort keeps the RecordDispatchAttempt classification name used
+// by tests; it is preDispatchAbort with the attempt-record failure code.
+func attemptRecordAbort(ctx context.Context, aerr error) (status, errCode, errMsg string) {
+	return preDispatchAbort(ctx, aerr, "DELEGATION_ATTEMPT_RECORD_FAILED")
+}
+
+// abortPreDispatch finishes a TASK child (if any) and the delegation after a
+// pre-Inner abort. Persist uses WithoutCancel so a cancelled drive ctx cannot
+// skip FinishChild / finalize.
+func (t *AuditedAgentTool) abortPreDispatch(
+	ctx context.Context,
+	workspaceID, delegationID, stepID, childRunID string,
+	cause error,
+	failedCode string,
+) string {
+	finalStatus, errCode, errMsg := preDispatchAbort(ctx, cause, failedCode)
+	var finChildErr error
+	if childRunID != "" && t.cfg.ChildRuns != nil {
+		finChildErr = t.cfg.ChildRuns.FinishChild(context.WithoutCancel(ctx), workspaceID, childRunID,
+			finalStatus, errCode, json.RawMessage(`{}`))
+	}
+	var childPtr *string
+	if childRunID != "" {
+		childPtr = &childRunID
+	}
+	finErr := t.finalizeWithRetry(context.WithoutCancel(ctx), workspaceID, delegationID, stepID,
+		finalStatus, errCode, errMsg, childPtr, nil)
+	wrapped := cause
+	switch finalStatus {
+	case StatusCancelled:
+		wrapped = errors.Join(ErrCancelled, cause)
+	case StatusTimedOut:
+		wrapped = errors.Join(ErrTimedOut, cause)
+	}
+	return formatDelegationError(errors.Join(wrapped, finChildErr, finErr))
 }
 
 func formatDelegationError(err error) string {
