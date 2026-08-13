@@ -14,6 +14,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"go/format"
 	"os"
 	"path/filepath"
 	"sort"
@@ -55,7 +56,7 @@ func run() error {
 
 	meta := genMeta{
 		SpecVersion:     "1.0",
-		ProtocolVersion: "2026-07-20",
+		ProtocolVersion: "2026-08-11",
 		SchemaSetSHA256: setHash,
 		DocumentNames:   names,
 		DocumentSHA256:  docHashes,
@@ -147,7 +148,7 @@ func hashSchemas(dir string, names []string) (setHash string, docHashes map[stri
 
 func writeChecksumFile(path, setHash string, docHashes map[string]string, names []string) error {
 	var b strings.Builder
-	b.WriteString("# AAP 1.0 / protocol date 2026-07-20\n")
+	b.WriteString("# AAP 1.0 / protocol date 2026-08-11\n")
 	b.WriteString("# schema-set (the concatenated bytes of the JSON files below in filename order)\n")
 	b.WriteString(setHash + "  schema-set\n\n")
 	for _, name := range names {
@@ -490,5 +491,17 @@ func renderTemplate(path, tmpl string, data any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, buf.Bytes(), 0o644)
+	payload := buf.Bytes()
+	if filepath.Ext(path) == ".go" {
+		// Generated Go has to be gofmt-clean as written. A template can only
+		// guess at alignment, so without this a formatting pass over the repo
+		// edits the file and "generate must be clean" then fails on whitespace
+		// no one chose.
+		formatted, err := format.Source(payload)
+		if err != nil {
+			return fmt.Errorf("format %s: %w", path, err)
+		}
+		payload = formatted
+	}
+	return os.WriteFile(path, payload, 0o644)
 }

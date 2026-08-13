@@ -2,6 +2,7 @@ import "./styles.css";
 import {
   attachOutboundCredential,
   clearOutboundCredential,
+  extractA2UIPart,
   extractMessageText,
   extractToolSummary,
   fetchBffConfig,
@@ -9,9 +10,11 @@ import {
   itemRole,
   startChatTurn,
   uploadAttachment,
+  type A2UIPartExtract,
   type BffConfig,
   type OutboundStatus,
 } from "./aap";
+import { renderA2UICard } from "./a2ui";
 import { escapeHtml, renderMarkdown } from "./markdown";
 import { mockAssistantStream } from "./mock-stream";
 import type { ProtocolItem } from "@actweave/agent-client";
@@ -39,6 +42,8 @@ interface UiMessage {
   text: string;
   html?: string;
   tools?: Array<{ name: string; status: string; detail: string }>;
+  /** First a2ui part for real surface rendering (display-only). */
+  a2ui?: A2UIPartExtract;
   attachments?: UiAttachment[];
   pending?: boolean;
   error?: boolean;
@@ -77,9 +82,9 @@ const pendingFileByLocalId = new Map<string, File>();
 
 const SUGGESTIONS = [
   "展示一段 Markdown + 数学公式样例",
-  "用代码说明如何接入 AAP",
-  "帮我查一下有哪些识别场景",
-  "解释贝叶斯定理并给一个例子",
+  "用结构化表单收集：姓名、公司、手机、演示日期",
+  "用统计图展示近 6 个月预约与成交趋势",
+  "用饼图展示线索来源分布",
 ];
 
 async function boot() {
@@ -126,7 +131,7 @@ function render() {
           <div class="demo-brand-mark" aria-hidden="true"><i class="fa-solid fa-hexagon-nodes"></i></div>
           <div>
             <h1>ActWeave AAP Chat</h1>
-            <p>Agent Access Protocol 对接示例 · 富文本对话（Markdown / 公式 / 代码 / 图片）</p>
+            <p>Agent Access Protocol 对接示例 · 富文本对话 + A2UI 真实渲染（Markdown / 公式 / 代码 / 图片 / 表单）</p>
           </div>
         </div>
         <div class="demo-top-meta">
@@ -414,6 +419,7 @@ function messageHtml(msg: UiMessage): string {
         </div>`;
       })
       .join("") || "";
+  const a2ui = msg.a2ui ? renderA2UICard(msg.a2ui) : "";
 
   return `
     <div class="msg-row ${roleClass}" data-msg-id="${escapeHtml(msg.id)}">
@@ -425,6 +431,7 @@ function messageHtml(msg: UiMessage): string {
         </div>
         ${messageAttachmentsHtml(msg)}
         ${body ? `<div class="msg-body ${msg.role === "user" ? "" : "md-body"}">${body}</div>` : ""}
+        ${a2ui}
         ${tools}
       </div>
     </div>
@@ -739,7 +746,27 @@ async function runMock(text: string) {
       }
     } else if (chunk.kind === "assistant_done") {
       const msg = state.messages.find((m) => m.id === assistantId);
-      if (msg) msg.pending = false;
+      if (msg) {
+        msg.pending = false;
+        if (chunk.a2ui?.surface != null) {
+          const surface = chunk.a2ui.surface;
+          msg.a2ui = {
+            version: chunk.a2ui.version,
+            catalogId: chunk.a2ui.catalogId,
+            surface,
+            rawJson: JSON.stringify(
+              {
+                type: "a2ui",
+                ...(chunk.a2ui.version ? { version: chunk.a2ui.version } : {}),
+                ...(chunk.a2ui.catalogId ? { catalogId: chunk.a2ui.catalogId } : {}),
+                surface,
+              },
+              null,
+              2,
+            ),
+          };
+        }
+      }
     } else if (chunk.kind === "status") {
       state.status = chunk.text;
     }
@@ -887,12 +914,16 @@ function applySnapshotToAssistant(assistantId: string, items: ProtocolItem[]) {
 
   const texts: string[] = [];
   const tools: Array<{ name: string; status: string; detail: string }> = [];
+  let a2ui: A2UIPartExtract | undefined;
 
   for (const item of items) {
     const role = itemRole(item);
     if (role === "assistant") {
       const t = extractMessageText(item);
       if (t) texts.push(t);
+      // item.completed multiparty may carry optional a2ui (authoritative over delta fences).
+      const part = extractA2UIPart(item);
+      if (part) a2ui = part;
     } else if (role === "tool") {
       tools.push(extractToolSummary(item));
     }
@@ -904,6 +935,9 @@ function applySnapshotToAssistant(assistantId: string, items: ProtocolItem[]) {
     msg.html = renderMarkdown(msg.text);
   }
   msg.tools = tools;
+  if (a2ui) {
+    msg.a2ui = a2ui;
+  }
 }
 
 function patchMessages() {

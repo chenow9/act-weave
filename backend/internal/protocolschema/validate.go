@@ -209,8 +209,8 @@ func validateSchemaValue(
 			return ErrSchemaViolation
 		}
 		if pattern, ok := schema["pattern"].(string); ok {
-			compiled, err := regexp.Compile(pattern)
-			if err != nil || !compiled.MatchString(typed) {
+			compiled := compiledPattern(pattern)
+			if compiled == nil || !compiled.MatchString(typed) {
 				return ErrSchemaViolation
 			}
 		}
@@ -307,6 +307,25 @@ func validationTypeMatches(expected any, value any) bool {
 	default:
 		return false
 	}
+}
+
+// patternCache memoizes compiled pattern keywords. Schemas are fixed documents
+// with a small set of patterns, but validation runs per request and per string
+// member, so recompiling dominated both time and allocations. A nil entry means
+// the pattern does not compile, which fails validation the same way it always did.
+var patternCache sync.Map
+
+func compiledPattern(pattern string) *regexp.Regexp {
+	if cached, ok := patternCache.Load(pattern); ok {
+		compiled, _ := cached.(*regexp.Regexp)
+		return compiled
+	}
+	compiled, err := regexp.Compile(pattern)
+	if err != nil {
+		compiled = nil
+	}
+	patternCache.Store(pattern, compiled)
+	return compiled
 }
 
 func validationFormatMatches(format, value string) bool {

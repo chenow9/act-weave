@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"actweave/backend/internal/a2ui"
 	"actweave/backend/internal/agent"
 	"actweave/backend/internal/agentdelegation"
 	"actweave/backend/internal/agenticmsg"
@@ -507,6 +508,13 @@ func (b *Bridge) planAgenticRun(
 	if err != nil {
 		return nil, err
 	}
+	// KD-17: A2UI rules go on the frozen system prompt once, before the cache
+	// key and assembly. Resume rebuilds the same plan; AppendPromptRules is
+	// idempotent. BuildAgenticAgent.Instruction stays empty so adk does not
+	// prepend a second copy on the wire.
+	if sessioncontext.EnableA2UIFromSnapshot(run.ContextPolicySnapshot) {
+		instruction = a2ui.AppendPromptRules(instruction)
+	}
 
 	promptCacheKey, err := buildRunPromptCacheKey(cfg, instruction, catalog)
 	if err != nil {
@@ -857,9 +865,14 @@ func (b *Bridge) buildAgenticMessagesTokenWindow(
 				Role: contextwindow.RoleUser, Content: plainTextForEstimate(m.Content),
 			})
 		case contextwindow.RoleAssistant:
-			out = append(out, agenticmsg.AssistantText(m.Content))
+			// KD-10: join text parts only; never feed raw surface JSON to the model.
+			assistantText := strings.TrimSpace(assistantModelHistoryText(m.Content))
+			if assistantText == "" {
+				continue
+			}
+			out = append(out, agenticmsg.AssistantText(assistantText))
 			estMsgs = append(estMsgs, contextwindow.Message{
-				Role: contextwindow.RoleAssistant, Content: m.Content,
+				Role: contextwindow.RoleAssistant, Content: assistantText,
 			})
 		}
 	}

@@ -70,9 +70,11 @@ type CompactionSnapshot struct {
 	ClaimWaitMs         int64  `json:"claimWaitMs"`
 }
 
-// AAPSnapshot freezes whether successful compact body is dual-written to protocol (T4-B).
+// AAPSnapshot freezes AAP disclosure / capability flags for a run (v2).
 type AAPSnapshot struct {
 	IncludeCompactionSummary bool `json:"includeCompactionSummary"`
+	// EnableA2UI freezes whether the run may emit additive a2ui content parts.
+	EnableA2UI bool `json:"enableA2UI"`
 }
 
 // SnapshotSources records which policy layers contributed to the resolved snapshot.
@@ -163,7 +165,7 @@ func ParseResolvedSnapshot(raw json.RawMessage) (ResolvedSnapshot, error) {
 		return ResolvedSnapshot{}, ErrInvalidSnapshot
 	}
 	if doc.AAP == nil {
-		doc.AAP = &AAPSnapshot{IncludeCompactionSummary: false}
+		doc.AAP = &AAPSnapshot{IncludeCompactionSummary: false, EnableA2UI: false}
 	}
 	return doc, nil
 }
@@ -193,6 +195,15 @@ func IncludeCompactionSummaryFromSnapshot(raw json.RawMessage) bool {
 		return false
 	}
 	return doc.AAP.IncludeCompactionSummary
+}
+
+// EnableA2UIFromSnapshot returns frozen A2UI capability (false if absent/legacy/v1/err).
+func EnableA2UIFromSnapshot(raw json.RawMessage) bool {
+	doc, err := ParseResolvedSnapshot(raw)
+	if err != nil || doc.AAP == nil {
+		return false
+	}
+	return doc.AAP.EnableA2UI
 }
 
 func isRecognizedLegacyPlaceholder(top map[string]json.RawMessage) bool {
@@ -251,6 +262,8 @@ type ResolveInput struct {
 // Resolve merges policy layers and clamps against model hard capabilities.
 // Priority: system hard constraints > internal override > agent > workspace > platform default.
 // When CompactionGateEnabled, writes session-context.v2 with frozen 80/60 and delay budgets.
+// KD-12: when agent enableA2UI is true and compaction gate is off, still emit full v2 with
+// platform-default compaction and sources.compactionGateEnabled=false (compact runtime stays off).
 func Resolve(input ResolveInput) (ResolvedSnapshot, json.RawMessage, error) {
 	if input.ContextWindowTokens <= 0 || input.DefaultOutputReserveTokens <= 0 ||
 		input.DefaultOutputReserveTokens >= input.ContextWindowTokens ||
@@ -323,11 +336,22 @@ func Resolve(input ResolveInput) (ResolvedSnapshot, json.RawMessage, error) {
 		summary = json.RawMessage(`null`)
 	}
 
+	include := false
+	enableA2UI := false
+	if agentDoc != nil {
+		include = agentDoc.IncludeCompactionSummary()
+		enableA2UI = agentDoc.EnableA2UI()
+	}
+
+	// Emit v2 when compaction gate is on, or when enableA2UI requires aap freeze (KD-12).
+	// ParseResolvedSnapshot still requires a full compaction block on every v2 snapshot.
 	schema := SnapshotSchemaV1
 	var compaction *CompactionSnapshot
 	var aap *AAPSnapshot
-	if input.CompactionGateEnabled {
+	if input.CompactionGateEnabled || enableA2UI {
 		schema = SnapshotSchemaV2
+		// Platform defaults for summary knobs; agent summary tightens when present.
+		// Gate-off + enableA2UI uses the same construction (platform defaults when no summary).
 		maxSummary := int64(2048)
 		minEvicted := int64(4)
 		maxPasses := int64(2)
@@ -358,11 +382,10 @@ func Resolve(input ResolveInput) (ResolvedSnapshot, json.RawMessage, error) {
 			PerPassTimeoutMs:    DefaultPerPassTimeoutMs,
 			ClaimWaitMs:         DefaultClaimWaitMs,
 		}
-		include := false
-		if agentDoc != nil {
-			include = agentDoc.IncludeCompactionSummary()
+		aap = &AAPSnapshot{
+			IncludeCompactionSummary: include,
+			EnableA2UI:               enableA2UI,
 		}
-		aap = &AAPSnapshot{IncludeCompactionSummary: include}
 	}
 
 	doc := ResolvedSnapshot{
@@ -384,6 +407,7 @@ func Resolve(input ResolveInput) (ResolvedSnapshot, json.RawMessage, error) {
 			AgentPolicyVersion:       input.AgentLockVersion,
 			RolloutVersion:           input.RolloutVersion,
 			GateEnabled:              input.GateEnabled,
+			// Compact runtime still keys off this flag — placeholder compaction must not flip it on.
 			CompactionGateEnabled:    input.CompactionGateEnabled,
 			CompactionRolloutVersion: strings.TrimSpace(input.CompactionRolloutVersion),
 		},

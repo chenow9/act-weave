@@ -1,0 +1,51 @@
+{
+  "name": "chart-stacked",
+  "title": "Stacked bars composing a whole per category",
+  "expect": "renders",
+  "note": "stacked is only legal on bar, hbar and area. Bars accumulate instead of sitting side by side.",
+  "surface": {
+    "components": [
+      { "id": "root", "component": "Column", "children": ["caption", "cost"] },
+      {
+        "id": "caption",
+        "component": "Text",
+        "text": "按月拆分的用量成本",
+        "variant": "caption"
+      },
+      {
+        "id": "cost",
+        "component": "Chart",
+        "chartType": "bar",
+        "stacked": true,
+        "unit": "USD",
+        "valueFormat": "currency",
+        "series": [
+          {
+            "name": "推理",
+            "points": [
+              { "label": "5月", "value": 1820 },
+              { "label": "6月", "value": 2140 },
+              { "label": "7月", "value": 2605 }
+            ]
+          },
+          {
+            "name": "嵌入",
+            "points": [
+              { "label": "5月", "value": 320 },
+              { "label": "6月", "value": 415 },
+              { "label": "7月", "value": 508 }
+            ]
+          },
+          {
+            "name": "存储",
+            "points": [
+              { "label": "5月", "value": 96 },
+              { "label": "6月", "value": 104 },
+              { "label": "7月", "value": 131 }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

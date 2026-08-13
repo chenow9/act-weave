@@ -155,6 +155,24 @@ func (validator *PayloadValidator) scan(value any, depth int) error {
 	}
 	switch typed := value.(type) {
 	case map[string]any:
+		// KD-11: when a content part is type=a2ui, exempt the entire surface
+		// subtree (property keys and value patterns). Still scan type/version/
+		// catalogId and every other field on the part / message.
+		if isA2UIContentPartMap(typed) {
+			for key, nested := range typed {
+				if key == "surface" {
+					continue
+				}
+				normalized := normalizeSensitiveKey(key)
+				if _, allowed := validator.allowedKeys[normalized]; !allowed && sensitiveKey(normalized) {
+					return ErrSensitivePayload
+				}
+				if err := validator.scan(nested, depth+1); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
 		for key, nested := range typed {
 			normalized := normalizeSensitiveKey(key)
 			if _, allowed := validator.allowedKeys[normalized]; !allowed && sensitiveKey(normalized) {
@@ -176,6 +194,13 @@ func (validator *PayloadValidator) scan(value any, depth int) error {
 		}
 	}
 	return nil
+}
+
+// isA2UIContentPartMap reports whether value is an a2ui content part object
+// (type=="a2ui"). Used for KD-11 surface subtree exemption.
+func isA2UIContentPartMap(value map[string]any) bool {
+	typeVal, ok := value["type"].(string)
+	return ok && typeVal == string(ContentPartTypeA2UI)
 }
 
 func decodePolicyJSON(raw json.RawMessage) (any, error) {

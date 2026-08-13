@@ -1,0 +1,14 @@
+{
+  "name": "unknown-component",
+  "title": "A component this catalog does not define",
+  "expect": "degrades",
+  "note": "The server rejects this surface, so it never reaches our own renderers from our own write path. It exists because a client built against catalog v1 may be handed a surface from a newer catalog: the unknown component becomes a placeholder and its known siblings still render.",
+  "surface": {
+    "components": [
+      { "id": "root", "component": "Column", "children": ["heading", "gauge", "footnote"] },
+      { "id": "heading", "component": "Text", "text": "SLA 概览", "variant": "heading" },
+      { "id": "gauge", "component": "Gauge", "value": 99.95, "target": 99.9 },
+      { "id": "footnote", "component": "Text", "text": "近 30 天可用性", "variant": "caption" }
+    ]
+  }
+}

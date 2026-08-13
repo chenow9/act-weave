@@ -30,7 +30,7 @@ const OUTBOUND_TOKEN_TTL_SECONDS = Math.max(
   60,
   Number(process.env.OUTBOUND_TOKEN_TTL_SECONDS || 600) || 600,
 );
-const PROTOCOL_VERSION = "2026-07-20";
+const PROTOCOL_VERSION = "2026-08-11";
 
 /** @type {{ token: string, expiresAt: number } | null} */
 let cachedToken = null;

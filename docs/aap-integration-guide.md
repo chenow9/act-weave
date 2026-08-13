@@ -27,6 +27,7 @@ Product overview and local run: root [`README.md`](../README.md) / [`README.zh-C
 4. Follow **Run events** over SSE (`Last-Event-ID` resume)
 5. Decide **Interactions** (human / policy confirmations)
 6. (Optional, **off by default**) Upload **Files**, wait until ready, and reference them from Run input as `input_file` parts
+7. (Optional, **off by default**) Receive additive **A2UI** surfaces on assistant messages when the Agent has `enableA2UI` (display-only in MVP)
 
 AAP is **not** the ActWeave management console API (`/api/v1`). Console user session JWTs are **rejected** on AAP routes. There is **no** Console product UI for AAP files in v1.
 
@@ -65,6 +66,7 @@ Store the Client Secret / private key in **your** secret manager. Secrets never 
 | **Conversation** | Durable dialogue container for one Agent |
 | **Run** | One execution under a Conversation. Default input is **text**; when AAP files is enabled, user messages may also include `input_file` parts that reference a stable `fileId` |
 | **File** | Optional uploaded blob with lifecycle status (`pending_upload` → … → `ready`). GET status is the source of truth (no File SSE in v1) |
+| **A2UI** | Optional declarative UI surface on assistant messages (`type: "a2ui"` content part). Agent-level `enableA2UI`; default off. Text remains first-class |
 | **Protocol Event** | Durable fact on the Run stream (`sequence` is the cursor) |
 | **Interaction** | Run paused for approve / decline / cancel |
 | **External Subject** | End-user identity from your IdP via Token Exchange (optional) |
@@ -488,6 +490,199 @@ Partners should either:
 
 Partners must **not** be required to hold an AAP token and call `:download` themselves. Model-visible / stored tool arguments contain only `fileId` (and metadata) — never live URLs.
 
+### 9.2 A2UI (optional, additive)
+
+Design (normative product locks): [`designs/a2ui-additive-capability.md`](./designs/a2ui-additive-capability.md).  
+Implementation checklist: [`designs/a2ui-additive-capability-checklist.md`](./designs/a2ui-additive-capability-checklist.md).  
+Surface contract (component catalog, chart semantics, strict validation): [`designs/a2ui-catalog-refactor.md`](./designs/a2ui-catalog-refactor.md).
+
+A2UI is an **optional, additive** capability: **text is always first-class**. Enabling it means the Agent **may** attach a declarative UI surface when useful — it does **not** require every reply to include A2UI. Simple Q&A can remain text-only; the same Conversation may mix pure-text turns and text+a2ui turns.
+
+#### Enable (ActWeave admin / Agents Studio)
+
+| Layer | Field | Default |
+| --- | --- | --- |
+| Agent policy | `context_policy.aap.enableA2UI: boolean` | **`false`** (omit / null → false) |
+| Policy schema | Requires `session-context-policy.v2` when any `aap.*` flag is present | Same pattern as `includeCompactionSummary` |
+| Run freeze | `context_policy_snapshot.aap.enableA2UI` at createRun | Mid-run Agent edits do **not** change an in-flight Run |
+
+Workspace-scoped context policy **rejects** any `aap` fields. Only Agent-level policy applies.
+
+#### Profile advertisement (`GET .../profile`)
+
+When `enableA2UI` is true, the Agent Profile **advertises** assistant outbound capability:
+
+1. `supportedContent` message parts include `"a2ui"` (stable order: `text` → optional `input_file` → optional `a2ui`).
+2. Top-level **`a2ui`** object (present **only** when enabled; **omitted** when disabled — not `enabled: false`):
+
+```json
+"a2ui": {
+  "enabled": true,
+  "delivery": "item_completed",
+  "streaming": false,
+  "actions": false,
+  "maxSurfaceBytes": 65536,
+  "specHint": "a2ui-surface.v1",
+  "catalogIds": ["https://catalog.actweave.dev/standard/v1/catalog.json"]
+}
+```
+
+| Field | MVP meaning |
+| --- | --- |
+| `delivery: "item_completed"` | Full A2UI part arrives on **`item.completed`** only |
+| `streaming: false` | No A2UI delta / progressive surface in MVP |
+| `actions: false` | **No** action channel; controls are **display-only** |
+| `maxSurfaceBytes` | Raw `surface` JSON size cap (64 KiB) |
+| `specHint` | Envelope / surface version hint for clients |
+| `catalogIds` | Component catalogs a surface may declare. Every surface carries one of these as `catalogId`; a client that renders none of them should ignore `a2ui` parts and use the text |
+
+ETag / profile version includes this object: flipping enable or changing advertised metadata changes ETag.
+
+#### Wire shape (assistant outbound)
+
+On `item.completed`, content is multi-part when A2UI was successfully extracted:
+
+```json
+{
+  "type": "message",
+  "role": "assistant",
+  "status": "completed",
+  "content": [
+    { "type": "text", "text": "Please confirm the booking details:" },
+    {
+      "type": "a2ui",
+      "version": "a2ui-surface.v1",
+      "catalogId": "https://catalog.actweave.dev/standard/v1/catalog.json",
+      "surface": { }
+    }
+  ]
+}
+```
+
+| Rule | Detail |
+| --- | --- |
+| **Text first-class** | Schema always has a `text` part; value may be `""` only when a valid `a2ui` part is present |
+| **Optional a2ui** | 0 or 1 `a2ui` part (MVP). Clients that ignore unknown parts still work with text alone |
+| **Inbound** | `createRun` **rejects** user/input `a2ui` (`UNSUPPORTED_CONTENT_TYPE` / 4xx). A2UI is assistant outbound only |
+| **Degrade** | Invalid / oversized / failed projection → text-only success; A2UI never alone fails the Run |
+
+#### Client rules (authoritative completed vs streaming preview)
+
+1. **Stream text as today.** Only `text_delta` streams (index 0). Concatenated deltas are a **live preview**, not final copy.
+2. **Deltas carry prose only.** The A2UI fence (`<<<A2UI>>>` … `<<<END_A2UI>>>`) is how the platform asks a model for a surface, and it is stripped before any delta leaves the server — including a marker split across chunks. You never see a fragment of one, so there is nothing to strip and nothing to parse client-side. A surface streams no text at all, so expect a pause between prose and `item.completed`; keep whatever in-progress affordance you already show until the item completes.
+3. **`item.completed` is authoritative.** It **replaces** the whole item snapshot. Use its multiparty `content`: cleaned text [+ optional `a2ui`]. Prefer completed over any in-flight delta buffer.
+4. **MVP display-only / client no-op for actions.** Profile advertises `a2ui.actions: false`. Render surfaces with a local catalog if you have one; **do not** submit button clicks, form posts, or other control actions to ActWeave. **Never** reuse `interaction.decide` for A2UI controls (approval Interactions stay separate).
+5. **Ignore unknown parts** if you do not implement A2UI; still advance the SSE sequence cursor.
+
+TypeScript SDK helpers (`@actweave/agent-client`):
+
+```ts
+import { findA2UIPart, isKnownA2UICatalog, iterCharts, joinTextParts, type ProtocolItem } from "@actweave/agent-client";
+
+function readAssistant(item: ProtocolItem) {
+  const text = joinTextParts(item); // text parts only; ignores a2ui / unknown
+  const surface = findA2UIPart(item)?.surface; // undefined when text-only
+  // A surface from a catalog you do not know: show the text, draw nothing.
+  if (!isKnownA2UICatalog(surface)) return { text, charts: [] };
+  return { text, charts: iterCharts(surface) }; // series resolved, values numeric
+}
+```
+
+`RunReducer` already replaces items on `item.completed` so progressive text is overwritten by the authoritative multiparty content.
+
+#### Surface contract (catalog `standard/v1`)
+
+The `surface` is **not** free-form: the server validates every surface against a
+component catalog before storing it, and rejects the whole surface if it does not
+conform (the message then arrives as text alone). What you receive is therefore
+already inside these bounds — the contract exists so your renderer can rely on
+that instead of guessing.
+
+Design and rationale: [`designs/a2ui-catalog-refactor.md`](./designs/a2ui-catalog-refactor.md).
+
+**Shape.** A surface is the A2UI `createSurface` payload, so a conforming
+renderer can consume it unchanged:
+
+```json
+{
+  "surfaceId": "019ff3f0-bfdd-7b38-9c53-f90bf5812478:item_1",
+  "catalogId": "https://catalog.actweave.dev/standard/v1/catalog.json",
+  "components": [
+    { "id": "root", "component": "Column", "children": ["t1", "c1"] },
+    { "id": "t1", "component": "Text", "text": "2026 Q1 revenue by region", "variant": "heading" },
+    { "id": "c1", "component": "Chart", "chartType": "bar", "unit": "万元", "series": { "path": "/revenue" } }
+  ],
+  "dataModel": {
+    "revenue": [{ "name": "revenue", "points": [{ "label": "East", "value": 1280 }] }]
+  }
+}
+```
+
+The graph is **flat**: components are a list, children are referenced by id, and
+exactly one component has `id: "root"`. Walk from `root`; a component nobody
+references is unreachable and never reaches you.
+
+**Components** (`standard/v1`, 11): `Column` `Row` `Card` `Text` `Divider`
+`Chart` `TextField` `CheckBox` `ChoicePicker` `DateTimeInput` `Button`.
+Names match exactly — no aliases, no case folding.
+
+**Charts** carry measurements only. There is no colour, size, axis range, legend
+or formatted string to inherit; that is your design system's business.
+
+| Member | Contract |
+| --- | --- |
+| `chartType` | `bar` `hbar` `line` `area` `pie` `donut`. `hbar` exists so long category labels need no rotation |
+| `series` | 1–8 series, each with 1–64 `{label, value}` points. Inline or a binding |
+| `unit` | Unit of every value (e.g. `万元`, `%`), never baked into the numbers |
+| `valueFormat` | `plain` `compact` `percent` `currency` — how a value should read |
+| `stacked` | Bar shapes only; the server rejects it elsewhere |
+| `title` | Optional. A chart's own title, separate from any sibling `Text` heading |
+
+Cross-field rules the server has already enforced: `pie` / `donut` carry exactly
+one series and no negative values; multi-series charts share one label sequence.
+
+**Bindings.** Anywhere a value is allowed, a member may instead be a JSON Pointer
+(RFC 6901) into `dataModel`: `{ "path": "/revenue" }`. Resolve every member
+through one helper — do not decide literal-vs-pointer by inspecting the value.
+A pointer that reaches nothing is not an error; treat it as an absent member.
+
+**Limits** (server-enforced; mirror them and a foreign surface cannot drive
+unbounded work in your client):
+
+| Limit | Value |
+| --- | --- |
+| `surface` JSON bytes | 65536 |
+| Components per surface | 64 |
+| Tree depth | 16 |
+| Series per chart / points per series | 8 / 64 |
+
+**Client obligations.**
+
+1. **Check `catalogId`** against the profile's `a2ui.catalogIds` before rendering. An unknown catalog means unknown components: fall back to the text.
+2. **Degrade per component, never per message.** For a component you do not implement, render a placeholder and keep drawing its siblings. The same applies to a dangling child id or a tree deeper than you allow.
+3. **Never execute anything from a surface.** Text is text, not markup: interpolate it. `actions: false` means controls are display-only.
+4. **Do not infer meaning from ids.** `id` is a graph key, not a semantic hint.
+
+**Schema distribution.** Fetch the catalog and surface schemas (public,
+cacheable, `ETag`, no token):
+
+```
+GET {base}/api/v1/a2ui/catalogs/standard/v1/catalog.json
+GET {base}/api/v1/a2ui/catalogs/standard/v1/surface.schema.json
+```
+
+`catalogId` is an *identifier*: per the A2UI spec it need not be fetchable, so
+resolve schemas through these endpoints rather than by dereferencing the id.
+The surface schema reaches the catalog through a relative `$ref`, so keep the two
+documents siblings if you mirror them.
+
+#### Non-goals (MVP)
+
+- A2UI streaming / progressive surface (future)
+- Component action channel / `a2ui_action` user parts (future)
+- Catalog negotiation: a client cannot yet declare which catalogs it renders
+- Catalogs beyond `standard/v1`, and the Basic Catalog components it omits
+
 ---
 
 ## 10. SSE event stream
@@ -759,7 +954,7 @@ SDK guarantees:
 - File PUT uses **only** create-returned headers (no AAP Bearer on object storage)
 - `getFileContent` prefers opaque `:download` when `sizeBytes > 4MiB`
 
-Also exported: `StaticTokenProvider`, `RunReducer`, `AAPSESession`, file types / `SDK_PREFER_DOWNLOAD_TOKEN_BYTES`. See `sdk/typescript/README.md`.
+Also exported: `StaticTokenProvider`, `RunReducer`, `AAPSESession`, file types / `SDK_PREFER_DOWNLOAD_TOKEN_BYTES`, and A2UI helpers `joinTextParts` / `findA2UIPart`. See `sdk/typescript/README.md` and [§9.2 A2UI](#92-a2ui-optional-additive).
 
 ---
 
@@ -799,7 +994,8 @@ Unauthorized `Origin` is not reflected. Prefer moving secrets server-side and di
 - [ ] OpenAPI / SDK versions match the ActWeave deployment  
 - [ ] If using files: operator enabled `agentAccess.files` **and** (for model vision/PDF) `RuntimeMultimodal`; Grant includes `file:read` / `file:write`  
 - [ ] If using files: PUT always sends create-returned `Content-Length` / `Content-Type`; never store live download URLs in your long-term logs  
-- [ ] If you implement a processor: verify `X-ActWeave-Signature`, https-only callback URL policy, and late-callback `FILE_PROCESSOR_CALLBACK_LATE` handling 
+- [ ] If you implement a processor: verify `X-ActWeave-Signature`, https-only callback URL policy, and late-callback `FILE_PROCESSOR_CALLBACK_LATE` handling  
+- [ ] If using A2UI: Agent has `context_policy.aap.enableA2UI`; client treats `item.completed` as authoritative; Profile `a2ui.actions: false` → display-only / no-op submits  
 
 ---
 
@@ -811,6 +1007,8 @@ Unauthorized `Origin` is not reflected. Prefer moving secrets server-side and di
 | **对接指南（中文）** | `docs/aap-integration-guide.zh-CN.md` | Same content in Chinese |
 | OpenAPI | `docs/openapi/agent-access-v1.yaml` | Machine-readable HTTP contract |
 | TypeScript SDK | `sdk/typescript/` | Client library |
+| A2UI design | `docs/designs/a2ui-additive-capability.md` | Additive A2UI capability (product locks) |
+| A2UI checklist | `docs/designs/a2ui-additive-capability-checklist.md` | Implementation checklist |
 | Product README (EN) | `README.md` | Product overview & local run |
 | Product README (ZH) | `README.zh-CN.md` | 产品说明与本地运行 |
 

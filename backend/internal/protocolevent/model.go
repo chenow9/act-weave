@@ -1,11 +1,14 @@
 package protocolevent
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"actweave/backend/internal/a2ui"
 
 	"github.com/google/uuid"
 )
@@ -202,6 +205,7 @@ type ContentPartType string
 const (
 	ContentPartTypeText      ContentPartType = "text"
 	ContentPartTypeInputFile ContentPartType = "input_file"
+	ContentPartTypeA2UI      ContentPartType = "a2ui"
 	ContentPartTypeUnknown   ContentPartType = "unknown"
 )
 
@@ -211,6 +215,8 @@ func ParseContentPartType(value string) ContentPartType {
 		return ContentPartTypeText
 	case string(ContentPartTypeInputFile):
 		return ContentPartTypeInputFile
+	case string(ContentPartTypeA2UI):
+		return ContentPartTypeA2UI
 	default:
 		return ContentPartTypeUnknown
 	}
@@ -236,6 +242,18 @@ type InputFileContentPart struct {
 }
 
 func (InputFileContentPart) ContentKind() ContentPartType { return ContentPartTypeInputFile }
+
+// A2UIContentPart carries a declarative A2UI surface (protocol-native first-class part).
+// Surface is an opaque JSON object; size is capped by a2ui.MaxSurfaceBytes.
+// PayloadValidator exempts the surface subtree from sensitive-key scan (KD-11).
+type A2UIContentPart struct {
+	Type      ContentPartType `json:"type"`
+	Version   string          `json:"version,omitempty"`
+	Surface   json.RawMessage `json:"surface"`
+	CatalogID string          `json:"catalogId,omitempty"`
+}
+
+func (A2UIContentPart) ContentKind() ContentPartType { return ContentPartTypeA2UI }
 
 type UnknownContentPart struct {
 	Type string
@@ -892,6 +910,18 @@ func DecodeContentPart(raw json.RawMessage) (ContentPart, error) {
 			return nil, ErrModelInvalid
 		}
 		return value, nil
+	case "a2ui":
+		var value A2UIContentPart
+		if err := json.Unmarshal(canonical, &value); err != nil {
+			return nil, ErrModelInvalid
+		}
+		if value.Type != ContentPartTypeA2UI {
+			return nil, ErrModelInvalid
+		}
+		if err := validateA2UISurface(value.Surface); err != nil {
+			return nil, err
+		}
+		return value, nil
 	default:
 		return UnknownContentPart{Type: discriminator.Type, raw: canonical}, nil
 	}
@@ -951,6 +981,13 @@ func ValidateItem(item Item) error {
 			case InputFileContentPart:
 				if typed.Type != ContentPartTypeInputFile || !modelUUID(typed.FileID) {
 					return ErrModelInvalid
+				}
+			case A2UIContentPart:
+				if typed.Type != ContentPartTypeA2UI {
+					return ErrModelInvalid
+				}
+				if err := validateA2UISurface(typed.Surface); err != nil {
+					return err
 				}
 			}
 		}
@@ -1075,6 +1112,22 @@ func modelSHA256(value string) bool {
 		}
 	}
 	return true
+}
+
+// validateA2UISurface enforces surface is a JSON object within a2ui.MaxSurfaceBytes.
+func validateA2UISurface(surface json.RawMessage) error {
+	if len(surface) == 0 || len(surface) > a2ui.MaxSurfaceBytes {
+		return ErrModelInvalid
+	}
+	trimmed := bytes.TrimSpace(surface)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return ErrModelInvalid
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(trimmed, &object); err != nil || object == nil {
+		return ErrModelInvalid
+	}
+	return nil
 }
 
 func modelUUID(value string) bool {

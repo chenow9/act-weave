@@ -158,6 +158,47 @@ describe("run-event-stream pure projection", () => {
     expect(isTerminalRunStatus(state.runStatus)).toBe(true);
   });
 
+  // A chart must appear as the turn ends, not only after a reload, so the
+  // completed item is where surfaces enter the Console projection.
+  it("carries a2ui surfaces on item.completed and only for the current version", () => {
+    const surface = { surfaceId: "srf_1", components: [{ id: "root", component: "Text", text: "hi" }] };
+    const completed = (version: string) =>
+      parseSSEBlock(
+        sseBlock("item.completed", 7, {
+          item: {
+            id: itemId,
+            type: "message",
+            status: "completed",
+            role: "assistant",
+            content: [
+              { type: "text", text: "看图。" },
+              { type: "a2ui", version, catalogId: "c", surface },
+            ],
+          },
+        }),
+        runId,
+      )!;
+
+    const current = applyStreamFrame(createProjectionState(), completed("a2ui-surface.v1"));
+    const patch = current.effects.assistantMessages[0];
+    expect(patch?.content).toBe("看图。");
+    expect(patch?.a2ui).toEqual([surface]);
+
+    // An older surface version has no renderer in this build.
+    const older = applyStreamFrame(createProjectionState(), completed("a2ui-surface.v0"));
+    expect(older.effects.assistantMessages[0]?.content).toBe("看图。");
+    expect(older.effects.assistantMessages[0]?.a2ui).toBeUndefined();
+  });
+
+  it("leaves a2ui absent while text is still streaming", () => {
+    const state = createProjectionState();
+    const delta = parseSSEBlock(
+      sseBlock("item.delta", 4, { itemId, delta: { type: "text_delta", index: 0, text: "…" } }),
+      runId,
+    )!;
+    expect(applyStreamFrame(state, delta).effects.assistantMessages[0]?.a2ui).toBeUndefined();
+  });
+
   it("ignores unknown event types without aborting projection", () => {
     let state = createProjectionState();
     const started = parseSSEBlock(

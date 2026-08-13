@@ -1,0 +1,49 @@
+{
+  "name": "chart-multi-series",
+  "title": "Three named series sharing one category axis",
+  "expect": "renders",
+  "note": "Multi-series charts require a name on every series and the same point count in each, so a legend is always derivable.",
+  "surface": {
+    "components": [
+      {
+        "id": "root",
+        "component": "Chart",
+        "chartType": "line",
+        "title": "各环境运行量",
+        "valueFormat": "compact",
+        "series": [
+          {
+            "name": "生产",
+            "points": [
+              { "label": "周一", "value": 8420 },
+              { "label": "周二", "value": 9110 },
+              { "label": "周三", "value": 8875 },
+              { "label": "周四", "value": 9630 },
+              { "label": "周五", "value": 10240 }
+            ]
+          },
+          {
+            "name": "预发",
+            "points": [
+              { "label": "周一", "value": 1240 },
+              { "label": "周二", "value": 1580 },
+              { "label": "周三", "value": 1395 },
+              { "label": "周四", "value": 1720 },
+              { "label": "周五", "value": 1610 }
+            ]
+          },
+          {
+            "name": "开发",
+            "points": [
+              { "label": "周一", "value": 460 },
+              { "label": "周二", "value": 520 },
+              { "label": "周三", "value": 705 },
+              { "label": "周四", "value": 640 },
+              { "label": "周五", "value": 380 }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

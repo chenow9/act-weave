@@ -47,6 +47,7 @@
   "composerAria": "输入业务指令或目标任务",
   "composerShortcut": "按 Enter 发送，按 Shift 加 Enter 换行。",
   "sending": "发送中",
+  "assistantWorking": "正在生成回复",
   "send": "发送",
   "historyAria": "历史会话",
   "executionRecords": "执行记录",

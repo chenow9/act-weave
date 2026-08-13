@@ -9,9 +9,11 @@ import (
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
 
+	"actweave/backend/internal/a2ui"
 	"actweave/backend/internal/agentrun"
 	"actweave/backend/internal/einoruntime"
 	"actweave/backend/internal/execution"
+	"actweave/backend/internal/sessioncontext"
 )
 
 // agenticTurnFunc performs one Agentic engine call: Run for an initial turn,
@@ -52,6 +54,11 @@ func (b *Bridge) runAgenticTurn(
 		ModelTurnHook: func(hookCtx context.Context, turn einoruntime.ModelTurn) error {
 			return b.recordModelTurn(hookCtx, job, run, turn)
 		},
+	}
+	if sessioncontext.EnableA2UIFromSnapshot(run.ContextPolicySnapshot) {
+		// Only this run's model was told about the fence, so only this run's
+		// preview needs to hide it. Recorded deltas stay raw for terminal extract.
+		projector.Preview = &a2ui.FencePreview{}
 	}
 	if b.textSinkFactory != nil {
 		messageID, idErr := newRuntimeID()

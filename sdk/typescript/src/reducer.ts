@@ -3,6 +3,10 @@
  * Mirrors backend/internal/protocolevent.RunReducer and the golden-trace
  * reference reducer: contiguous sequence, fixed scope, replace Item/Interaction
  * snapshots, apply text/output deltas for live projection, ignore unknown events.
+ *
+ * A2UI (enableA2UI): text may stream with fence fragments in text_delta; the
+ * authoritative multiparty content (text [+ optional a2ui]) arrives on
+ * item.completed, which replaces the whole item snapshot.
  */
 
 import { AgentClientError } from "./errors.js";

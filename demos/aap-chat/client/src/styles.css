@@ -686,6 +686,524 @@ textarea {
   background: #fef2f2;
 }
 
+/* A2UI real surface render (fields fillable; actions disabled in MVP) */
+.a2ui-card {
+  margin-top: 10px;
+  border: 1px solid #99f6e4;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f0fdfa 0%, #ffffff 48px);
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.a2ui-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 14px;
+  border-bottom: 1px solid #ccfbf1;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.a2ui-card header .a2ui-meta {
+  font-weight: 600;
+  color: #0d9488;
+  opacity: 0.9;
+  font-size: 11px;
+}
+
+.a2ui-surface {
+  padding: 14px 16px 12px;
+}
+
+.a2ui-stack,
+.a2ui-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.a2ui-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.a2ui-row > * {
+  flex: 1 1 160px;
+  min-width: 140px;
+}
+
+/* Catalog align / justify. The surface carries intent; these pick the geometry. */
+.a2ui-col.a2ui-align-start,
+.a2ui-row.a2ui-align-start {
+  align-items: flex-start;
+}
+
+.a2ui-col.a2ui-align-center,
+.a2ui-row.a2ui-align-center {
+  align-items: center;
+}
+
+.a2ui-col.a2ui-align-end,
+.a2ui-row.a2ui-align-end {
+  align-items: flex-end;
+}
+
+.a2ui-col.a2ui-align-stretch,
+.a2ui-row.a2ui-align-stretch {
+  align-items: stretch;
+}
+
+.a2ui-justify-start {
+  justify-content: flex-start;
+}
+
+.a2ui-justify-center {
+  justify-content: center;
+}
+
+.a2ui-justify-end {
+  justify-content: flex-end;
+}
+
+.a2ui-justify-spaceBetween {
+  justify-content: space-between;
+}
+
+.a2ui-justify-spaceAround {
+  justify-content: space-around;
+}
+
+/* A Row that positions its children must not have them fill the line. */
+.a2ui-row.a2ui-justify-end > *,
+.a2ui-row.a2ui-justify-center > *,
+.a2ui-row.a2ui-justify-start > * {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.a2ui-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+}
+
+.a2ui-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #475569;
+}
+
+.a2ui-text-caption {
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+.a2ui-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.a2ui-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.a2ui-req {
+  color: #dc2626;
+  margin-left: 2px;
+}
+
+.a2ui-input {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 9px 11px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 13.5px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.a2ui-input:hover {
+  border-color: #94a3b8;
+}
+
+.a2ui-input:focus {
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.18);
+}
+
+textarea.a2ui-input {
+  resize: vertical;
+  min-height: 72px;
+  font-family: inherit;
+}
+
+.a2ui-field-check .a2ui-check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: #334155;
+  cursor: pointer;
+}
+
+.a2ui-field-action {
+  flex-direction: row;
+}
+
+.a2ui-btn {
+  appearance: none;
+  border: 1px solid #99f6e4;
+  background: #ecfdf5;
+  color: #0f766e;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.a2ui-btn-primary {
+  background: #0d9488;
+  border-color: #0d9488;
+  color: #fff;
+}
+
+.a2ui-btn-borderless {
+  background: transparent;
+  border-color: transparent;
+  color: #475569;
+}
+
+.a2ui-empty {
+  margin: 0;
+  font-size: 12.5px;
+  color: #94a3b8;
+}
+
+.a2ui-panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.a2ui-panel-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.a2ui-divider {
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+  margin: 4px 0;
+}
+
+/* Graceful degradation: a component this build cannot draw, a dangling child
+   reference, or a tree deeper than the contract allows. */
+[data-a2ui-placeholder] {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+}
+
+.a2ui-raw {
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.a2ui-raw summary {
+  cursor: pointer;
+  padding: 8px 14px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #64748b;
+  user-select: none;
+  list-style: none;
+}
+
+.a2ui-raw summary::-webkit-details-marker {
+  display: none;
+}
+
+.a2ui-raw summary::before {
+  content: "▸ ";
+  color: #94a3b8;
+}
+
+.a2ui-raw[open] summary::before {
+  content: "▾ ";
+}
+
+.a2ui-raw pre {
+  margin: 0;
+  padding: 10px 14px 12px;
+  background: transparent;
+  border: 0;
+  color: #475569;
+  font-size: 11px;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--mono);
+}
+
+/* A2UI charts (SVG, display-only) */
+.a2ui-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 4px 0 2px;
+}
+
+.a2ui-chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.a2ui-chart-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #0f766e;
+  background: #ccfbf1;
+  border: 1px solid #99f6e4;
+  border-radius: 999px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+
+.a2ui-chart-body {
+  position: relative;
+  width: 100%;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 8px 6px 4px;
+  overflow: hidden;
+}
+
+.a2ui-chart-hit {
+  fill: transparent;
+  stroke: none;
+  cursor: crosshair;
+}
+
+.a2ui-chart-bar {
+  opacity: 0.92;
+}
+
+/* While a category is hovered the rest recede, so the tooltip's numbers and the
+   shapes they describe are read together. */
+.a2ui-chart-body.is-hovering .a2ui-chart-bar {
+  opacity: 0.32;
+}
+
+.a2ui-chart-body.is-hovering .a2ui-chart-bar.is-active {
+  opacity: 0.92;
+}
+
+.a2ui-chart-body.is-hovering .a2ui-chart-slice {
+  opacity: 0.45;
+}
+
+.a2ui-chart-body.is-hovering .a2ui-chart-slice.is-active {
+  opacity: 1;
+}
+
+.a2ui-chart-dot.is-active {
+  stroke: #fff;
+  stroke-width: 2.5;
+}
+
+/* Band, guide and tooltip cards are all present from the start; hover only
+   reveals the one that answers where the cursor is. */
+.a2ui-chart-band,
+.a2ui-chart-guide,
+.a2ui-chart-tip {
+  display: none;
+}
+
+.a2ui-chart-band.is-active,
+.a2ui-chart-guide.is-active {
+  display: block;
+}
+
+.a2ui-chart-band {
+  fill: #0f172a;
+  opacity: 0.05;
+}
+
+.a2ui-chart-guide {
+  stroke: #94a3b8;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+/* Rides along the top of the plot: it follows the cursor sideways only, so it can
+   never cover the reading it describes or spill out of the card. */
+.a2ui-chart-tip.is-active {
+  position: absolute;
+  top: 6px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 220px;
+  padding: 7px 9px;
+  transform: translateX(12px);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #f1f5f9;
+  font-size: 12px;
+  line-height: 16px;
+  pointer-events: none;
+}
+
+.a2ui-chart-tip.is-flipped {
+  transform: translateX(calc(-100% - 12px));
+}
+
+.a2ui-chart-tip > strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.a2ui-chart-tip-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.a2ui-chart-tip-name {
+  color: #cbd5e1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.a2ui-chart-tip-row strong {
+  margin-left: auto;
+  font-weight: 600;
+  color: #fff;
+}
+
+.a2ui-chart-tip-row em {
+  color: #94a3b8;
+  font-style: normal;
+}
+
+.a2ui-chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 260px;
+}
+
+.a2ui-chart-svg-pie {
+  max-height: 240px;
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+.a2ui-chart-grid {
+  stroke: #e2e8f0;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.a2ui-chart-axis {
+  fill: #64748b;
+  font-size: 10px;
+  font-family: var(--font);
+}
+
+.a2ui-chart-center {
+  fill: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font);
+}
+
+.a2ui-chart-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.a2ui-chart-legend li {
+  display: grid;
+  grid-template-columns: 12px 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 12.5px;
+  color: #334155;
+}
+
+.a2ui-chart-legend-series {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.a2ui-chart-legend-series li {
+  display: inline-flex;
+  grid-template-columns: none;
+}
+
+.a2ui-chart-legend strong {
+  font-variant-numeric: tabular-nums;
+  color: #0f172a;
+  font-size: 12px;
+}
+
+.a2ui-chart-legend em {
+  font-style: normal;
+  color: #94a3b8;
+  font-size: 11.5px;
+  min-width: 40px;
+  text-align: right;
+}
+
+.a2ui-chart-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.a2ui-chart-empty {
+  padding: 4px 0;
+}
+
 /* Outbound business credential panel */
 .outbound-panel {
   margin-bottom: 12px;

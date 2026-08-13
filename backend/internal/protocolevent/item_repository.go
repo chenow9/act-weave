@@ -365,12 +365,9 @@ func (repository *RunItemRepository) validateCreate(
 }
 
 func marshalProjectionItem(item Item, eventType string, validator *PayloadValidator) (json.RawMessage, error) {
-	if ValidateItem(item) != nil {
-		return nil, ErrRunItemInvalid
-	}
-	data, err := json.Marshal(ItemSnapshotData{Item: item})
-	if err != nil || validator.ValidateEventData(eventType, data) != nil {
-		return nil, ErrRunItemInvalid
+	data, err := ValidateProjectionItemData(item, eventType, validator)
+	if err != nil {
+		return nil, err
 	}
 	var wrapper struct {
 		Item json.RawMessage `json:"item"`
@@ -379,6 +376,34 @@ func marshalProjectionItem(item Item, eventType string, validator *PayloadValida
 		return nil, ErrRunItemInvalid
 	}
 	return wrapper.Item, nil
+}
+
+// ValidateProjectionItem runs the same validation sequence as production
+// CompleteRunItem / marshalProjectionItem (KD-11 preflight):
+//
+//	ValidateItem → json.Marshal(ItemSnapshotData{Item}) → ValidateEventData(eventType, data)
+//
+// Bridge completeRun must call this before RecordAssistantResult when attaching
+// a2ui so preflight pass ⇔ CompleteProjected pass (no false pass / false degrade).
+func ValidateProjectionItem(item Item, eventType string, validator *PayloadValidator) error {
+	_, err := ValidateProjectionItemData(item, eventType, validator)
+	return err
+}
+
+// ValidateProjectionItemData is ValidateProjectionItem plus the marshaled
+// ItemSnapshotData bytes used for event validation (tests / shared helpers).
+func ValidateProjectionItemData(item Item, eventType string, validator *PayloadValidator) (json.RawMessage, error) {
+	if validator == nil {
+		validator = MustDefaultPayloadValidator()
+	}
+	if ValidateItem(item) != nil {
+		return nil, ErrRunItemInvalid
+	}
+	data, err := json.Marshal(ItemSnapshotData{Item: item})
+	if err != nil || validator.ValidateEventData(eventType, data) != nil {
+		return nil, ErrRunItemInvalid
+	}
+	return data, nil
 }
 
 func applyCurrentItemDelta(item Item, delta Delta) (Item, bool, error) {

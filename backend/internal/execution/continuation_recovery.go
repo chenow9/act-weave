@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 // Continuation recovery covers the post-commit path after an approved Interaction
@@ -300,6 +301,16 @@ func (service *ContinuationRecoveryService) ClaimRuntimeContinue(
 		return RuntimeContinueClaim{}, ErrRuntimeContinueNotClaimed
 	}
 	if err != nil {
+		// ON CONFLICT arbitrates on confirmation_id only, and Postgres still
+		// checks the other unique index over (workspace_id, confirmation_id).
+		// When two replicas insert the same row at once, the one that loses can
+		// be caught there instead of taking DO UPDATE, and a unique violation
+		// surfaces. That is this call's ordinary answer, not a fault: someone
+		// else holds the lease.
+		var postgresError *pq.Error
+		if errors.As(err, &postgresError) && postgresError.Code == "23505" {
+			return RuntimeContinueClaim{}, ErrRuntimeContinueNotClaimed
+		}
 		return RuntimeContinueClaim{}, fmt.Errorf("claim runtime continue: %w", err)
 	}
 	if !storedClaim.Valid || !storedExpiry.Valid || storedClaim.String != claimID {

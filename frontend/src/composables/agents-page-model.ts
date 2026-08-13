@@ -17,10 +17,15 @@ import type {
 } from "../types/domain";
 import { renderMarkdown } from "../utils/markdown";
 import {
+  aapFlagBag,
+  anyAapFlagTrue,
   buildContextPolicyPayload,
   DEFAULT_ROLLING_SUMMARY_MAX_RECENT_TURNS,
   defaultRollingSummary,
+  mergeAapFlags,
+  needsSessionContextV2,
   normalizeContextPolicy,
+  readAapFlags,
 } from "../utils/session-context-config";
 import type { ManagementListColumn } from "../components/ManagementList.vue";
 import type { ManagementRowAction } from "../components/ManagementRowActions.vue";
@@ -466,28 +471,45 @@ export function createAgentsPageModel() {
   const agentContextIncludeCompactionSummary = computed(() =>
     Boolean(draftContextPolicy().aap?.includeCompactionSummary),
   );
+  const agentContextEnableA2UI = computed(() => Boolean(draftContextPolicy().aap?.enableA2UI));
   const agentContextAdvancedOpen = ref(false);
 
   function toggleAgentContextAdvanced() {
     agentContextAdvancedOpen.value = !agentContextAdvancedOpen.value;
   }
 
+  /** Preserve aap flag bag + force v2 when any flag/aap requires it (never v1+aap). */
+  function withPreservedAap(current: SessionContextPolicy, patch: Partial<SessionContextPolicy>): SessionContextPolicy {
+    const flags = readAapFlags(current.aap);
+    const next: SessionContextPolicy = { ...current, ...patch };
+    if (needsSessionContextV2(current, flags) || needsSessionContextV2(next, flags)) {
+      next.schemaVersion = "session-context-policy.v2";
+      next.aap = aapFlagBag(flags);
+    } else {
+      next.schemaVersion = next.schemaVersion || "session-context-policy.v1";
+      if (next.aap) delete next.aap;
+    }
+    return next;
+  }
+
   function setAgentContextMode(mode: string) {
     const value = String(mode || "").trim();
+    const flags = readAapFlags(draftContextPolicy().aap);
+    const aapSlice = anyAapFlagTrue(flags)
+      ? { schemaVersion: "session-context-policy.v2" as const, aap: aapFlagBag(flags) }
+      : {};
     if (!value || value === "inherit") {
-      const include = Boolean(draftContextPolicy().aap?.includeCompactionSummary);
-      draftAgent.value.contextPolicy = include
-        ? { schemaVersion: "session-context-policy.v2", mode: undefined, aap: { includeCompactionSummary: true } }
+      draftAgent.value.contextPolicy = anyAapFlagTrue(flags)
+        ? { schemaVersion: "session-context-policy.v2", mode: undefined, aap: aapFlagBag(flags) }
         : { mode: undefined };
       return;
     }
     if (value === "disabled") {
-      const include = Boolean(draftContextPolicy().aap?.includeCompactionSummary);
-      draftAgent.value.contextPolicy = include
+      draftAgent.value.contextPolicy = anyAapFlagTrue(flags)
         ? {
             schemaVersion: "session-context-policy.v2",
             mode: "disabled",
-            aap: { includeCompactionSummary: true },
+            aap: aapFlagBag(flags),
           }
         : {
             schemaVersion: "session-context-policy.v1",
@@ -497,9 +519,7 @@ export function createAgentsPageModel() {
     }
     if (value !== "token_window" && value !== "rolling_summary") return;
     const current = draftContextPolicy();
-    const include = Boolean(current.aap?.includeCompactionSummary);
-    const schemaVersion = include ? "session-context-policy.v2" : "session-context-policy.v1";
-    const aap = include ? { aap: { includeCompactionSummary: true as const } } : {};
+    const schemaVersion = anyAapFlagTrue(flags) ? "session-context-policy.v2" : "session-context-policy.v1";
     if (value === "token_window") {
       draftAgent.value.contextPolicy = {
         schemaVersion,
@@ -508,7 +528,7 @@ export function createAgentsPageModel() {
         maxRecentTurns: current.maxRecentTurns ?? 0,
         ...(current.outputReserveTokens != null ? { outputReserveTokens: current.outputReserveTokens } : {}),
         ...(current.safetyMarginTokens != null ? { safetyMarginTokens: current.safetyMarginTokens } : {}),
-        ...aap,
+        ...aapSlice,
       };
       return;
     }
@@ -525,80 +545,79 @@ export function createAgentsPageModel() {
       ...(current.outputReserveTokens != null ? { outputReserveTokens: current.outputReserveTokens } : {}),
       ...(current.safetyMarginTokens != null ? { safetyMarginTokens: current.safetyMarginTokens } : {}),
       summary: defaultRollingSummary(current.summary),
-      ...aap,
+      ...aapSlice,
     };
   }
 
   function setAgentContextMaxInput(value: number) {
     const current = draftContextPolicy();
     if (current.mode !== "token_window" && current.mode !== "rolling_summary") return;
-    draftAgent.value.contextPolicy = {
-      ...current,
-      schemaVersion: "session-context-policy.v1",
+    draftAgent.value.contextPolicy = withPreservedAap(current, {
       maxInputTokens: Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0,
-    };
+    });
   }
 
   function setAgentContextMaxTurns(value: number) {
     const current = draftContextPolicy();
     if (current.mode !== "token_window" && current.mode !== "rolling_summary") return;
-    draftAgent.value.contextPolicy = {
-      ...current,
-      schemaVersion: "session-context-policy.v1",
+    draftAgent.value.contextPolicy = withPreservedAap(current, {
       maxRecentTurns: Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0,
-    };
+    });
   }
 
   function setAgentContextSummaryMaxTokens(value: number) {
     const current = draftContextPolicy();
     if (current.mode !== "rolling_summary") return;
     const summary = defaultRollingSummary(current.summary);
-    draftAgent.value.contextPolicy = {
-      ...current,
-      schemaVersion: "session-context-policy.v1",
+    draftAgent.value.contextPolicy = withPreservedAap(current, {
       summary: {
         ...summary,
         maxTokens: Number.isFinite(value) && value > 0 ? Math.floor(value) : summary.maxTokens,
       },
-    };
+    });
   }
 
   function setAgentContextSummaryMinEvictedTurns(value: number) {
     const current = draftContextPolicy();
     if (current.mode !== "rolling_summary") return;
     const summary = defaultRollingSummary(current.summary);
-    draftAgent.value.contextPolicy = {
-      ...current,
-      schemaVersion: "session-context-policy.v1",
+    draftAgent.value.contextPolicy = withPreservedAap(current, {
       summary: {
         ...summary,
         minEvictedTurns: Number.isFinite(value) && value >= 0 ? Math.floor(value) : summary.minEvictedTurns,
       },
-    };
+    });
   }
 
   function setAgentContextSummaryMaxPasses(value: number) {
     const current = draftContextPolicy();
     if (current.mode !== "rolling_summary") return;
     const summary = defaultRollingSummary(current.summary);
-    draftAgent.value.contextPolicy = {
-      ...current,
-      schemaVersion: "session-context-policy.v1",
+    draftAgent.value.contextPolicy = withPreservedAap(current, {
       summary: {
         ...summary,
         maxGenerationPasses: Number.isFinite(value) && value > 0 ? Math.floor(value) : summary.maxGenerationPasses,
       },
-    };
+    });
   }
 
-  /** T4-B Agent-only AAP disclosure; forces policy v2 when set. */
+  /** T4-B Agent-only AAP disclosure; forces policy v2; preserves enableA2UI (KD-14). */
   function setAgentContextIncludeCompactionSummary(value: boolean) {
     const current = draftContextPolicy();
-    const include = Boolean(value);
     draftAgent.value.contextPolicy = {
       ...current,
       schemaVersion: "session-context-policy.v2",
-      aap: { includeCompactionSummary: include },
+      aap: aapFlagBag(mergeAapFlags(current.aap, { includeCompactionSummary: Boolean(value) })),
+    };
+  }
+
+  /** Agent-only A2UI capability; forces policy v2; preserves includeCompactionSummary (KD-14). */
+  function setAgentContextEnableA2UI(value: boolean) {
+    const current = draftContextPolicy();
+    draftAgent.value.contextPolicy = {
+      ...current,
+      schemaVersion: "session-context-policy.v2",
+      aap: aapFlagBag(mergeAapFlags(current.aap, { enableA2UI: Boolean(value) })),
     };
   }
 
@@ -1535,6 +1554,7 @@ export function createAgentsPageModel() {
     agentContextSummaryMinEvictedTurns,
     agentContextSummaryMaxPasses,
     agentContextIncludeCompactionSummary,
+    agentContextEnableA2UI,
     agentContextAdvancedOpen,
     toggleAgentContextAdvanced,
     setAgentContextMode,
@@ -1544,6 +1564,7 @@ export function createAgentsPageModel() {
     setAgentContextSummaryMinEvictedTurns,
     setAgentContextSummaryMaxPasses,
     setAgentContextIncludeCompactionSummary,
+    setAgentContextEnableA2UI,
     enterCreateMode,
     enterEditMode,
     closeStudio,

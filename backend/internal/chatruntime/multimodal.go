@@ -100,9 +100,13 @@ func (a *MultimodalAssembler) AssembleUserMessage(
 
 	hasFile := false
 	for _, p := range parts {
-		if p.Type == "input_file" {
+		switch p.Type {
+		case "input_file":
 			hasFile = true
-			break
+		case "a2ui":
+			// KD-7 / PR-5: a2ui is assistant-outbound only; never accept on user
+			// multimodal / history assembly paths.
+			return nil, fmt.Errorf("%w: a2ui content parts are not accepted on user messages", ErrModelContentUnsupported)
 		}
 	}
 
@@ -142,6 +146,9 @@ func (a *MultimodalAssembler) AssembleUserMessage(
 				return nil, err
 			}
 			multi = append(multi, filePart)
+		case "a2ui":
+			// Defensive: a2ui already rejected above; keep fail-closed here too.
+			return nil, fmt.Errorf("%w: a2ui content parts are not accepted on user messages", ErrModelContentUnsupported)
 		default:
 			// Unknown part type in durable body: fail closed (never drop).
 			return nil, fmt.Errorf("%w: unsupported content part type %q", ErrModelContentUnsupported, p.Type)
@@ -321,9 +328,13 @@ func (a *MultimodalAssembler) AssembleUserAgenticMessage(
 
 	hasFile := false
 	for _, p := range parts {
-		if p.Type == "input_file" {
+		switch p.Type {
+		case "input_file":
 			hasFile = true
-			break
+		case "a2ui":
+			// KD-7 / PR-5: a2ui is assistant-outbound only; never accept on user
+			// multimodal / history assembly paths.
+			return nil, fmt.Errorf("%w: a2ui content parts are not accepted on user messages", ErrModelContentUnsupported)
 		}
 	}
 	if !hasFile {
@@ -363,6 +374,9 @@ func (a *MultimodalAssembler) AssembleUserAgenticMessage(
 				MIMEType:   filePart.Image.MIMEType,
 				Detail:     schema.ImageURLDetail(filePart.Image.Detail),
 			}))
+		case "a2ui":
+			// Defensive: a2ui already rejected above; keep fail-closed here too.
+			return nil, fmt.Errorf("%w: a2ui content parts are not accepted on user messages", ErrModelContentUnsupported)
 		default:
 			return nil, fmt.Errorf("%w: unsupported content part type %q", ErrModelContentUnsupported, p.Type)
 		}

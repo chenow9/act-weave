@@ -609,7 +609,12 @@ func (b *Bridge) buildMessages(
 			}
 			messages = append(messages, userMsg)
 		case "assistant":
-			// Assistant durable bodies are plain text (not aap.message-content.v1).
+			// KD-10: model history is text-only; omit a2ui surface / raw envelope.
+			content = assistantModelHistoryText(content)
+			content = strings.TrimSpace(content)
+			if content == "" {
+				continue
+			}
 			messages = append(messages, schema.AssistantMessage(content, nil))
 		case "system":
 			// Instruction already injected; skip history system rows.
@@ -720,7 +725,12 @@ func (b *Bridge) buildMessagesTokenWindow(
 			}
 			out = append(out, userMsg)
 		case contextwindow.RoleAssistant:
-			out = append(out, schema.AssistantMessage(m.Content, nil))
+			// KD-10: join text parts only; never feed raw surface JSON to the model.
+			assistantText := strings.TrimSpace(assistantModelHistoryText(m.Content))
+			if assistantText == "" {
+				continue
+			}
+			out = append(out, schema.AssistantMessage(assistantText, nil))
 		}
 	}
 	if len(out) < 2 {
@@ -815,6 +825,11 @@ func (b *Bridge) loadBoundedHistoryForAssembly(
 			content, cErr := b.resolveMessageContent(ctx, job, msg)
 			if cErr != nil {
 				return contextwindow.HistoryMessage{}, nil, cErr
+			}
+			// KD-10: assistant durable multi-part must not inflate the token window
+			// with surface JSON, and must not re-enter the model as raw envelope.
+			if strings.EqualFold(strings.TrimSpace(msg.Role), "ASSISTANT") {
+				content = assistantModelHistoryText(content)
 			}
 			histNewestFirst = append(histNewestFirst, contextwindow.HistoryMessage{
 				ID: msg.ID, SessionID: msg.SessionID, Role: msg.Role, Content: content,
@@ -929,6 +944,10 @@ func (b *Bridge) completeRun(
 			return b.failRun(ctx, job, run, err)
 		}
 	}
+	// Terminal extract only (KD-3/4/16): never mid-tool intermediate. Stream
+	// text_delta remains raw (may include fence fragments); item.completed is authoritative.
+	content, _ = materializeAssistantTerminalContent(content, run.ContextPolicySnapshot, assistantID)
+
 	run, err := b.runs.GetAgentRun(ctx, job.WorkspaceID, job.RunID)
 	if err != nil {
 		return b.failRun(ctx, job, run, err)

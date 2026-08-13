@@ -13,7 +13,7 @@ import (
 
 const (
 	SpecVersion     = "1.0"
-	ProtocolVersion = "2026-07-20"
+	ProtocolVersion = "2026-08-11"
 	schemaDirectory = "schemas/aap/v1"
 )
 

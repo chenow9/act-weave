@@ -1,0 +1,29 @@
+{
+  "name": "chart-bar",
+  "title": "Bar chart in a labelled column",
+  "expect": "renders",
+  "note": "Baseline vertical bars. The heading comes from a sibling Text, not from the chart title.",
+  "surface": {
+    "components": [
+      { "id": "root", "component": "Column", "children": ["heading", "revenue"] },
+      { "id": "heading", "component": "Text", "text": "季度营收", "variant": "heading" },
+      {
+        "id": "revenue",
+        "component": "Chart",
+        "chartType": "bar",
+        "unit": "万元",
+        "valueFormat": "compact",
+        "series": [
+          {
+            "points": [
+              { "label": "Q1", "value": 1280 },
+              { "label": "Q2", "value": 1544 },
+              { "label": "Q3", "value": 1390 },
+              { "label": "Q4", "value": 1812 }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

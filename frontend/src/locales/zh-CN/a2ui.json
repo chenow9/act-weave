@@ -1,0 +1,29 @@
+{
+  "label": "A2UI",
+  "displayOnly": "仅展示",
+  "rawSurface": "原始 surface JSON",
+  "emptySurface": "此消息没有可渲染的界面内容",
+  "missingRoot": "surface 缺少 id 为 {id} 的根组件",
+  "foreignCatalog": "此 surface 声明的组件目录（{catalogId}）不是当前版本",
+  "unsupportedComponent": "当前版本尚不支持组件 {component}",
+  "missingChild": "引用了不存在的组件 {id}",
+  "missingChildren": "此容器没有可渲染的子组件",
+  "cycle": "组件 {id} 形成了循环引用",
+  "tooDeep": "嵌套超过 {depth} 层，已省略",
+  "chartWithoutType": "统计图缺少可识别的 chartType",
+  "chartNoData": "统计图无有效数据",
+  "chartNoPositive": "无正值可展示",
+  "seriesFallback": "系列 {index}",
+  "chartTotal": "合计",
+  "choosePlaceholder": "请选择…",
+  "noOptions": "（无选项）",
+  "actionDisabled": "此界面为展示态，未接入 UI 动作",
+  "chartTypes": {
+    "bar": "柱状图",
+    "hbar": "条形图",
+    "line": "折线图",
+    "area": "面积图",
+    "pie": "饼图",
+    "donut": "环图"
+  }
+}

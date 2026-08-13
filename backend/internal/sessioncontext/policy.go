@@ -28,7 +28,7 @@ const (
 type PolicyScope int
 
 const (
-	// PolicyScopeAgent allows aap.includeCompactionSummary (v2).
+	// PolicyScopeAgent allows aap.includeCompactionSummary and aap.enableA2UI (v2).
 	PolicyScopeAgent PolicyScope = iota
 	// PolicyScopeWorkspace rejects aap disclosure fields.
 	PolicyScopeWorkspace
@@ -56,10 +56,12 @@ type SummaryPolicy struct {
 	MaxGenerationPasses *int64 `json:"maxGenerationPasses,omitempty"`
 }
 
-// AAPPolicy is Agent-level disclosure for compact protocol projection (T4-B).
-// Missing includeCompactionSummary normalizes to false.
+// AAPPolicy is Agent-level AAP disclosure / capability flags (v2, agent-only).
+// Missing includeCompactionSummary / enableA2UI normalize to false when aap is present.
 type AAPPolicy struct {
 	IncludeCompactionSummary *bool `json:"includeCompactionSummary,omitempty"`
+	// EnableA2UI allows the agent to emit additive a2ui content parts (default false).
+	EnableA2UI *bool `json:"enableA2UI,omitempty"`
 }
 
 // ParsePolicy validates and normalizes a raw JSON object as an Agent policy
@@ -129,6 +131,7 @@ func ParsePolicyScoped(raw json.RawMessage, scope PolicyScope) (PolicyDocument, 
 		}
 		aapAllowed := map[string]struct{}{
 			"includeCompactionSummary": {},
+			"enableA2UI":               {},
 		}
 		for key := range aapObj {
 			if _, ok := aapAllowed[key]; !ok {
@@ -201,12 +204,16 @@ func ParsePolicyScoped(raw json.RawMessage, scope PolicyScope) (PolicyDocument, 
 		return PolicyDocument{}, nil, fmt.Errorf("%w: outputReserveTokens must be < maxInputTokens when maxInputTokens > 0", ErrInvalidPolicy)
 	}
 
-	// Agent v2: missing includeCompactionSummary normalizes to false when aap present or when
-	// writing disclosure default — only materialize false when aap key was provided or schema is v2
-	// with explicit aap object. Default for absent aap is nil (read as false at snapshot time).
-	if doc.SchemaVersion == PolicySchemaV2 && doc.AAP != nil && doc.AAP.IncludeCompactionSummary == nil {
+	// Agent v2: missing aap flags normalize to false when aap is present.
+	// Absent aap remains nil (read as false at snapshot time).
+	if doc.SchemaVersion == PolicySchemaV2 && doc.AAP != nil {
 		f := false
-		doc.AAP.IncludeCompactionSummary = &f
+		if doc.AAP.IncludeCompactionSummary == nil {
+			doc.AAP.IncludeCompactionSummary = &f
+		}
+		if doc.AAP.EnableA2UI == nil {
+			doc.AAP.EnableA2UI = &f
+		}
 	}
 
 	normalized, err := json.Marshal(doc)
@@ -239,4 +246,12 @@ func (doc PolicyDocument) IncludeCompactionSummary() bool {
 		return false
 	}
 	return *doc.AAP.IncludeCompactionSummary
+}
+
+// EnableA2UI reports whether the agent may emit additive A2UI (default false).
+func (doc PolicyDocument) EnableA2UI() bool {
+	if doc.AAP == nil || doc.AAP.EnableA2UI == nil {
+		return false
+	}
+	return *doc.AAP.EnableA2UI
 }

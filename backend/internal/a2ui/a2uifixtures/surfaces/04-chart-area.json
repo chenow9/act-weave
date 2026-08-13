@@ -1,0 +1,28 @@
+{
+  "name": "chart-area",
+  "title": "Area chart crossing zero",
+  "expect": "renders",
+  "note": "Negative values are legal outside pie and donut, so the renderer needs a baseline that is not the axis floor.",
+  "surface": {
+    "components": [
+      {
+        "id": "root",
+        "component": "Chart",
+        "chartType": "area",
+        "title": "净现金流",
+        "unit": "万元",
+        "series": [
+          {
+            "points": [
+              { "label": "1月", "value": 42 },
+              { "label": "2月", "value": -18 },
+              { "label": "3月", "value": 7 },
+              { "label": "4月", "value": 63 },
+              { "label": "5月", "value": 88 }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
