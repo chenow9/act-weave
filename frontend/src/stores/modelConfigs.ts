@@ -171,6 +171,7 @@ function normalizeModelConfig(config: ModelApiConfig): ModelApiConfig {
     options: config.options || {},
     runtimeCapabilities: config.runtimeCapabilities || {},
     agenticCapabilities: config.agenticCapabilities || {},
+    toolDisclosurePolicy: config.toolDisclosurePolicy || {},
     lastLatencyMs: config.lastLatencyMs ?? undefined,
     credentialSecretId: undefined,
   };

@@ -107,6 +107,15 @@ describe("model config v1 behavior", () => {
   });
 
   it("verifies only the persisted v1 resource and reloads its active page", async () => {
+    fixture.store.verifyModelConfig = vi.fn(async () => ({
+      ...modelFixture({
+        status: "VERIFIED",
+        lastLatencyMs: 24,
+        lockVersion: 2,
+        toolDisclosureUI: "hidden",
+        agenticCapabilities: { schemaVersion: "agentic-model.v1", toolSearchModes: ["client"] },
+      }),
+    }));
     const wrapper = mountView();
     await flushPromises();
     await wrapper.get('button[aria-label="更多操作"]').trigger("click");
@@ -114,7 +123,66 @@ describe("model config v1 behavior", () => {
     await flushPromises();
     expect(fixture.store.verifyModelConfig).toHaveBeenCalledWith("model-1");
     expect(fixture.store.loadModelConfigs).toHaveBeenCalledTimes(2);
-    expect(wrapper.text()).toContain("验证通过");
+    expect(wrapper.text()).toContain("已验证，按需加载已启用");
+  });
+
+  it("shows capability badges from toolDisclosureUI and never from modelName", async () => {
+    fixture.store.items = [
+      modelFixture({
+        id: "model-native",
+        name: "Native",
+        modelName: "gpt-3.5-turbo",
+        status: "VERIFIED",
+        toolDisclosureUI: "hidden",
+      }),
+      modelFixture({
+        id: "model-fc",
+        name: "Function",
+        modelName: "gpt-5.4",
+        status: "VERIFIED",
+        toolDisclosureUI: "binary",
+      }),
+      modelFixture({
+        id: "model-none",
+        name: "None",
+        modelName: "o4-mini",
+        status: "VERIFIED",
+        toolDisclosureUI: "unavailable",
+      }),
+      modelFixture({
+        id: "model-open",
+        name: "Open",
+        modelName: "gpt-5.4",
+        status: "UNVERIFIED",
+      }),
+    ];
+    fixture.store.pagination = { ...fixture.store.pagination, total: 4 };
+    const wrapper = mountView();
+    await flushPromises();
+    const badges = wrapper.findAll("[data-capability-badge]").map((badge) => badge.text());
+    expect(badges).toEqual(["原生按需", "函数调用", "无工具", "未验证"]);
+    expect(wrapper.find('input[type="radio"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("set-disclosure");
+    expect(wrapper.html()).not.toMatch(/set-disclosure|setDisclosure/i);
+  });
+
+  it("uses tool-less verify copy for function_calling and none", async () => {
+    fixture.store.verifyModelConfig = vi.fn(async () =>
+      modelFixture({
+        status: "VERIFIED",
+        lastLatencyMs: 40,
+        lockVersion: 2,
+        toolDisclosureUI: "binary",
+        agenticCapabilities: { schemaVersion: "agentic-model.v2", toolCalling: "function_calling" },
+      }),
+    );
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('button[aria-label="更多操作"]').trigger("click");
+    await wrapper.get('button[aria-label="测试"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.text()).toContain("已验证；无工具聊天可用。绑定了工具的 Agent 要等平台检索/全量携带上线。");
+    expect(wrapper.text()).not.toContain("按需加载已启用");
   });
 
   it("sends the canonical provider on the wire while showing the human label", async () => {

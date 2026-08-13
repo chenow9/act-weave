@@ -12,6 +12,7 @@ import WorkspaceContextState from "../components/WorkspaceContextState.vue";
 import { useModelConfigStore } from "../stores/modelConfigs";
 import { useWorkspaceStore } from "../stores/workspaces";
 import type { ModelApiConfig, ModelApiConfigListQuery, ModelRuntimeCapabilities } from "../types/domain";
+import { resolveToolCapabilityBadge, type ToolCapabilityBadge } from "../utils/model-tool-disclosure";
 import { normalizeRuntimeCapabilities } from "../utils/session-context-config";
 
 /**
@@ -160,6 +161,13 @@ const modelConfigColumns = computed<ManagementListColumn<ModelApiConfig>[]>(() =
     sortable: true,
     sortKey: "modelName",
     getValue: (item) => item.modelName,
+  },
+  {
+    key: "capability",
+    label: t("modelApis.colCapability"),
+    width: 128,
+    hidable: true,
+    getValue: (item) => capabilityLabel(item),
   },
   {
     key: "latency",
@@ -352,9 +360,7 @@ async function testConnection(item: ModelApiConfig) {
     }
     await loadModelConfigPage();
     const note =
-      verified.status === "VERIFIED"
-        ? t("modelApis.verifyPassed", { name: item.name })
-        : t("modelApis.verifyFailed", { name: item.name });
+      verified.status === "VERIFIED" ? verifySuccessNote(verified) : t("modelApis.verifyFailed", { name: item.name });
     showActionNote(note);
   } finally {
     verifyingModelId.value = null;
@@ -537,6 +543,29 @@ function keepEditingModelDraft() {
 function confirmDiscardModelDraft() {
   if (savingModelConfig.value) return;
   closeModelModal();
+}
+
+function capabilityBadge(item: ModelApiConfig): ToolCapabilityBadge {
+  return resolveToolCapabilityBadge(item);
+}
+
+function capabilityLabel(item: ModelApiConfig): string {
+  switch (capabilityBadge(item)) {
+    case "native":
+      return t("modelApis.capabilityNative");
+    case "function_calling":
+      return t("modelApis.capabilityFunctionCalling");
+    case "none":
+      return t("modelApis.capabilityNone");
+    default:
+      return t("modelApis.capabilityUnverified");
+  }
+}
+
+function verifySuccessNote(verified: ModelApiConfig): string {
+  return capabilityBadge(verified) === "native"
+    ? t("modelApis.verifyPassedNative")
+    : t("modelApis.verifyPassedToolLess");
 }
 
 function displayedLatency(item: ModelApiConfig) {
@@ -883,6 +912,16 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               item.modelName
             }}</span>
           </template>
+          <template #cell-capability="{ row: item }">
+            <span
+              class="model-capability-badge aw-table-pill"
+              :class="capabilityBadge(item)"
+              data-capability-badge
+              :title="capabilityLabel(item)"
+            >
+              {{ capabilityLabel(item) }}
+            </span>
+          </template>
           <template #cell-latency="{ row: item }">
             <span class="model-latency-badge aw-table-pill" :class="latencyTone(displayedLatency(item))">
               <span class="model-latency-value">{{
@@ -922,6 +961,14 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 <div>
                   <dt>{{ t("modelApis.mobileModel") }}</dt>
                   <dd class="model-mono-text">{{ item.modelName }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t("modelApis.colCapability") }}</dt>
+                  <dd>
+                    <span class="model-capability-badge aw-table-pill" :class="capabilityBadge(item)">{{
+                      capabilityLabel(item)
+                    }}</span>
+                  </dd>
                 </div>
                 <div>
                   <dt>{{ t("modelApis.mobileLatency") }}</dt>
@@ -1644,6 +1691,44 @@ function handleModelModalKeydown(event: KeyboardEvent) {
   color: #334155;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.model-capability-badge {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  padding: 2px 7px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #f8fafc;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-capability-badge.native {
+  border-color: #bbf7d0;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.model-capability-badge.function_calling {
+  border-color: rgba(199, 210, 254, 0.8);
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+.model-capability-badge.none {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.model-capability-badge.unverified {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
 }
 
 .model-latency-badge {

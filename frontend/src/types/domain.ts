@@ -73,22 +73,35 @@ export interface ModelRuntimeCapabilities {
   tokenizerVersion?: string;
 }
 
+/** Server-derived GET/list token. Never client-writable; never inferred from modelName. */
+export type ModelToolDisclosureUI = "hidden" | "binary" | "unavailable" | "unverified";
+
+export type ModelToolCalling = "native_client_search" | "function_calling" | "none";
+
 /**
- * Verification-owned Agentic capability document (agentic-model.v1).
+ * Verification-owned Agentic capability document (agentic-model.v1 or v2).
  * Read-only on GET/list; create/update must never send this field.
- * Empty object means unverified.
+ * Empty object means unverified. Missing toolCalling / toolSearchModes must not
+ * be treated as native.
  */
 export interface ModelAgenticCapabilities {
-  schemaVersion?: "agentic-model.v1";
+  schemaVersion?: "agentic-model.v1" | "agentic-model.v2";
   protocol?: "openai-responses-v1";
   streaming?: boolean;
   usage?: boolean;
+  toolCalling?: ModelToolCalling;
   toolSearchModes?: Array<"client">;
   reasoningReplay?: "encrypted-or-none";
   verifiedAdapter?: string;
   verifiedAt?: string;
   verifiedLockVersion?: number;
   verifiedConfigDigest?: string;
+}
+
+/** Read-only on GET/list. Unset is {}. Create/update must never send this field. */
+export interface ModelToolDisclosurePolicy {
+  schemaVersion?: "tool-disclosure.v1";
+  mode?: "platform_on_demand" | "carry_all";
 }
 
 export interface Workspace {
@@ -196,6 +209,10 @@ export interface ModelApiConfig {
   runtimeCapabilities?: ModelRuntimeCapabilities | Record<string, unknown>;
   /** Read-only Agentic verification capability; never client-writable. */
   agenticCapabilities?: ModelAgenticCapabilities | Record<string, unknown>;
+  /** Read-only. Create/update must never send this field. */
+  toolDisclosurePolicy?: ModelToolDisclosurePolicy | Record<string, unknown>;
+  /** Server-derived UI token. Map badges from this / caps, never from modelName. */
+  toolDisclosureUI?: ModelToolDisclosureUI;
   status: "UNVERIFIED" | "VERIFIED" | "ERROR" | "DISABLED";
   lastVerifiedAt?: string;
   lastLatencyMs?: number;
