@@ -202,6 +202,9 @@ func (b *Bridge) ExecuteA2AInbound(ctx context.Context, req a2agateway.InboundRu
 		})
 	})
 	if runErr != nil {
+		if userCancelledRun(ctx, runErr) {
+			return "", runErr
+		}
 		_ = b.failRunA2A(ctx, job, run, runErr)
 		return "", runErr
 	}
@@ -302,6 +305,9 @@ func (b *Bridge) failRunA2A(ctx context.Context, job agentrun.Job, run execution
 	// Under inbound lease fence the gateway FencedInboundTerminal owns all terminals
 	// (run+task+delegation) in one atomic TX — do not race a separate run transition.
 	if _, ok := a2agateway.ExecutionFenceFrom(ctx); ok {
+		return runErr
+	}
+	if userCancelledRun(ctx, runErr) {
 		return runErr
 	}
 	if b.steps == nil {

@@ -351,10 +351,15 @@ func (b *Bridge) Execute(ctx context.Context, job agentrun.Job) error {
 	// reads sit textually above the Agentic path: anything added to the top of
 	// the classic seam silently ran on the frozen path too.
 	content, streamMessageID, runErr := b.driveAgenticInitial(ctx, job, run)
-	// Persist terminal status even when the turn timed out / cancelled the ctx.
+	// Persist terminal status even when the turn timed out. User cancel is
+	// different: durable CANCELLED is owned by the cancel API, so a
+	// WithoutCancel failRun must not race it into FAILED.
 	persistCtx := context.WithoutCancel(ctx)
 	if runErr != nil {
 		if errors.Is(runErr, ErrWaitingConfirmation) {
+			return runErr
+		}
+		if userCancelledRun(ctx, runErr) {
 			return runErr
 		}
 		return b.failRun(persistCtx, job, run, runErr)
@@ -404,6 +409,9 @@ func (b *Bridge) ContinueAfterConfirmation(
 	persistCtx := context.WithoutCancel(ctx)
 	if runErr != nil {
 		if errors.Is(runErr, ErrWaitingConfirmation) {
+			return runErr
+		}
+		if userCancelledRun(ctx, runErr) {
 			return runErr
 		}
 		return b.failRun(persistCtx, job, run, runErr)
@@ -976,6 +984,11 @@ func (b *Bridge) completeRun(
 }
 
 func (b *Bridge) failRun(ctx context.Context, job agentrun.Job, run execution.AgentRun, cause error) error {
+	// Cancel API owns durable CANCELLED. WithoutCancel persist must not rewrite
+	// that race into FAILED. Check the incoming ctx/cause before stripping cancel.
+	if userCancelledRun(ctx, cause) {
+		return cause
+	}
 	// Never rely on a cancelled drive context for durable status transitions.
 	ctx = context.WithoutCancel(ctx)
 	errorCode := executionErrorCode(cause)
@@ -1065,6 +1078,19 @@ func (b *Bridge) ensureRunNotLeftRunning(ctx context.Context, job agentrun.Job, 
 		return
 	}
 	_ = b.failRun(ctx, job, run, cause)
+}
+
+// userCancelledRun reports an in-process CancelRun. context.WithoutCancel
+// drops Cause, so callers must pass the drive ctx (or ErrRunCancelled itself).
+// DeadlineExceeded (Enqueue timeout) is not user cancel and still fails the run.
+func userCancelledRun(ctx context.Context, err error) bool {
+	if errors.Is(err, ErrRunCancelled) {
+		return true
+	}
+	if ctx == nil {
+		return false
+	}
+	return errors.Is(context.Cause(ctx), ErrRunCancelled)
 }
 
 func userSafeBridgeError(err error) string {

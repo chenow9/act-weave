@@ -48,6 +48,9 @@ type scriptedAgenticModel struct {
 }
 
 func (m *scriptedAgenticModel) next(ctx context.Context, input []*schema.AgenticMessage, opts []model.Option) (*schema.AgenticMessage, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	n := int(m.calls.Add(1))

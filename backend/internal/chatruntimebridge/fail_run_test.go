@@ -246,6 +246,33 @@ func TestFailRun_ReentryDoesNotCreateSecondMessage(t *testing.T) {
 	}
 }
 
+func TestFailRun_UserCancelDoesNotForceFailed(t *testing.T) {
+	t.Parallel()
+	store := &failRunStore{run: execution.AgentRun{
+		ID: "22000000-0000-4000-8000-0000000000f5", WorkspaceID: "ws",
+		SessionID: "s", Status: "RUNNING", LockVersion: 2,
+	}}
+	results := &failRunResults{}
+	events := &failRunEvents{}
+	b := &Bridge{
+		results: &failRunResultsWithStatus{results: results, store: store},
+		runs:    store, events: events,
+		logger: slog.Default(), now: time.Now,
+	}
+	job := agentrun.Job{WorkspaceID: "ws", SessionID: "s", RunID: store.run.ID, ActorID: "u"}
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cancel(ErrRunCancelled)
+	if err := b.failRun(ctx, job, store.run, context.Canceled); !errors.Is(err, context.Canceled) {
+		t.Fatalf("failRun must return the drive error, got %v", err)
+	}
+	if results.calls != 0 {
+		t.Fatalf("user cancel must not persist FAILED, calls=%d", results.calls)
+	}
+	if store.run.Status != "RUNNING" {
+		t.Fatalf("user cancel must leave durable status to the cancel API, got %s", store.run.Status)
+	}
+}
+
 func TestFailRun_DoesNotTouchSucceededOrCancelledSemantics(t *testing.T) {
 	t.Parallel()
 	// completeRun path is separate; ensure failRun ignores non-RUNNING.
