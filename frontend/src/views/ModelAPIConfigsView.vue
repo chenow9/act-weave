@@ -606,9 +606,14 @@ function capabilityLabel(item: ModelApiConfig): string {
 }
 
 function verifySuccessNote(verified: ModelApiConfig): string {
-  return capabilityBadge(verified) === "native"
-    ? t("modelApis.verifyPassedNative")
-    : t("modelApis.verifyPassedToolLess");
+  switch (capabilityBadge(verified)) {
+    case "native":
+      return t("modelApis.verifyPassedNative");
+    case "function_calling":
+      return t("modelApis.verifyPassedFunctionCalling");
+    default:
+      return t("modelApis.verifyPassedToolLess");
+  }
 }
 
 function displayedLatency(item: ModelApiConfig) {
@@ -867,6 +872,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
         <button
           class="primary-button"
           type="button"
+          data-testid="model-create"
           :disabled="!hasWorkspaceContext"
           :title="hasWorkspaceContext ? t('modelApis.create') : t('modelApis.createNeedWorkspace')"
           @click="openCreateModel"
@@ -918,7 +924,9 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 <i class="fa-solid fa-microchip" />
               </div>
               <div>
-                <strong class="aw-table-title">{{ item.name }}</strong>
+                <strong class="aw-table-title" data-testid="model-config-name" :data-model-name="item.name">{{
+                  item.name
+                }}</strong>
                 <span class="aw-table-subtitle">{{ item.createdBy || t("modelApis.createdByWorkspace") }}</span>
               </div>
             </div>
@@ -951,15 +959,21 @@ function handleModelModalKeydown(event: KeyboardEvent) {
             </div>
           </template>
           <template #cell-modelName="{ row: item }">
-            <span class="model-mono-text model-name-text aw-table-mono" :title="item.modelName">{{
-              item.modelName
-            }}</span>
+            <span
+              class="model-mono-text model-name-text aw-table-mono"
+              data-testid="model-config-model-name"
+              :data-model-name="item.modelName"
+              :title="item.modelName"
+              >{{ item.modelName }}</span
+            >
           </template>
           <template #cell-capability="{ row: item }">
             <span
               class="model-capability-badge aw-table-pill"
               :class="capabilityBadge(item)"
+              data-testid="model-capability-badge"
               data-capability-badge
+              :data-model-name="item.modelName"
               :title="capabilityLabel(item)"
             >
               {{ capabilityLabel(item) }}
@@ -1152,6 +1166,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 aria-required="true"
                 :aria-invalid="Boolean(visibleModelDraftValidationError('name'))"
                 aria-describedby="model-field-error-name"
+                data-testid="model-field-name"
                 :placeholder="t('modelApis.fieldNamePlaceholder')"
                 @blur="touchModelDraftField('name')"
               />
@@ -1190,6 +1205,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 aria-required="true"
                 :aria-invalid="Boolean(visibleModelDraftValidationError('credentialSecretId'))"
                 aria-describedby="model-field-error-credentialSecretId model-credential-help"
+                data-testid="model-field-api-key"
                 :placeholder="t('modelApis.pasteApiKey')"
                 @blur="touchModelDraftField('credentialSecretId')"
               />
@@ -1232,6 +1248,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 aria-required="true"
                 :aria-invalid="Boolean(visibleModelDraftValidationError('apiBase'))"
                 aria-describedby="model-field-error-apiBase"
+                data-testid="model-field-api-base"
                 placeholder="https://llm-gateway.actweave.local/v1"
                 @blur="touchModelDraftField('apiBase')"
               />
@@ -1256,6 +1273,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 aria-required="true"
                 :aria-invalid="Boolean(visibleModelDraftValidationError('modelName'))"
                 aria-describedby="model-field-error-modelName"
+                data-testid="model-field-model-name"
                 placeholder="claude-sonnet-4"
                 @blur="touchModelDraftField('modelName')"
               />

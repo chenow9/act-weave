@@ -29,6 +29,9 @@ npm test -- --run
 npm run type-check
 npm run build
 npm run e2e:smoke
+npm run e2e:disclosure
+# Live gateway probe (needs Vite :5174, backend :8082, and env):
+# E2E_MODEL_API_BASE=... E2E_MODEL_API_KEY=... npm run e2e:disclosure:live
 ```
 
 ## Backend

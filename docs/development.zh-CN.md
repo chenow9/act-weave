@@ -29,6 +29,9 @@ npm test -- --run
 npm run type-check
 npm run build
 npm run e2e:smoke
+npm run e2e:disclosure
+# 真实网关探针（需 Vite :5174、后端 :8082，以及环境变量）：
+# E2E_MODEL_API_BASE=... E2E_MODEL_API_KEY=... npm run e2e:disclosure:live
 ```
 
 ## 后端

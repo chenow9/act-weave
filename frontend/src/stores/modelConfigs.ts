@@ -151,8 +151,11 @@ export const useModelConfigStore = defineStore("modelConfigs", {
       return updated;
     },
     async verifyModelConfig(configId: string) {
+      // Probe budget is 120s server-side; the shared axios default (12s) aborts first.
       const response = await apiClient.post<ModelApiConfig>(
         `/workspaces/${this.workspaceID()}/model-configs/${configId}:verify`,
+        {},
+        { timeout: 180_000 },
       );
       const verified = normalizeModelConfig(response.data);
       this.upsertConfig(verified);

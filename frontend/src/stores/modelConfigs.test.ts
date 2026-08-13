@@ -68,7 +68,11 @@ describe("v1 model config store", () => {
     store.items = [modelFixture()];
     await store.verifyModelConfig("model-1");
     await store.deleteModelConfig("model-1");
-    expect(apiClient.post).toHaveBeenCalledWith("/workspaces/workspace-1/model-configs/model-1:verify");
+    expect(apiClient.post).toHaveBeenCalledWith(
+      "/workspaces/workspace-1/model-configs/model-1:verify",
+      {},
+      { timeout: 180_000 },
+    );
     expect(apiClient.delete).toHaveBeenCalledWith("/workspaces/workspace-1/model-configs/model-1?lockVersion=2");
   });
 

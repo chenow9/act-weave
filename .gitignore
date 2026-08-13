@@ -7,6 +7,8 @@ frontend/dist/
 frontend/e2e/**
 !frontend/e2e/smoke.spec.ts
 !frontend/e2e/a2ui-enable.spec.ts
+!frontend/e2e/tool-disclosure.spec.ts
+!frontend/e2e/tool-disclosure-live.spec.ts
 !frontend/e2e/fixtures/
 !frontend/e2e/fixtures/**
 frontend/e2e/**/*-snapshots/**

@@ -168,7 +168,7 @@ describe("model config v1 behavior", () => {
     expect(wrapper.html()).not.toMatch(/set-disclosure|setDisclosure/i);
   });
 
-  it("uses tool-less verify copy for function_calling and none", async () => {
+  it("uses function-calling verify copy when the probe grades FC", async () => {
     fixture.store.verifyModelConfig = vi.fn(async () =>
       modelFixture({
         status: "VERIFIED",
@@ -183,8 +183,9 @@ describe("model config v1 behavior", () => {
     await wrapper.get('button[aria-label="更多操作"]').trigger("click");
     await wrapper.get('button[aria-label="测试"]').trigger("click");
     await flushPromises();
-    expect(wrapper.text()).toContain("已验证；无工具聊天可用。绑定了工具的 Agent 要等平台检索/全量携带上线。");
+    expect(wrapper.text()).toContain("已验证，可用按需检索或全量携带工具");
     expect(wrapper.text()).not.toContain("按需加载已启用");
+    expect(wrapper.text()).not.toContain("要等平台检索");
   });
 
   it("sends the canonical provider on the wire while showing the human label", async () => {
