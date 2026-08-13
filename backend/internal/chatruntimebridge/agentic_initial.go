@@ -946,9 +946,10 @@ type agenticAssemblyPlanMeta struct {
 	Policy                 sessioncontext.ResolvedSnapshot
 }
 
-// estimateAndPreflightAgentic always runs EstimateAgenticRequest + PreflightAgenticMandatory
-// and persists the agentic ContextAssemblyRecord. meta and assemblies are required;
-// there is no nil-meta skip path.
+// estimateAndPreflightAgentic always runs EstimateAgenticRequestV2 + PreflightAgenticMandatory
+// and persists the agentic ContextAssemblyRecord. Native still uses the v1 formula
+// via V2's client_bounded delegate. meta and assemblies are required; there is
+// no nil-meta skip path.
 func (b *Bridge) estimateAndPreflightAgentic(
 	ctx context.Context,
 	job agentrun.Job,

@@ -240,6 +240,17 @@ describe("model config v1 behavior", () => {
     expect(fixture.store.setDisclosurePolicy).toHaveBeenCalledWith("model-1", 1, "platform_on_demand");
   });
 
+  it("does not mount an empty disclosure heading for unverified models", async () => {
+    fixture.store.items = [modelFixture({ status: "UNVERIFIED", toolDisclosureUI: "unverified" })];
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('button[aria-label="更多操作"]').trigger("click");
+    await wrapper.get('button[aria-label="编辑"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find("[data-testid=model-disclosure]").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("工具披露");
+  });
+
   it("filters with v1 status values", async () => {
     const wrapper = mountView();
     await flushPromises();

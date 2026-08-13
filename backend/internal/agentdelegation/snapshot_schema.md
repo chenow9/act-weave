@@ -59,7 +59,7 @@ unbound); root may omit the key and rejects explicit null.
 | runtimeCapabilities | yes | no | object | `{}` legal unset |
 | toolDisclosurePolicy | yes | no | object | `{}` legal unset |
 
-Unknown keys rejected (e.g. `forged`, root-only capability fields).
+Unknown keys rejected (e.g. `forged`).
 
 ### nodes[].agentSnapshot (agent-binding.v1)
 

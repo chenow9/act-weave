@@ -414,6 +414,10 @@ function draftDisclosureUI(): ToolDisclosureUI | undefined {
   return activeModelDraft.value?.toolDisclosureUI;
 }
 
+function showsDisclosureSection(ui: ToolDisclosureUI | undefined): boolean {
+  return ui === "hidden" || ui === "unavailable" || ui === "binary";
+}
+
 async function saveDisclosurePolicy() {
   const draft = editingModelDraft.value;
   if (!draft?.id || savingDisclosure.value) return;
@@ -1265,7 +1269,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
               </span>
             </label>
             <section
-              v-if="modelModalMode === 'edit' && draftDisclosureUI()"
+              v-if="modelModalMode === 'edit' && showsDisclosureSection(draftDisclosureUI())"
               class="model-modal-fieldset model-disclosure-section"
               data-testid="model-disclosure"
             >
