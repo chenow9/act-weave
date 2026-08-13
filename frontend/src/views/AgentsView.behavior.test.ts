@@ -604,6 +604,75 @@ describe("agents view behavior", () => {
     wrapper.unmount();
   });
 
+  it("disables create-studio one-click tool copy when the selected model cannot call tools", async () => {
+    modelConfigStoreState.items = [
+      {
+        ...makeModelConfig(),
+        status: "VERIFIED",
+        agenticCapabilities: { schemaVersion: "agentic-model.v2", toolCalling: "none" },
+      },
+    ];
+    const wrapper = mountAgentsView();
+    await flushPromises();
+
+    await wrapper.find(".agent-create-button").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find(".agent-delegation-deferred").text()).toContain("当前所选模型无法调用工具");
+    expect(wrapper.find(".agent-delegation-deferred").text()).not.toContain("创建成功后，在编辑页展开对应区块");
+    expect(wrapper.find("#agent-model-no-tools-hint").text()).toContain("此模型不能调用工具");
+    wrapper.unmount();
+  });
+
+  it("disables capability bind actions for a none-tool model without hiding manageCapabilities", async () => {
+    modelConfigStoreState.items = [
+      {
+        ...makeModelConfig(),
+        status: "VERIFIED",
+        agenticCapabilities: { schemaVersion: "agentic-model.v2", toolCalling: "none" },
+      },
+    ];
+    const wrapper = mountAgentsView();
+    await flushPromises();
+
+    await openAgentRowMenu(wrapper, 0);
+    const manageCapabilities = document.body.querySelector<HTMLButtonElement>(
+      'button[data-action-key="capabilities"]',
+    );
+    expect(manageCapabilities).toBeTruthy();
+    manageCapabilities?.click();
+    await flushPromises();
+
+    expect(wrapper.find(".agent-capability-dialog").text()).toContain("无法绑定：当前 Agent 的模型不能调用工具");
+    expect(wrapper.get("[data-action='batch-bind-all-unbound']").attributes("disabled")).toBeDefined();
+    expect(wrapper.get("[data-action='batch-bind-selected-capabilities']").attributes("disabled")).toBeDefined();
+    expect(wrapper.get("[data-action='bind-capability']").attributes("disabled")).toBeDefined();
+
+    await wrapper.get("[data-action='batch-bind-all-unbound']").trigger("click");
+    await wrapper.get("[data-action='bind-capability']").trigger("click");
+    await flushPromises();
+    expect(bindCapabilityMock).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("does not treat unverified capabilities as none when binding", async () => {
+    modelConfigStoreState.items = [
+      {
+        ...makeModelConfig(),
+        status: "UNVERIFIED",
+        agenticCapabilities: {},
+      },
+    ];
+    const wrapper = mountAgentsView();
+    await flushPromises();
+
+    await selectAgentMenuAction(wrapper, "capabilities");
+    await flushPromises();
+
+    expect(wrapper.get("[data-action='bind-capability']").attributes("disabled")).toBeUndefined();
+    wrapper.unmount();
+  });
+
   it("opens a Weaving preview instead of directly applying enhanced prompt text", async () => {
     const wrapper = mountAgentsView();
 

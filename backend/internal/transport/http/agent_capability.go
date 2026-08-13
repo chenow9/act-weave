@@ -12,6 +12,7 @@ import (
 	"actweave/backend/internal/agent"
 	"actweave/backend/internal/authz"
 	"actweave/backend/internal/capability"
+	"actweave/backend/internal/modelconfig"
 
 	"github.com/gin-gonic/gin"
 )
@@ -53,6 +54,14 @@ type BindingWriter interface {
 	Unbind(context.Context, string, string, string, int64) error
 }
 
+type ModelConfigGetter interface {
+	Get(context.Context, string, string) (modelconfig.Config, error)
+}
+
+type DelegationEdgeChecker interface {
+	HasEnabledDelegationEdges(context.Context, string, string) (bool, error)
+}
+
 type AgentCapabilityRoutes struct {
 	authorizer     WorkspaceAuthorizer
 	agents         AgentStore
@@ -62,6 +71,8 @@ type AgentCapabilityRoutes struct {
 	capabilities   CapabilityStore
 	catalog        AgentCapabilityCatalog
 	bindings       BindingWriter
+	models         ModelConfigGetter
+	edges          DelegationEdgeChecker
 }
 
 func NewAgentCapabilityRoutes(authorizer WorkspaceAuthorizer, agents AgentStore, prompts AgentPromptService,
@@ -86,6 +97,18 @@ func (r *AgentCapabilityRoutes) WithCurrentPromptReader(reader AgentCurrentPromp
 func (r *AgentCapabilityRoutes) WithCreationService(creation AgentCreationService) *AgentCapabilityRoutes {
 	if r != nil {
 		r.creation = creation
+	}
+	return r
+}
+
+// WithModelToolCompatibility installs the model-swap tool gate. Bind uses
+// BindingService; this only covers PATCH modelConfigId.
+func (r *AgentCapabilityRoutes) WithModelToolCompatibility(
+	models ModelConfigGetter, edges DelegationEdgeChecker,
+) *AgentCapabilityRoutes {
+	if r != nil {
+		r.models = models
+		r.edges = edges
 	}
 	return r
 }
@@ -375,6 +398,12 @@ func (r *AgentCapabilityRoutes) updateAgent(c *gin.Context) {
 		RespondError(c, err)
 		return
 	}
+	if request.ModelConfigID != nil && *request.ModelConfigID != current.ModelConfigID {
+		if err := r.assertUpdateModelTools(c.Request.Context(), c.Param("wid"), current.ID, *request.ModelConfigID); err != nil {
+			RespondError(c, err)
+			return
+		}
+	}
 	if request.Name != nil {
 		current.Name = *request.Name
 	}
@@ -395,12 +424,39 @@ func (r *AgentCapabilityRoutes) updateAgent(c *gin.Context) {
 		Name: current.Name, RoleDescription: current.RoleDescription, ModelConfigID: current.ModelConfigID,
 		Status: current.Status, ContextPolicy: request.ContextPolicy,
 		ContextPolicySet: request.ContextPolicy != nil,
-		UpdatedBy: actor(c), ExpectedLockVersion: request.LockVersion})
+		UpdatedBy:        actor(c), ExpectedLockVersion: request.LockVersion})
 	if err != nil {
 		RespondError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, agentValueDTO(value))
+}
+
+func (r *AgentCapabilityRoutes) assertUpdateModelTools(ctx context.Context, workspaceID, agentID, modelConfigID string) error {
+	if r == nil || r.models == nil {
+		return nil
+	}
+	cfg, err := r.models.Get(ctx, workspaceID, modelConfigID)
+	if err != nil {
+		return err
+	}
+	descriptors, err := r.catalog.ListForAgent(ctx, workspaceID, agentID)
+	if err != nil {
+		return err
+	}
+	hasEdges := false
+	if r.edges != nil {
+		hasEdges, err = r.edges.HasEnabledDelegationEdges(ctx, workspaceID, agentID)
+		if err != nil {
+			return err
+		}
+	}
+	return modelconfig.AssertAgentModelToolCompatibility(cfg, modelconfig.AgentModelToolCheck{
+		AgentID:            agentID,
+		CatalogCount:       len(descriptors),
+		HasDelegationEdges: hasEdges,
+		RequireVerified:    true,
+	})
 }
 
 func (r *AgentCapabilityRoutes) deleteAgent(c *gin.Context) {

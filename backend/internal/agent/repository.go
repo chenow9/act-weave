@@ -110,6 +110,29 @@ func (r *Repository) Get(ctx context.Context, workspaceID, agentID string) (Agen
 	return value, mapRead("get agent", err)
 }
 
+// HasEnabledDelegationEdges reports whether the Agent has enabled internal
+// or A2A remote bindings. Those edges make the Agent tool-bearing even when
+// ListForAgent is empty.
+func (r *Repository) HasEnabledDelegationEdges(ctx context.Context, workspaceID, agentID string) (bool, error) {
+	if !validUUID(workspaceID) || !validUUID(agentID) {
+		return false, ErrInvalid
+	}
+	var exists bool
+	err := r.db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM agent_delegation_bindings
+			WHERE workspace_id=$1 AND caller_agent_id=$2 AND enabled AND deleted_at IS NULL
+		) OR EXISTS (
+			SELECT 1 FROM agent_a2a_remote_bindings
+			WHERE workspace_id=$1 AND caller_agent_id=$2 AND enabled AND deleted_at IS NULL
+		)
+	`, workspaceID, agentID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check delegation edges: %w", err)
+	}
+	return exists, nil
+}
+
 func (r *Repository) List(ctx context.Context, workspaceID string) ([]Agent, error) {
 	if !validUUID(workspaceID) {
 		return nil, ErrInvalid

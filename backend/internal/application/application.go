@@ -554,13 +554,15 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if err != nil {
 		return nil, err
 	}
+	bindingService = bindingService.WithToolCompatibility(modelRepository, capabilityCatalog, agentRepository)
 	agentRoutes, err := httptransport.NewAgentCapabilityRoutes(authorizer, agentRepository,
 		promptService, capabilityRepository, capabilityCatalog, bindingService)
 	if err != nil {
 		return nil, err
 	}
 	agentRoutes = agentRoutes.WithCurrentPromptReader(currentPromptQuery).
-		WithCreationService(agentCreationService)
+		WithCreationService(agentCreationService).
+		WithModelToolCompatibility(modelRepository, agentRepository)
 
 	// Agent→Agent bindings + A2A gateway config (management APIs).
 	delegationRepo, err := agentdelegation.NewRepository(db)

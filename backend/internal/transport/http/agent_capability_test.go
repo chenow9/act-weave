@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -171,6 +172,7 @@ type agentCapabilityFixture struct {
 	objects                                 *promptMemoryObjects
 	agents                                  *agent.Repository
 	capabilities                            *capability.Repository
+	models                                  *modelconfig.Repository
 }
 
 func newAgentCapabilityFixture(t *testing.T) *agentCapabilityFixture {
@@ -220,6 +222,7 @@ func newAgentCapabilityFixture(t *testing.T) *agentCapabilityFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	bindings = bindings.WithToolCompatibility(models, catalog, agents)
 	routes, err := NewAgentCapabilityRoutes(authorizer, agents, prompts, capabilities, catalog, bindings)
 	if err != nil {
 		t.Fatal(err)
@@ -236,14 +239,15 @@ func newAgentCapabilityFixture(t *testing.T) *agentCapabilityFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	routes = routes.WithCurrentPromptReader(currentPrompt).WithCreationService(creation)
+	routes = routes.WithCurrentPromptReader(currentPrompt).WithCreationService(creation).
+		WithModelToolCompatibility(models, agents)
 	router, err := NewRouter(Config{Authenticator: authFixture.auth, Registrars: []V1RouteRegistrar{authFixture.authRoutes, routes}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	authFixture.router = router
 	login := authFixture.request(t, http.MethodPost, "/api/v1/auth/login", map[string]any{"username": v1AdminName, "password": v1AdminPass}, "", nil)
-	return &agentCapabilityFixture{v1AuthFixture: authFixture, workspaceID: workspaceID, modelConfigID: modelConfigID, base: "/api/v1/workspaces/" + workspaceID, token: decodeTokenResponse(t, login).AccessToken, objects: objects, agents: agents, capabilities: capabilities}
+	return &agentCapabilityFixture{v1AuthFixture: authFixture, workspaceID: workspaceID, modelConfigID: modelConfigID, base: "/api/v1/workspaces/" + workspaceID, token: decodeTokenResponse(t, login).AccessToken, objects: objects, agents: agents, capabilities: capabilities, models: models}
 }
 
 type agentSnapshot struct{}
@@ -345,5 +349,152 @@ func TestV1BindUnpublishedWorkflowRejectedThenPublishedSucceeds(t *testing.T) {
 	decodeResponse(t, detail.Body.Bytes(), &summary)
 	if summary.WorkflowsCount != 1 {
 		t.Fatalf("workflowsCount after published WORKFLOW bind=%+v", summary)
+	}
+}
+
+func TestV1CreateAgentAllowsNoneModel(t *testing.T) {
+	f := newAgentCapabilityFixture(t)
+	noneID := f.createModelConfig(t, "none-model")
+	f.plantVerifiedCalling(t, noneID, modelconfig.ToolCallingNone)
+	response := f.request(t, http.MethodPost, f.base+"/agents", map[string]any{
+		"name": "text-only", "roleDescription": "No tools", "modelConfigId": noneID, "systemPrompt": "Chat only.",
+	}, f.token, nil)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create on none model status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestV1BindRejectsNoneModel(t *testing.T) {
+	f := newAgentCapabilityFixture(t)
+	f.plantVerifiedCalling(t, f.modelConfigID, modelconfig.ToolCallingNone)
+	created := f.createAgent(t, "none-bind")
+	toolItem := f.seedCapability(t, "TOOL", "none-lookup")
+	bound := f.request(t, http.MethodPut, f.base+"/agents/"+created.ID+"/capabilities/"+toolItem.ID, map[string]any{
+		"versionPolicy": "FOLLOW_ACTIVE", "enabled": true, "configOverrides": map[string]any{}, "lockVersion": 0,
+	}, f.token, nil)
+	assertErrorResponse(t, bound, http.StatusUnprocessableEntity, modelconfig.ErrorCodeAgentModelToolsUnsupported)
+}
+
+func TestV1UpdateModelToNoneRejectedWhenToolsBound(t *testing.T) {
+	f := newAgentCapabilityFixture(t)
+	created := f.createAgent(t, "switch-none")
+	toolItem := f.seedCapability(t, "TOOL", "switch-lookup")
+	bound := f.request(t, http.MethodPut, f.base+"/agents/"+created.ID+"/capabilities/"+toolItem.ID, map[string]any{
+		"versionPolicy": "FOLLOW_ACTIVE", "enabled": true, "configOverrides": map[string]any{}, "lockVersion": 0,
+	}, f.token, nil)
+	if bound.Code != http.StatusOK {
+		t.Fatalf("bind before swap status=%d body=%s", bound.Code, bound.Body.String())
+	}
+	noneID := f.createModelConfig(t, "none-target")
+	f.plantVerifiedCalling(t, noneID, modelconfig.ToolCallingNone)
+	detail := f.request(t, http.MethodGet, f.base+"/agents/"+created.ID, nil, f.token, nil)
+	var current agentDTO
+	decodeResponse(t, detail.Body.Bytes(), &current)
+	swapped := f.request(t, http.MethodPatch, f.base+"/agents/"+created.ID, map[string]any{
+		"modelConfigId": noneID, "lockVersion": current.LockVersion,
+	}, f.token, nil)
+	assertErrorResponse(t, swapped, http.StatusUnprocessableEntity, modelconfig.ErrorCodeAgentModelToolsUnsupported)
+}
+
+func TestV1UpdateModelToNoneAllowedWhenNoTools(t *testing.T) {
+	f := newAgentCapabilityFixture(t)
+	created := f.createAgent(t, "empty-switch-none")
+	noneID := f.createModelConfig(t, "none-empty")
+	f.plantVerifiedCalling(t, noneID, modelconfig.ToolCallingNone)
+	swapped := f.request(t, http.MethodPatch, f.base+"/agents/"+created.ID, map[string]any{
+		"modelConfigId": noneID, "lockVersion": created.LockVersion,
+	}, f.token, nil)
+	if swapped.Code != http.StatusOK {
+		t.Fatalf("tool-less swap to none status=%d body=%s", swapped.Code, swapped.Body.String())
+	}
+}
+
+func TestV1BindCarryAllTooLarge(t *testing.T) {
+	f := newAgentCapabilityFixture(t)
+	f.plantVerifiedCalling(t, f.modelConfigID, modelconfig.ToolCallingFunctionCalling)
+	f.plantCarryAll(t, f.modelConfigID)
+	created := f.createAgent(t, "carry-all")
+	for i := 0; i < modelconfig.CarryAllHardLimit; i++ {
+		item := f.seedCapability(t, "TOOL", "carry-tool-"+strconv.Itoa(i))
+		bound := f.request(t, http.MethodPut, f.base+"/agents/"+created.ID+"/capabilities/"+item.ID, map[string]any{
+			"versionPolicy": "FOLLOW_ACTIVE", "enabled": true, "configOverrides": map[string]any{}, "lockVersion": 0,
+		}, f.token, nil)
+		if bound.Code != http.StatusOK {
+			t.Fatalf("bind %d status=%d body=%s", i, bound.Code, bound.Body.String())
+		}
+	}
+	overflow := f.seedCapability(t, "TOOL", "carry-tool-overflow")
+	rejected := f.request(t, http.MethodPut, f.base+"/agents/"+created.ID+"/capabilities/"+overflow.ID, map[string]any{
+		"versionPolicy": "FOLLOW_ACTIVE", "enabled": true, "configOverrides": map[string]any{}, "lockVersion": 0,
+	}, f.token, nil)
+	assertErrorResponse(t, rejected, http.StatusUnprocessableEntity, modelconfig.ErrorCodeToolCarryAllTooLarge)
+}
+
+func (f *agentCapabilityFixture) createModelConfig(t *testing.T, name string) string {
+	t.Helper()
+	id := uuid.NewString()
+	if _, err := f.models.Create(context.Background(), modelconfig.NewConfig{
+		ID: id, WorkspaceID: f.workspaceID, Name: name, Provider: modelconfig.ProviderOpenAICompatible,
+		APIBase: "https://models.example/v1", ModelName: name, Options: json.RawMessage(`{}`), CreatedBy: v1AdminUserID,
+	}); err != nil {
+		t.Fatalf("create model %s: %v", name, err)
+	}
+	return id
+}
+
+func (f *agentCapabilityFixture) plantVerifiedCalling(t *testing.T, configID, calling string) {
+	t.Helper()
+	ctx := context.Background()
+	cfg, err := f.models.Get(ctx, f.workspaceID, configID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := modelconfig.WireConfigDigest(cfg)
+	at := time.Now().UTC().Truncate(time.Second)
+	var doc modelconfig.AgenticCapabilities
+	if calling == modelconfig.ToolCallingNativeClientSearch {
+		doc, err = modelconfig.CanonicalAgenticCapabilities(at, cfg.LockVersion, digest)
+	} else {
+		doc, err = modelconfig.CanonicalAgenticCapabilitiesV2(calling, at, cfg.LockVersion, digest)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := json.RawMessage(`{}`)
+	if calling == modelconfig.ToolCallingFunctionCalling {
+		policy, err = modelconfig.CanonicalToolDisclosurePolicy(modelconfig.DisclosureModePlatformOnDemand)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := f.models.RecordVerification(ctx, modelconfig.VerificationUpdate{
+		WorkspaceID: f.workspaceID, ConfigID: configID, Status: modelconfig.StatusVerified, LatencyMS: 1,
+		AgenticCapabilities: raw, ToolDisclosurePolicy: policy, VerifiedAt: at,
+		VerifiedBy: v1AdminUserID, ExpectedLockVersion: cfg.LockVersion,
+	}); err != nil {
+		t.Fatalf("record verification %s: %v", calling, err)
+	}
+}
+
+func (f *agentCapabilityFixture) plantCarryAll(t *testing.T, configID string) {
+	t.Helper()
+	ctx := context.Background()
+	cfg, err := f.models.Get(ctx, f.workspaceID, configID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, err := modelconfig.CanonicalToolDisclosurePolicy(modelconfig.DisclosureModeCarryAll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.models.UpdateDisclosurePolicy(ctx, modelconfig.DisclosurePolicyUpdate{
+		WorkspaceID: f.workspaceID, ConfigID: configID, Policy: policy,
+		UpdatedBy: v1AdminUserID, ExpectedLockVersion: cfg.LockVersion,
+	}); err != nil {
+		t.Fatalf("set carry_all: %v", err)
 	}
 }

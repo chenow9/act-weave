@@ -351,6 +351,32 @@ export function createAgentsPageModel() {
     return modelConfigs.items.find((config) => config.id === configId);
   }
 
+  function probeModelToolCalling(
+    config: ModelApiConfig | undefined,
+  ): "native_client_search" | "function_calling" | "none" | "unverified" {
+    const caps = config?.agenticCapabilities;
+    if (!caps || typeof caps !== "object") return "unverified";
+    const rec = caps as Record<string, unknown>;
+    if (Object.keys(rec).length === 0) return "unverified";
+    if (rec.schemaVersion === "agentic-model.v1") return "native_client_search";
+    const calling = rec.toolCalling;
+    if (calling === "none" || calling === "function_calling" || calling === "native_client_search") {
+      return calling;
+    }
+    return "unverified";
+  }
+
+  function modelCannotCallTools(config: ModelApiConfig | undefined): boolean {
+    return probeModelToolCalling(config) === "none";
+  }
+
+  const selectedDraftModelCannotCallTools = computed(() =>
+    modelCannotCallTools(modelConfigById(draftAgent.value.modelConfigId)),
+  );
+  const capabilityModelCannotCallTools = computed(() =>
+    modelCannotCallTools(modelConfigById(capabilityAgent.value?.modelConfigId || "")),
+  );
+
   function workspaceLabel(agent: Agent) {
     return workspaceById(agent.workspaceId)?.name || agent.workspaceId;
   }
@@ -376,7 +402,12 @@ export function createAgentsPageModel() {
   }
 
   function modelConfigOptionLabel(config: ModelApiConfig) {
-    return `${config.modelName}${config.id === workspaceById(draftAgent.value.workspaceId)?.modelConfigId ? tt("agents.workspaceDefaultSuffix") : ""}`;
+    const suffix =
+      config.id === workspaceById(draftAgent.value.workspaceId)?.modelConfigId
+        ? tt("agents.workspaceDefaultSuffix")
+        : "";
+    const noneHint = modelCannotCallTools(config) ? ` · ${tt("agents.modelCannotCallToolsHint")}` : "";
+    return `${config.modelName}${suffix}${noneHint}`;
   }
 
   function renderPromptMarkdown(source: string) {
@@ -1204,6 +1235,9 @@ export function createAgentsPageModel() {
   }
 
   function canBindCapability(capability: CapabilityCatalogItem): { ok: true } | { ok: false; reason: string } {
+    if (capabilityModelCannotCallTools.value) {
+      return { ok: false, reason: tt("agents.capabilityBindDisabledNoTools") };
+    }
     const draft = capabilityDrafts.value[capability.id];
     if (!draft) return { ok: false, reason: tt("agents.bindGateNoDraft") };
     if (draft.versionPolicy === "PINNED" && !capability.activeReleaseId) {
@@ -1492,6 +1526,8 @@ export function createAgentsPageModel() {
     agentSummaryItems,
     workspaceOptions,
     modelConfigOptions,
+    selectedDraftModelCannotCallTools,
+    capabilityModelCannotCallTools,
     promptDetailVisible,
     studioTitle,
     promptDetailHTML,

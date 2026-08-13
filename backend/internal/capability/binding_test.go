@@ -5,9 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"actweave/backend/internal/database/dbtest"
+	"actweave/backend/internal/modelconfig"
 )
 
 const (
@@ -452,3 +455,135 @@ func assertBindingTableMissing(t *testing.T, dsn string) {
 }
 
 func stringReference(value string) *string { return &value }
+
+func TestBindRejectsNoneModelAndAllowsUnverified(t *testing.T) {
+	repository, db := newBindingRepositoryTest(t)
+	models, err := modelconfig.NewRepository(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := NewCatalog(repository, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewBindingService(repository, ConnectionCompatibilityFunc(func(context.Context, string, string, string) error {
+		return nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service = service.WithToolCompatibility(models, catalog, nil)
+
+	if _, err := service.Bind(context.Background(), BindInput{
+		WorkspaceID: bindingWorkspaceID, AgentID: bindingAgentID, CapabilityID: bindingCapabilityID,
+		VersionPolicy: "FOLLOW_ACTIVE", Enabled: true, BoundBy: bindingOwnerID,
+	}); err != nil {
+		t.Fatalf("unverified bind should succeed: %v", err)
+	}
+	if err := service.Unbind(context.Background(), bindingWorkspaceID, bindingAgentID, bindingCapabilityID, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	plantBindingModelCalling(t, models, bindingWorkspaceID, bindingModelID, modelconfig.ToolCallingNone)
+	if _, err := service.Bind(context.Background(), BindInput{
+		WorkspaceID: bindingWorkspaceID, AgentID: bindingAgentID, CapabilityID: bindingCapabilityID,
+		VersionPolicy: "FOLLOW_ACTIVE", Enabled: true, BoundBy: bindingOwnerID,
+	}); !errors.Is(err, modelconfig.ErrAgentModelToolsUnsupported) {
+		t.Fatalf("none bind: %v", err)
+	}
+}
+
+func TestBindCarryAllTooLargeUsesProposedCatalogCount(t *testing.T) {
+	repository, db := newBindingRepositoryTest(t)
+	models, err := modelconfig.NewRepository(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plantBindingModelCalling(t, models, bindingWorkspaceID, bindingModelID, modelconfig.ToolCallingFunctionCalling)
+	plantBindingCarryAll(t, models, bindingWorkspaceID, bindingModelID)
+	existing := make([]Descriptor, modelconfig.CarryAllHardLimit)
+	for i := range existing {
+		existing[i] = Descriptor{CapabilityID: "existing-" + strings.Repeat("0", 2)}
+	}
+	catalog := stubAgentCatalog{descriptors: existing}
+	service, err := NewBindingService(repository, ConnectionCompatibilityFunc(func(context.Context, string, string, string) error {
+		return nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service = service.WithToolCompatibility(models, catalog, nil)
+	_, err = service.Bind(context.Background(), BindInput{
+		WorkspaceID: bindingWorkspaceID, AgentID: bindingAgentID, CapabilityID: bindingCapabilityID,
+		VersionPolicy: "FOLLOW_ACTIVE", Enabled: true, BoundBy: bindingOwnerID,
+	})
+	tooLarge, ok := modelconfig.AsCarryAllTooLarge(err)
+	if !ok || tooLarge.Count != modelconfig.CarryAllHardLimit+1 {
+		t.Fatalf("proposed carry-all: %+v err=%v", tooLarge, err)
+	}
+}
+
+type stubAgentCatalog struct {
+	descriptors []Descriptor
+}
+
+func (s stubAgentCatalog) ListForAgent(context.Context, string, string) ([]Descriptor, error) {
+	return s.descriptors, nil
+}
+
+func plantBindingModelCalling(t *testing.T, models *modelconfig.Repository, workspaceID, configID, calling string) {
+	t.Helper()
+	ctx := context.Background()
+	cfg, err := models.Get(ctx, workspaceID, configID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := modelconfig.WireConfigDigest(cfg)
+	at := time.Now().UTC().Truncate(time.Second)
+	var doc modelconfig.AgenticCapabilities
+	if calling == modelconfig.ToolCallingNativeClientSearch {
+		doc, err = modelconfig.CanonicalAgenticCapabilities(at, cfg.LockVersion, digest)
+	} else {
+		doc, err = modelconfig.CanonicalAgenticCapabilitiesV2(calling, at, cfg.LockVersion, digest)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := json.RawMessage(`{}`)
+	if calling == modelconfig.ToolCallingFunctionCalling {
+		policy, err = modelconfig.CanonicalToolDisclosurePolicy(modelconfig.DisclosureModePlatformOnDemand)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := models.RecordVerification(ctx, modelconfig.VerificationUpdate{
+		WorkspaceID: workspaceID, ConfigID: configID, Status: modelconfig.StatusVerified, LatencyMS: 1,
+		AgenticCapabilities: raw, ToolDisclosurePolicy: policy, VerifiedAt: at,
+		VerifiedBy: bindingOwnerID, ExpectedLockVersion: cfg.LockVersion,
+	}); err != nil {
+		t.Fatalf("plant %s: %v", calling, err)
+	}
+}
+
+func plantBindingCarryAll(t *testing.T, models *modelconfig.Repository, workspaceID, configID string) {
+	t.Helper()
+	ctx := context.Background()
+	cfg, err := models.Get(ctx, workspaceID, configID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, err := modelconfig.CanonicalToolDisclosurePolicy(modelconfig.DisclosureModeCarryAll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := models.UpdateDisclosurePolicy(ctx, modelconfig.DisclosurePolicyUpdate{
+		WorkspaceID: workspaceID, ConfigID: configID, Policy: policy,
+		UpdatedBy: bindingOwnerID, ExpectedLockVersion: cfg.LockVersion,
+	}); err != nil {
+		t.Fatalf("plant carry_all: %v", err)
+	}
+}

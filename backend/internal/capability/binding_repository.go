@@ -232,6 +232,26 @@ func (r *Repository) ListBindings(ctx context.Context, workspaceID, agentID stri
 	return values, rows.Err()
 }
 
+// AgentModelConfigID loads the Agent's current model without importing the
+// agent package. Missing or deleted Agents are ErrNotFound.
+func (r *Repository) AgentModelConfigID(ctx context.Context, workspaceID, agentID string) (string, error) {
+	if !validUUID(workspaceID) || !validUUID(agentID) {
+		return "", ErrInvalid
+	}
+	var modelConfigID string
+	err := r.db.QueryRowContext(ctx, `
+		SELECT model_config_id::text FROM agents
+		WHERE workspace_id=$1 AND id=$2 AND deleted_at IS NULL
+	`, workspaceID, agentID).Scan(&modelConfigID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("get agent model config: %w", err)
+	}
+	return modelConfigID, nil
+}
+
 func (r *Repository) ListEnabledSelections(ctx context.Context, workspaceID, agentID string) ([]BindingSelection, error) {
 	if !validUUID(workspaceID) || !validUUID(agentID) {
 		return nil, ErrInvalid

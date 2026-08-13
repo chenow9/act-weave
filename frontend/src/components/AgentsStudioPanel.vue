@@ -13,7 +13,7 @@ import { computed } from "vue";
 const scp = useAgentsPageContext();
 /* prettier-ignore */
 const {
-  studioMode, draftAgent, savingAgent, agentStudioPanelRef, agentNameInputRef, promptDetailDialogRef, agentStudioInlineWarning, pendingPromptSaveReview, weavePreviewAgent, acceptingPromptRevision, workspaceOptions, modelConfigOptions, studioTitle, agentNameError, agentWorkspaceError,
+  studioMode, draftAgent, savingAgent, agentStudioPanelRef, agentNameInputRef, promptDetailDialogRef, agentStudioInlineWarning, pendingPromptSaveReview, weavePreviewAgent, acceptingPromptRevision, workspaceOptions, modelConfigOptions, selectedDraftModelCannotCallTools, studioTitle, agentNameError, agentWorkspaceError,
   agentModelError, agentRoleError, agentPromptError, promptLineCount, promptPreviewText, canSaveAgent, originalPrompt, promptSaveDiff, pendingPromptText, weavePreviewDiff, agentSaveButtonLabel, canEnhanceDraftPrompt, formatSignedDelta, isEnhancing, toggleDraftStatus,
   agentContextMode, agentContextMaxInputTokens, agentContextMaxRecentTurns,
   agentContextSummaryMaxTokens, agentContextSummaryMinEvictedTurns, agentContextSummaryMaxPasses,
@@ -141,9 +141,21 @@ void AgentDelegationPanel;
                   :aria-label="t('agents.decisionModel')"
                   :aria-required="true"
                   :aria-invalid="Boolean(agentModelError)"
-                  :aria-describedby="agentModelError ? 'agent-model-error' : undefined"
+                  :aria-describedby="
+                    agentModelError
+                      ? 'agent-model-error'
+                      : selectedDraftModelCannotCallTools
+                        ? 'agent-model-no-tools-hint'
+                        : undefined
+                  "
                 />
                 <small v-if="agentModelError" id="agent-model-error" class="field-error">{{ agentModelError }}</small>
+                <small
+                  v-else-if="selectedDraftModelCannotCallTools"
+                  id="agent-model-no-tools-hint"
+                  class="field-hint"
+                  >{{ t("agents.modelCannotCallToolsHint") }}</small
+                >
               </label>
               <label class="modal-field">
                 <span>{{ t("agents.roleDuty") }} <b class="required-mark" aria-hidden="true">*</b></span>
@@ -334,13 +346,27 @@ void AgentDelegationPanel;
           <section v-else-if="studioMode === 'create'" class="agent-studio-section agent-delegation-deferred">
             <header>
               <span><i class="fa-solid fa-sitemap" aria-hidden="true" /> {{ t("agents.collabExternal") }}</span>
-              <span class="agent-delegation-deferred-badge">{{ t("agents.configureAfterCreate") }}</span>
+              <span
+                class="agent-delegation-deferred-badge"
+                :class="{ 'is-unavailable': selectedDraftModelCannotCallTools }"
+                >{{
+                  selectedDraftModelCannotCallTools
+                    ? t("agents.modelCannotCallToolsHint")
+                    : t("agents.configureAfterCreate")
+                }}</span
+              >
             </header>
             <div class="agent-delegation-deferred-body">
               <i class="fa-solid fa-lock" aria-hidden="true" />
               <div>
-                <p>{{ t("agents.collabDeferredBody") }}</p>
-                <small>{{ t("agents.collabDeferredHint") }}</small>
+                <p>
+                  {{
+                    selectedDraftModelCannotCallTools
+                      ? t("agents.collabDeferredNoneModel")
+                      : t("agents.collabDeferredBody")
+                  }}
+                </p>
+                <small v-if="!selectedDraftModelCannotCallTools">{{ t("agents.collabDeferredHint") }}</small>
               </div>
             </div>
           </section>

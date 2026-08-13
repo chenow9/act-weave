@@ -10,7 +10,7 @@ const { t } = useI18n();
 const scp = useAgentsPageContext();
 /* prettier-ignore */
 const {
-  agentActionNote, agentActionTone, promptDetailAgent, agentDeleting, agentDeleteTarget, agentDeleteConfirmName, promptDetailDialogRef, agentDeleteDialogRef, agentDeleteInputRef, capabilityAgent, capabilityLoading, capabilitySavingId, capabilityBatchBusy, capabilityDrafts, promptDetailVisible, capabilityCatalog, canConfirmAgentDelete,
+  agentActionNote, agentActionTone, promptDetailAgent, agentDeleting, agentDeleteTarget, agentDeleteConfirmName, promptDetailDialogRef, agentDeleteDialogRef, agentDeleteInputRef, capabilityAgent, capabilityLoading, capabilitySavingId, capabilityBatchBusy, capabilityDrafts, promptDetailVisible, capabilityCatalog, capabilityModelCannotCallTools, canConfirmAgentDelete,
   capabilitySelectedCount, capabilityUnboundCount, capabilityBindableUnboundCount, capabilitySelectedBoundCount, capabilityActionsBusy,
   agentDeleteNameError, closePromptDetail, trapAgentModalFocus, clearAgentToast, closeAgentDeleteConfirm, requestCloseAgentDeleteConfirm, confirmDeleteAgent, closeCapabilityBindings, currentCapabilityBinding, setCapabilityVersionPolicy, capabilityVersionPolicyOptions, saveCapabilityBinding, removeCapabilityBinding,
   isCapabilitySelected, toggleCapabilitySelection, clearCapabilitySelection, selectUnboundCapabilities, selectAllCapabilities, batchBindCapabilities, batchUnbindCapabilities,
@@ -164,7 +164,11 @@ async function copyPromptRaw() {
         </header>
         <div class="agent-capability-body">
           <p>
-            {{ t("agents.capabilityDialogIntro") }}
+            {{
+              capabilityModelCannotCallTools
+                ? t("agents.capabilityBindDisabledNoTools")
+                : t("agents.capabilityDialogIntro")
+            }}
           </p>
 
           <div v-if="!capabilityLoading && capabilityCatalog.length" class="agent-capability-batch-bar">
@@ -219,7 +223,10 @@ async function copyPromptRaw() {
                 class="primary-button"
                 type="button"
                 data-action="batch-bind-selected-capabilities"
-                :disabled="capabilityActionsBusy || capabilitySelectedCount === 0"
+                :disabled="
+                  capabilityActionsBusy || capabilitySelectedCount === 0 || capabilityModelCannotCallTools
+                "
+                :title="capabilityModelCannotCallTools ? t('agents.batchBindDisabledNoTools') : undefined"
                 @click="batchBindCapabilities({ mode: 'selected' })"
               >
                 <i v-if="capabilityBatchBusy" class="fa-solid fa-spinner fa-spin" />
@@ -229,8 +236,16 @@ async function copyPromptRaw() {
                 class="primary-button agent-capability-batch-bind-all"
                 type="button"
                 data-action="batch-bind-all-unbound"
-                :disabled="capabilityActionsBusy || capabilityBindableUnboundCount === 0"
-                :title="t('agents.batchBindAllTitle')"
+                :disabled="
+                  capabilityActionsBusy ||
+                  capabilityBindableUnboundCount === 0 ||
+                  capabilityModelCannotCallTools
+                "
+                :title="
+                  capabilityModelCannotCallTools
+                    ? t('agents.batchBindDisabledNoTools')
+                    : t('agents.batchBindAllTitle')
+                "
                 @click="batchBindCapabilities({ mode: 'all-unbound' })"
               >
                 <i v-if="capabilityBatchBusy" class="fa-solid fa-spinner fa-spin" />
@@ -325,7 +340,11 @@ async function copyPromptRaw() {
               <button
                 class="primary-button"
                 type="button"
-                :disabled="capabilityActionsBusy"
+                data-action="bind-capability"
+                :disabled="capabilityActionsBusy || capabilityModelCannotCallTools"
+                :title="
+                  capabilityModelCannotCallTools ? t('agents.capabilityBindDisabledNoTools') : undefined
+                "
                 @click="saveCapabilityBinding(capability)"
               >
                 <i v-if="capabilitySavingId === capability.id" class="fa-solid fa-spinner fa-spin" />{{
