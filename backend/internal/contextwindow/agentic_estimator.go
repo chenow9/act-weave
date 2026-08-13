@@ -17,6 +17,14 @@ const (
 	// EstimatorVersionAgenticOpenAIResponsesV1 is the Agentic-only estimator version.
 	// Classic EstimatorVersion remains "contextwindow-estimator.v1".
 	EstimatorVersionAgenticOpenAIResponsesV1 = "contextwindow-estimator.agentic-openai-responses.v1"
+	// EstimatorVersionAgenticOpenAIResponsesV2 is the disclosure-mode estimator.
+	EstimatorVersionAgenticOpenAIResponsesV2 = "contextwindow-estimator.agentic-openai-responses.v2"
+
+	// DisclosureMode values are contextwindow strings (exact enum, no whitespace).
+	DisclosureModeClientBounded   = "client_bounded"
+	DisclosureModePlatformBounded = "platform_bounded"
+	DisclosureModeCarryAll        = "carry_all"
+	DisclosureModeNone            = "none"
 
 	// AgenticMaxIterations is fixed/validated at 8 (D3 / D7).
 	AgenticMaxIterations = 8
@@ -68,6 +76,9 @@ type ToolExposureEstimate struct {
 	// MaxLoadedTools is non-user-tunable. 0 means derive; nonzero must equal
 	// min(len(DeferredMetadata), AgenticMaxLoadedDefinitionsPerRun).
 	MaxLoadedTools int
+	// DisclosureMode is a contextwindow string: "" / "client_bounded" /
+	// "platform_bounded" / "carry_all" / "none". Exact enum; no whitespace.
+	DisclosureMode string
 }
 
 // AgenticEstimateResult is the Agentic-only estimation outcome.
@@ -257,6 +268,320 @@ func (e *Estimator) EstimateAgenticRequest(
 	}
 	result.InitialVisibleTokens = visible
 	return result, nil
+}
+
+// EstimateAgenticRequestV2 applies disclosure-mode tool accounting.
+// Empty and client_bounded delegate to EstimateAgenticRequest.
+// Unknown DisclosureMode values fail closed.
+func (e *Estimator) EstimateAgenticRequestV2(
+	system string,
+	exposure ToolExposureEstimate,
+	messages []Message,
+) (AgenticEstimateResult, error) {
+	if e == nil || e.tokenizer == nil {
+		return AgenticEstimateResult{}, ErrUnavailableProfile
+	}
+	switch exposure.DisclosureMode {
+	case "", DisclosureModeClientBounded:
+		return e.EstimateAgenticRequest(system, exposure, messages)
+	case DisclosureModePlatformBounded:
+		return e.estimateAgenticPlatformBounded(system, exposure, messages)
+	case DisclosureModeCarryAll:
+		return e.estimateAgenticCarryAll(system, exposure, messages)
+	case DisclosureModeNone:
+		return e.estimateAgenticNone(system, exposure, messages)
+	default:
+		return AgenticEstimateResult{}, fmt.Errorf("%w: unknown disclosure mode %q", ErrAgenticEstimatorInvalid, exposure.DisclosureMode)
+	}
+}
+
+func (e *Estimator) estimateAgenticPlatformBounded(
+	system string,
+	exposure ToolExposureEstimate,
+	messages []Message,
+) (AgenticEstimateResult, error) {
+	if err := validateDeferredLoadIdentity(exposure); err != nil {
+		return AgenticEstimateResult{}, err
+	}
+	deferredCount := len(exposure.DeferredMetadata)
+	maxLoaded := derivePlatformMaxLoadedToolCount(deferredCount)
+	if exposure.MaxLoadedTools != 0 && exposure.MaxLoadedTools != AgenticMaxLoadedToolsPerSearch {
+		return AgenticEstimateResult{}, fmt.Errorf(
+			"%w: MaxLoadedTools must be 0 or %d for platform_bounded",
+			ErrAgenticEstimatorInvalid, AgenticMaxLoadedToolsPerSearch,
+		)
+	}
+
+	core, err := e.estimateAgenticTextAndImmediate(system, exposure.Immediate, messages)
+	if err != nil {
+		return AgenticEstimateResult{}, err
+	}
+	reserve, err := e.estimatePlatformBoundedReserve(exposure, maxLoaded)
+	if err != nil {
+		return AgenticEstimateResult{}, err
+	}
+
+	result := AgenticEstimateResult{
+		Profile:                      e.tokenizer.Profile(),
+		TokenizerVersion:             e.tokenizer.Version(),
+		EstimatorVersion:             EstimatorVersionAgenticOpenAIResponsesV2,
+		FixedOverhead:                fixedRequestOverhead + tokensPerReplyPriming,
+		MessageCount:                 len(messages),
+		ImmediateToolCount:           len(exposure.Immediate),
+		DeferredToolCount:            deferredCount,
+		MaxLoadedToolCount:           maxLoaded,
+		SystemTokens:                 core.systemTokens,
+		MessagesTokens:               core.messageTokens,
+		ImmediateToolsTokens:         core.immediateTokens,
+		DeferredMetadataTokens:       0,
+		DynamicToolLoadReserveTokens: reserve,
+		FramingTokens:                core.framingTokens,
+	}
+	if err := finishAgenticEstimate(&result); err != nil {
+		return AgenticEstimateResult{}, err
+	}
+	return result, nil
+}
+
+func (e *Estimator) estimateAgenticCarryAll(
+	system string,
+	exposure ToolExposureEstimate,
+	messages []Message,
+) (AgenticEstimateResult, error) {
+	if len(exposure.DeferredMetadata) != 0 || len(exposure.LoadCandidates) != 0 {
+		return AgenticEstimateResult{}, fmt.Errorf("%w: carry_all forbids deferred tools", ErrAgenticEstimatorInvalid)
+	}
+	if exposure.MaxLoadedTools != 0 {
+		return AgenticEstimateResult{}, fmt.Errorf("%w: carry_all MaxLoadedTools must be 0", ErrAgenticEstimatorInvalid)
+	}
+
+	core, err := e.estimateAgenticTextAndImmediate(system, exposure.Immediate, messages)
+	if err != nil {
+		return AgenticEstimateResult{}, err
+	}
+	result := AgenticEstimateResult{
+		Profile:                      e.tokenizer.Profile(),
+		TokenizerVersion:             e.tokenizer.Version(),
+		EstimatorVersion:             EstimatorVersionAgenticOpenAIResponsesV2,
+		FixedOverhead:                fixedRequestOverhead + tokensPerReplyPriming,
+		MessageCount:                 len(messages),
+		ImmediateToolCount:           len(exposure.Immediate),
+		DeferredToolCount:            0,
+		MaxLoadedToolCount:           0,
+		SystemTokens:                 core.systemTokens,
+		MessagesTokens:               core.messageTokens,
+		ImmediateToolsTokens:         core.immediateTokens,
+		DeferredMetadataTokens:       0,
+		DynamicToolLoadReserveTokens: 0,
+		FramingTokens:                core.framingTokens,
+	}
+	if err := finishAgenticEstimate(&result); err != nil {
+		return AgenticEstimateResult{}, err
+	}
+	return result, nil
+}
+
+func (e *Estimator) estimateAgenticNone(
+	system string,
+	exposure ToolExposureEstimate,
+	messages []Message,
+) (AgenticEstimateResult, error) {
+	if len(exposure.Immediate) != 0 || len(exposure.DeferredMetadata) != 0 || len(exposure.LoadCandidates) != 0 {
+		return AgenticEstimateResult{}, fmt.Errorf("%w: none forbids tools", ErrAgenticEstimatorInvalid)
+	}
+	if exposure.MaxLoadedTools != 0 {
+		return AgenticEstimateResult{}, fmt.Errorf("%w: none MaxLoadedTools must be 0", ErrAgenticEstimatorInvalid)
+	}
+
+	core, err := e.estimateAgenticTextAndImmediate(system, nil, messages)
+	if err != nil {
+		return AgenticEstimateResult{}, err
+	}
+	result := AgenticEstimateResult{
+		Profile:                      e.tokenizer.Profile(),
+		TokenizerVersion:             e.tokenizer.Version(),
+		EstimatorVersion:             EstimatorVersionAgenticOpenAIResponsesV2,
+		FixedOverhead:                fixedRequestOverhead + tokensPerReplyPriming,
+		MessageCount:                 len(messages),
+		ImmediateToolCount:           0,
+		DeferredToolCount:            0,
+		MaxLoadedToolCount:           0,
+		SystemTokens:                 core.systemTokens,
+		MessagesTokens:               core.messageTokens,
+		ImmediateToolsTokens:         0,
+		DeferredMetadataTokens:       0,
+		DynamicToolLoadReserveTokens: 0,
+		FramingTokens:                core.framingTokens,
+	}
+	if err := finishAgenticEstimate(&result); err != nil {
+		return AgenticEstimateResult{}, err
+	}
+	return result, nil
+}
+
+type agenticTextImmediate struct {
+	systemTokens    int64
+	messageTokens   int64
+	immediateTokens int64
+	framingTokens   int64
+}
+
+func (e *Estimator) estimateAgenticTextAndImmediate(
+	system string,
+	immediate []ToolSchema,
+	messages []Message,
+) (agenticTextImmediate, error) {
+	var out agenticTextImmediate
+	sysTokens, err := e.estimateMessage(Message{Role: RoleSystem, Content: system})
+	if err != nil {
+		return agenticTextImmediate{}, err
+	}
+	if strings.TrimSpace(system) != "" {
+		out.systemTokens = sysTokens
+	}
+
+	var msgTotal int64
+	for _, msg := range messages {
+		n, err := e.estimateMessage(msg)
+		if err != nil {
+			return agenticTextImmediate{}, err
+		}
+		msgTotal, err = addInt64(msgTotal, n)
+		if err != nil {
+			return agenticTextImmediate{}, err
+		}
+	}
+	out.messageTokens = msgTotal
+
+	var immediateTotal int64
+	for _, tool := range immediate {
+		n, err := e.estimateTool(tool)
+		if err != nil {
+			return agenticTextImmediate{}, err
+		}
+		immediateTotal, err = addInt64(immediateTotal, n)
+		if err != nil {
+			return agenticTextImmediate{}, err
+		}
+	}
+	out.immediateTokens = immediateTotal
+
+	framing := int64(0)
+	if strings.TrimSpace(system) != "" {
+		framing += tokensPerMessage
+	}
+	framing, err = addInt64(framing, tokensPerMessage*int64(len(messages)))
+	if err != nil {
+		return agenticTextImmediate{}, err
+	}
+	framing, err = addInt64(framing, tokensPerMessage*int64(len(immediate)))
+	if err != nil {
+		return agenticTextImmediate{}, err
+	}
+	out.framingTokens = framing
+	return out, nil
+}
+
+func finishAgenticEstimate(result *AgenticEstimateResult) error {
+	toolsSum, err := addInt64(result.ImmediateToolsTokens, result.DeferredMetadataTokens)
+	if err != nil {
+		return err
+	}
+	toolsSum, err = addInt64(toolsSum, result.DynamicToolLoadReserveTokens)
+	if err != nil {
+		return err
+	}
+	result.ToolsTokens = toolsSum
+
+	total, err := addInt64(result.SystemTokens, result.MessagesTokens)
+	if err != nil {
+		return err
+	}
+	total, err = addInt64(total, result.ToolsTokens)
+	if err != nil {
+		return err
+	}
+	total, err = addInt64(total, result.FixedOverhead)
+	if err != nil {
+		return err
+	}
+	result.TotalTokens = total
+
+	visible, err := addInt64(result.SystemTokens, result.MessagesTokens)
+	if err != nil {
+		return err
+	}
+	visible, err = addInt64(visible, result.ImmediateToolsTokens)
+	if err != nil {
+		return err
+	}
+	visible, err = addInt64(visible, result.DeferredMetadataTokens)
+	if err != nil {
+		return err
+	}
+	visible, err = addInt64(visible, result.FixedOverhead)
+	if err != nil {
+		return err
+	}
+	result.InitialVisibleTokens = visible
+	return nil
+}
+
+func derivePlatformMaxLoadedToolCount(deferredCount int) int {
+	if deferredCount <= 0 {
+		return 0
+	}
+	if deferredCount > AgenticMaxLoadedToolsPerSearch {
+		return AgenticMaxLoadedToolsPerSearch
+	}
+	return deferredCount
+}
+
+// estimatePlatformBoundedReserve is the worst-case largest maxLoaded full
+// schemas plus one search call/result and one Responses turn.
+func (e *Estimator) estimatePlatformBoundedReserve(exposure ToolExposureEstimate, maxLoaded int) (int64, error) {
+	if maxLoaded <= 0 {
+		return 0, nil
+	}
+	type scored struct {
+		name   string
+		tokens int64
+	}
+	scores := make([]scored, 0, len(exposure.LoadCandidates))
+	for _, cand := range exposure.LoadCandidates {
+		n, err := e.estimateTool(cand)
+		if err != nil {
+			return 0, err
+		}
+		scores = append(scores, scored{name: strings.TrimSpace(cand.Name), tokens: n})
+	}
+	sort.SliceStable(scores, func(i, j int) bool {
+		if scores[i].tokens != scores[j].tokens {
+			return scores[i].tokens > scores[j].tokens
+		}
+		return scores[i].name < scores[j].name
+	})
+	take := maxLoaded
+	if take > len(scores) {
+		take = len(scores)
+	}
+	var schemaReserve int64
+	for i := 0; i < take; i++ {
+		var err error
+		schemaReserve, err = addInt64(schemaReserve, scores[i].tokens)
+		if err != nil {
+			return 0, err
+		}
+	}
+	total, err := addInt64(schemaReserve, agenticSearchCallOutputGroupTokens)
+	if err != nil {
+		return 0, err
+	}
+	total, err = addInt64(total, agenticResponsesTurnFramingTokens)
+	if err != nil {
+		return 0, err
+	}
+	return total, nil
 }
 
 // DeriveMaxLoadedToolCount returns min(deferredCount, 5*8=40). Platform-frozen.
@@ -556,11 +881,16 @@ type PromptCacheKeyInput struct {
 	PromptRevisionHash string
 	CatalogDigest      string
 	AdapterVersion     string
+	// DisclosureMode is an exact contextwindow enum. Empty keeps the v1 key.
+	DisclosureMode string
 }
 
 // BuildAgenticPromptCacheKey builds:
 //
 //	aw:agentic:v1:<sha256(provider_protocol|model_config_id|model_lock_version|prompt_revision_hash|catalog_digest|adapter_version)>
+//
+// When DisclosureMode is a non-empty exact enum the prefix is aw:agentic:v2:
+// and DisclosureMode is appended to the hash payload.
 //
 // Strict canonical inputs only:
 //   - ProviderProtocol must be exactly openai-responses-v1
@@ -569,6 +899,7 @@ type PromptCacheKeyInput struct {
 //   - ModelLockVersion > 0
 //   - PromptRevisionHash and CatalogDigest must be exact lowercase 64-hex
 //     (no whitespace/case normalization)
+//   - DisclosureMode empty or exact enum (no whitespace)
 //
 // No workspace/run/user/session/name/time components.
 func BuildAgenticPromptCacheKey(in PromptCacheKeyInput) (string, error) {
@@ -590,16 +921,34 @@ func BuildAgenticPromptCacheKey(in PromptCacheKeyInput) (string, error) {
 	if !isExactLowerHex64(in.CatalogDigest) {
 		return "", fmt.Errorf("%w: catalog_digest must be exact lowercase 64-hex", ErrAgenticEstimatorInvalid)
 	}
-	payload := strings.Join([]string{
+	if err := validatePromptCacheDisclosureMode(in.DisclosureMode); err != nil {
+		return "", err
+	}
+	fields := []string{
 		in.ProviderProtocol,
 		in.ModelConfigID,
 		fmt.Sprintf("%d", in.ModelLockVersion),
 		in.PromptRevisionHash,
 		in.CatalogDigest,
 		in.AdapterVersion,
-	}, "|")
+	}
+	prefix := "aw:agentic:v1:"
+	if in.DisclosureMode != "" {
+		fields = append(fields, in.DisclosureMode)
+		prefix = "aw:agentic:v2:"
+	}
+	payload := strings.Join(fields, "|")
 	sum := sha256.Sum256([]byte(payload))
-	return "aw:agentic:v1:" + hex.EncodeToString(sum[:]), nil
+	return prefix + hex.EncodeToString(sum[:]), nil
+}
+
+func validatePromptCacheDisclosureMode(mode string) error {
+	switch mode {
+	case "", DisclosureModeClientBounded, DisclosureModePlatformBounded, DisclosureModeCarryAll, DisclosureModeNone:
+		return nil
+	default:
+		return fmt.Errorf("%w: disclosure mode must be an exact enum", ErrAgenticEstimatorInvalid)
+	}
 }
 
 func isExactLowerHex64(v string) bool {

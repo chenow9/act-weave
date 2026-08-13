@@ -266,6 +266,142 @@ func TestContextAssemblyAgenticValidation(t *testing.T) {
 	}
 }
 
+func TestContextAssemblyV2FormulaRejects(t *testing.T) {
+	testDatabase := dbtest.New(t)
+	testDatabase.MigrateToLatest(t)
+	db := testDatabase.Open(t)
+	const (
+		owner = "b08f1f2e-7b5a-7c3d-8e9f-123456789031"
+		ws    = "b08f1f2e-7b5a-7c3d-8e9f-123456789032"
+		model = "b08f1f2e-7b5a-7c3d-8e9f-123456789033"
+		agent = "b08f1f2e-7b5a-7c3d-8e9f-123456789034"
+		hash  = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	)
+	execSQL(t, db, `INSERT INTO users(id,username,display_name) VALUES($1,'asm4.owner','A')`, owner)
+	execSQL(t, db, `INSERT INTO workspaces(id,slug,display_name,mode,owner_user_id,created_by,updated_by) VALUES($1,'asm4','A','SANDBOX',$2,$2,$2)`, ws, owner)
+	execSQL(t, db, `INSERT INTO model_configs(id,workspace_id,name,provider,api_base,model_name,created_by,updated_by) VALUES($1,$2,'m','openai','https://x','m',$3,$3)`, model, ws, owner)
+	execSQL(t, db, `INSERT INTO agents(id,workspace_id,name,model_config_id,created_by,updated_by) VALUES($1,$2,'a',$3,$4,$4)`, agent, ws, model, owner)
+
+	repo, err := execution.NewContextAssemblyRepository(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	base := execution.ContextAssemblyRecord{
+		WorkspaceID: ws, Mode: "token_window",
+		PolicySnapshotHash: hash, ModelSnapshotHash: hash, CapabilitySnapshotHash: hash, AgentSnapshotHash: hash,
+		EstimatorProfile: "o200k_base", EstimatorVersion: "contextwindow-estimator.agentic-openai-responses.v2",
+		HardInputCeilingTokens: 1000, OutputReserveTokens: 100, SafetyMarginTokens: 10,
+		SystemPromptHash: hash, IncludedSegments: json.RawMessage(`[]`), EstimatedTotalTokens: 50,
+		ToolCatalogDigest: hash,
+	}
+	cases := []struct {
+		name string
+		run  string
+		mod  func(*execution.ContextAssemblyRecord)
+	}{
+		{
+			name: "platform_metadata_nonzero",
+			run:  "b08f1f2e-7b5a-7c3d-8e9f-123456789035",
+			mod: func(rec *execution.ContextAssemblyRecord) {
+				rec.ToolSearchMode = execution.AssemblyToolSearchModePlatformBounded
+				rec.ImmediateToolCount = 1
+				rec.DeferredToolCount = 9
+				rec.MaxLoadedToolCount = 5
+				rec.ImmediateToolsTokens = 2
+				rec.DeferredMetadataTokens = 4
+				rec.DynamicToolLoadReserveTokens = 10
+				rec.ToolsOverheadTokens = 16
+			},
+		},
+		{
+			name: "platform_max_loaded_not_least_5",
+			run:  "b08f1f2e-7b5a-7c3d-8e9f-123456789036",
+			mod: func(rec *execution.ContextAssemblyRecord) {
+				rec.ToolSearchMode = execution.AssemblyToolSearchModePlatformBounded
+				rec.ImmediateToolCount = 1
+				rec.DeferredToolCount = 9
+				rec.MaxLoadedToolCount = 9
+				rec.ImmediateToolsTokens = 2
+				rec.DeferredMetadataTokens = 0
+				rec.DynamicToolLoadReserveTokens = 10
+				rec.ToolsOverheadTokens = 12
+			},
+		},
+		{
+			name: "platform_estimator_v1",
+			run:  "b08f1f2e-7b5a-7c3d-8e9f-123456789037",
+			mod: func(rec *execution.ContextAssemblyRecord) {
+				rec.EstimatorVersion = "contextwindow-estimator.agentic-openai-responses.v1"
+				rec.ToolSearchMode = execution.AssemblyToolSearchModePlatformBounded
+				rec.ImmediateToolCount = 1
+				rec.DeferredToolCount = 9
+				rec.MaxLoadedToolCount = 5
+				rec.ImmediateToolsTokens = 2
+				rec.DeferredMetadataTokens = 0
+				rec.DynamicToolLoadReserveTokens = 10
+				rec.ToolsOverheadTokens = 12
+			},
+		},
+		{
+			name: "carry_all_deferred_nonzero",
+			run:  "b08f1f2e-7b5a-7c3d-8e9f-123456789038",
+			mod: func(rec *execution.ContextAssemblyRecord) {
+				rec.ToolSearchMode = execution.AssemblyToolSearchModeCarryAll
+				rec.ImmediateToolCount = 4
+				rec.DeferredToolCount = 2
+				rec.MaxLoadedToolCount = 0
+				rec.ImmediateToolsTokens = 8
+				rec.DeferredMetadataTokens = 0
+				rec.DynamicToolLoadReserveTokens = 0
+				rec.ToolsOverheadTokens = 8
+			},
+		},
+		{
+			name: "carry_all_reserve_nonzero",
+			run:  "b08f1f2e-7b5a-7c3d-8e9f-123456789039",
+			mod: func(rec *execution.ContextAssemblyRecord) {
+				rec.ToolSearchMode = execution.AssemblyToolSearchModeCarryAll
+				rec.ImmediateToolCount = 4
+				rec.DeferredToolCount = 0
+				rec.MaxLoadedToolCount = 0
+				rec.ImmediateToolsTokens = 8
+				rec.DeferredMetadataTokens = 0
+				rec.DynamicToolLoadReserveTokens = 3
+				rec.ToolsOverheadTokens = 8
+			},
+		},
+		{
+			name: "client_bounded_estimator_v2",
+			run:  "b08f1f2e-7b5a-7c3d-8e9f-12345678903a",
+			mod: func(rec *execution.ContextAssemblyRecord) {
+				rec.ToolSearchMode = execution.AssemblyToolSearchModeClientBounded
+				rec.ImmediateToolCount = 0
+				rec.DeferredToolCount = 3
+				rec.MaxLoadedToolCount = 3
+				rec.ImmediateToolsTokens = 0
+				rec.DeferredMetadataTokens = 5
+				rec.DynamicToolLoadReserveTokens = 10
+				rec.ToolsOverheadTokens = 15
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			execSQL(t, db, `
+				INSERT INTO agent_runs(id,workspace_id,agent_id,status,trigger_type,triggered_by_type,triggered_by_id,trace_id,model_snapshot,capability_snapshot)
+				VALUES($1,$2,$3,'RUNNING','CHAT','USER',$4,'t','{}','{}')`, tc.run, ws, agent, owner)
+			rec := base
+			rec.RunID = tc.run
+			tc.mod(&rec)
+			rec.AssemblyDigest = execution.ComputeAssemblyDigest(rec)
+			if _, err := repo.InsertImmutable(context.Background(), rec); err == nil {
+				t.Fatal("expected v2 formula reject")
+			}
+		})
+	}
+}
+
 func TestContextAssemblyGetByRunValidatesAndClassicV1Digest(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	testDatabase.MigrateToLatest(t)

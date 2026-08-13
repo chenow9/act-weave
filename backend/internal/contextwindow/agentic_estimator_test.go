@@ -160,6 +160,31 @@ func TestAgenticEstimatorRejectsCallerLoweredMaxLoaded(t *testing.T) {
 	}
 }
 
+func TestAgenticEstimatorV1RejectsLoweredMaxLoadedToFive(t *testing.T) {
+	est, err := contextwindow.NewEstimator(contextwindow.ProfileByteUpperBound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var meta []contextwindow.ToolMetadata
+	var full []contextwindow.ToolSchema
+	for i := 0; i < 10; i++ {
+		name := fmt.Sprintf("tool_%02d", i)
+		meta = append(meta, contextwindow.ToolMetadata{Name: name, Description: "d"})
+		full = append(full, contextwindow.ToolSchema{Name: name, Description: "d", Parameters: json.RawMessage(`{}`)})
+	}
+	if _, err := est.EstimateAgenticRequest("", contextwindow.ToolExposureEstimate{
+		DeferredMetadata: meta, LoadCandidates: full, MaxLoadedTools: 5,
+	}, nil); err == nil || !errors.Is(err, contextwindow.ErrAgenticEstimatorInvalid) {
+		t.Fatalf("v1 must reject MaxLoadedTools=5 when derived is 10, got %v", err)
+	}
+	if _, err := est.EstimateAgenticRequestV2("", contextwindow.ToolExposureEstimate{
+		DeferredMetadata: meta, LoadCandidates: full, MaxLoadedTools: 5,
+		DisclosureMode: contextwindow.DisclosureModeClientBounded,
+	}, nil); err == nil || !errors.Is(err, contextwindow.ErrAgenticEstimatorInvalid) {
+		t.Fatalf("v2 client_bounded must still reject MaxLoadedTools=5, got %v", err)
+	}
+}
+
 func TestAgenticEstimatorRejectsIdentityMismatch(t *testing.T) {
 	est, err := contextwindow.NewEstimator(contextwindow.ProfileByteUpperBound)
 	if err != nil {
@@ -552,6 +577,34 @@ func TestPromptCacheKeyBuilder(t *testing.T) {
 	if err != nil || kAgain != k1 {
 		t.Fatalf("stability broken: %v %s vs %s", err, kAgain, k1)
 	}
+
+	in.DisclosureMode = contextwindow.DisclosureModePlatformBounded
+	v2a, err := contextwindow.BuildAgenticPromptCacheKey(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(v2a, "aw:agentic:v2:") {
+		t.Fatalf("v2 prefix: %s", v2a)
+	}
+	if len(v2a) != len("aw:agentic:v2:")+64 {
+		t.Fatalf("v2 key length: %s", v2a)
+	}
+	in.DisclosureMode = contextwindow.DisclosureModeCarryAll
+	v2b, err := contextwindow.BuildAgenticPromptCacheKey(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v2b == v2a || !strings.HasPrefix(v2b, "aw:agentic:v2:") {
+		t.Fatalf("DisclosureMode must rotate v2 key: %s vs %s", v2a, v2b)
+	}
+	in.DisclosureMode = " platform_bounded"
+	if _, err := contextwindow.BuildAgenticPromptCacheKey(in); err == nil || !errors.Is(err, contextwindow.ErrAgenticEstimatorInvalid) {
+		t.Fatalf("whitespace DisclosureMode must fail, got %v", err)
+	}
+	in.DisclosureMode = "hosted"
+	if _, err := contextwindow.BuildAgenticPromptCacheKey(in); err == nil || !errors.Is(err, contextwindow.ErrAgenticEstimatorInvalid) {
+		t.Fatalf("unknown DisclosureMode must fail, got %v", err)
+	}
 }
 
 func TestAgenticEstimatorOverflowAndBounds(t *testing.T) {
@@ -583,6 +636,169 @@ func TestDeriveMaxLoadedToolCount(t *testing.T) {
 	}
 	if contextwindow.DeriveMaxLoadedToolCount(500) != contextwindow.AgenticMaxLoadedDefinitionsPerRun {
 		t.Fatal("500")
+	}
+}
+
+func TestEstimateAgenticRequestV2PlatformBounded(t *testing.T) {
+	est, err := contextwindow.NewEstimator(contextwindow.ProfileByteUpperBound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var meta []contextwindow.ToolMetadata
+	var full []contextwindow.ToolSchema
+	for i := 0; i < 7; i++ {
+		name := fmt.Sprintf("biz_%02d", i)
+		params := json.RawMessage(fmt.Sprintf(
+			`{"type":"object","properties":{"p":{"type":"string","description":"%s"}}}`,
+			strings.Repeat("x", 80-i*8),
+		))
+		meta = append(meta, contextwindow.ToolMetadata{Name: name, Description: "d"})
+		full = append(full, contextwindow.ToolSchema{Name: name, Description: "d", Parameters: params})
+	}
+	search := contextwindow.ToolSchema{
+		Name: "actweave_catalog_search", Description: "search", Parameters: json.RawMessage(`{}`),
+	}
+	got, err := est.EstimateAgenticRequestV2("sys", contextwindow.ToolExposureEstimate{
+		Immediate:        []contextwindow.ToolSchema{search},
+		DeferredMetadata: meta,
+		LoadCandidates:   full,
+		MaxLoadedTools:   5,
+		DisclosureMode:   contextwindow.DisclosureModePlatformBounded,
+	}, []contextwindow.Message{{Role: contextwindow.RoleUser, Content: "hi"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.EstimatorVersion != contextwindow.EstimatorVersionAgenticOpenAIResponsesV2 {
+		t.Fatalf("version=%s", got.EstimatorVersion)
+	}
+	if got.DeferredMetadataTokens != 0 {
+		t.Fatalf("deferred_metadata=%d want 0", got.DeferredMetadataTokens)
+	}
+	if got.DeferredToolCount != 7 {
+		t.Fatalf("deferred_count=%d want 7", got.DeferredToolCount)
+	}
+	if got.MaxLoadedToolCount != 5 {
+		t.Fatalf("max_loaded=%d want LEAST(7,5)=5", got.MaxLoadedToolCount)
+	}
+	if got.ImmediateToolCount != 1 {
+		t.Fatalf("immediate_count=%d", got.ImmediateToolCount)
+	}
+	if got.ToolsTokens != got.ImmediateToolsTokens+got.DeferredMetadataTokens+got.DynamicToolLoadReserveTokens {
+		t.Fatalf("overhead sum: %+v", got)
+	}
+
+	var top5 int64
+	for i := 0; i < 5; i++ {
+		one, err := est.EstimateAgenticRequestV2("", contextwindow.ToolExposureEstimate{
+			Immediate:      []contextwindow.ToolSchema{full[i]},
+			DisclosureMode: contextwindow.DisclosureModeCarryAll,
+		}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		top5 += one.ImmediateToolsTokens
+	}
+	wantReserve := top5 + 96 + 32
+	if got.DynamicToolLoadReserveTokens != wantReserve {
+		t.Fatalf("reserve=%d want %d (top-5 full schemas + 1 search + 1 turn)", got.DynamicToolLoadReserveTokens, wantReserve)
+	}
+
+	three, err := est.EstimateAgenticRequestV2("", contextwindow.ToolExposureEstimate{
+		DeferredMetadata: meta[:3],
+		LoadCandidates:   full[:3],
+		DisclosureMode:   contextwindow.DisclosureModePlatformBounded,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if three.MaxLoadedToolCount != 3 || three.DeferredMetadataTokens != 0 || three.DeferredToolCount != 3 {
+		t.Fatalf("LEAST(3,5) formula: %+v", three)
+	}
+}
+
+func TestEstimateAgenticRequestV2CarryAllAndNone(t *testing.T) {
+	est, err := contextwindow.NewEstimator(contextwindow.ProfileByteUpperBound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := []contextwindow.ToolSchema{
+		{Name: "a", Description: "da", Parameters: json.RawMessage(`{"type":"object"}`)},
+		{Name: "b", Description: "db", Parameters: json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`)},
+	}
+	got, err := est.EstimateAgenticRequestV2("sys", contextwindow.ToolExposureEstimate{
+		Immediate:      tools,
+		DisclosureMode: contextwindow.DisclosureModeCarryAll,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.EstimatorVersion != contextwindow.EstimatorVersionAgenticOpenAIResponsesV2 {
+		t.Fatalf("version=%s", got.EstimatorVersion)
+	}
+	if got.DeferredToolCount != 0 || got.MaxLoadedToolCount != 0 || got.DynamicToolLoadReserveTokens != 0 || got.DeferredMetadataTokens != 0 {
+		t.Fatalf("carry_all zeros: %+v", got)
+	}
+	if got.ToolsTokens != got.ImmediateToolsTokens || got.ImmediateToolsTokens <= 0 {
+		t.Fatalf("carry_all overhead must be immediate only: %+v", got)
+	}
+
+	none, err := est.EstimateAgenticRequestV2("sys", contextwindow.ToolExposureEstimate{
+		DisclosureMode: contextwindow.DisclosureModeNone,
+	}, []contextwindow.Message{{Role: contextwindow.RoleUser, Content: "hi"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if none.EstimatorVersion != contextwindow.EstimatorVersionAgenticOpenAIResponsesV2 {
+		t.Fatalf("none version=%s", none.EstimatorVersion)
+	}
+	if none.ImmediateToolCount != 0 || none.DeferredToolCount != 0 || none.MaxLoadedToolCount != 0 ||
+		none.ToolsTokens != 0 || none.DynamicToolLoadReserveTokens != 0 {
+		t.Fatalf("none must be zero tools: %+v", none)
+	}
+
+	if _, err := est.EstimateAgenticRequestV2("", contextwindow.ToolExposureEstimate{
+		Immediate: tools, DisclosureMode: contextwindow.DisclosureModeNone,
+	}, nil); err == nil || !errors.Is(err, contextwindow.ErrAgenticEstimatorInvalid) {
+		t.Fatalf("none with tools must fail, got %v", err)
+	}
+	if _, err := est.EstimateAgenticRequestV2("", contextwindow.ToolExposureEstimate{
+		DeferredMetadata: []contextwindow.ToolMetadata{{Name: "a", Description: "d"}},
+		LoadCandidates:   []contextwindow.ToolSchema{tools[0]},
+		DisclosureMode:   contextwindow.DisclosureModeCarryAll,
+	}, nil); err == nil || !errors.Is(err, contextwindow.ErrAgenticEstimatorInvalid) {
+		t.Fatalf("carry_all with deferred must fail, got %v", err)
+	}
+}
+
+func TestEstimateAgenticRequestV2UnknownModeAndDelegate(t *testing.T) {
+	est, err := contextwindow.NewEstimator(contextwindow.ProfileByteUpperBound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"hosted", " client_bounded", "CLIENT_BOUNDED", "platform-bounded"} {
+		if _, err := est.EstimateAgenticRequestV2("", contextwindow.ToolExposureEstimate{DisclosureMode: mode}, nil); err == nil || !errors.Is(err, contextwindow.ErrAgenticEstimatorInvalid) {
+			t.Fatalf("mode %q must fail closed, got %v", mode, err)
+		}
+	}
+	v1, err := est.EstimateAgenticRequest("sys", contextwindow.ToolExposureEstimate{}, []contextwindow.Message{
+		{Role: contextwindow.RoleUser, Content: "hi"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"", contextwindow.DisclosureModeClientBounded} {
+		got, err := est.EstimateAgenticRequestV2("sys", contextwindow.ToolExposureEstimate{DisclosureMode: mode}, []contextwindow.Message{
+			{Role: contextwindow.RoleUser, Content: "hi"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.EstimatorVersion != contextwindow.EstimatorVersionAgenticOpenAIResponsesV1 {
+			t.Fatalf("mode %q must stay on v1, got %s", mode, got.EstimatorVersion)
+		}
+		if got.TotalTokens != v1.TotalTokens {
+			t.Fatalf("mode %q tokens %d != v1 %d", mode, got.TotalTokens, v1.TotalTokens)
+		}
 	}
 }
 
