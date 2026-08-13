@@ -59,9 +59,10 @@ func isLoopbackRemoteAddr(remoteAddr string) bool {
 	return ip.IsLoopback()
 }
 
-// aapMetricsHandler exposes process-local AAP + smart-dag counters as Prometheus text.
+// aapMetricsHandler exposes process-local AAP, smart-dag, prompt, and
+// disclosure counters as Prometheus text.
 func aapMetricsHandler(c *gin.Context) {
 	c.Header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	c.Header("Cache-Control", "no-store")
-	c.String(http.StatusOK, metrics.Default().PrometheusText()+metrics.SmartDag().PrometheusText()+metrics.DefaultPrompt().RenderPromptMetrics())
+	c.String(http.StatusOK, metrics.Default().PrometheusText()+metrics.SmartDag().PrometheusText()+metrics.DefaultPrompt().RenderPromptMetrics()+metrics.Disclosure().PrometheusText())
 }

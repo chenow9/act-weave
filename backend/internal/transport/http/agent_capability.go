@@ -12,6 +12,7 @@ import (
 	"actweave/backend/internal/agent"
 	"actweave/backend/internal/authz"
 	"actweave/backend/internal/capability"
+	"actweave/backend/internal/metrics"
 	"actweave/backend/internal/modelconfig"
 
 	"github.com/gin-gonic/gin"
@@ -451,12 +452,17 @@ func (r *AgentCapabilityRoutes) assertUpdateModelTools(ctx context.Context, work
 			return err
 		}
 	}
-	return modelconfig.AssertAgentModelToolCompatibility(cfg, modelconfig.AgentModelToolCheck{
+	err = modelconfig.AssertAgentModelToolCompatibility(cfg, modelconfig.AgentModelToolCheck{
 		AgentID:            agentID,
 		CatalogCount:       len(descriptors),
 		HasDelegationEdges: hasEdges,
 		RequireVerified:    true,
 	})
+	if errors.Is(err, modelconfig.ErrToolCarryAllTooLarge) {
+		metrics.Disclosure().ObserveRejected(metrics.DisclosureCodeCarryAllTooLarge)
+		metrics.Disclosure().ObserveCarryAllRejected(metrics.DisclosureGateBind)
+	}
+	return err
 }
 
 func (r *AgentCapabilityRoutes) deleteAgent(c *gin.Context) {

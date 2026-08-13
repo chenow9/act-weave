@@ -130,3 +130,11 @@ runtime:
       allowAllWorkspaces: false
       workspaceIds: []
       rolloutVersion: context-compaction-default
+  # platform_bounded / carry_all only. Omitted key stays Enabled=false
+  # (SessionContext semantics; not promoted by applyRuntimeDefaults).
+  # Native client_bounded is unaffected. client_bounded is the only native
+  # production mode; platform_bounded and carry_all are additional Agentic
+  # modes. Readiness accepts v1 or v2 three-tier capabilities.
+  toolDisclosure:
+    enabled: true
+    allowAllWorkspaces: true

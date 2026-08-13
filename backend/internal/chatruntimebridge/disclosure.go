@@ -3,10 +3,12 @@ package chatruntimebridge
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"actweave/backend/internal/contextwindow"
 	"actweave/backend/internal/einoruntime"
 	"actweave/backend/internal/execution"
+	"actweave/backend/internal/metrics"
 	"actweave/backend/internal/modelconfig"
 )
 
@@ -105,11 +107,19 @@ func (b *Bridge) resolveFrozenDisclosure(
 	}
 	mode, err := resolveDisclosureMode(caps, policy, catalog)
 	if err != nil {
+		if errors.Is(err, modelconfig.ErrToolCarryAllTooLarge) {
+			metrics.Disclosure().ObserveRejected(metrics.DisclosureCodeCarryAllTooLarge)
+			metrics.Disclosure().ObserveCarryAllRejected(metrics.DisclosureGateRunStart)
+		}
 		return "", "", err
 	}
 	if err := b.applyDisclosureRollout(workspaceID, mode); err != nil {
+		if errors.Is(err, modelconfig.ErrToolDisclosureNotRolledOut) {
+			metrics.Disclosure().ObserveRejected(metrics.DisclosureCodeNotRolledOut)
+		}
 		return "", "", err
 	}
+	metrics.Disclosure().ObserveModeRun(string(mode), caps.ToolCalling)
 	return mode, caps.ToolCalling, nil
 }
 

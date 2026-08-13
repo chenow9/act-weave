@@ -59,6 +59,7 @@ PostgreSQL is the source of truth for configuration, runs, protocol events, and 
 | LLM context compaction | `runtime.sessionContext.compaction.enabled: false`; enable gradually according to the runbook. |
 | Tool force publish | Available only to platform administrators when `tools.allowForcePublish` allows it; not the standard publishing path. |
 | A2A no-auth mode | Rejected by default; available for local testing only through an explicit environment switch. |
+| Tool disclosure (`platform_bounded` / `carry_all`) | Checked-in `backend/config.yaml` sets `runtime.toolDisclosure.enabled: true` and `allowAllWorkspaces: true`. Omitting the YAML key still loads as `enabled: false` (not promoted). `client_bounded` remains the only native production mode; `platform_bounded` / `carry_all` are additional Agentic modes. Readiness accepts v1 or v2 three-tier capabilities. |
 
 ## Rollout checklist
 

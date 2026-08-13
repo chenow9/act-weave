@@ -11,6 +11,8 @@ import (
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"actweave/backend/internal/metrics"
 )
 
 const (
@@ -246,18 +248,22 @@ func (t *boundedPlatformCatalogSearchExecutor) InvokableRun(
 	}
 	// At-cap must not select new names — return stable JSON before the helper.
 	if len(already) >= MaxLoadedToolsPerSearch {
+		observePlatformSearchLoadCap()
 		return platformSearchLoadCapJSON(), nil
 	}
 	matches, newlyLoaded, err := executeBoundedToolSearch(t.catalog, argumentsInJSON, already, MaxLoadedToolsPerSearch)
 	if err != nil {
 		if errIsToolSearchLoadCap(err) {
+			observePlatformSearchLoadCap()
 			return platformSearchLoadCapJSON(), nil
 		}
+		metrics.Disclosure().ObserveSearchCall(metrics.DisclosureModePlatformBounded, metrics.DisclosureOutcomeError)
 		return "", err
 	}
 	if len(newlyLoaded) > 0 {
 		merged := mergeLoadedDeferredToolNames(already, newlyLoaded)
 		if len(merged) > MaxLoadedToolsPerSearch {
+			observePlatformSearchLoadCap()
 			return platformSearchLoadCapJSON(), nil
 		}
 		storeLoadedDeferredToolNames(ctx, merged)
@@ -279,9 +285,17 @@ func (t *boundedPlatformCatalogSearchExecutor) InvokableRun(
 		LoadedNames: names,
 	})
 	if err != nil {
+		metrics.Disclosure().ObserveSearchCall(metrics.DisclosureModePlatformBounded, metrics.DisclosureOutcomeError)
 		return "", fmt.Errorf("%w: marshal search result: %v", ErrToolSearchInvalidArgs, err)
 	}
+	metrics.Disclosure().ObserveSearchCall(metrics.DisclosureModePlatformBounded, metrics.DisclosureOutcomeOK)
+	metrics.Disclosure().ObserveSearchLoaded(metrics.DisclosureModePlatformBounded, len(names))
 	return string(payload), nil
+}
+
+func observePlatformSearchLoadCap() {
+	metrics.Disclosure().ObserveSearchCall(metrics.DisclosureModePlatformBounded, metrics.DisclosureOutcomeLoadCap)
+	metrics.Disclosure().ObserveRejected(metrics.DisclosureCodeSearchLoadCap)
 }
 
 func errIsToolSearchLoadCap(err error) bool {

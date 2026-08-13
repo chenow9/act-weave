@@ -14,6 +14,8 @@ import (
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"actweave/backend/internal/metrics"
 )
 
 // Client tool-search hard bounds (D3).
@@ -276,16 +278,20 @@ func (t *boundedClientToolSearchExecutor) InvokableRun(
 	}
 	matches, newlyLoaded, err := executeBoundedToolSearch(t.catalog, toolArgument.Text, already, MaxLoadedDefinitionsPerRun)
 	if err != nil {
+		observeClientSearchOutcome(err)
 		return nil, err
 	}
 	// Atomically update the run-local set before returning output.
 	if len(newlyLoaded) > 0 {
 		merged := mergeLoadedDeferredToolNames(already, newlyLoaded)
 		if len(merged) > MaxLoadedDefinitionsPerRun {
+			observeClientSearchOutcome(ErrToolSearchLoadCapExceeded)
 			return nil, fmt.Errorf("%w: cumulative %d > %d", ErrToolSearchLoadCapExceeded, len(merged), MaxLoadedDefinitionsPerRun)
 		}
 		storeLoadedDeferredToolNames(ctx, merged)
 	}
+	metrics.Disclosure().ObserveSearchCall(metrics.DisclosureModeClientBounded, metrics.DisclosureOutcomeOK)
+	metrics.Disclosure().ObserveSearchLoaded(metrics.DisclosureModeClientBounded, len(matches))
 	return &schema.ToolResult{
 		Parts: []schema.ToolOutputPart{{
 			Type: schema.ToolPartTypeToolSearchResult,
@@ -294,6 +300,15 @@ func (t *boundedClientToolSearchExecutor) InvokableRun(
 			},
 		}},
 	}, nil
+}
+
+func observeClientSearchOutcome(err error) {
+	if errors.Is(err, ErrToolSearchLoadCapExceeded) {
+		metrics.Disclosure().ObserveSearchCall(metrics.DisclosureModeClientBounded, metrics.DisclosureOutcomeLoadCap)
+		metrics.Disclosure().ObserveRejected(metrics.DisclosureCodeSearchLoadCap)
+		return
+	}
+	metrics.Disclosure().ObserveSearchCall(metrics.DisclosureModeClientBounded, metrics.DisclosureOutcomeError)
 }
 
 // executeBoundedToolSearch parses strict args, searches/selects, and returns

@@ -27,6 +27,9 @@ func TestAAPMetricsRouteExposesPrometheusText(t *testing.T) {
 	if !strings.Contains(body, "aap_token_issue_failure_total") {
 		t.Fatalf("missing token failure metric: %s", body)
 	}
+	if !strings.Contains(body, "agentic_disclosure_mode_runs_total") {
+		t.Fatalf("missing disclosure metric: %s", body)
+	}
 	if !strings.Contains(rec.Header().Get("Content-Type"), "text/plain") {
 		t.Fatalf("content-type=%q", rec.Header().Get("Content-Type"))
 	}

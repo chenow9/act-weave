@@ -14,6 +14,7 @@ import (
 	"actweave/backend/internal/authz"
 	"actweave/backend/internal/capability"
 	"actweave/backend/internal/connection"
+	"actweave/backend/internal/metrics"
 	"actweave/backend/internal/modelconfig"
 	"actweave/backend/internal/outboundidentity"
 	"actweave/backend/internal/provider"
@@ -572,6 +573,8 @@ func (r *ConfigurationRoutes) evaluateCarryAllCatalog(ctx context.Context, works
 		}
 		count := len(descriptors)
 		if count > modelconfig.CarryAllHardLimit {
+			metrics.Disclosure().ObserveRejected(metrics.DisclosureCodeCarryAllTooLarge)
+			metrics.Disclosure().ObserveCarryAllRejected(metrics.DisclosureGateSetDisclosure)
 			return nil, modelconfig.CarryAllTooLargeError{
 				AgentID: agentID,
 				Count:   count,

@@ -23,6 +23,7 @@ func TestRuntimeConfig(t *testing.T) {
 	t.Run("ModelVerificationTimeoutContract", testRuntimeModelVerificationTimeoutContract)
 	t.Run("ModelVerificationTimeoutLoadPaths", testRuntimeModelVerificationTimeoutLoadPaths)
 	t.Run("ToolDisclosureOmittedDeniesAllWorkspaces", testRuntimeToolDisclosureOmittedDeniesAllWorkspaces)
+	t.Run("ToolDisclosureExplicitEnable", testRuntimeToolDisclosureExplicitEnable)
 }
 
 func testRuntimeToolDisclosureOmittedDeniesAllWorkspaces(t *testing.T) {
@@ -40,6 +41,27 @@ func testRuntimeToolDisclosureOmittedDeniesAllWorkspaces(t *testing.T) {
 	}
 	if !loaded.Runtime.Agent.Enabled || !loaded.Runtime.Agent.AllowsWorkspace(ws) {
 		t.Fatal("agent promotion must still apply when toolDisclosure is omitted")
+	}
+}
+
+func testRuntimeToolDisclosureExplicitEnable(t *testing.T) {
+	yaml := validConfigYAML + `
+runtime:
+  toolDisclosure:
+    enabled: true
+    allowAllWorkspaces: true
+`
+	path := writeConfig(t, yaml)
+	loaded, err := Load(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded.Runtime.ToolDisclosure.Enabled || !loaded.Runtime.ToolDisclosure.AllowAllWorkspaces {
+		t.Fatalf("explicit enable must stick: %+v", loaded.Runtime.ToolDisclosure)
+	}
+	ws := "a0000000-0000-4000-8000-000000000001"
+	if !loaded.Runtime.ToolDisclosure.AllowsWorkspace(ws) {
+		t.Fatal("explicit allowAll must allow any workspace")
 	}
 }
 

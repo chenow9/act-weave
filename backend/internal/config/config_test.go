@@ -194,6 +194,17 @@ func TestCheckedInDevelopmentConfigurationIsValid(t *testing.T) {
 		t.Fatalf("checked-in modelVerification.timeoutSeconds=%d want %d",
 			loaded.Runtime.ModelVerification.TimeoutSeconds, DefaultModelVerificationTimeoutSeconds)
 	}
+	if !loaded.Runtime.ToolDisclosure.Enabled || !loaded.Runtime.ToolDisclosure.AllowAllWorkspaces {
+		t.Fatalf("checked-in toolDisclosure must be enabled + allowAll, got %+v", loaded.Runtime.ToolDisclosure)
+	}
+	if !loaded.Runtime.ToolDisclosure.AllowsWorkspace("a0000000-0000-4000-8000-000000000001") {
+		t.Fatal("checked-in toolDisclosure must allow any workspace")
+	}
+	if loaded.Runtime.SessionContext.Compaction.Enabled ||
+		loaded.Runtime.SessionContext.Compaction.Mode != "disabled" {
+		t.Fatalf("checked-in sessionContext.compaction must stay off, got %+v",
+			loaded.Runtime.SessionContext.Compaction)
+	}
 }
 
 func TestLoadRejectsUnknownFieldsAndMultipleDocuments(t *testing.T) {

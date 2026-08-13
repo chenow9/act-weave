@@ -25,6 +25,7 @@ import (
 	"actweave/backend/internal/agenticmsg"
 	"actweave/backend/internal/config"
 	"actweave/backend/internal/einoruntime"
+	"actweave/backend/internal/metrics"
 	"actweave/backend/internal/modelapi"
 	"actweave/backend/internal/modelconfig"
 )
@@ -141,14 +142,28 @@ func (verifier *modelConfigVerifier) Verify(ctx context.Context, config modelcon
 
 	// 1) Lightweight auth/connectivity probe (GET /models). Failure classifies
 	// auth/network; success alone is insufficient for VERIFIED.
+	authStart := time.Now()
 	if err := verifier.probeAuthConnectivity(ctx, config); err != nil {
+		observeVerificationPhase(metrics.DisclosurePhaseAuth, metrics.DisclosureOutcomeError, metrics.DisclosureToolCallingUnverified, time.Since(authStart))
+		observeVerificationResult(metrics.DisclosureOutcomeError, metrics.DisclosureToolCallingUnverified)
 		return modelconfig.AgenticCapabilities{}, err
 	}
+	observeVerificationPhase(metrics.DisclosurePhaseAuth, metrics.DisclosureOutcomeOK, metrics.DisclosureToolCallingUnverified, time.Since(authStart))
 
 	// 2–4) Responses streaming, then native client tool-search, then (on a
 	// capability miss only) ordinary function calling. ToolCalling is the only
 	// probe field the service uses; lock/digest/timestamp are stamped there.
-	return verifier.probeAgenticCapabilities(ctx, config)
+	caps, err := verifier.probeAgenticCapabilities(ctx, config)
+	if err != nil {
+		observeVerificationResult(metrics.DisclosureOutcomeError, metrics.DisclosureToolCallingUnverified)
+		return caps, err
+	}
+	calling := caps.ToolCalling
+	if calling == "" {
+		calling = metrics.DisclosureToolCallingUnverified
+	}
+	observeVerificationResult(metrics.DisclosureOutcomeOK, calling)
+	return caps, nil
 }
 
 func (verifier *modelConfigVerifier) probeAuthConnectivity(ctx context.Context, config modelconfig.Config) error {
@@ -244,18 +259,37 @@ func (verifier *modelConfigVerifier) probeAgenticCapabilities(ctx context.Contex
 	}
 
 	// --- Probe A: Responses streaming with fixed non-sensitive prompt ---
+	respStart := time.Now()
 	if err := verifier.probeResponsesStream(ctx, am); err != nil {
+		observeVerificationPhase(metrics.DisclosurePhaseResponses, metrics.DisclosureOutcomeError, metrics.DisclosureToolCallingUnverified, time.Since(respStart))
 		return modelconfig.AgenticCapabilities{}, err
 	}
+	observeVerificationPhase(metrics.DisclosurePhaseResponses, metrics.DisclosureOutcomeOK, metrics.DisclosureToolCallingUnverified, time.Since(respStart))
 
 	// --- Probe B: Client tool-search + echo function call (ordered contract) ---
+	searchStart := time.Now()
 	if err := verifier.probeClientToolSearch(ctx, am, mw, opts); err != nil {
 		if !isAgenticToolSearchCapabilityMiss(err) {
+			observeVerificationPhase(metrics.DisclosurePhaseToolSearch, metrics.DisclosureOutcomeError, metrics.DisclosureToolCallingUnverified, time.Since(searchStart))
 			return modelconfig.AgenticCapabilities{}, err
 		}
+		observeVerificationPhase(metrics.DisclosurePhaseToolSearch, metrics.DisclosureOutcomeSkipped, metrics.DisclosureToolCallingUnverified, time.Since(searchStart))
 		// Native search is not available; classify ordinary function calling.
-		return verifier.probeFunctionCalling(ctx, am, echoInfo)
+		fcStart := time.Now()
+		caps, fcErr := verifier.probeFunctionCalling(ctx, am, echoInfo)
+		if fcErr != nil {
+			observeVerificationPhase(metrics.DisclosurePhaseFunctionCalling, metrics.DisclosureOutcomeError, metrics.DisclosureToolCallingUnverified, time.Since(fcStart))
+			return caps, fcErr
+		}
+		calling := caps.ToolCalling
+		if calling == "" {
+			calling = metrics.DisclosureToolCallingNone
+		}
+		observeVerificationPhase(metrics.DisclosurePhaseFunctionCalling, metrics.DisclosureOutcomeOK, calling, time.Since(fcStart))
+		return caps, nil
 	}
+	observeVerificationPhase(metrics.DisclosurePhaseToolSearch, metrics.DisclosureOutcomeOK, metrics.DisclosureToolCallingNative, time.Since(searchStart))
+	observeVerificationPhase(metrics.DisclosurePhaseFunctionCalling, metrics.DisclosureOutcomeSkipped, metrics.DisclosureToolCallingNative, 0)
 	return modelconfig.AgenticCapabilities{ToolCalling: modelconfig.ToolCallingNativeClientSearch}, nil
 }
 
@@ -888,4 +922,12 @@ func verificationHTTPStatus(err error) int {
 		return 0
 	}
 	return n
+}
+
+func observeVerificationPhase(phase, outcome, toolCalling string, latency time.Duration) {
+	metrics.Disclosure().ObserveVerification(phase, outcome, toolCalling, latency)
+}
+
+func observeVerificationResult(outcome, toolCalling string) {
+	metrics.Disclosure().ObserveVerification(metrics.DisclosurePhaseResult, outcome, toolCalling, 0)
 }

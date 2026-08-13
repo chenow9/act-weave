@@ -59,6 +59,7 @@ PostgreSQL 是配置、运行记录、协议事件和审计元数据的事实来
 | 上下文 LLM 压缩 | `runtime.sessionContext.compaction.enabled: false`；请依据运行手册逐步开启。 |
 | Tool 强制发布 | 仅平台管理员、且 `tools.allowForcePublish` 配置允许时可用；不是常规发布策略。 |
 | A2A 的无认证模式 | 默认拒绝；仅在显式环境开关下可用于本地测试。 |
+| 工具披露（`platform_bounded` / `carry_all`） | 仓库内 `backend/config.yaml` 将 `runtime.toolDisclosure.enabled` 与 `allowAllWorkspaces` 设为 true。省略该 YAML 键时仍加载为 `enabled: false`（不会被促销）。`client_bounded` 仍是原生生产的唯一模式；`platform_bounded` / `carry_all` 是额外的 Agentic 模式。就绪检查接受 v1 或 v2 三档能力。 |
 
 ## 上线检查清单
 

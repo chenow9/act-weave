@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"actweave/backend/internal/metrics"
 	"actweave/backend/internal/modelconfig"
 )
 
@@ -109,12 +110,17 @@ func (s *BindingService) assertModelToolCompatibility(ctx context.Context, input
 			return err
 		}
 	}
-	return modelconfig.AssertAgentModelToolCompatibility(cfg, modelconfig.AgentModelToolCheck{
+	err = modelconfig.AssertAgentModelToolCompatibility(cfg, modelconfig.AgentModelToolCheck{
 		AgentID:            input.AgentID,
 		CatalogCount:       count,
 		HasDelegationEdges: hasEdges,
 		RequireVerified:    false,
 	})
+	if errors.Is(err, modelconfig.ErrToolCarryAllTooLarge) {
+		metrics.Disclosure().ObserveRejected(metrics.DisclosureCodeCarryAllTooLarge)
+		metrics.Disclosure().ObserveCarryAllRejected(metrics.DisclosureGateBind)
+	}
+	return err
 }
 
 func (s *BindingService) Unbind(ctx context.Context, workspaceID, agentID, capabilityID string, expectedLockVersion int64) error {
