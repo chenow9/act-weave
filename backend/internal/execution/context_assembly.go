@@ -468,16 +468,11 @@ func validateAssemblyRecord(rec ContextAssemblyRecord) error {
 		return ErrRunInvalid
 	}
 
-	// Classic / non-agentic: all Agentic fields must be at defaults.
+	// none: tool columns stay at defaults. Estimator version is not pinned.
 	if rec.ToolSearchMode == AssemblyToolSearchModeNone {
 		if rec.ToolCatalogDigest != "" ||
 			rec.ImmediateToolCount != 0 || rec.DeferredToolCount != 0 || rec.MaxLoadedToolCount != 0 ||
 			rec.ImmediateToolsTokens != 0 || rec.DeferredMetadataTokens != 0 || rec.DynamicToolLoadReserveTokens != 0 {
-			return ErrRunInvalid
-		}
-		// Classic estimator version must not claim agentic.
-		if rec.EstimatorVersion == assemblyEstimatorAgenticOpenAIV1 ||
-			rec.EstimatorVersion == assemblyEstimatorAgenticOpenAIV2 {
 			return ErrRunInvalid
 		}
 		return nil

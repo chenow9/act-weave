@@ -64,17 +64,17 @@ type ToolMetadata struct {
 
 // ToolExposureEstimate is the Agentic estimator input (design §9.1).
 //
-// MaxLoadedToolCount is derived internally as min(deferredCount, 5*8=40).
-// Callers cannot lower it: MaxLoadedTools must be 0 (omit) or exactly the
-// derived value; any other nonzero value is rejected.
+// MaxLoadedTools is mode-specific and non-user-tunable:
+//   - v1 / empty / client_bounded: 0 (derive) or min(deferredCount, 40)
+//   - platform_bounded: 0 (derive) or 5; output is still LEAST(deferredCount, 5)
+//   - carry_all / none: must be 0
 type ToolExposureEstimate struct {
 	Immediate        []ToolSchema
 	DeferredMetadata []ToolMetadata
 	// LoadCandidates are full schemas for deferred tools. Identities must be an
 	// exact one-to-one match with DeferredMetadata names (no missing/extra/dup).
 	LoadCandidates []ToolSchema
-	// MaxLoadedTools is non-user-tunable. 0 means derive; nonzero must equal
-	// min(len(DeferredMetadata), AgenticMaxLoadedDefinitionsPerRun).
+	// MaxLoadedTools follows the mode split on ToolExposureEstimate.
 	MaxLoadedTools int
 	// DisclosureMode is a contextwindow string: "" / "client_bounded" /
 	// "platform_bounded" / "carry_all" / "none". Exact enum; no whitespace.

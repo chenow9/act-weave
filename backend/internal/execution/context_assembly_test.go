@@ -252,6 +252,23 @@ func TestContextAssemblyAgenticValidation(t *testing.T) {
 		t.Fatalf("carry_all allow: %v", err)
 	}
 
+	runNoneV2 := "b08f1f2e-7b5a-7c3d-8e9f-12345678901d"
+	execSQL(t, db, `
+		INSERT INTO agent_runs(id,workspace_id,agent_id,status,trigger_type,triggered_by_type,triggered_by_id,trace_id,model_snapshot,capability_snapshot)
+		VALUES($1,$2,$3,'RUNNING','CHAT','USER',$4,'tnonev2','{}','{}')`, runNoneV2, ws, agent, owner)
+	noneV2 := execution.ContextAssemblyRecord{
+		WorkspaceID: ws, RunID: runNoneV2, Mode: "token_window",
+		PolicySnapshotHash: hash, ModelSnapshotHash: hash, CapabilitySnapshotHash: hash, AgentSnapshotHash: hash,
+		EstimatorProfile: "o200k_base", EstimatorVersion: "contextwindow-estimator.agentic-openai-responses.v2",
+		HardInputCeilingTokens: 1000, OutputReserveTokens: 100, SafetyMarginTokens: 10, ToolsOverheadTokens: 0,
+		SystemPromptHash: hash, IncludedSegments: json.RawMessage(`[]`), EstimatedTotalTokens: 50,
+		ToolSearchMode: execution.AssemblyToolSearchModeNone,
+	}
+	noneV2.AssemblyDigest = execution.ComputeAssemblyDigest(noneV2)
+	if _, err := repo.InsertImmutable(context.Background(), noneV2); err != nil {
+		t.Fatalf("none + estimator v2 allow: %v", err)
+	}
+
 	// Whitespace-padded catalog digest rejected.
 	run6 := "b08f1f2e-7b5a-7c3d-8e9f-12345678901a"
 	execSQL(t, db, `
