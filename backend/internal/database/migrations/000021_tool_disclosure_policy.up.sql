@@ -1,6 +1,6 @@
--- Expand-only tool disclosure policy on model_configs, plus assembly mode
--- allowlist for later platform_bounded / carry_all writers (production still
--- only writes none / client_bounded). No backfill of guessed policy.
+-- Expand-only tool disclosure policy (object JSON, default {}).
+-- Coupling CHECK keeps none/client_bounded formulas and names platform_bounded /
+-- carry_all so those modes cannot persist a weaker digest or estimator identity.
 
 ALTER TABLE model_configs
     ADD COLUMN tool_disclosure_policy JSONB NOT NULL DEFAULT '{}'::JSONB;
@@ -14,8 +14,6 @@ ALTER TABLE agent_run_context_assemblies
     ADD CONSTRAINT agent_run_context_assemblies_tool_search_mode_check
         CHECK (tool_search_mode IN ('none', 'client_bounded', 'platform_bounded', 'carry_all'));
 
--- Rewrite mode/digest coupling (design §8.5). none + client_bounded keep today's
--- shape; platform_bounded / carry_all are accepted so later PRs can write them.
 ALTER TABLE agent_run_context_assemblies
     DROP CONSTRAINT agent_run_context_assemblies_agentic_mode_digest_coupling_check,
     ADD CONSTRAINT agent_run_context_assemblies_agentic_mode_digest_coupling_check
@@ -33,6 +31,7 @@ ALTER TABLE agent_run_context_assemblies
             OR
             (
                 tool_search_mode = 'client_bounded'
+                AND tool_catalog_digest IS NOT NULL
                 AND tool_catalog_digest ~ '^[0-9a-f]{64}$'
                 AND estimator_version = 'contextwindow-estimator.agentic-openai-responses.v1'
                 AND max_loaded_tool_count = LEAST(deferred_tool_count, 40)
@@ -44,6 +43,7 @@ ALTER TABLE agent_run_context_assemblies
             OR
             (
                 tool_search_mode = 'platform_bounded'
+                AND tool_catalog_digest IS NOT NULL
                 AND tool_catalog_digest ~ '^[0-9a-f]{64}$'
                 AND estimator_version = 'contextwindow-estimator.agentic-openai-responses.v2'
                 AND deferred_metadata_tokens = 0
@@ -56,6 +56,7 @@ ALTER TABLE agent_run_context_assemblies
             OR
             (
                 tool_search_mode = 'carry_all'
+                AND tool_catalog_digest IS NOT NULL
                 AND tool_catalog_digest ~ '^[0-9a-f]{64}$'
                 AND estimator_version = 'contextwindow-estimator.agentic-openai-responses.v2'
                 AND deferred_tool_count = 0

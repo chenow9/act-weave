@@ -164,6 +164,19 @@ func CanonicalToolDisclosurePolicy(mode string) (json.RawMessage, error) {
 	})
 }
 
+// AssertDisclosureWritable reports whether set-disclosure may write a policy.
+// Only VERIFIED rows whose caps parse as function_calling are writable.
+func AssertDisclosureWritable(cfg Config) error {
+	if cfg.Status != StatusVerified {
+		return ErrToolDisclosureInvalid
+	}
+	caps, _, err := ParseAgenticCapabilities(cfg.AgenticCapabilities)
+	if err != nil || caps.ToolCalling != ToolCallingFunctionCalling {
+		return ErrToolDisclosureInvalid
+	}
+	return nil
+}
+
 // DeriveToolDisclosureUI maps status + capability document to the GET/list UI token.
 func DeriveToolDisclosureUI(status Status, caps json.RawMessage) string {
 	if status == StatusError || IsUnverifiedAgenticCapabilities(caps) {

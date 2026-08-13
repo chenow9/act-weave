@@ -143,6 +143,20 @@ func TestV1ModelConfigSetDisclosure(t *testing.T) {
 	}, f.token, nil)
 	assertErrorResponse(t, nativeReject, http.StatusUnprocessableEntity, modelconfig.ErrorCodeToolDisclosureInvalid)
 
+	nativeLargeID := insertHTTPAgent(t, f, value.ID, "native-large")
+	catalog.counts[nativeLargeID] = 9
+	nativeLarge := f.request(t, http.MethodPost, f.base+"/model-configs/"+value.ID+":set-disclosure", map[string]any{
+		"lockVersion": verifiedValue.LockVersion,
+		"toolDisclosurePolicy": map[string]any{
+			"schemaVersion": "tool-disclosure.v1", "mode": "carry_all",
+		},
+	}, f.token, nil)
+	assertErrorResponse(t, nativeLarge, http.StatusUnprocessableEntity, modelconfig.ErrorCodeToolDisclosureInvalid)
+	delete(catalog.counts, nativeLargeID)
+	if _, err := f.db.Exec(`UPDATE agents SET deleted_at = clock_timestamp() WHERE id = $1`, nativeLargeID); err != nil {
+		t.Fatal(err)
+	}
+
 	plantHTTPFunctionCalling(t, f, verifiedValue)
 	fcGet := f.request(t, http.MethodGet, f.base+"/model-configs/"+value.ID, nil, f.token, nil)
 	if fcGet.Code != http.StatusOK {

@@ -355,11 +355,11 @@ func (r *Repository) UpdateDisclosurePolicy(ctx context.Context, input Disclosur
 	if current.LockVersion != input.ExpectedLockVersion {
 		return Config{}, ErrConflict
 	}
-	if current.Status != StatusVerified {
-		return Config{}, ErrToolDisclosureInvalid
+	if err := AssertDisclosureWritable(current); err != nil {
+		return Config{}, err
 	}
 	caps, _, err := ParseAgenticCapabilities(current.AgenticCapabilities)
-	if err != nil || caps.ToolCalling != ToolCallingFunctionCalling {
+	if err != nil {
 		return Config{}, ErrToolDisclosureInvalid
 	}
 	caps.VerifiedLockVersion = current.LockVersion

@@ -525,6 +525,15 @@ func (r *ConfigurationRoutes) setModelDisclosure(c *gin.Context) {
 		RespondError(c, modelconfig.ErrToolDisclosureInvalid)
 		return
 	}
+	current, err := r.models.Get(c.Request.Context(), c.Param("wid"), c.Param("id"))
+	if err != nil {
+		RespondError(c, err)
+		return
+	}
+	if err := modelconfig.AssertDisclosureWritable(current); err != nil {
+		RespondError(c, err)
+		return
+	}
 	warnings, err := r.evaluateCarryAllCatalog(c.Request.Context(), c.Param("wid"), c.Param("id"), policy.Mode)
 	if err != nil {
 		RespondError(c, err)

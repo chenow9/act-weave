@@ -1,5 +1,4 @@
--- Inverse of 000021. Fails closed if any assembly row uses a new mode
--- (production writers in this release still only emit none / client_bounded).
+-- Inverse of 000021. Rows using platform_bounded / carry_all fail this down.
 
 ALTER TABLE agent_run_context_assemblies
     DROP CONSTRAINT IF EXISTS agent_run_context_assemblies_agentic_mode_digest_coupling_check;

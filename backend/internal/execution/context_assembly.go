@@ -72,11 +72,9 @@ const (
 	// AssemblyToolSearchModeNone is the default for classic/old assemblies.
 	AssemblyToolSearchModeNone = "none"
 	// AssemblyToolSearchModeClientBounded is required for new Agentic assemblies.
-	AssemblyToolSearchModeClientBounded = "client_bounded"
-	// AssemblyToolSearchModePlatformBounded is accepted (not yet written by production).
+	AssemblyToolSearchModeClientBounded   = "client_bounded"
 	AssemblyToolSearchModePlatformBounded = "platform_bounded"
-	// AssemblyToolSearchModeCarryAll is accepted (not yet written by production).
-	AssemblyToolSearchModeCarryAll = "carry_all"
+	AssemblyToolSearchModeCarryAll        = "carry_all"
 
 	assemblyEstimatorAgenticOpenAIV1 = "contextwindow-estimator.agentic-openai-responses.v1"
 	assemblyEstimatorAgenticOpenAIV2 = "contextwindow-estimator.agentic-openai-responses.v2"
@@ -511,7 +509,6 @@ func validateAssemblyRecord(rec ContextAssemblyRecord) error {
 		}
 		return nil
 	case AssemblyToolSearchModePlatformBounded:
-		// Allow later writers; production still only writes none/client_bounded.
 		if rec.EstimatorVersion != assemblyEstimatorAgenticOpenAIV2 {
 			return ErrRunInvalid
 		}
