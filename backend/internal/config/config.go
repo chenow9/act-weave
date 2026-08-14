@@ -173,7 +173,7 @@ type AgentAccessFilesConfig struct {
 	} `yaml:"virusScan"`
 	// RuntimeMultimodal gates model assembly of input_file (IC-08); orthogonal to files gate.
 	RuntimeMultimodal bool `yaml:"runtimeMultimodal"`
-	// RuntimeOutboundAttachments gates IngestGenerated. Default off.
+	// RuntimeOutboundAttachments gates IngestGenerated and output_file emission. Default off; orthogonal to files HTTP and RuntimeMultimodal.
 	RuntimeOutboundAttachments bool `yaml:"runtimeOutboundAttachments"`
 }
 

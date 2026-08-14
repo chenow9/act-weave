@@ -28,7 +28,7 @@ const (
 type PolicyScope int
 
 const (
-	// PolicyScopeAgent allows aap.includeCompactionSummary and aap.enableA2UI (v2).
+	// PolicyScopeAgent allows aap.includeCompactionSummary, aap.enableA2UI, and aap.enableOutboundAttachments (v2).
 	PolicyScopeAgent PolicyScope = iota
 	// PolicyScopeWorkspace rejects aap disclosure fields.
 	PolicyScopeWorkspace
@@ -57,11 +57,14 @@ type SummaryPolicy struct {
 }
 
 // AAPPolicy is Agent-level AAP disclosure / capability flags (v2, agent-only).
-// Missing includeCompactionSummary / enableA2UI normalize to false when aap is present.
+// Missing includeCompactionSummary / enableA2UI / enableOutboundAttachments
+// normalize to false when aap is present.
 type AAPPolicy struct {
 	IncludeCompactionSummary *bool `json:"includeCompactionSummary,omitempty"`
 	// EnableA2UI allows the agent to emit additive a2ui content parts (default false).
 	EnableA2UI *bool `json:"enableA2UI,omitempty"`
+	// EnableOutboundAttachments allows additive output_file parts (default false).
+	EnableOutboundAttachments *bool `json:"enableOutboundAttachments,omitempty"`
 }
 
 // ParsePolicy validates and normalizes a raw JSON object as an Agent policy
@@ -130,8 +133,9 @@ func ParsePolicyScoped(raw json.RawMessage, scope PolicyScope) (PolicyDocument, 
 			return PolicyDocument{}, nil, fmt.Errorf("%w: aap must be an object", ErrInvalidPolicy)
 		}
 		aapAllowed := map[string]struct{}{
-			"includeCompactionSummary": {},
-			"enableA2UI":               {},
+			"includeCompactionSummary":  {},
+			"enableA2UI":                {},
+			"enableOutboundAttachments": {},
 		}
 		for key := range aapObj {
 			if _, ok := aapAllowed[key]; !ok {
@@ -214,6 +218,9 @@ func ParsePolicyScoped(raw json.RawMessage, scope PolicyScope) (PolicyDocument, 
 		if doc.AAP.EnableA2UI == nil {
 			doc.AAP.EnableA2UI = &f
 		}
+		if doc.AAP.EnableOutboundAttachments == nil {
+			doc.AAP.EnableOutboundAttachments = &f
+		}
 	}
 
 	normalized, err := json.Marshal(doc)
@@ -254,4 +261,12 @@ func (doc PolicyDocument) EnableA2UI() bool {
 		return false
 	}
 	return *doc.AAP.EnableA2UI
+}
+
+// EnableOutboundAttachments reports whether the agent may emit output_file parts (default false).
+func (doc PolicyDocument) EnableOutboundAttachments() bool {
+	if doc.AAP == nil || doc.AAP.EnableOutboundAttachments == nil {
+		return false
+	}
+	return *doc.AAP.EnableOutboundAttachments
 }

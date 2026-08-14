@@ -38,21 +38,21 @@ const (
 
 // ResolvedSnapshot is the immutable run-level session-context document (v1 or v2).
 type ResolvedSnapshot struct {
-	SchemaVersion            string               `json:"schemaVersion"`
-	Mode                     string               `json:"mode"`
-	ModelContextWindowTokens int64                `json:"modelContextWindowTokens"`
-	EffectiveMaxInputTokens  int64                `json:"effectiveMaxInputTokens"`
-	OutputReserveTokens      int64                `json:"outputReserveTokens"`
-	SafetyMarginTokens       int64                `json:"safetyMarginTokens"`
-	MaxRecentTurns           int64                `json:"maxRecentTurns"`
-	TokenizerProfile         string               `json:"tokenizerProfile"`
-	TokenizerVersion         string               `json:"tokenizerVersion"`
-	OutputTokenLimitMode     string               `json:"outputTokenLimitMode"`
-	Summary                  json.RawMessage      `json:"summary"`
+	SchemaVersion            string          `json:"schemaVersion"`
+	Mode                     string          `json:"mode"`
+	ModelContextWindowTokens int64           `json:"modelContextWindowTokens"`
+	EffectiveMaxInputTokens  int64           `json:"effectiveMaxInputTokens"`
+	OutputReserveTokens      int64           `json:"outputReserveTokens"`
+	SafetyMarginTokens       int64           `json:"safetyMarginTokens"`
+	MaxRecentTurns           int64           `json:"maxRecentTurns"`
+	TokenizerProfile         string          `json:"tokenizerProfile"`
+	TokenizerVersion         string          `json:"tokenizerVersion"`
+	OutputTokenLimitMode     string          `json:"outputTokenLimitMode"`
+	Summary                  json.RawMessage `json:"summary"`
 	// Compaction is present only on v2 (platform-frozen 80/60 + timeouts + template).
 	Compaction *CompactionSnapshot `json:"compaction,omitempty"`
 	// AAP disclosure is present only on v2; default false.
-	AAP *AAPSnapshot `json:"aap,omitempty"`
+	AAP     *AAPSnapshot    `json:"aap,omitempty"`
 	Sources SnapshotSources `json:"sources"`
 }
 
@@ -75,6 +75,9 @@ type AAPSnapshot struct {
 	IncludeCompactionSummary bool `json:"includeCompactionSummary"`
 	// EnableA2UI freezes whether the run may emit additive a2ui content parts.
 	EnableA2UI bool `json:"enableA2UI"`
+	// EnableOutboundAttachments freezes output_file capability. omitempty so
+	// false is absent on existing A2UI/compaction v2 snapshots.
+	EnableOutboundAttachments bool `json:"enableOutboundAttachments,omitempty"`
 }
 
 // SnapshotSources records which policy layers contributed to the resolved snapshot.
@@ -204,6 +207,16 @@ func EnableA2UIFromSnapshot(raw json.RawMessage) bool {
 		return false
 	}
 	return doc.AAP.EnableA2UI
+}
+
+// EnableOutboundAttachmentsFromSnapshot returns frozen outbound-attachment
+// capability (false if absent/legacy/v1/err).
+func EnableOutboundAttachmentsFromSnapshot(raw json.RawMessage) bool {
+	doc, err := ParseResolvedSnapshot(raw)
+	if err != nil || doc.AAP == nil {
+		return false
+	}
+	return doc.AAP.EnableOutboundAttachments
 }
 
 func isRecognizedLegacyPlaceholder(top map[string]json.RawMessage) bool {
@@ -403,10 +416,10 @@ func Resolve(input ResolveInput) (ResolvedSnapshot, json.RawMessage, error) {
 		Compaction:               compaction,
 		AAP:                      aap,
 		Sources: SnapshotSources{
-			WorkspacePolicyVersion:   input.WorkspaceLockVersion,
-			AgentPolicyVersion:       input.AgentLockVersion,
-			RolloutVersion:           input.RolloutVersion,
-			GateEnabled:              input.GateEnabled,
+			WorkspacePolicyVersion: input.WorkspaceLockVersion,
+			AgentPolicyVersion:     input.AgentLockVersion,
+			RolloutVersion:         input.RolloutVersion,
+			GateEnabled:            input.GateEnabled,
 			// Compact runtime still keys off this flag — placeholder compaction must not flip it on.
 			CompactionGateEnabled:    input.CompactionGateEnabled,
 			CompactionRolloutVersion: strings.TrimSpace(input.CompactionRolloutVersion),

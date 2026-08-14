@@ -8,7 +8,8 @@ import (
 func TestAgentAccessFilesConfig(t *testing.T) {
 	t.Run("DefaultDisabled", func(t *testing.T) {
 		var files AgentAccessFilesConfig
-		if files.Enabled || files.AllowsWorkspace("a0000000-0000-4000-8000-000000000001") ||
+		if files.Enabled || files.RuntimeMultimodal || files.RuntimeOutboundAttachments ||
+			files.AllowsWorkspace("a0000000-0000-4000-8000-000000000001") ||
 			files.AllowsClient("b0000000-0000-4000-8000-000000000001") {
 			t.Fatalf("zero files config must be closed: %+v", files)
 		}
@@ -84,8 +85,8 @@ func TestAgentAccessFilesConfig(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if loaded.AgentAccess.Files.Enabled {
-			t.Fatal("sample files.enabled must default false")
+		if loaded.AgentAccess.Files.Enabled || loaded.AgentAccess.Files.RuntimeOutboundAttachments {
+			t.Fatal("sample files.enabled / runtimeOutboundAttachments must default false")
 		}
 	})
 }
