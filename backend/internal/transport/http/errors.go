@@ -227,7 +227,7 @@ func mapAAPFileError(err error) (mappedError, bool) {
 	switch {
 	case errors.Is(err, aap.ErrFileRuntimeUnavailable):
 		return mappedError{http.StatusUnprocessableEntity, "FILE_RUNTIME_UNAVAILABLE", "Multimodal file runtime is not available."}, true
-	case errors.Is(err, ErrAAPFilesFeatureDisabled):
+	case errors.Is(err, ErrAAPFilesFeatureDisabled), errors.Is(err, aapfile.ErrFeatureDisabled):
 		return mappedError{http.StatusNotFound, "FILE_FEATURE_DISABLED", "The requested resource was not found."}, true
 	case errors.Is(err, aapfile.ErrNotFound):
 		return mappedError{http.StatusNotFound, "FILE_NOT_FOUND", "The requested file was not found."}, true

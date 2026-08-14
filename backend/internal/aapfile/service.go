@@ -82,6 +82,7 @@ type FileStore interface {
 	GetDownloadToken(context.Context, string) (DownloadToken, error)
 	ConsumeDownloadToken(context.Context, string) (DownloadToken, error)
 	PurgeExpiredDownloadTokens(context.Context, int) (int, error)
+	ListGeneratedForRun(context.Context, string, string, string) ([]File, error)
 }
 
 // Service implements create intent / complete (fast path) / get / promote /
@@ -97,9 +98,32 @@ type Service struct {
 	maxPending    int
 	maxReadyBytes int64
 	virusScan     VirusScanConfig
+	filesGate     FilesFeatureGate
 	metrics       *metrics.AAPFileCollector
 	now           func() time.Time
 	newID         func() (uuid.UUID, error)
+}
+
+// FilesFeatureGate is the ingest allowlist (files HTTP gate + runtimeOutboundAttachments).
+// Zero value denies all outbound ingest.
+type FilesFeatureGate struct {
+	Enabled                    bool
+	RuntimeOutboundAttachments bool
+	AllowsWorkspace            func(string) bool
+	AllowsClient               func(string) bool
+}
+
+func (g FilesFeatureGate) allowsOutbound(workspaceID, clientID string) bool {
+	if !g.Enabled || !g.RuntimeOutboundAttachments {
+		return false
+	}
+	if g.AllowsWorkspace == nil || !g.AllowsWorkspace(workspaceID) {
+		return false
+	}
+	if g.AllowsClient == nil || !g.AllowsClient(clientID) {
+		return false
+	}
+	return true
 }
 
 // ServiceOption configures Service defaults.
@@ -168,6 +192,14 @@ func WithVirusScan(cfg VirusScanConfig) ServiceOption {
 	}
 }
 
+// WithFilesFeatureGate sets the outbound ingest allowlist. Default is closed.
+func WithFilesFeatureGate(gate FilesFeatureGate) ServiceOption {
+	return func(s *Service) error {
+		s.filesGate = gate
+		return nil
+	}
+}
+
 // WithMetrics injects an AAP file metrics collector (defaults to process-wide).
 func WithMetrics(collector *metrics.AAPFileCollector) ServiceOption {
 	return func(s *Service) error {
@@ -193,11 +225,11 @@ func NewService(
 		store: store, staging: staging, secure: secure,
 		maxBytes: DefaultMaxBytes, stagingTTL: DefaultStagingTTL,
 		presignTTL: DefaultPresignTTL, retention: DefaultRetention,
-		maxPending: DefaultMaxPendingPerWorkspace,
+		maxPending:    DefaultMaxPendingPerWorkspace,
 		maxReadyBytes: DefaultMaxReadyBytesPerWorkspace,
-		metrics: metrics.DefaultAAPFile(),
-		now:     func() time.Time { return time.Now().UTC() },
-		newID:   uuid.NewV7,
+		metrics:       metrics.DefaultAAPFile(),
+		now:           func() time.Time { return time.Now().UTC() },
+		newID:         uuid.NewV7,
 	}
 	for _, option := range options {
 		if option == nil {
@@ -231,6 +263,20 @@ type CreateUploadIntentInput struct {
 	SizeBytes int64
 	SHA256    string // optional client-declared hex
 	Purpose   string
+}
+
+// IngestGeneratedInput is a same-process write of an agent-generated file.
+type IngestGeneratedInput struct {
+	Scope              Scope
+	Principal          agentaccessauth.AAPAccessTokenPrincipal
+	ClientID           string
+	AgentPolicyVersion int64
+	Filename           string
+	MediaType          string
+	SizeBytes          int64
+	SHA256             string
+	Body               io.Reader
+	SourceRunID        string // required for chat-run ingest; UUID
 }
 
 // CreateUploadIntent allocates fileId + staging key + presigned PUT headers.
@@ -508,6 +554,161 @@ func (s *Service) CompleteUpload(
 		s.metrics.IncComplete()
 	}
 	return CompleteUploadResult{File: updated, Job: job}, nil
+}
+
+// IngestGenerated writes an agent-generated body as a READY AGENT_OUTPUT file.
+// No virus scan, processing jobs, or webhook DLP. Does not consume PENDING_UPLOAD slots.
+func (s *Service) IngestGenerated(ctx context.Context, in IngestGeneratedInput) (file File, err error) {
+	result := "error"
+	defer func() {
+		if s != nil && s.metrics != nil {
+			if err == nil {
+				result = "ok"
+			}
+			s.metrics.IncIngestGenerated(result)
+		}
+	}()
+	if s == nil || s.store == nil || s.secure == nil || ctx == nil {
+		return File{}, ErrInvalid
+	}
+	in = normalizeIngestInput(in)
+	clientID := in.ClientID
+	if clientID == "" {
+		clientID = strings.TrimSpace(in.Principal.AuthorizedParty)
+	}
+	if !s.filesGate.allowsOutbound(in.Scope.WorkspaceID, clientID) {
+		result = "disabled"
+		return File{}, fmt.Errorf("%w: %s", ErrFeatureDisabled, ErrorCodeFeatureDisabled)
+	}
+	if err := validateIngestInput(in, s.maxBytes); err != nil {
+		result = ingestResult(err)
+		return File{}, err
+	}
+
+	ownership, err := buildOwnership(CreateUploadIntentInput{
+		Scope:              in.Scope,
+		Principal:          in.Principal,
+		ClientID:           in.ClientID,
+		AgentPolicyVersion: in.AgentPolicyVersion,
+	})
+	if err != nil {
+		result = "denied"
+		return File{}, err
+	}
+
+	if s.maxReadyBytes > 0 {
+		readyBytes, sumErr := s.store.SumReadyBytes(ctx, in.Scope.WorkspaceID)
+		if sumErr != nil {
+			return File{}, sumErr
+		}
+		if readyBytes+in.SizeBytes > s.maxReadyBytes {
+			result = "denied"
+			return File{}, fmt.Errorf("%w: %s", ErrFailed, ErrorCodeSizeExceeded)
+		}
+	}
+
+	if in.Body == nil {
+		result = "denied"
+		return File{}, ErrInvalid
+	}
+	hasher := sha256.New()
+	limited := io.LimitReader(in.Body, s.maxBytes+1)
+	body, readErr := io.ReadAll(io.TeeReader(limited, hasher))
+	if readErr != nil {
+		return File{}, fmt.Errorf("read generated file body: %w", readErr)
+	}
+	if int64(len(body)) > s.maxBytes {
+		result = "denied"
+		return File{}, fmt.Errorf("%w: %s", ErrFailed, ErrorCodeSizeExceeded)
+	}
+	computed := hex.EncodeToString(hasher.Sum(nil))
+	if int64(len(body)) != in.SizeBytes || computed != in.SHA256 {
+		result = "denied"
+		return File{}, fmt.Errorf("%w: %s", ErrFailed, ErrorCodeIntegrityMismatch)
+	}
+
+	detected := DetectMediaTypeFromSample(body)
+	if !outboundMediaTypesCompatible(in.MediaType, detected) {
+		result = "denied"
+		return File{}, fmt.Errorf("%w: %s", ErrFailed, ErrorCodeMediaTypeMismatch)
+	}
+
+	fileID, err := s.newID()
+	if err != nil {
+		return File{}, fmt.Errorf("allocate file id: %w", err)
+	}
+	objectID, err := s.newID()
+	if err != nil {
+		return File{}, fmt.Errorf("allocate stored object id: %w", err)
+	}
+	now := s.now().UTC()
+	retentionUntil := now.Add(s.retention)
+	filename := in.Filename
+	detectedCopy := detected
+	shaCopy := computed
+	objectIDStr := objectID.String()
+
+	_, putErr := s.secure.Put(ctx, storedobject.PutInput{
+		ID: objectIDStr, WorkspaceID: in.Scope.WorkspaceID,
+		Kind: storedobject.KindAAPFile, ContentType: in.MediaType,
+		SizeBytes: in.SizeBytes, SHA256: computed,
+		Classification: storedobject.ClassificationSensitive,
+		RetentionMode:  storedobject.RetentionExpiring,
+		RetentionUntil: &retentionUntil,
+		CreatedByType:  storedobject.CreatorServicePrincipal,
+		CreatedByID:    ownership.ActorID,
+		Reader:         bytes.NewReader(body),
+	})
+	if putErr != nil {
+		return File{}, fmt.Errorf("secure store put generated file: %w", putErr)
+	}
+
+	created, err := s.store.InsertFile(ctx, File{
+		ID:                     fileID.String(),
+		WorkspaceID:            in.Scope.WorkspaceID,
+		AgentID:                in.Scope.AgentID,
+		ActorType:              ownership.ActorType,
+		ActorID:                ownership.ActorID,
+		ClientID:               ownership.ClientID,
+		SubjectType:            ownership.SubjectType,
+		SubjectID:              ownership.SubjectID,
+		OwnershipMode:          OwnershipSubjectOwned,
+		OwnershipPolicyVersion: ownership.PolicyVersion,
+		Status:                 StatusReady,
+		Filename:               &filename,
+		DeclaredMediaType:      in.MediaType,
+		DetectedMediaType:      &detectedCopy,
+		SizeBytes:              in.SizeBytes,
+		SHA256:                 &shaCopy,
+		StagingBucket:          storedobject.BucketAAPStaging,
+		StagingObjectKey:       nil,
+		StagingExpiresAt:       now,
+		StagingDeletedAt:       &now,
+		StoredObjectID:         &objectIDStr,
+		Purpose:                PurposeAgentOutput,
+		SourceRunID:            in.SourceRunID,
+		ProcessingVersion:      1,
+		ReadyAt:                &now,
+		RetentionUntil:         &retentionUntil,
+	})
+	if err != nil {
+		return File{}, err
+	}
+	return created, nil
+}
+
+// ListGeneratedForRun returns AGENT_OUTPUT files for workspace+agent+run.
+func (s *Service) ListGeneratedForRun(ctx context.Context, workspaceID, agentID, runID string) ([]File, error) {
+	if s == nil || s.store == nil || ctx == nil {
+		return nil, ErrInvalid
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	agentID = strings.TrimSpace(agentID)
+	runID = strings.TrimSpace(runID)
+	if !validUUID(workspaceID) || !validUUID(agentID) || !validUUID(runID) {
+		return nil, ErrInvalid
+	}
+	return s.store.ListGeneratedForRun(ctx, workspaceID, agentID, runID)
 }
 
 // GetFile returns the file fact by workspace + id (no auth matrix here).
@@ -1076,8 +1277,8 @@ func (s *Service) EvaluateReady(ctx context.Context, workspaceID, fileID string)
 
 // HandleProcessorCallback applies a verified partner callback for deliveryID.
 type HandleProcessorCallbackInput struct {
-	DeliveryID  string
-	Body        []byte
+	DeliveryID string
+	Body       []byte
 	// Signature already verified by HTTP layer; body is raw JSON.
 }
 
@@ -1313,6 +1514,76 @@ func normalizeCreateInput(input CreateUploadIntentInput) CreateUploadIntentInput
 		input.MediaType = media
 	}
 	return input
+}
+
+func normalizeIngestInput(input IngestGeneratedInput) IngestGeneratedInput {
+	input.Scope.WorkspaceID = strings.TrimSpace(input.Scope.WorkspaceID)
+	input.Scope.AgentID = strings.TrimSpace(input.Scope.AgentID)
+	input.ClientID = strings.TrimSpace(input.ClientID)
+	input.Filename = strings.TrimSpace(input.Filename)
+	input.MediaType = strings.TrimSpace(input.MediaType)
+	input.SHA256 = strings.ToLower(strings.TrimSpace(input.SHA256))
+	input.SourceRunID = strings.ToLower(strings.TrimSpace(input.SourceRunID))
+	input.Principal.PrincipalID = strings.TrimSpace(input.Principal.PrincipalID)
+	input.Principal.ServicePrincipalID = strings.TrimSpace(input.Principal.ServicePrincipalID)
+	input.Principal.AuthorizedParty = strings.TrimSpace(input.Principal.AuthorizedParty)
+	if media, err := NormalizeMediaType(input.MediaType); err == nil {
+		input.MediaType = media
+	}
+	return input
+}
+
+func validateIngestInput(input IngestGeneratedInput, maxBytes int64) error {
+	if !validUUID(input.Scope.WorkspaceID) || !validUUID(input.Scope.AgentID) ||
+		!validUUID(input.SourceRunID) {
+		return ErrInvalid
+	}
+	if !validOutboundFilename(input.Filename) {
+		return ErrInvalid
+	}
+	if input.SizeBytes < 1 {
+		return ErrInvalid
+	}
+	if input.SizeBytes > maxBytes {
+		return fmt.Errorf("%w: %s", ErrFailed, ErrorCodeSizeExceeded)
+	}
+	if !AllowedOutboundMediaType(input.MediaType) {
+		return fmt.Errorf("%w: %s", ErrFailed, ErrorCodeMediaTypeDenied)
+	}
+	if !validSHA256Hex(input.SHA256) {
+		return ErrInvalid
+	}
+	if input.AgentPolicyVersion < 1 || !validUUID(input.ClientID) {
+		return ErrInvalid
+	}
+	if !validUUID(input.Principal.PrincipalID) || !validUUID(input.Principal.ServicePrincipalID) {
+		return ErrInvalid
+	}
+	return nil
+}
+
+func validOutboundFilename(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 255 {
+		return false
+	}
+	if strings.ContainsAny(name, "/\\\x00") || strings.Contains(name, "..") {
+		return false
+	}
+	return true
+}
+
+func ingestResult(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	if errors.Is(err, ErrFeatureDisabled) {
+		return "disabled"
+	}
+	if errors.Is(err, ErrInvalid) || errors.Is(err, ErrFailed) {
+		return "denied"
+	}
+	return "error"
 }
 
 func validateCreateInput(input CreateUploadIntentInput, maxBytes int64) error {

@@ -368,13 +368,19 @@ func TestCreateRejectsDisallowedMediaAndOversize(t *testing.T) {
 	if _, err := service.CreateUploadIntent(ctx, big); err == nil {
 		t.Fatal("expected size exceeded")
 	}
+
+	outbound := createCCInput(10, "")
+	outbound.Purpose = aapfile.PurposeAgentOutput
+	if _, err := service.CreateUploadIntent(ctx, outbound); err == nil {
+		t.Fatal("client create must not accept AGENT_OUTPUT")
+	}
 }
 
 func TestMigrationAAPFilesTablesExist(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 22 || version.Dirty {
-		t.Fatalf("expected migration 18, got %+v", version)
+	if !version.Applied || version.Number != 23 || version.Dirty {
+		t.Fatalf("expected migration 23, got %+v", version)
 	}
 	db := testDatabase.Open(t)
 	for _, table := range []string{
@@ -396,6 +402,16 @@ func TestMigrationAAPFilesTablesExist(t *testing.T) {
 	}
 	if !strings.Contains(checkDef, "AAP_FILE") || !strings.Contains(checkDef, "AAP_FILE_DERIVED") {
 		t.Fatalf("kind check missing AAP kinds: %s", checkDef)
+	}
+	var purposeDef string
+	if err := db.QueryRow(`
+		SELECT pg_get_constraintdef(oid) FROM pg_constraint
+		WHERE conname='aap_files_purpose_check'
+	`).Scan(&purposeDef); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(purposeDef, "AGENT_OUTPUT") {
+		t.Fatalf("purpose check missing AGENT_OUTPUT: %s", purposeDef)
 	}
 }
 
@@ -422,7 +438,7 @@ func createCCInput(size int, sha string) aapfile.CreateUploadIntentInput {
 	}
 }
 
-func newAAPFileService(t *testing.T) (*aapfile.Service, *fakeStaging, *fakeSecure, *sql.DB) {
+func newAAPFileService(t *testing.T, opts ...aapfile.ServiceOption) (*aapfile.Service, *fakeStaging, *fakeSecure, *sql.DB) {
 	t.Helper()
 	db := openMigratedDB(t)
 	insertFixtures(t, db)
@@ -432,7 +448,7 @@ func newAAPFileService(t *testing.T) (*aapfile.Service, *fakeStaging, *fakeSecur
 	}
 	staging := newFakeStaging()
 	secure := &fakeSecure{}
-	service, err := aapfile.NewService(repo, staging, secure)
+	service, err := aapfile.NewService(repo, staging, secure, opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -443,7 +459,7 @@ func openMigratedDB(t *testing.T) *sql.DB {
 	t.Helper()
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 22 || version.Dirty {
+	if !version.Applied || version.Number != 23 || version.Dirty {
 		t.Fatalf("migrate: %+v", version)
 	}
 	return testDatabase.Open(t)
@@ -545,12 +561,14 @@ func (f *fakeStaging) PresignPutWithHeaders(
 }
 
 type fakeSecure struct {
-	mu            sync.Mutex
-	putCalls      int
-	lastKind      string
-	lastClass     string
-	lastRetention string
-	objects       map[string][]byte
+	mu              sync.Mutex
+	putCalls        int
+	lastKind        string
+	lastClass       string
+	lastRetention   string
+	lastCreatedBy   string
+	lastCreatedByID string
+	objects         map[string][]byte
 }
 
 func (f *fakeSecure) Put(_ context.Context, input storedobject.PutInput) (storedobject.StoredObject, error) {
@@ -560,6 +578,8 @@ func (f *fakeSecure) Put(_ context.Context, input storedobject.PutInput) (stored
 	f.lastKind = input.Kind
 	f.lastClass = input.Classification
 	f.lastRetention = input.RetentionMode
+	f.lastCreatedBy = input.CreatedByType
+	f.lastCreatedByID = input.CreatedByID
 	if f.objects == nil {
 		f.objects = make(map[string][]byte)
 	}

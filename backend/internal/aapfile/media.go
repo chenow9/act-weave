@@ -24,13 +24,23 @@ func NormalizeMediaType(value string) (string, error) {
 	return parsed, nil
 }
 
-// AllowedMediaType reports whether mediaType is in the v1 allowlist.
+// AllowedMediaType reports whether mediaType is in the v1 inbound allowlist.
 func AllowedMediaType(mediaType string) bool {
 	normalized, err := NormalizeMediaType(mediaType)
 	if err != nil {
 		return false
 	}
 	_, ok := AllowedMediaTypes[normalized]
+	return ok
+}
+
+// AllowedOutboundMediaType reports whether mediaType is in the outbound ingest allowlist.
+func AllowedOutboundMediaType(mediaType string) bool {
+	normalized, err := NormalizeMediaType(mediaType)
+	if err != nil {
+		return false
+	}
+	_, ok := AllowedOutboundMediaTypes[normalized]
 	return ok
 }
 
@@ -86,4 +96,30 @@ func mediaTypesCompatible(declared, detected string) bool {
 		return true
 	}
 	return false
+}
+
+// outboundMediaTypesCompatible reports whether sniffed magic is acceptable for a
+// declared outbound type. Text CSV/JSON/Markdown almost always sniff as text/plain.
+// Do not use this helper for inbound complete (keep mediaTypesCompatible strict).
+func outboundMediaTypesCompatible(declared, detected string) bool {
+	declared, err := NormalizeMediaType(declared)
+	if err != nil {
+		return false
+	}
+	detected = strings.ToLower(strings.TrimSpace(detected))
+	if detected == "" || detected == "application/octet-stream" {
+		return true
+	}
+	if declared == detected {
+		return true
+	}
+	if declared == "image/jpeg" && (detected == "image/jpg" || detected == "image/jpeg") {
+		return true
+	}
+	switch declared {
+	case "text/plain", "text/csv", "text/markdown", "application/json":
+		return detected == "text/plain"
+	default:
+		return false
+	}
 }

@@ -35,7 +35,7 @@ const (
 func TestProviderImportMigrationRecordsSourceRevision(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 22 || version.Dirty {
+	if !version.Applied || version.Number != 23 || version.Dirty {
 		t.Fatalf("expected migration 15, got %+v", version)
 	}
 	db := testDatabase.Open(t)
@@ -173,7 +173,7 @@ func newProviderImportTest(t *testing.T) (*Repository, *ProviderSourceRepository
 	t.Helper()
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 22 || version.Dirty {
+	if !version.Applied || version.Number != 23 || version.Dirty {
 		t.Fatalf("unexpected migration: %+v", version)
 	}
 	db := testDatabase.Open(t)

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -249,6 +250,54 @@ func TestAAPFileDTOSensitiveAllowlist(t *testing.T) {
 	}
 }
 
+func TestSetAAPFileStreamHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("image stays inline with nosniff", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		setAAPFileStreamHeaders(c, "image/png", "pixel.png")
+		if rec.Header().Get("Content-Type") != "image/png" {
+			t.Fatalf("Content-Type=%q", rec.Header().Get("Content-Type"))
+		}
+		if rec.Header().Get("Cache-Control") != "private, no-store" {
+			t.Fatalf("Cache-Control=%q", rec.Header().Get("Cache-Control"))
+		}
+		if rec.Header().Get("X-Accel-Buffering") != "no" {
+			t.Fatalf("X-Accel-Buffering=%q", rec.Header().Get("X-Accel-Buffering"))
+		}
+		if rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+			t.Fatalf("nosniff=%q", rec.Header().Get("X-Content-Type-Options"))
+		}
+		if rec.Header().Get("Content-Disposition") != "" {
+			t.Fatalf("image must stay inline, got %q", rec.Header().Get("Content-Disposition"))
+		}
+	})
+
+	t.Run("non-image is attachment", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		setAAPFileStreamHeaders(c, "text/csv", "invoice-2026-08.csv")
+		got := rec.Header().Get("Content-Disposition")
+		if got != `attachment; filename="invoice-2026-08.csv"` {
+			t.Fatalf("Content-Disposition=%q", got)
+		}
+		if rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+			t.Fatalf("nosniff=%q", rec.Header().Get("X-Content-Type-Options"))
+		}
+	})
+
+	t.Run("non-ascii filename uses RFC 5987", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		setAAPFileStreamHeaders(c, "application/json", "对账单.json")
+		got := rec.Header().Get("Content-Disposition")
+		if !strings.Contains(got, `attachment; filename="`) || !strings.Contains(got, "filename*=UTF-8''") {
+			t.Fatalf("Content-Disposition=%q", got)
+		}
+	})
+}
+
 // IC-07: download token hardening on the public content proxy path.
 func TestAAPFileDownloadTokenHardening(t *testing.T) {
 	filesOn := config.AgentAccessFilesConfig{
@@ -300,7 +349,7 @@ func TestAAPFileDownloadTokenHardening(t *testing.T) {
 
 	t.Run("single_use_second_read_not_found", func(t *testing.T) {
 		minted, err := domain.MintDownloadToken(context.Background(), aapfile.MintDownloadTokenInput{
-			Scope: aapfile.Scope{WorkspaceID: aapFileWorkspaceID, AgentID: aapFileAgentID},
+			Scope:  aapfile.Scope{WorkspaceID: aapFileWorkspaceID, AgentID: aapFileAgentID},
 			FileID: fileID, Purpose: aapfile.DownloadPurposeToolInvoke,
 			CreatedBy: aapFileServiceID,
 		})
@@ -318,6 +367,12 @@ func TestAAPFileDownloadTokenHardening(t *testing.T) {
 		}
 		if first.Header().Get("X-Accel-Buffering") != "no" {
 			t.Fatalf("missing X-Accel-Buffering: %q", first.Header().Get("X-Accel-Buffering"))
+		}
+		if first.Header().Get("X-Content-Type-Options") != "nosniff" {
+			t.Fatalf("missing nosniff: %q", first.Header().Get("X-Content-Type-Options"))
+		}
+		if first.Header().Get("Content-Disposition") != "" {
+			t.Fatalf("image download must stay inline, got %q", first.Header().Get("Content-Disposition"))
 		}
 		if !bytes.Equal(first.Body.Bytes(), png1x1) {
 			t.Fatal("body mismatch on first download")
@@ -338,7 +393,7 @@ func TestAAPFileDownloadTokenHardening(t *testing.T) {
 
 	t.Run("expired_token_rejected", func(t *testing.T) {
 		minted, err := domain.MintDownloadToken(context.Background(), aapfile.MintDownloadTokenInput{
-			Scope: aapfile.Scope{WorkspaceID: aapFileWorkspaceID, AgentID: aapFileAgentID},
+			Scope:  aapfile.Scope{WorkspaceID: aapFileWorkspaceID, AgentID: aapFileAgentID},
 			FileID: fileID, Purpose: aapfile.DownloadPurposeClientContent,
 			CreatedBy: aapFileServiceID, TTL: time.Minute,
 		})
@@ -359,7 +414,7 @@ func TestAAPFileDownloadTokenHardening(t *testing.T) {
 	t.Run("purpose_mismatch_rejected", func(t *testing.T) {
 		// Mint client_content; resolve with tool_invoke expectation must fail.
 		minted, err := domain.MintDownloadToken(context.Background(), aapfile.MintDownloadTokenInput{
-			Scope: aapfile.Scope{WorkspaceID: aapFileWorkspaceID, AgentID: aapFileAgentID},
+			Scope:  aapfile.Scope{WorkspaceID: aapFileWorkspaceID, AgentID: aapFileAgentID},
 			FileID: fileID, Purpose: aapfile.DownloadPurposeClientContent,
 			CreatedBy: aapFileServiceID,
 		})
@@ -723,6 +778,27 @@ func (s *memoryFileStore) ConsumeDownloadToken(
 	token.ConsumedAt = &now
 	s.tokens[tokenID] = token
 	return token, nil
+}
+
+func (s *memoryFileStore) ListGeneratedForRun(
+	_ context.Context, workspaceID, agentID, runID string,
+) ([]aapfile.File, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]aapfile.File, 0)
+	for _, file := range s.files {
+		if file.WorkspaceID == workspaceID && file.AgentID == agentID &&
+			file.SourceRunID == runID && file.Purpose == aapfile.PurposeAgentOutput {
+			out = append(out, file)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.Before(out[j].CreatedAt)
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out, nil
 }
 
 func (s *memoryFileStore) PurgeExpiredDownloadTokens(

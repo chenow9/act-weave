@@ -13,7 +13,7 @@ func TestMigrationTestHarnessRebuildsFromAnyVersion(t *testing.T) {
 	database := New(t)
 
 	version := database.MigrateToLatest(t)
-	if !version.Applied || version.Number != 22 || version.Dirty {
+	if !version.Applied || version.Number != 23 || version.Dirty {
 		t.Fatalf("expected clean version 6, got %+v", version)
 	}
 	db := database.Open(t)
@@ -22,7 +22,7 @@ func TestMigrationTestHarnessRebuildsFromAnyVersion(t *testing.T) {
 	}
 
 	version = database.ResetToLatest(t)
-	if !version.Applied || version.Number != 22 || version.Dirty {
+	if !version.Applied || version.Number != 23 || version.Dirty {
 		t.Fatalf("expected a clean latest version 6, got %+v", version)
 	}
 	assertTableMissing(t, database.DSN(), "reset_probe")

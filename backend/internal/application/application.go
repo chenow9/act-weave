@@ -1027,6 +1027,12 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	aapFileDomainOpts = append(aapFileDomainOpts, aapfile.WithVirusScan(aapfile.VirusScanConfig{
 		Enabled: filesCfg.VirusScan.Enabled, Required: filesCfg.VirusScan.Required,
 	}))
+	aapFileDomainOpts = append(aapFileDomainOpts, aapfile.WithFilesFeatureGate(aapfile.FilesFeatureGate{
+		Enabled:                    filesCfg.Enabled,
+		RuntimeOutboundAttachments: filesCfg.RuntimeOutboundAttachments,
+		AllowsWorkspace:            filesCfg.AllowsWorkspace,
+		AllowsClient:               filesCfg.AllowsClient,
+	}))
 	aapFileDomain, err := aapfile.NewService(
 		aapFileRepo, aapfile.ObjectStagingStore{Store: objectStore}, aapFileSecure,
 		aapFileDomainOpts...,
@@ -1678,7 +1684,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	return &Application{
 		db: db, redis: redisClient, handler: handler, eventNotifier: liveEvents,
 		securityChanges: securityChanges, cancelBus: cancelBus,
-		clientSecretAuthenticator: clientSecretAuthenticator,
+		clientSecretAuthenticator:  clientSecretAuthenticator,
 		privateKeyJWTAuthenticator: privateKeyJWTAuthenticator,
 		agentAccessAuthorizer:      agentAccessAuthorizer,
 		securityVersionCache:       securityVersionCache,

@@ -33,7 +33,7 @@ const fileColumns = `
 	size_bytes, sha256, staging_bucket, staging_object_key,
 	staging_expires_at, staging_deleted_at, stored_object_id, purpose,
 	error_code, error_message, processing_version,
-	created_at, updated_at, ready_at, retention_until
+	created_at, updated_at, ready_at, retention_until, source_run_id
 `
 
 // InsertFile inserts a new PENDING_UPLOAD (or other) file row.
@@ -48,10 +48,11 @@ func (r *Repository) InsertFile(ctx context.Context, file File) (File, error) {
 			status, filename, declared_media_type, detected_media_type,
 			size_bytes, sha256, staging_bucket, staging_object_key,
 			staging_expires_at, staging_deleted_at, stored_object_id, purpose,
-			error_code, error_message, processing_version, retention_until
+			error_code, error_message, processing_version, retention_until,
+			source_run_id, ready_at
 		) VALUES (
 			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-			$19,$20,$21,$22,$23,$24,$25,$26
+			$19,$20,$21,$22,$23,$24,$25,$26,$27,$28
 		)
 		RETURNING `+fileColumns,
 		file.ID, file.WorkspaceID, file.AgentID, file.ActorType, file.ActorID, file.ClientID,
@@ -63,11 +64,44 @@ func (r *Repository) InsertFile(ctx context.Context, file File) (File, error) {
 		nullableTimePtr(file.StagingDeletedAt), nullableStringPtr(file.StoredObjectID),
 		file.Purpose, nullableStringPtr(file.ErrorCode), nullableStringPtr(file.ErrorMessage),
 		file.ProcessingVersion, nullableTimePtr(file.RetentionUntil),
+		nullableString(file.SourceRunID), nullableTimePtr(file.ReadyAt),
 	))
 	if err != nil {
 		return File{}, mapWrite("insert aap file", err)
 	}
 	return value, nil
+}
+
+// ListGeneratedForRun returns AGENT_OUTPUT files for a chat run (HITL rebuild).
+func (r *Repository) ListGeneratedForRun(
+	ctx context.Context,
+	workspaceID, agentID, runID string,
+) ([]File, error) {
+	if r == nil || r.db == nil || !validUUID(workspaceID) || !validUUID(agentID) || !validUUID(runID) {
+		return nil, ErrInvalid
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT `+fileColumns+` FROM aap_files
+		 WHERE workspace_id=$1 AND source_run_id=$2
+		   AND purpose='AGENT_OUTPUT' AND agent_id=$3
+		 ORDER BY created_at ASC, id ASC
+	`, workspaceID, runID, agentID)
+	if err != nil {
+		return nil, fmt.Errorf("list generated aap files: %w", err)
+	}
+	defer rows.Close()
+	files := make([]File, 0)
+	for rows.Next() {
+		file, scanErr := scanFileRow(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		files = append(files, file)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return files, nil
 }
 
 // GetFile loads a file by workspace + id.
@@ -713,6 +747,7 @@ func scanFileRow(row scannable) (File, error) {
 		file                                                File
 		subjectType, subjectID, filename, detected, sha256  sql.NullString
 		stagingKey, storedObjectID, errorCode, errorMessage sql.NullString
+		sourceRunID                                         sql.NullString
 		stagingDeletedAt, readyAt, retentionUntil           sql.NullTime
 	)
 	err := row.Scan(
@@ -722,7 +757,7 @@ func scanFileRow(row scannable) (File, error) {
 		&file.SizeBytes, &sha256, &file.StagingBucket, &stagingKey,
 		&file.StagingExpiresAt, &stagingDeletedAt, &storedObjectID, &file.Purpose,
 		&errorCode, &errorMessage, &file.ProcessingVersion,
-		&file.CreatedAt, &file.UpdatedAt, &readyAt, &retentionUntil,
+		&file.CreatedAt, &file.UpdatedAt, &readyAt, &retentionUntil, &sourceRunID,
 	)
 	if err != nil {
 		return File{}, err
@@ -739,6 +774,9 @@ func scanFileRow(row scannable) (File, error) {
 	file.StagingDeletedAt = nullTimePtr(stagingDeletedAt)
 	file.ReadyAt = nullTimePtr(readyAt)
 	file.RetentionUntil = nullTimePtr(retentionUntil)
+	if sourceRunID.Valid {
+		file.SourceRunID = strings.TrimSpace(sourceRunID.String)
+	}
 	return file, nil
 }
 
@@ -802,9 +840,9 @@ func scanJob(row scannable) (ProcessingJob, error) {
 
 func scanDownloadToken(row scannable) (DownloadToken, error) {
 	var (
-		token              DownloadToken
-		consumedAt         sql.NullTime
-		maxBytes           sql.NullInt64
+		token      DownloadToken
+		consumedAt sql.NullTime
+		maxBytes   sql.NullInt64
 	)
 	err := row.Scan(
 		&token.ID, &token.WorkspaceID, &token.FileID, &token.Purpose, &token.JTI,
@@ -848,6 +886,14 @@ func mapWrite(operation string, err error) error {
 func validUUID(value string) bool {
 	parsed, err := uuid.Parse(strings.TrimSpace(value))
 	return err == nil && parsed.String() == value
+}
+
+func nullableString(value string) any {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func nullableStringPtr(value *string) any {

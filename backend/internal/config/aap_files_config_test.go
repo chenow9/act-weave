@@ -50,13 +50,14 @@ func TestAgentAccessFilesConfig(t *testing.T) {
 	t.Run("EnvironmentOverrides", func(t *testing.T) {
 		path := writeConfig(t, validConfigYAML)
 		values := map[string]string{
-			"ACTWEAVE_AAP_FILES_ENABLED":              "true",
-			"ACTWEAVE_AAP_FILES_ALLOW_ALL_WORKSPACES": "false",
-			"ACTWEAVE_AAP_FILES_ALLOW_ALL_CLIENTS":    "false",
-			"ACTWEAVE_AAP_FILES_WORKSPACE_IDS":        "a0000000-0000-4000-8000-0000000000a1",
-			"ACTWEAVE_AAP_FILES_CLIENT_IDS":           "b0000000-0000-4000-8000-0000000000b1",
-			"ACTWEAVE_AAP_FILES_MAX_BYTES":            "1048576",
-			"ACTWEAVE_AAP_FILES_RUNTIME_MULTIMODAL":   "true",
+			"ACTWEAVE_AAP_FILES_ENABLED":                      "true",
+			"ACTWEAVE_AAP_FILES_ALLOW_ALL_WORKSPACES":         "false",
+			"ACTWEAVE_AAP_FILES_ALLOW_ALL_CLIENTS":            "false",
+			"ACTWEAVE_AAP_FILES_WORKSPACE_IDS":                "a0000000-0000-4000-8000-0000000000a1",
+			"ACTWEAVE_AAP_FILES_CLIENT_IDS":                   "b0000000-0000-4000-8000-0000000000b1",
+			"ACTWEAVE_AAP_FILES_MAX_BYTES":                    "1048576",
+			"ACTWEAVE_AAP_FILES_RUNTIME_MULTIMODAL":           "true",
+			"ACTWEAVE_AAP_FILES_RUNTIME_OUTBOUND_ATTACHMENTS": "true",
 		}
 		loaded, err := Load(path, lookup(values))
 		if err != nil {
@@ -66,7 +67,7 @@ func TestAgentAccessFilesConfig(t *testing.T) {
 		if !files.Enabled || files.AllowAllWorkspaces || files.AllowAllClients {
 			t.Fatalf("files env override failed: %+v", files)
 		}
-		if files.MaxBytes != 1048576 || !files.RuntimeMultimodal {
+		if files.MaxBytes != 1048576 || !files.RuntimeMultimodal || !files.RuntimeOutboundAttachments {
 			t.Fatalf("files numeric/bool env failed: %+v", files)
 		}
 		if !files.AllowsWorkspace("a0000000-0000-4000-8000-0000000000a1") ||

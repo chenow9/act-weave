@@ -18,7 +18,7 @@ import (
 func TestDelegationMigrationAndAuditDAO(t *testing.T) {
 	harness := dbtest.New(t)
 	version := harness.MigrateToLatest(t)
-	if !version.Applied || version.Number != 22 || version.Dirty {
+	if !version.Applied || version.Number != 23 || version.Dirty {
 		t.Fatalf("migration version = %+v want >=13", version)
 	}
 	db := harness.Open(t)

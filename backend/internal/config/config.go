@@ -173,6 +173,8 @@ type AgentAccessFilesConfig struct {
 	} `yaml:"virusScan"`
 	// RuntimeMultimodal gates model assembly of input_file (IC-08); orthogonal to files gate.
 	RuntimeMultimodal bool `yaml:"runtimeMultimodal"`
+	// RuntimeOutboundAttachments gates IngestGenerated. Default off.
+	RuntimeOutboundAttachments bool `yaml:"runtimeOutboundAttachments"`
 }
 
 // AllowsWorkspace reports whether the workspace may use AAP File APIs when files are enabled.
@@ -576,6 +578,13 @@ func (config *Config) applyEnvironment(lookup LookupEnv) error {
 			return errors.New("ACTWEAVE_AAP_FILES_RUNTIME_MULTIMODAL must be a boolean")
 		}
 		config.AgentAccess.Files.RuntimeMultimodal = value
+	}
+	if raw, ok := lookup("ACTWEAVE_AAP_FILES_RUNTIME_OUTBOUND_ATTACHMENTS"); ok {
+		value, err := strconv.ParseBool(strings.TrimSpace(raw))
+		if err != nil {
+			return errors.New("ACTWEAVE_AAP_FILES_RUNTIME_OUTBOUND_ATTACHMENTS must be a boolean")
+		}
+		config.AgentAccess.Files.RuntimeOutboundAttachments = value
 	}
 	if raw, ok := lookup("ACTWEAVE_AAP_FILES_PUBLIC_UPLOAD_BASE_URL"); ok {
 		config.AgentAccess.Files.PublicUploadBaseURL = strings.TrimSpace(raw)

@@ -3,6 +3,7 @@ package httptransport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -119,7 +120,7 @@ type aapFileErrorDTO struct {
 }
 
 type aapFileProcessingDTO struct {
-	Version int64                      `json:"version"`
+	Version int64                       `json:"version"`
 	Stages  []aapFileProcessingStageDTO `json:"stages"`
 }
 
@@ -135,23 +136,23 @@ type aapFileLinksDTO struct {
 // aapFileDTO is the public File resource. Sensitive acceptance forbids upload/
 // presign/downloadUrl fields on this type.
 type aapFileDTO struct {
-	Object             string               `json:"object"`
-	ID                 string               `json:"id"`
-	AgentID            string               `json:"agentId"`
-	Status             string               `json:"status"`
-	Filename           string               `json:"filename,omitempty"`
-	MediaType          string               `json:"mediaType"`
-	DetectedMediaType  string               `json:"detectedMediaType,omitempty"`
-	SizeBytes          int64                `json:"sizeBytes"`
-	SHA256             string               `json:"sha256,omitempty"`
-	Purpose            string               `json:"purpose"`
-	Error              *aapFileErrorDTO     `json:"error,omitempty"`
-	Processing         aapFileProcessingDTO `json:"processing"`
-	Artifacts          []any                `json:"artifacts"`
-	Links              aapFileLinksDTO      `json:"links"`
-	CreatedAt          time.Time            `json:"createdAt"`
-	UpdatedAt          time.Time            `json:"updatedAt"`
-	ReadyAt            *time.Time           `json:"readyAt,omitempty"`
+	Object            string               `json:"object"`
+	ID                string               `json:"id"`
+	AgentID           string               `json:"agentId"`
+	Status            string               `json:"status"`
+	Filename          string               `json:"filename,omitempty"`
+	MediaType         string               `json:"mediaType"`
+	DetectedMediaType string               `json:"detectedMediaType,omitempty"`
+	SizeBytes         int64                `json:"sizeBytes"`
+	SHA256            string               `json:"sha256,omitempty"`
+	Purpose           string               `json:"purpose"`
+	Error             *aapFileErrorDTO     `json:"error,omitempty"`
+	Processing        aapFileProcessingDTO `json:"processing"`
+	Artifacts         []any                `json:"artifacts"`
+	Links             aapFileLinksDTO      `json:"links"`
+	CreatedAt         time.Time            `json:"createdAt"`
+	UpdatedAt         time.Time            `json:"updatedAt"`
+	ReadyAt           *time.Time           `json:"readyAt,omitempty"`
 }
 
 type aapCreateFileResponse struct {
@@ -276,7 +277,7 @@ func (routes *AAPFileRoutes) completeFile(c *gin.Context) {
 	}
 	stages, _ := routes.domainStages(c, c.Param("wid"), fileID)
 	c.JSON(http.StatusOK, aapCompleteFileResponse{
-		File: aapFileDTOFor(result.Result.File, stages, c.Param("wid"), c.Param("aid")),
+		File:       aapFileDTOFor(result.Result.File, stages, c.Param("wid"), c.Param("aid")),
 		Idempotent: result.Idempotent,
 	})
 }
@@ -384,7 +385,7 @@ func (routes *AAPFileRoutes) getFileContent(c *gin.Context) {
 	}
 	// Content path ops: reverse proxies must not buffer full bodies
 	// (nginx: proxy_buffering off; proxy_read_timeout >= 120s). See frontend/nginx.conf.
-	setAAPFileStreamHeaders(c, contentType)
+	setAAPFileStreamHeaders(c, contentType, aapFileDisplayName(file))
 	c.Status(http.StatusOK)
 	_, _ = io.Copy(c.Writer, opened.Body)
 }
@@ -488,7 +489,7 @@ func (routes *AAPFileRoutes) downloadByToken(c *gin.Context) {
 		contentType = *file.DetectedMediaType
 	}
 	// Token proxy stream: same reverse-proxy buffering rules as Bearer content.
-	setAAPFileStreamHeaders(c, contentType)
+	setAAPFileStreamHeaders(c, contentType, aapFileDisplayName(file))
 	c.Status(http.StatusOK)
 	body := io.Reader(opened.Body)
 	if token.MaxBytes != nil && *token.MaxBytes > 0 {
@@ -501,7 +502,7 @@ func (routes *AAPFileRoutes) downloadByToken(c *gin.Context) {
 // setAAPFileStreamHeaders applies content headers for long file bodies.
 // Gateways must disable response buffering (e.g. nginx proxy_buffering off)
 // and allow proxy_read_timeout >= 120s for up to DefaultMaxBytes decrypt streams.
-func setAAPFileStreamHeaders(c *gin.Context, contentType string) {
+func setAAPFileStreamHeaders(c *gin.Context, contentType, filename string) {
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
@@ -509,6 +510,82 @@ func setAAPFileStreamHeaders(c *gin.Context, contentType string) {
 	c.Header("Cache-Control", "private, no-store")
 	// Hints nginx and compatible proxies not to buffer the full response.
 	c.Header("X-Accel-Buffering", "no")
+	c.Header("X-Content-Type-Options", "nosniff")
+	if !isInlineImageMediaType(contentType) {
+		c.Header("Content-Disposition", rfc5987AttachmentDisposition(filename))
+	}
+}
+
+func aapFileDisplayName(file aapfile.File) string {
+	if file.Filename == nil {
+		return ""
+	}
+	return strings.TrimSpace(*file.Filename)
+}
+
+func isInlineImageMediaType(contentType string) bool {
+	normalized, err := aapfile.NormalizeMediaType(contentType)
+	if err != nil {
+		return false
+	}
+	return strings.HasPrefix(normalized, "image/")
+}
+
+func rfc5987AttachmentDisposition(filename string) string {
+	filename = strings.TrimSpace(filename)
+	filename = strings.ReplaceAll(filename, "\\", "/")
+	if idx := strings.LastIndex(filename, "/"); idx >= 0 {
+		filename = filename[idx+1:]
+	}
+	filename = strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 {
+			return -1
+		}
+		return r
+	}, filename)
+	if filename == "" || filename == "." || filename == ".." {
+		filename = "download"
+	}
+	fallback := strings.Map(func(r rune) rune {
+		if r == '"' {
+			return '\''
+		}
+		if r > 0x7e {
+			return '_'
+		}
+		return r
+	}, filename)
+	if fallback == "" {
+		fallback = "download"
+	}
+	if rfc5987ASCIIFilename(filename) && !strings.Contains(filename, `"`) {
+		return `attachment; filename="` + fallback + `"`
+	}
+	return fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, fallback, rfc5987Encode(filename))
+}
+
+func rfc5987ASCIIFilename(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if value[i] > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
+func rfc5987Encode(value string) string {
+	var b strings.Builder
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+			c == '!' || c == '#' || c == '$' || c == '&' || c == '+' || c == '-' ||
+			c == '.' || c == '^' || c == '_' || c == '`' || c == '|' || c == '~' {
+			b.WriteByte(c)
+			continue
+		}
+		fmt.Fprintf(&b, "%%%02X", c)
+	}
+	return b.String()
 }
 
 // ---- helpers ----

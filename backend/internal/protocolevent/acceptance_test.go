@@ -18,7 +18,7 @@ import (
 func TestEventKernelDatabaseAcceptance(t *testing.T) {
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 22 || version.Dirty {
+	if !version.Applied || version.Number != 23 || version.Dirty {
 		t.Fatalf("expected clean latest schema version 4, got %+v", version)
 	}
 	db := testDatabase.Open(t)

@@ -31,10 +31,17 @@ const (
 
 // File purposes.
 const (
-	PurposeGeneral   = "GENERAL"
-	PurposeVision    = "VISION"
-	PurposeDocument  = "DOCUMENT"
-	PurposeToolInput = "TOOL_INPUT"
+	PurposeGeneral     = "GENERAL"
+	PurposeVision      = "VISION"
+	PurposeDocument    = "DOCUMENT"
+	PurposeToolInput   = "TOOL_INPUT"
+	PurposeAgentOutput = "AGENT_OUTPUT"
+)
+
+// Outbound ingest / publish limits (design §5.1).
+const (
+	MaxPublishTextBytes     = 256 << 10
+	MaxOutboundFilesPerTurn = 8
 )
 
 // Built-in processing stages.
@@ -125,11 +132,11 @@ const DefaultDownloadTokenPurgeBatch = 500
 
 // Staging GC / retention purge defaults (IC-11 / KD-21 / design §5.4.3).
 const (
-	DefaultStagingGCBatch          = 100
-	DefaultStagingGCInterval       = 60 * time.Second
-	DefaultMaxPromoteAttempts      = 10
-	DefaultRetentionPurgeBatch     = 100
-	DefaultRetentionPurgeInterval  = 5 * time.Minute
+	DefaultStagingGCBatch           = 100
+	DefaultStagingGCInterval        = 60 * time.Second
+	DefaultMaxPromoteAttempts       = 10
+	DefaultRetentionPurgeBatch      = 100
+	DefaultRetentionPurgeInterval   = 5 * time.Minute
 	DefaultRetentionPurgeClaimLease = 2 * time.Minute
 )
 
@@ -148,7 +155,7 @@ const (
 	DefaultRetentionDays       = 30
 )
 
-// AllowedMediaTypes is the v1 MIME allowlist (KD-12).
+// AllowedMediaTypes is the v1 inbound MIME allowlist (KD-12).
 var AllowedMediaTypes = map[string]struct{}{
 	"image/png":       {},
 	"image/jpeg":      {},
@@ -157,14 +164,29 @@ var AllowedMediaTypes = map[string]struct{}{
 	"application/pdf": {},
 }
 
+// AllowedOutboundMediaTypes is the ingest allowlist: inbound five plus text types.
+// Do not use this table for client create (validateCreateInput stays inbound-only).
+var AllowedOutboundMediaTypes = map[string]struct{}{
+	"image/png":        {},
+	"image/jpeg":       {},
+	"image/webp":       {},
+	"image/gif":        {},
+	"application/pdf":  {},
+	"text/plain":       {},
+	"text/csv":         {},
+	"text/markdown":    {},
+	"application/json": {},
+}
+
 var (
-	ErrInvalid      = errors.New("aap file input is invalid")
-	ErrNotFound     = errors.New("aap file not found")
-	ErrConflict     = errors.New("aap file conflict")
-	ErrFailed       = errors.New("aap file operation failed")
-	ErrExpired      = errors.New("aap file upload expired")
-	ErrNotReady     = errors.New("aap file is not ready")
-	ErrPendingLimit = errors.New("aap file pending upload limit exceeded")
+	ErrInvalid         = errors.New("aap file input is invalid")
+	ErrNotFound        = errors.New("aap file not found")
+	ErrConflict        = errors.New("aap file conflict")
+	ErrFailed          = errors.New("aap file operation failed")
+	ErrExpired         = errors.New("aap file upload expired")
+	ErrNotReady        = errors.New("aap file is not ready")
+	ErrPendingLimit    = errors.New("aap file pending upload limit exceeded")
+	ErrFeatureDisabled = errors.New("aap file feature disabled")
 )
 
 // File is the durable aap_files row.
@@ -191,6 +213,7 @@ type File struct {
 	StagingDeletedAt       *time.Time
 	StoredObjectID         *string
 	Purpose                string
+	SourceRunID            string
 	ErrorCode              *string
 	ErrorMessage           *string
 	ProcessingVersion      int64

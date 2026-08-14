@@ -55,6 +55,7 @@ agentAccess:
     maxPendingPerWorkspace: 20
     maxReadyBytesPerWorkspace: 5368709120
     runtimeMultimodal: false
+    runtimeOutboundAttachments: false
   signingKeys:
     # Local development only. Production must mount a protected, stable PKCS#8
     # Ed25519 key file and set generateIfMissing=false.

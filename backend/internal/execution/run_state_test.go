@@ -29,7 +29,7 @@ func TestRunStateMigration(t *testing.T) {
 	t.Skip("historical step migration retired after baseline squash; see migrations_archive")
 	testDatabase := dbtest.New(t)
 	version := testDatabase.MigrateToLatest(t)
-	if !version.Applied || version.Number != 22 || version.Dirty {
+	if !version.Applied || version.Number != 23 || version.Dirty {
 		t.Fatalf("expected clean run state migration version 22, got %+v", version)
 	}
 	db := testDatabase.Open(t)

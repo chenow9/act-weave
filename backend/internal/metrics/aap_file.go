@@ -42,6 +42,11 @@ type AAPFileCollector struct {
 
 	pendingUploadGauge atomic.Int64
 	stagingOrphanBytes atomic.Int64
+
+	ingestGeneratedOK       atomic.Uint64
+	ingestGeneratedDisabled atomic.Uint64
+	ingestGeneratedDenied   atomic.Uint64
+	ingestGeneratedError    atomic.Uint64
 }
 
 var defaultAAPFile = &AAPFileCollector{}
@@ -148,6 +153,24 @@ func (c *AAPFileCollector) IncDownload(purpose, result string) {
 	}
 }
 
+// IncIngestGenerated increments aap_file_ingest_generated_total{result}.
+// result ∈ {ok, disabled, denied, error}; never pass file_id or filename.
+func (c *AAPFileCollector) IncIngestGenerated(result string) {
+	if c == nil {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(result)) {
+	case "ok", "succeeded", "success":
+		c.ingestGeneratedOK.Add(1)
+	case "disabled":
+		c.ingestGeneratedDisabled.Add(1)
+	case "denied":
+		c.ingestGeneratedDenied.Add(1)
+	default:
+		c.ingestGeneratedError.Add(1)
+	}
+}
+
 // SetPendingUploadGauge sets aap_file_pending_upload_gauge (process-wide count).
 func (c *AAPFileCollector) SetPendingUploadGauge(n int64) {
 	if c == nil {
@@ -177,27 +200,31 @@ func (c *AAPFileCollector) Snapshot() map[string]uint64 {
 		return map[string]uint64{}
 	}
 	return map[string]uint64{
-		"aap_file_create_total":                  c.createTotal.Load(),
-		"aap_file_complete_total":                c.completeTotal.Load(),
-		"aap_file_promote_duration_ms":           uint64(c.promoteDurationMs.Load()),
-		"aap_file_processing_promote_succeeded":  c.promoteSucceeded.Load(),
-		"aap_file_processing_promote_failed":     c.promoteFailed.Load(),
-		"aap_file_processing_promote_error":      c.promoteError.Load(),
-		"aap_file_processing_mime_succeeded":     c.mimeSucceeded.Load(),
-		"aap_file_processing_mime_failed":        c.mimeFailed.Load(),
-		"aap_file_processing_virus_succeeded":    c.virusSucceeded.Load(),
-		"aap_file_processing_virus_failed":       c.virusFailed.Load(),
-		"aap_file_processing_webhook_delivered":  c.webhookDelivered.Load(),
-		"aap_file_processing_webhook_failed":     c.webhookFailed.Load(),
-		"aap_file_processing_webhook_timed_out":  c.webhookTimedOut.Load(),
-		"aap_file_processing_webhook_succeeded":  c.webhookSucceeded.Load(),
-		"aap_file_download_ok":                   c.downloadOK.Load(),
-		"aap_file_download_not_found":            c.downloadNotFound.Load(),
-		"aap_file_download_consumed":             c.downloadConsumed.Load(),
-		"aap_file_download_purpose_denied":       c.downloadPurposeDenied.Load(),
-		"aap_file_download_error":                c.downloadError.Load(),
-		"aap_file_processing_other_total":        c.otherTotal.Load(),
-		"aap_file_pending_upload_gauge":          uint64(c.pendingUploadGauge.Load()),
-		"aap_file_staging_orphan_bytes":          uint64(c.stagingOrphanBytes.Load()),
+		"aap_file_create_total":                 c.createTotal.Load(),
+		"aap_file_complete_total":               c.completeTotal.Load(),
+		"aap_file_promote_duration_ms":          uint64(c.promoteDurationMs.Load()),
+		"aap_file_processing_promote_succeeded": c.promoteSucceeded.Load(),
+		"aap_file_processing_promote_failed":    c.promoteFailed.Load(),
+		"aap_file_processing_promote_error":     c.promoteError.Load(),
+		"aap_file_processing_mime_succeeded":    c.mimeSucceeded.Load(),
+		"aap_file_processing_mime_failed":       c.mimeFailed.Load(),
+		"aap_file_processing_virus_succeeded":   c.virusSucceeded.Load(),
+		"aap_file_processing_virus_failed":      c.virusFailed.Load(),
+		"aap_file_processing_webhook_delivered": c.webhookDelivered.Load(),
+		"aap_file_processing_webhook_failed":    c.webhookFailed.Load(),
+		"aap_file_processing_webhook_timed_out": c.webhookTimedOut.Load(),
+		"aap_file_processing_webhook_succeeded": c.webhookSucceeded.Load(),
+		"aap_file_download_ok":                  c.downloadOK.Load(),
+		"aap_file_download_not_found":           c.downloadNotFound.Load(),
+		"aap_file_download_consumed":            c.downloadConsumed.Load(),
+		"aap_file_download_purpose_denied":      c.downloadPurposeDenied.Load(),
+		"aap_file_download_error":               c.downloadError.Load(),
+		"aap_file_processing_other_total":       c.otherTotal.Load(),
+		"aap_file_pending_upload_gauge":         uint64(c.pendingUploadGauge.Load()),
+		"aap_file_staging_orphan_bytes":         uint64(c.stagingOrphanBytes.Load()),
+		"aap_file_ingest_generated_ok":          c.ingestGeneratedOK.Load(),
+		"aap_file_ingest_generated_disabled":    c.ingestGeneratedDisabled.Load(),
+		"aap_file_ingest_generated_denied":      c.ingestGeneratedDenied.Load(),
+		"aap_file_ingest_generated_error":       c.ingestGeneratedError.Load(),
 	}
 }
