@@ -48,11 +48,11 @@ Integrator contract: [AAP integration guide §9.3](../aap-integration-guide.md#9
 
 ## Rollback
 
-1. Turn **`runtimeOutboundAttachments` off first** (or clear the files allowlist) and restart — stops new outbound writes / tool injection. Historical `fileId`s remain downloadable while `files.enabled` stays on.
+1. Turn **`runtimeOutboundAttachments` off first** and restart — stops new outbound writes / tool injection (`IngestGenerated` and `actweave.publish_attachment`). Leave the workspace/client allowlist and `files.enabled` on so historical path A/B downloads still work.
 2. Stop new Agent-policy `enableOutboundAttachments: true`.
 3. **Do not** roll back the snapshot parser that understands `enableOutboundAttachments`. In-flight Runs may already have written `"enableOutboundAttachments":true`; pre-parser binaries `DisallowUnknownFields` and would fail those snapshots.
 4. **Do not** run `000023_aap_file_outbound` down while `AGENT_OUTPUT` rows exist (the CHECK rollback raises). Do **not** delete `aap_files` / permanent objects as the primary rollback.
-5. Set `agentAccess.files.enabled: false` **last**. File create/complete/download routes return not-visible (**404**), including historical outbound files. Non-file AAP routes stay up.
+5. Set `agentAccess.files.enabled: false` **last** (or clear the files allowlist). Either conceal action 404s File create/complete/download, including historical outbound files. Non-file AAP routes stay up.
 6. Pipeline / staging GC / retention purge workers idle when there is no work; leave them running.
 7. Optional: keep `runtimeMultimodal: false` so any residual `input_file` createRun fails closed.
 
