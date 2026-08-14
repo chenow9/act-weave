@@ -218,7 +218,8 @@ func projectAAPAgentProfile(
 	}
 	// Read enableA2UI from agent ContextPolicy (no new store). Parse errors fail closed.
 	enableA2UI := aapEnableA2UIFromPolicy(value.ContextPolicy)
-	supportedContent := aapSupportedContentForAgent(filesEnabled, filesGate, enableA2UI)
+	enableOutbound := aapEnableOutboundFromPolicy(value.ContextPolicy)
+	supportedContent := aapSupportedContentForAgent(filesEnabled, filesGate, enableA2UI, enableOutbound)
 	// When disabled: omit top-level a2ui (prefer omit over enabled:false; KD-15).
 	var a2uiProfile *aapA2UIDTO
 	if enableA2UI {
@@ -265,6 +266,14 @@ func aapEnableA2UIFromPolicy(raw json.RawMessage) bool {
 	return doc.EnableA2UI()
 }
 
+func aapEnableOutboundFromPolicy(raw json.RawMessage) bool {
+	doc, _, err := sessioncontext.ParsePolicy(raw)
+	if err != nil {
+		return false
+	}
+	return doc.EnableOutboundAttachments()
+}
+
 // aapA2UIAdvertisement is the MVP top-level a2ui object when enableA2UI is true.
 func aapA2UIAdvertisement() *aapA2UIDTO {
 	return &aapA2UIDTO{
@@ -278,31 +287,40 @@ func aapA2UIAdvertisement() *aapA2UIDTO {
 	}
 }
 
-// aapSupportedContentForAgent composes message parts: text → input_file? → a2ui? (KD-15).
+// aapSupportedContentForAgent composes message parts: text → input_file? → a2ui? → output_file?
 func aapSupportedContentForAgent(
 	filesEnabled bool,
 	filesGate *config.AgentAccessFilesConfig,
 	enableA2UI bool,
+	enableOutbound bool,
 ) []aapSupportedContentDTO {
 	content := aapSupportedContentForFiles(filesEnabled, filesGate)
-	if !enableA2UI {
-		return content
+	if enableA2UI {
+		content = appendMessagePart(content, "a2ui")
 	}
+	if filesEnabled && filesGate != nil && filesGate.RuntimeOutboundAttachments && enableOutbound {
+		content = appendMessagePart(content, "output_file")
+		content = append(content, aapSupportedContentDTO{
+			Type:       "output_file_constraints",
+			MediaTypes: append([]string(nil), aapfile.PublishAttachmentMediaTypes...),
+			MaxBytes:   aapfile.MaxPublishTextBytes,
+		})
+	}
+	return content
+}
+
+func appendMessagePart(content []aapSupportedContentDTO, part string) []aapSupportedContentDTO {
 	for i := range content {
 		if content[i].Type != "message" {
 			continue
 		}
-		already := false
-		for _, part := range content[i].Parts {
-			if part == "a2ui" {
-				already = true
-				break
+		for _, existing := range content[i].Parts {
+			if existing == part {
+				return content
 			}
 		}
-		if !already {
-			content[i].Parts = append(append([]string(nil), content[i].Parts...), "a2ui")
-		}
-		break
+		content[i].Parts = append(append([]string(nil), content[i].Parts...), part)
+		return content
 	}
 	return content
 }

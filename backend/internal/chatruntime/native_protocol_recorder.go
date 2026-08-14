@@ -1,6 +1,7 @@
 package chatruntime
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -26,6 +27,8 @@ var terminalRunEventNamespace = uuid.MustParse("c56a50c4-96e0-61c8-ae91-56d12e8e
 // NativeProtocolRecorder is the production Runtime adapter for the AAP Event
 // Kernel. It consumes persisted domain facts and delegates public mapping to
 // the native protocol mappers/projectors; it never creates a legacy RunEvent.
+var _ PlatformToolCallProjector = (*NativeProtocolRecorder)(nil)
+
 type NativeProtocolRecorder struct {
 	runs                 *execution.RunRepository
 	tools                *execution.ToolInvocationRepository
@@ -148,6 +151,105 @@ func (recorder *NativeProtocolRecorder) recordTerminal(ctx context.Context, reco
 	return recorder.appendRunSnapshotWithID(
 		ctx, record.Run, eventType, record.OccurredAt, "", eventID,
 	)
+}
+
+// ProjectPlatformToolCall writes a tool_call item from an in-memory invocation.
+// It must not call tools.Get or insert tool_invocations.
+func (recorder *NativeProtocolRecorder) ProjectPlatformToolCall(
+	ctx context.Context,
+	in ProjectPlatformToolCallInput,
+) error {
+	if recorder == nil || recorder.toolProjector == nil || ctx == nil {
+		return errors.New("native runtime platform tool projection is invalid")
+	}
+	name := strings.TrimSpace(in.Name)
+	if name == "" || strings.TrimSpace(in.Run.ID) == "" || strings.TrimSpace(in.Run.TraceID) == "" {
+		return errors.New("native runtime platform tool projection is invalid")
+	}
+	startedAt := in.StartedAt.UTC()
+	if startedAt.IsZero() {
+		startedAt = time.Now().UTC()
+	}
+	finishedAt := in.FinishedAt.UTC()
+	if finishedAt.IsZero() {
+		finishedAt = time.Now().UTC()
+	}
+	invocationID := strings.TrimSpace(in.InvocationID)
+	if invocationID == "" {
+		id, err := uuid.NewV7()
+		if err != nil {
+			return err
+		}
+		invocationID = id.String()
+	}
+	args := append(json.RawMessage(nil), in.Args...)
+	if len(bytes.TrimSpace(args)) == 0 {
+		args = json.RawMessage(`{}`)
+	}
+	result := append(json.RawMessage(nil), in.Result...)
+	if len(bytes.TrimSpace(result)) == 0 {
+		result = json.RawMessage(`{}`)
+	}
+	base := execution.ToolInvocation{
+		ID:                  invocationID,
+		WorkspaceID:         in.Run.WorkspaceID,
+		AgentRunID:          in.Run.ID,
+		CapabilityReleaseID: PlatformPublishReleaseID,
+		ActorType:           in.Run.TriggeredByType,
+		ActorID:             firstNonEmpty(in.Job.ActorID, in.Run.TriggeredByID),
+		TraceID:             in.Run.TraceID,
+		InputSummary:        args,
+		StartedAt:           startedAt,
+	}
+	started := base
+	started.Status, started.FinishedAt = "RUNNING", nil
+	started.OutputSummary, started.ErrorCode = nil, ""
+
+	completed := base
+	completed.FinishedAt = &finishedAt
+	completed.OutputSummary = result
+	if in.OK {
+		completed.Status = "SUCCEEDED"
+	} else {
+		completed.Status = "FAILED"
+		completed.ErrorCode = strings.TrimSpace(in.ErrorCode)
+		if completed.ErrorCode == "" {
+			completed.ErrorCode = "FILE_INVALID"
+		}
+	}
+
+	protocolContext := execution.ProtocolToolCallContext{
+		Scope: runtimeProtocolScope(in.Run), EventStreamID: in.Run.ID,
+		TraceID: in.Run.TraceID,
+	}
+	ordinal, err := recorder.nextOrdinal(ctx, in.Run)
+	if err != nil {
+		return err
+	}
+	if _, err := recorder.toolProjector.ProjectStarted(ctx, execution.ProjectToolCallStartedInput{
+		Context: protocolContext, Invocation: started, Name: name, Ordinal: ordinal,
+		SourceType: protocolevent.SourceRuntime,
+	}); err != nil {
+		return err
+	}
+	if _, err := recorder.toolProjector.ProjectArguments(ctx, execution.ProjectToolCallDeltaInput{
+		Context: protocolContext, Invocation: started, OccurredAt: startedAt,
+	}); err != nil {
+		return err
+	}
+	_, err = recorder.toolProjector.Complete(ctx, execution.CompleteProtocolToolCallInput{
+		Context: protocolContext, Invocation: completed, Name: name, CompletedAt: finishedAt,
+	})
+	return err
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func (recorder *NativeProtocolRecorder) recordToolCompleted(ctx context.Context, record ProtocolRecord) error {

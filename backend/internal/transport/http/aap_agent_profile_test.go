@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"actweave/backend/internal/a2ui"
+	"actweave/backend/internal/aapfile"
 	"actweave/backend/internal/agent"
 	"actweave/backend/internal/agentaccessauth"
 	"actweave/backend/internal/capability"
@@ -357,6 +358,66 @@ func TestAAPAgentProfileA2UIAdvertisement(t *testing.T) {
 			t.Fatalf("body missing a2ui: %s", response.Body.String())
 		}
 	})
+}
+
+func TestAAPAgentProfileOutboundParts(t *testing.T) {
+	gate := &config.AgentAccessFilesConfig{
+		Enabled: true, AllowAllWorkspaces: true, RuntimeOutboundAttachments: true,
+		MaxBytes: 10 << 20,
+	}
+	summary := aapPublishedAgentSummary()
+	summary.ContextPolicy = aapEnableOutboundPolicyJSON(true)
+	profile, _, err := projectAAPAgentProfile(summary, aapProfileDescriptors(), true, gate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(profile.SupportedContent[0].Parts, []string{"text", "input_file", "output_file"}) {
+		t.Fatalf("parts=%v", profile.SupportedContent[0].Parts)
+	}
+	var found bool
+	for _, entry := range profile.SupportedContent {
+		if entry.Type != "output_file_constraints" {
+			continue
+		}
+		found = true
+		if entry.MaxBytes != aapfile.MaxPublishTextBytes {
+			t.Fatalf("maxBytes=%d", entry.MaxBytes)
+		}
+		if !reflect.DeepEqual(entry.MediaTypes, aapfile.PublishAttachmentMediaTypes) {
+			t.Fatalf("mediaTypes=%v", entry.MediaTypes)
+		}
+	}
+	if !found {
+		t.Fatalf("missing output_file_constraints: %+v", profile.SupportedContent)
+	}
+
+	gate.RuntimeOutboundAttachments = false
+	off, _, err := projectAAPAgentProfile(summary, aapProfileDescriptors(), true, gate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reflect.DeepEqual(off.SupportedContent[0].Parts, profile.SupportedContent[0].Parts) {
+		t.Fatal("runtime flag off must not advertise output_file")
+	}
+}
+
+func aapEnableOutboundPolicyJSON(enabled bool) json.RawMessage {
+	doc := map[string]any{
+		"schemaVersion": sessioncontext.PolicySchemaV2,
+		"mode":          sessioncontext.ModeTokenWindow,
+		"aap": map[string]any{
+			"enableOutboundAttachments": enabled,
+		},
+	}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		panic(err)
+	}
+	_, normalized, err := sessioncontext.ParsePolicy(raw)
+	if err != nil {
+		panic(err)
+	}
+	return normalized
 }
 
 func aapEnableA2UIPolicyJSON(enabled bool) json.RawMessage {

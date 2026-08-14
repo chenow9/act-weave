@@ -275,8 +275,8 @@ type ResolveInput struct {
 // Resolve merges policy layers and clamps against model hard capabilities.
 // Priority: system hard constraints > internal override > agent > workspace > platform default.
 // When CompactionGateEnabled, writes session-context.v2 with frozen 80/60 and delay budgets.
-// KD-12: when agent enableA2UI is true and compaction gate is off, still emit full v2 with
-// platform-default compaction and sources.compactionGateEnabled=false (compact runtime stays off).
+// enableA2UI or enableOutboundAttachments also emit full v2 with platform-default compaction
+// and sources.compactionGateEnabled=false (compact runtime stays off).
 func Resolve(input ResolveInput) (ResolvedSnapshot, json.RawMessage, error) {
 	if input.ContextWindowTokens <= 0 || input.DefaultOutputReserveTokens <= 0 ||
 		input.DefaultOutputReserveTokens >= input.ContextWindowTokens ||
@@ -351,17 +351,19 @@ func Resolve(input ResolveInput) (ResolvedSnapshot, json.RawMessage, error) {
 
 	include := false
 	enableA2UI := false
+	enableOutbound := false
 	if agentDoc != nil {
 		include = agentDoc.IncludeCompactionSummary()
 		enableA2UI = agentDoc.EnableA2UI()
+		enableOutbound = agentDoc.EnableOutboundAttachments()
 	}
 
-	// Emit v2 when compaction gate is on, or when enableA2UI requires aap freeze (KD-12).
+	// Emit v2 when compaction is on or when A2UI / outbound attachments need an aap freeze.
 	// ParseResolvedSnapshot still requires a full compaction block on every v2 snapshot.
 	schema := SnapshotSchemaV1
 	var compaction *CompactionSnapshot
 	var aap *AAPSnapshot
-	if input.CompactionGateEnabled || enableA2UI {
+	if input.CompactionGateEnabled || enableA2UI || enableOutbound {
 		schema = SnapshotSchemaV2
 		// Platform defaults for summary knobs; agent summary tightens when present.
 		// Gate-off + enableA2UI uses the same construction (platform defaults when no summary).
@@ -398,6 +400,9 @@ func Resolve(input ResolveInput) (ResolvedSnapshot, json.RawMessage, error) {
 		aap = &AAPSnapshot{
 			IncludeCompactionSummary: include,
 			EnableA2UI:               enableA2UI,
+		}
+		if enableOutbound {
+			aap.EnableOutboundAttachments = true
 		}
 	}
 

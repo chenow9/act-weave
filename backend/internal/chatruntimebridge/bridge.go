@@ -21,6 +21,7 @@ import (
 	"actweave/backend/internal/contextwindow"
 	"actweave/backend/internal/einoruntime"
 	"actweave/backend/internal/execution"
+	"actweave/backend/internal/metrics"
 	"actweave/backend/internal/modelconfig"
 	"actweave/backend/internal/sessioncontext"
 	"actweave/backend/internal/tooltranslator"
@@ -109,6 +110,13 @@ type Dependencies struct {
 	// ToolDisclosure gates platform_bounded / carry_all. Zero value denies every
 	// workspace (same as omitted runtime.toolDisclosure).
 	ToolDisclosure config.RuntimeFeatureRollout
+	// PlatformCalls projects platform InvokableTool calls without tool_invocations.
+	// Production assigns the same *NativeProtocolRecorder as Events.
+	PlatformCalls chatruntime.PlatformToolCallProjector
+	// Files is the AAP file service used to ingest / list / promote outbound files.
+	Files outboundFileService
+	// FilesConfig is the files HTTP + runtimeOutboundAttachments gate. Nil denies inject.
+	FilesConfig *config.AgentAccessFilesConfig
 }
 
 // Bridge implements agentrun.Runtime on the eino engine path.
@@ -138,6 +146,9 @@ type Bridge struct {
 	multimodal        *chatruntime.MultimodalAssembler
 	delegation        *DelegationDeps
 	toolDisclosure    config.RuntimeFeatureRollout
+	platformCalls     chatruntime.PlatformToolCallProjector
+	files             outboundFileService
+	filesCfg          *config.AgentAccessFilesConfig
 
 	activeMu   sync.Mutex
 	activeRuns map[string]*activeRunExecution
@@ -201,6 +212,9 @@ func NewBridge(deps Dependencies) (*Bridge, error) {
 		multimodal:      deps.Multimodal,
 		delegation:      deps.Delegation,
 		toolDisclosure:  deps.ToolDisclosure.Normalized(),
+		platformCalls:   deps.PlatformCalls,
+		files:           deps.Files,
+		filesCfg:        deps.FilesConfig,
 		activeRuns:      make(map[string]*activeRunExecution),
 		pendingConfirms: make(map[string][]einoruntime.PendingConfirmInterrupt),
 	}, nil
@@ -962,6 +976,9 @@ func (b *Bridge) completeRun(
 	// Terminal extract only (KD-3/4/16): never mid-tool intermediate. Stream
 	// text_delta remains raw (may include fence fragments); item.completed is authoritative.
 	content, _ = materializeAssistantTerminalContent(content, run.ContextPolicySnapshot, assistantID)
+	outbound := b.snapshotOutboundFiles(ctx, run.WorkspaceID, run.AgentID, job.RunID)
+	content, attached := attachOutboundFiles(content, outbound)
+	metrics.Default().ObserveOutboundTurnFiles(len(attached))
 
 	run, err := b.runs.GetAgentRun(ctx, job.WorkspaceID, job.RunID)
 	if err != nil {
@@ -980,6 +997,7 @@ func (b *Bridge) completeRun(
 	if err != nil {
 		return b.failRun(ctx, job, run, err)
 	}
+	b.promoteOutboundFiles(ctx, job.WorkspaceID, attached)
 	finished, err := b.runs.GetAgentRun(ctx, job.WorkspaceID, job.RunID)
 	if err != nil {
 		return err

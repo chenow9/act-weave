@@ -97,6 +97,30 @@ type EventRecorder interface {
 	Record(context.Context, ProtocolRecord) error
 }
 
+// PlatformPublishReleaseID is the in-memory mapper sentinel for platform tools.
+// uuid.Nil is accepted by invocationValidUUID; never INSERT this into
+// capability_releases or tool_invocations.
+const PlatformPublishReleaseID = "00000000-0000-0000-0000-000000000000"
+
+// ProjectPlatformToolCallInput is one platform tool_call projection (no tool_invocations row).
+type ProjectPlatformToolCallInput struct {
+	Run          execution.AgentRun
+	Job          Job
+	Name         string
+	InvocationID string
+	Args         json.RawMessage
+	Result       json.RawMessage
+	OK           bool
+	ErrorCode    string
+	StartedAt    time.Time
+	FinishedAt   time.Time
+}
+
+// PlatformToolCallProjector writes tool_call items without tools.Get.
+type PlatformToolCallProjector interface {
+	ProjectPlatformToolCall(context.Context, ProjectPlatformToolCallInput) error
+}
+
 // ModelTurnRecordInput is the permanent MODEL step evidence payload.
 type ModelTurnRecordInput struct {
 	WorkspaceID    string

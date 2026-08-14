@@ -204,6 +204,8 @@ type ProjectToolCallStartedInput struct {
 	Invocation ToolInvocation
 	Name       string
 	Ordinal    int
+	// SourceType overrides CreateRunItem.SourceType. Empty keeps TOOL_INVOCATION.
+	SourceType string
 }
 
 type ProjectToolCallDeltaInput struct {
@@ -278,10 +280,14 @@ func (projector *ProtocolToolCallProjector) ProjectStarted(
 		if _, err := transaction.EnsureRunEventStream(ctx, input.Context.EventStreamID, input.Context.Scope); err != nil {
 			return err
 		}
+		sourceType := strings.TrimSpace(input.SourceType)
+		if sourceType == "" {
+			sourceType = protocolevent.SourceToolInvocation
+		}
 		projection, err = transaction.CreateRunItem(ctx, protocolevent.CreateRunItemInput{
 			WorkspaceID: input.Context.Scope.WorkspaceID, AgentID: input.Context.Scope.AgentID,
 			RunID: input.Context.Scope.RunID, Ordinal: input.Ordinal,
-			SourceType: protocolevent.SourceToolInvocation, SourceID: input.Invocation.ID,
+			SourceType: sourceType, SourceID: input.Invocation.ID,
 			Item: item, StartedAt: input.Invocation.StartedAt,
 		})
 		if err != nil {

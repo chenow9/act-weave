@@ -356,7 +356,7 @@ func (b *Bridge) buildAgenticChildAgent(
 	if err != nil {
 		return nil, err
 	}
-	catalog, err := buildFrozenToolCatalogStrict(ctx, tools, caps)
+	catalog, err := buildFrozenToolCatalogStrict(ctx, tools, caps, nil)
 	if err != nil {
 		return nil, fmt.Errorf("child catalog: %w", err)
 	}

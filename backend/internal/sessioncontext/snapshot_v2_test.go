@@ -451,8 +451,8 @@ func TestParseEnableOutboundAttachmentsTrueFromSnapshot(t *testing.T) {
 	}
 }
 
-func TestResolveEnableOutboundAttachmentsTrueGateOffStaysV1(t *testing.T) {
-	// parse-only: policy true must not upgrade to v2 (emit predicate unchanged).
+func TestResolveEnableOutboundAttachmentsGateOffEmitsV2(t *testing.T) {
+	// Outbound-only, compaction/A2UI off: first writer of enableOutboundAttachments:true.
 	doc, raw, err := sessioncontext.Resolve(sessioncontext.ResolveInput{
 		AgentPolicy: json.RawMessage(`{
 			"schemaVersion":"session-context-policy.v2",
@@ -470,20 +470,34 @@ func TestResolveEnableOutboundAttachmentsTrueGateOffStaysV1(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if doc.SchemaVersion != sessioncontext.SnapshotSchemaV1 || doc.Compaction != nil || doc.AAP != nil {
-		t.Fatalf("expected v1 without compact/aap: schema=%s compaction=%v aap=%v",
-			doc.SchemaVersion, doc.Compaction != nil, doc.AAP)
+	if doc.SchemaVersion != sessioncontext.SnapshotSchemaV2 {
+		t.Fatalf("schema=%s want v2", doc.SchemaVersion)
 	}
-	if bytes.Contains(raw, []byte("enableOutboundAttachments")) {
-		t.Fatalf("Resolve must not emit enableOutboundAttachments: %s", raw)
+	if doc.Compaction == nil {
+		t.Fatal("expected platform-default compaction block")
 	}
-	if sessioncontext.EnableOutboundAttachmentsFromSnapshot(raw) {
-		t.Fatal("v1 helper must stay false")
+	if doc.Sources.CompactionGateEnabled {
+		t.Fatalf("compactionGateEnabled must stay false: %+v", doc.Sources)
+	}
+	if doc.AAP == nil || !doc.AAP.EnableOutboundAttachments || doc.AAP.EnableA2UI {
+		t.Fatalf("aap=%+v", doc.AAP)
+	}
+	if !bytes.Contains(raw, []byte(`"enableOutboundAttachments":true`)) {
+		t.Fatalf("Resolve must emit enableOutboundAttachments:true: %s", raw)
+	}
+	if !sessioncontext.EnableOutboundAttachmentsFromSnapshot(raw) {
+		t.Fatal("EnableOutboundAttachmentsFromSnapshot expected true")
+	}
+	if sessioncontext.EnableA2UIFromSnapshot(raw) {
+		t.Fatal("A2UI must stay false")
+	}
+	parsed, err := sessioncontext.ParseResolvedSnapshot(raw)
+	if err != nil || parsed.AAP == nil || !parsed.AAP.EnableOutboundAttachments {
+		t.Fatalf("round-trip: %+v err=%v", parsed, err)
 	}
 }
 
-func TestResolveV2OmitsEnableOutboundAttachmentsWhenPolicyTrue(t *testing.T) {
-	// Compaction already emits v2; 3a still must not write the new key.
+func TestResolveV2WritesEnableOutboundAttachmentsWhenPolicyTrue(t *testing.T) {
 	doc, raw, err := sessioncontext.Resolve(sessioncontext.ResolveInput{
 		AgentPolicy: json.RawMessage(`{
 			"schemaVersion":"session-context-policy.v2",
@@ -504,23 +518,23 @@ func TestResolveV2OmitsEnableOutboundAttachmentsWhenPolicyTrue(t *testing.T) {
 	if doc.SchemaVersion != sessioncontext.SnapshotSchemaV2 || doc.AAP == nil {
 		t.Fatalf("expected v2 aap: schema=%s aap=%v", doc.SchemaVersion, doc.AAP)
 	}
-	if doc.AAP.EnableOutboundAttachments {
-		t.Fatal("Resolve must not copy enableOutboundAttachments onto the snapshot")
+	if !doc.AAP.EnableOutboundAttachments {
+		t.Fatal("Resolve must copy enableOutboundAttachments=true onto the snapshot")
 	}
-	if bytes.Contains(raw, []byte("enableOutboundAttachments")) {
-		t.Fatalf("existing v2 marshal must omit enableOutboundAttachments: %s", raw)
+	if !bytes.Contains(raw, []byte(`"enableOutboundAttachments":true`)) {
+		t.Fatalf("v2 marshal must contain enableOutboundAttachments:true: %s", raw)
 	}
-	if sessioncontext.EnableOutboundAttachmentsFromSnapshot(raw) {
-		t.Fatal("omitted key must parse as false")
+	if !sessioncontext.EnableOutboundAttachmentsFromSnapshot(raw) {
+		t.Fatal("helper must be true")
 	}
 }
 
 func TestEnableOutboundAttachmentsSnapshotFrozenAgainstAgentChange(t *testing.T) {
-	_, base, err := sessioncontext.Resolve(sessioncontext.ResolveInput{
+	_, frozen, err := sessioncontext.Resolve(sessioncontext.ResolveInput{
 		AgentPolicy: json.RawMessage(`{
 			"schemaVersion":"session-context-policy.v2",
 			"mode":"token_window",
-			"aap":{"enableA2UI":true}
+			"aap":{"enableOutboundAttachments":true}
 		}`),
 		ContextWindowTokens:        128000,
 		DefaultOutputReserveTokens: 4096,
@@ -533,21 +547,8 @@ func TestEnableOutboundAttachmentsSnapshotFrozenAgainstAgentChange(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var top map[string]any
-	if err := json.Unmarshal(base, &top); err != nil {
-		t.Fatal(err)
-	}
-	aap, ok := top["aap"].(map[string]any)
-	if !ok {
-		t.Fatalf("aap missing: %s", base)
-	}
-	aap["enableOutboundAttachments"] = true
-	frozen, err := json.Marshal(top)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if !sessioncontext.EnableOutboundAttachmentsFromSnapshot(frozen) {
-		t.Fatal("frozen fixture should be true")
+		t.Fatal("frozen should be true")
 	}
 	_, later, err := sessioncontext.Resolve(sessioncontext.ResolveInput{
 		AgentPolicy: json.RawMessage(`{
@@ -567,7 +568,11 @@ func TestEnableOutboundAttachmentsSnapshotFrozenAgainstAgentChange(t *testing.T)
 		t.Fatal(err)
 	}
 	if sessioncontext.EnableOutboundAttachmentsFromSnapshot(later) {
-		t.Fatal("new resolve must not emit the key")
+		t.Fatal("new resolve with flag off should be false")
+	}
+	parsedLater, err := sessioncontext.ParseResolvedSnapshot(later)
+	if err != nil || parsedLater.AAP != nil {
+		t.Fatalf("policy-off resolve must stay v1: %+v err=%v", parsedLater, err)
 	}
 	if !sessioncontext.EnableOutboundAttachmentsFromSnapshot(frozen) {
 		t.Fatal("in-flight run snapshot must not flip when agent policy changes")

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"actweave/backend/internal/a2ui"
+	"actweave/backend/internal/aapfile"
 	"actweave/backend/internal/agent"
 	"actweave/backend/internal/agentdelegation"
 	"actweave/backend/internal/agenticmsg"
@@ -510,7 +511,9 @@ func (b *Bridge) planAgenticRun(
 		return nil, err
 	}
 
-	catalog, err := buildFrozenToolCatalogStrict(ctx, tools, frozenCaps)
+	tools, catalogFlags := b.maybeInjectOutboundPublish(ctx, job, run, tools, frozenCaps, cfg)
+
+	catalog, err := buildFrozenToolCatalogStrict(ctx, tools, frozenCaps, catalogFlags)
 	if err != nil {
 		return nil, err
 	}
@@ -527,6 +530,9 @@ func (b *Bridge) planAgenticRun(
 	// prepend a second copy on the wire.
 	if sessioncontext.EnableA2UIFromSnapshot(run.ContextPolicySnapshot) {
 		instruction = a2ui.AppendPromptRules(instruction)
+	}
+	if _, ok := catalog.Entry(aapfile.PublishAttachmentToolName); ok {
+		instruction = aapfile.AppendOutboundPromptRules(instruction)
 	}
 
 	mode, calling, err := b.resolveFrozenDisclosure(job.WorkspaceID, cfg, catalog)
@@ -675,7 +681,7 @@ func buildFrozenToolCatalog(
 	if err != nil {
 		caps = nil
 	}
-	return buildFrozenToolCatalogStrict(ctx, tools, caps)
+	return buildFrozenToolCatalogStrict(ctx, tools, caps, nil)
 }
 
 // buildFrozenToolCatalogStrict is the Agentic initial form: the capability list
@@ -685,6 +691,7 @@ func buildFrozenToolCatalogStrict(
 	ctx context.Context,
 	tools []tool.BaseTool,
 	capabilities []chatruntime.SnapshotCapability,
+	flags map[string]catalogEntryFlags,
 ) (*einoruntime.ToolCatalogSnapshot, error) {
 	if len(tools) == 0 {
 		return einoruntime.BuildToolCatalog(ctx, nil)
@@ -728,6 +735,12 @@ func buildFrozenToolCatalogStrict(
 		} else if kind := catalogKindForTool(t); kind != "" {
 			// Graph-edge AgentTool / A2A outbound are not capability releases.
 			entry.Kind = kind
+		}
+		if flag, ok := flags[name]; ok {
+			if strings.TrimSpace(flag.Exposure) != "" {
+				entry.Exposure = flag.Exposure
+			}
+			entry.PlatformControl = flag.PlatformControl
 		}
 		inputs = append(inputs, entry)
 	}
