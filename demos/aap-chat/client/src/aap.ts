@@ -329,18 +329,14 @@ export async function hydrateAttachment(options: {
 
   let previewUrl: string | undefined;
   if (mediaType.startsWith("image/")) {
-    try {
-      const result = await client.getFileContent(
-        options.workspaceId,
-        options.agentId,
-        options.fileId,
-        { prefer: "content" },
-      );
-      const mime = result.contentType || mediaType;
-      previewUrl = URL.createObjectURL(new Blob([result.body], { type: mime }));
-    } catch {
-      previewUrl = undefined;
-    }
+    previewUrl =
+      (await fetchFileObjectUrl({
+        aapBaseUrl: options.aapBaseUrl,
+        workspaceId: options.workspaceId,
+        agentId: options.agentId,
+        fileId: options.fileId,
+        mediaType,
+      })) ?? undefined;
   }
   return { name, mediaType, sizeBytes, previewUrl };
 }

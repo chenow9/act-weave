@@ -1189,7 +1189,8 @@ async function downloadAttachment(key: string) {
       });
       const url = URL.createObjectURL(blob);
       triggerAnchorDownload(url, att.name);
-      URL.revokeObjectURL(url);
+      // Delay revoke so Chromium/WebKit can snapshot the blob after click.
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       return;
     }
     if (att.previewUrl) {
