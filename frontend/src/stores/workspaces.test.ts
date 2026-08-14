@@ -54,8 +54,8 @@ describe("v1 workspace and member store", () => {
     });
     await store.loadWorkspacePage({
       query: "业务空间 2",
-      status: "Disabled",
-      mode: "Sandbox",
+      status: "DISABLED",
+      mode: "SANDBOX",
       page: 1,
       pageSize: 10,
     });
@@ -257,8 +257,8 @@ function workspaceValue(overrides: Partial<Workspace> = {}): Workspace {
     id: "workspace-1",
     name: "workspace-1",
     displayName: "业务空间 1",
-    mode: "Production",
-    status: "Active",
+    mode: "PRODUCTION",
+    status: "ACTIVE",
     ownerUserId: "user-owner",
     defaultAgentId: "",
     modelConfigId: "",

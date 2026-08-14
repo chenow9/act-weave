@@ -22,7 +22,7 @@
 
 | 范围 | 需要确认/替换 |
 | --- | --- |
-| 数据与加密 | `ACTWEAVE_POSTGRES_DSN`、`ACTWEAVE_JWT_SECRET`、`ACTWEAVE_SECRET_MASTER_KEY`；使用受管理的 PostgreSQL 和备份策略。 |
+| 数据与加密 | `ACTWEAVE_POSTGRES_DSN`、`ACTWEAVE_REDIS_ADDR`、`ACTWEAVE_JWT_SECRET`、`ACTWEAVE_SECRET_MASTER_KEY`；使用受管理的 PostgreSQL 和备份策略。Redis 用于跨副本唤醒与限流，不能替代 PostgreSQL。 |
 | 对象存储 | MinIO/S3 兼容端点、访问密钥、私钥、bucket 生命周期和备份。 |
 | AAP 签名 | `ACTWEAVE_AAP_TOKEN_ENDPOINT`、active key ID、私钥文件、轮换/预发布公钥和 token TTL；AAP access token 使用 EdDSA/Ed25519。 |
 | 初始身份 | `ACTWEAVE_BOOTSTRAP_ADMIN_*`。Bootstrap 仅会在 `users` 为空时创建第一个平台管理员，但开发默认值仍不可复用。 |
@@ -41,7 +41,7 @@ go run ./cmd/migrate version
 go run ./cmd/migrate up
 ```
 
-PostgreSQL 是配置、运行记录、协议事件和审计元数据的事实来源。MinIO 保存持久对象/加密内容；Redis 用于可重建的事件扇出，不能替代持久化事实。请为 PostgreSQL 和对象存储分别设计备份、恢复测试、保留和访问控制。
+PostgreSQL 是配置、运行记录、协议事件和审计元数据的事实来源。MinIO 保存持久对象/加密内容。Redis 在进程启动时必连，用于跨副本 SSE 唤醒、AAP 限流、连接租约以及取消/安全变更广播，不能替代持久化事实。请为 PostgreSQL 和对象存储分别设计备份、恢复测试、保留和访问控制。
 
 ## Runtime 与反向代理
 

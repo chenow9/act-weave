@@ -24,7 +24,7 @@ This documentation is organized as “understand the boundary first, then integr
 - **Console API** means the `/api/v1` management plane. It is not an entry point for third-party Agent Runtime calls.
 - **AAP** means the `/api/agent-access/v1` runtime plane. The [OpenAPI file](./openapi/agent-access-v1.yaml) is the authoritative public HTTP contract.
 - “Supported” means the current repository contains code, routes, configuration, or tests for the capability. Default-disabled features are labeled with their gate and limitation.
-- Design notes, verification records, and runbooks are supporting material; they do not replace a public interface contract.
+- Runbooks are supporting operational material; they do not replace a public interface contract.
 
 ## Bilingual index
 

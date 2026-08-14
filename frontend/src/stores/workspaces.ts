@@ -352,10 +352,8 @@ function buildWorkspaceListParams(query: WorkspaceListQuery) {
     pageSize: query.pageSize || DEFAULT_PAGE_SIZE,
   };
   if (query.query?.trim()) params.query = query.query.trim();
-  if (query.status === "Active") params.status = "ACTIVE";
-  if (query.status === "Disabled") params.status = "DISABLED";
-  if (query.mode === "Production") params.mode = "PRODUCTION";
-  if (query.mode === "Sandbox") params.mode = "SANDBOX";
+  if (query.status) params.status = query.status;
+  if (query.mode) params.mode = query.mode;
   if (query.sortBy) params.sortBy = query.sortBy;
   if (query.sortOrder) params.sortOrder = query.sortOrder;
   return params;
@@ -378,8 +376,8 @@ function workspaceFromDTO(value: WorkspaceDTO): Workspace {
     name: value.slug,
     slug: value.slug,
     displayName: value.displayName,
-    mode: value.mode === "PRODUCTION" ? "Production" : "Sandbox",
-    status: value.status === "ACTIVE" ? "Active" : "Disabled",
+    mode: value.mode,
+    status: value.status,
     ownerUserId: value.ownerUserId,
     defaultAgentId: value.defaultAgentId || "",
     defaultModelConfigId: value.defaultModelConfigId,
@@ -399,7 +397,7 @@ function workspaceFromDTO(value: WorkspaceDTO): Workspace {
 }
 
 function modeToDTO(mode: string) {
-  return mode === "Production" || mode === "PRODUCTION" ? "PRODUCTION" : "SANDBOX";
+  return mode === "SANDBOX" || mode === "Sandbox" ? "SANDBOX" : "PRODUCTION";
 }
 
 function upsertByID(items: Workspace[], workspace: Workspace) {

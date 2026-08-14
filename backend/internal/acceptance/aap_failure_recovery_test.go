@@ -24,7 +24,7 @@ import (
 
 // TestAAPFailureRecovery is the M10-T6 chaos / recovery gate.
 //
-// See docs/verification/agent-access-failure-recovery.md for the Chaos Matrix,
+// Chaos matrix coverage for AAP failure recovery lives in this package.
 // RTO/RPO conclusions, and dual-tx / continuation repair notes.
 func TestAAPFailureRecovery(t *testing.T) {
 	t.Run("DBBriefFailureDoesNotClaimSuccess", testFailureDBBriefFailure)

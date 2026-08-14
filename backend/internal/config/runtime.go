@@ -524,6 +524,9 @@ func (config *Config) applyRuntimeDefaults() {
 	if config == nil {
 		return
 	}
+	if strings.TrimSpace(config.Redis.KeyPrefix) == "" {
+		config.Redis.KeyPrefix = "actweave"
+	}
 	wf := &config.Runtime.Workflow
 	if !wf.enginePresent && strings.TrimSpace(wf.Engine) == "" {
 		wf.Engine = WorkflowEngineEino

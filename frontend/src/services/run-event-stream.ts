@@ -11,6 +11,8 @@
  * See: docs/runbooks/protocol-event-console-vs-aap-entrypoints.md
  */
 
+import { RunReducer, type ProtocolEventEnvelope, type ReducedRunSnapshot } from "@actweave/agent-client";
+
 import { A2UI_SURFACE_VERSION } from "../components/a2ui/generated/catalog.gen";
 import type {
   AgentRun,
@@ -84,6 +86,8 @@ export interface ConsoleRunProjectionState {
   /** itemId → streaming assistant bubble text */
   assistantByItemId: Record<string, { content: string; finalized: boolean }>;
   assistantOrder: string[];
+  /** Shared AAP reducer; Console JWT/URL stay on /api/v1. */
+  reducer: RunReducer;
 }
 
 /** Side-effects / UI patches derived from one frame. */
@@ -131,6 +135,7 @@ export function createProjectionState(): ConsoleRunProjectionState {
     runStatus: undefined,
     assistantByItemId: {},
     assistantOrder: [],
+    reducer: new RunReducer(),
   };
 }
 
@@ -274,6 +279,7 @@ export function applyStreamFrame(
     runStatus: state.runStatus,
     assistantByItemId: { ...state.assistantByItemId },
     assistantOrder: [...state.assistantOrder],
+    reducer: state.reducer,
   };
 
   const effects: ConsoleStreamEffects = {
@@ -297,10 +303,76 @@ export function applyStreamFrame(
     return { state: next, effects };
   }
 
+  if (frame.envelope && applyReducerEnvelope(next, frame, effects)) {
+    if (effects.runStatus) next.runStatus = effects.runStatus;
+    effects.terminal = isTerminalRunStatus(effects.runStatus ?? next.runStatus);
+    return { state: next, effects };
+  }
+
   applyProtocolFrame(next, frame, effects);
   if (effects.runStatus) next.runStatus = effects.runStatus;
   effects.terminal = isTerminalRunStatus(effects.runStatus ?? next.runStatus);
   return { state: next, effects };
+}
+
+function applyReducerEnvelope(
+  state: ConsoleRunProjectionState,
+  frame: StreamFrame,
+  effects: ConsoleStreamEffects,
+): boolean {
+  const envelope = frame.envelope;
+  if (!envelope || typeof envelope.sequence !== "number") {
+    return false;
+  }
+  try {
+    state.reducer.apply(envelope as ProtocolEventEnvelope);
+  } catch {
+    return false;
+  }
+  const snapshot = state.reducer.snapshot();
+  projectReducerSnapshot(state, snapshot, frame, effects);
+  return true;
+}
+
+function projectReducerSnapshot(
+  state: ConsoleRunProjectionState,
+  snapshot: ReducedRunSnapshot,
+  frame: StreamFrame,
+  effects: ConsoleStreamEffects,
+): void {
+  const mapped = mapProtocolRunStatus(snapshot.run?.status);
+  if (mapped) effects.runStatus = mapped;
+  if (frame.type === "run.waiting") {
+    effects.runStatus = "WAITING_CONFIRMATION";
+    if (isRecord(frame.data.confirmation)) {
+      effects.pendingConfirmation = frame.data.confirmation as unknown as ChatConfirmation;
+    }
+    if (typeof frame.data.resumeToken === "string") effects.resumeToken = frame.data.resumeToken;
+  }
+  if (frame.type === "run.resumed") {
+    effects.runStatus = "RUNNING";
+    effects.clearPendingConfirmation = true;
+  }
+  if (frame.type === "item.delta") effects.skipLoadRun = true;
+
+  for (const item of snapshot.items) {
+    if (!item || item.type !== "message" || item.role !== "assistant" || typeof item.id !== "string") {
+      continue;
+    }
+    const record = item as unknown as Record<string, unknown>;
+    const content = extractMessageText(record);
+    const finalized = item.status === "completed" || item.status === "failed";
+    ensureAssistant(state, item.id, content, finalized);
+    const surfaces = extractMessageSurfaces(record);
+    effects.assistantMessages.push({
+      id: item.id,
+      content,
+      status: item.status === "failed" ? "FAILED" : finalized ? "EXECUTED" : "PROCESSING",
+      runId: frame.runId,
+      finalized,
+      ...(surfaces.length ? { a2ui: surfaces } : {}),
+    });
+  }
 }
 
 function applyProtocolFrame(state: ConsoleRunProjectionState, frame: StreamFrame, effects: ConsoleStreamEffects): void {

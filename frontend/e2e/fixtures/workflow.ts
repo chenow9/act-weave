@@ -96,11 +96,24 @@ export async function installStableUi(page: Page) {
 }
 
 export async function loginAndOpenWorkflow(page: Page) {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("actweave.locale", "zh-CN");
+    } catch {
+      // ignore
+    }
+  });
   await page.goto("/login");
-  await expect(page.getByRole("heading", { name: "登录 ActWeave" })).toBeVisible();
-  await page.getByRole("textbox", { name: "Username" }).fill("chen.ops");
+  const zh = page.locator('[data-testid="login-lang-zh-CN"]');
+  if (await zh.isVisible().catch(() => false)) {
+    await zh.click();
+  }
+  await expect(page.getByRole("heading", { name: "登录", exact: true })).toBeVisible({
+    timeout: 15_000,
+  });
+  await page.locator('input[autocomplete="username"]').fill("chen.ops");
   await page.locator('input[autocomplete="current-password"]').fill("fixture-password");
-  await page.getByRole("button", { name: "登录 ActWeave" }).click();
+  await page.getByRole("button", { name: /^登录$/ }).click();
   await expect(page).toHaveURL(/\/overview$/);
   await page.locator(".fluid-trigger").click();
   const workflowLink = page.locator('.fluid-content a[href="/workflow"]').first();
@@ -559,8 +572,8 @@ function createWorkspace(): Workspace {
     displayName: "Ops Center",
     ownerUserId: FIXTURE_USER.id,
     owner: "Ops Platform",
-    mode: "Production",
-    status: "Active",
+    mode: "PRODUCTION",
+    status: "ACTIVE",
     defaultAgentId: FIXTURE_AGENT_ID,
     defaultModelConfigId: FIXTURE_MODEL_CONFIG_ID,
     modelConfigId: FIXTURE_MODEL_CONFIG_ID,

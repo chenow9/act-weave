@@ -448,7 +448,7 @@ function handleDocumentKeydown(event: KeyboardEvent) {
                 role="option"
                 :data-workspace-id="workspace.id"
                 :aria-selected="workspace.id === workspaces.activeWorkspaceId"
-                :disabled="workspace.status === 'Disabled'"
+                :disabled="workspace.status === 'DISABLED'"
                 @click="selectWorkspace(workspace.id)"
               >
                 <span class="workspace-option-icon"><i class="fa-solid fa-layer-group" aria-hidden="true" /></span>
@@ -458,7 +458,7 @@ function handleDocumentKeydown(event: KeyboardEvent) {
                 >
                 <span class="workspace-option-meta">
                   <em>{{ workspaceModeLabel(workspace.mode) }}</em>
-                  <em v-if="workspace.status === 'Disabled'" class="disabled">{{ t("common.disabled") }}</em>
+                  <em v-if="workspace.status === 'DISABLED'" class="disabled">{{ t("common.disabled") }}</em>
                 </span>
               </button>
               <p v-if="!filteredWorkspaces.length">{{ t("shell.noMatchingWorkspaces") }}</p>

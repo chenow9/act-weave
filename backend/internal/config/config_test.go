@@ -29,6 +29,8 @@ agentAccess:
     retiredPublicKeys: []
 encryption:
   masterKey: file-master-key
+redis:
+  addr: 127.0.0.1:16379
 storage:
   minio:
     endpoint: file-minio:9000
@@ -172,6 +174,17 @@ func TestLoadAppliesEnvironmentOverridesAfterFile(t *testing.T) {
 	if admin.Username != "environment-admin" || admin.Password != "environment-admin-password" ||
 		admin.DisplayName != "Environment Administrator" || admin.Locale != "en-US" || admin.Timezone != "UTC" {
 		t.Fatalf("bootstrap environment overrides were not applied: %+v", admin)
+	}
+}
+
+func TestValidateServerRequiresRedisAddr(t *testing.T) {
+	loaded, err := Load(writeConfig(t, validConfigYAML), lookup(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded.Redis.Addr = ""
+	if err := loaded.ValidateServer(); err == nil {
+		t.Fatal("empty redis.addr must fail ValidateServer")
 	}
 }
 

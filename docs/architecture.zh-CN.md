@@ -62,7 +62,7 @@ Agent Runtime 冻结/使用对应 Agent、模型和能力配置来执行；Workf
 | --- | --- |
 | PostgreSQL | 配置、身份、版本、Run、步骤、协议事件、审计元数据和迁移事实来源。 |
 | MinIO | Compose 创建执行、审计、Tool 测试、连接校验和 AAP 文件相关 bucket；持久对象由后端管理。 |
-| Redis | 可重建的事件扇出；不应承担事实持久化。 |
+| Redis | 进程启动必连。跨副本 SSE 唤醒、AAP 限流、SSE 连接租约、取消与安全变更广播。不是事实源；Run 事件仍从 PostgreSQL 回放。 |
 | Model API | Agent 调用的模型接入配置。 |
 | Provider/Connection | 到企业业务 HTTP API 的服务端点、认证契约、环境与出站身份。 |
 

@@ -69,8 +69,8 @@ const memberCandidatesError = ref("");
 const workspaceNamePattern = /^[A-Za-z][A-Za-z0-9_-]{2,31}$/;
 
 const modeOptions = [
-  { label: "Production", value: "Production" },
-  { label: "Sandbox", value: "Sandbox" },
+  { label: "Production", value: "PRODUCTION" },
+  { label: "Sandbox", value: "SANDBOX" },
 ];
 const workspaceRoleLabelKeys: Record<WorkspaceRole, string> = {
   OWNER: "workspaces.roleOwner",
@@ -205,13 +205,13 @@ const workspaceSummaryItems = computed<ManagementSummaryItem[]>(() => {
 });
 const workspaceFilterOptions = computed<Array<{ label: string; value: WorkspaceStatusFilter; tone?: string }>>(() => [
   { label: t("workspaces.statusAll"), value: "ALL" },
-  { label: t("workspaces.statusActive"), value: "Active", tone: "success" },
-  { label: t("workspaces.statusDisabled"), value: "Disabled", tone: "danger" },
+  { label: t("workspaces.statusActive"), value: "ACTIVE", tone: "success" },
+  { label: t("workspaces.statusDisabled"), value: "DISABLED", tone: "danger" },
 ]);
 const workspaceModeFilterOptions = computed<Array<{ label: string; value: WorkspaceModeFilter }>>(() => [
   { label: t("workspaces.modeAll"), value: "ALL" },
-  { label: t("workspaces.modeProduction"), value: "Production" },
-  { label: t("workspaces.modeSandbox"), value: "Sandbox" },
+  { label: t("workspaces.modeProduction"), value: "PRODUCTION" },
+  { label: t("workspaces.modeSandbox"), value: "SANDBOX" },
 ]);
 
 const detailWorkspace = computed(
@@ -276,7 +276,7 @@ const workspaceDeleteNameError = computed(() => {
 const pendingWorkspaceStatusAction = computed(() => {
   const workspace = workspaceStatusTarget.value;
   if (!workspace) return null;
-  return workspace.status === "Active" ? "disable" : "enable";
+  return workspace.status === "ACTIVE" ? "disable" : "enable";
 });
 onMounted(() => void loadWorkspacePage());
 
@@ -325,8 +325,8 @@ function newWorkspace(): Workspace {
     id: "",
     name: "",
     displayName: "",
-    mode: "Sandbox",
-    status: "Active",
+    mode: "SANDBOX",
+    status: "ACTIVE",
     defaultAgentId: "",
     modelConfigId: "",
     settings: {},
@@ -441,7 +441,7 @@ async function loadWorkspaceRegistry(overrides: WorkspaceListQuery = {}) {
   const result = await workspaces.loadWorkspacePage({
     query: overrides.query ?? query.value,
     status: statusFilter.value === "ALL" ? undefined : statusFilter.value,
-    mode: modeFilter.value === "ALL" ? undefined : (modeFilter.value as "Production" | "Sandbox"),
+    mode: modeFilter.value === "ALL" ? undefined : (modeFilter.value as "PRODUCTION" | "SANDBOX"),
     page: overrides.page ?? workspaces.pagination.page,
     pageSize: overrides.pageSize ?? workspaces.pagination.pageSize,
     sortBy,
@@ -522,7 +522,7 @@ async function bulkSetSelectedWorkspaceStatus(status: Workspace["status"]) {
         workspaces.can(workspace.id, "MANAGE"),
     );
     for (const workspace of selected) {
-      if (status === "Active") {
+      if (status === "ACTIVE") {
         await workspaces.enableWorkspace(workspace.id);
       } else {
         await workspaces.disableWorkspace(workspace.id);
@@ -531,7 +531,7 @@ async function bulkSetSelectedWorkspaceStatus(status: Workspace["status"]) {
     await refreshWorkspaceCatalogAndPage();
     showWorkspaceToast(
       t("workspaces.bulkStatus", {
-        action: status === "Active" ? t("workspaces.enabled") : t("workspaces.disabled"),
+        action: status === "ACTIVE" ? t("workspaces.enabled") : t("workspaces.disabled"),
         n: selected.length,
       }),
     );
@@ -674,8 +674,8 @@ function workspaceMenuActions(workspace: Workspace): ManagementRowAction[] {
   if (workspaces.can(workspace.id, "MANAGE")) {
     actions.push({
       key: "toggle",
-      label: workspace.status === "Active" ? t("workspaces.disableSpace") : t("workspaces.enableSpace"),
-      icon: workspace.status === "Active" ? "fa-solid fa-power-off" : "fa-solid fa-circle-play",
+      label: workspace.status === "ACTIVE" ? t("workspaces.disableSpace") : t("workspaces.enableSpace"),
+      icon: workspace.status === "ACTIVE" ? "fa-solid fa-power-off" : "fa-solid fa-circle-play",
     });
   }
   if (workspaces.can(workspace.id, "DELETE")) {
@@ -735,7 +735,7 @@ async function confirmWorkspaceStatusChange() {
   if (!workspace) return;
   workspaceStatusSaving.value = true;
   try {
-    if (workspace.status === "Active") {
+    if (workspace.status === "ACTIVE") {
       const updated = await workspaces.disableWorkspace(workspace.id);
       showWorkspaceToast(t("workspaces.disabledOk", { name: updated.name }));
     } else {
@@ -793,7 +793,7 @@ function statusTone(status: string) {
 }
 
 function displayWorkspaceStatus(status: Workspace["status"]) {
-  return status === "Active" ? t("workspaces.online") : t("workspaces.offline");
+  return status === "ACTIVE" ? t("workspaces.online") : t("workspaces.offline");
 }
 
 function modeTone(mode: Workspace["mode"]) {
@@ -961,7 +961,7 @@ function reconcileWorkspaceListContext() {
               type="button"
               data-action="bulk-enable"
               :disabled="workspaceStatusSaving"
-              @click="bulkSetSelectedWorkspaceStatus('Active')"
+              @click="bulkSetSelectedWorkspaceStatus('ACTIVE')"
             >
               {{ t("workspaces.batchEnable") }}
             </button>
@@ -970,7 +970,7 @@ function reconcileWorkspaceListContext() {
               type="button"
               data-action="bulk-disable"
               :disabled="workspaceStatusSaving"
-              @click="bulkSetSelectedWorkspaceStatus('Disabled')"
+              @click="bulkSetSelectedWorkspaceStatus('DISABLED')"
             >
               {{ t("workspaces.batchDisable") }}
             </button>
@@ -1213,7 +1213,7 @@ function reconcileWorkspaceListContext() {
               <article>
                 <span><i class="fa-solid fa-shield-halved" aria-hidden="true" />{{ t("workspaces.isolationEnv") }}</span
                 ><strong>{{
-                  detailWorkspace.mode === "Production" ? t("workspaces.prod") : t("workspaces.sandbox")
+                  detailWorkspace.mode === "PRODUCTION" ? t("workspaces.prod") : t("workspaces.sandbox")
                 }}</strong
                 ><small>{{ t("workspaces.isolationHint") }}</small>
               </article>
@@ -1492,7 +1492,7 @@ function reconcileWorkspaceListContext() {
                 >
                   <i v-if="draftWorkspace.mode === option.value" class="fa-solid fa-circle-check" aria-hidden="true" />
                   {{
-                    option.value === "Sandbox" ? t("workspaces.modeSandboxLabel") : t("workspaces.modeProductionLabel")
+                    option.value === "SANDBOX" ? t("workspaces.modeSandboxLabel") : t("workspaces.modeProductionLabel")
                   }}
                 </button>
               </div>

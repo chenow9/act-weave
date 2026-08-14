@@ -19,7 +19,7 @@ describe("providers store", () => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
     const workspaces = useWorkspaceStore();
-    workspaces.items = [{ id: "ws-1", name: "ws-1", displayName: "WS", mode: "Production", status: "Active" } as never];
+    workspaces.items = [{ id: "ws-1", name: "ws-1", displayName: "WS", mode: "PRODUCTION", status: "ACTIVE" } as never];
     workspaces.activeWorkspaceId = "ws-1";
   });
 

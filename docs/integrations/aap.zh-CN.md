@@ -10,7 +10,7 @@ AAP（Agent Access Protocol）是应用调用 ActWeave Agent Runtime 的路径�
 2. [OpenAPI](../openapi/agent-access-v1.yaml)：机器可读 HTTP 契约和字段 schema 的事实来源。
 3. [TypeScript SDK](../../sdk/typescript/)：`@actweave/agent-client`（`enableA2UI` 时可用 `joinTextParts` / `findA2UIPart`，以及读 surface 的 `isKnownA2UICatalog` / `resolveBinding` / `iterCharts`）。
 4. [AAP Chat Demo](../../demos/aap-chat/)：BFF 持有 Client Secret 的本地演示。
-5. A2UI 设计：[附加能力](../designs/a2ui-additive-capability.md)给出产品锁定（MVP `actions: false`），[catalog 契约](../designs/a2ui-catalog-refactor.md)给出 surface 能装什么、如何被校验。
+5. 可选 A2UI 见[对接指南 §9.2](../aap-integration-guide.zh-CN.md#92-a2ui可选附加)（MVP `actions: false`；surface 经 catalog 校验）。
 
 ## 最短调用链
 

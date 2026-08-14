@@ -112,7 +112,7 @@ describe("chat execution view FE-02 archive busy", () => {
       roleFor: vi.fn(() => "EDITOR"),
     });
     fixture.agents = reactive({
-      items: [{ id: "agent-1", workspaceId: "ws-1", name: "Agent One", status: "Active" }],
+      items: [{ id: "agent-1", workspaceId: "ws-1", name: "Agent One", status: "ACTIVE" }],
       load: vi.fn(async () => undefined),
       loadAgents: vi.fn(async () => undefined),
     });

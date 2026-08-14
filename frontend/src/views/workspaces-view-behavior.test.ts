@@ -39,13 +39,13 @@ const fixtures = vi.hoisted(() => ({
   router: { push: vi.fn() },
 }));
 
-function workspace(id: string, status: "Active" | "Disabled" = "Active"): Workspace {
+function workspace(id: string, status: "ACTIVE" | "DISABLED" = "ACTIVE"): Workspace {
   return {
     id,
     name: `Workspace-${id}`,
     displayName: `业务空间 ${id}`,
     owner: "Ops Platform",
-    mode: "Production",
+    mode: "PRODUCTION",
     status,
     defaultAgentId: `agent-${id}`,
     modelConfigId: "model-1",
@@ -102,8 +102,8 @@ function createWorkspaceStore() {
     can: vi.fn(() => true),
     createWorkspace: vi.fn(),
     updateWorkspace: vi.fn(),
-    enableWorkspace: vi.fn(async (id: string) => workspace(id, "Active")),
-    disableWorkspace: vi.fn(async (id: string) => workspace(id, "Disabled")),
+    enableWorkspace: vi.fn(async (id: string) => workspace(id, "ACTIVE")),
+    disableWorkspace: vi.fn(async (id: string) => workspace(id, "DISABLED")),
     deleteWorkspace: vi.fn(),
     selectWorkspace: vi.fn(),
   });
@@ -168,7 +168,7 @@ const ManagementRowActionsStub = {
 const ManagementSegmentedFilterStub = {
   props: ["ariaLabel"],
   emits: ["update:model-value"],
-  template: `<button class="filter-stub" :data-label="ariaLabel" @click="$emit('update:model-value', ariaLabel.includes('环境') ? 'Production' : 'Active')">filter</button>`,
+  template: `<button class="filter-stub" :data-label="ariaLabel" @click="$emit('update:model-value', ariaLabel.includes('环境') ? 'PRODUCTION' : 'ACTIVE')">filter</button>`,
 };
 
 const AppSelectStub = {
@@ -205,7 +205,7 @@ function mountView() {
 
 function putWorkspaceOnLastPage(
   item: Workspace,
-  filters: { query?: string; status?: "Active" | "Disabled"; sortBy?: string; sortOrder?: "asc" | "desc" } = {},
+  filters: { query?: string; status?: "ACTIVE" | "DISABLED"; sortBy?: string; sortOrder?: "asc" | "desc" } = {},
 ) {
   fixtures.workspaceStore.pageItems = [item];
   fixtures.workspaceStore.pagination = { page: 2, pageSize: 10, total: 11, pageSizeOptions: [10, 20, 50] };
@@ -259,12 +259,12 @@ describe("WorkspacesView management behavior", () => {
 
     await wrapper.get('[data-label="业务空间环境筛选"]').trigger("click");
     expect(fixtures.workspaceStore.loadWorkspacePage).toHaveBeenLastCalledWith(
-      expect.objectContaining({ mode: "Production", page: 1 }),
+      expect.objectContaining({ mode: "PRODUCTION", page: 1 }),
     );
 
     await wrapper.get('[data-label="业务空间状态筛选"]').trigger("click");
     expect(fixtures.workspaceStore.loadWorkspacePage).toHaveBeenLastCalledWith(
-      expect.objectContaining({ status: "Active", page: 1 }),
+      expect.objectContaining({ status: "ACTIVE", page: 1 }),
     );
 
     await wrapper.get('[data-test="sort"]').trigger("click");
@@ -344,7 +344,7 @@ describe("WorkspacesView management behavior", () => {
     const wrapper = mountView();
     await flushPromises();
     await wrapper.get('[data-label="业务空间状态筛选"]').trigger("click");
-    putWorkspaceOnLastPage(pageWorkspace, { status: "Active", sortBy: "owner", sortOrder: "desc" });
+    putWorkspaceOnLastPage(pageWorkspace, { status: "ACTIVE", sortBy: "owner", sortOrder: "desc" });
     await nextTick();
     const requests = mockLastPageCollapse();
 
@@ -354,8 +354,8 @@ describe("WorkspacesView management behavior", () => {
     await flushPromises();
 
     expect(requests).toEqual([
-      expect.objectContaining({ status: "Active", page: 2, pageSize: 10, sortBy: "owner", sortOrder: "desc" }),
-      expect.objectContaining({ status: "Active", page: 1, pageSize: 10, sortBy: "owner", sortOrder: "desc" }),
+      expect.objectContaining({ status: "ACTIVE", page: 2, pageSize: 10, sortBy: "owner", sortOrder: "desc" }),
+      expect.objectContaining({ status: "ACTIVE", page: 1, pageSize: 10, sortBy: "owner", sortOrder: "desc" }),
     ]);
     expect(wrapper.get('[data-test="management-list"]').attributes()).toMatchObject({
       "data-page": "1",
@@ -367,7 +367,7 @@ describe("WorkspacesView management behavior", () => {
     const wrapper = mountView();
     await flushPromises();
     await wrapper.get('[data-label="业务空间状态筛选"]').trigger("click");
-    putWorkspaceOnLastPage(pageWorkspace, { status: "Active", sortBy: "healthScore", sortOrder: "asc" });
+    putWorkspaceOnLastPage(pageWorkspace, { status: "ACTIVE", sortBy: "healthScore", sortOrder: "asc" });
     await nextTick();
     const requests = mockLastPageCollapse();
 
@@ -377,8 +377,8 @@ describe("WorkspacesView management behavior", () => {
 
     expect(fixtures.workspaceStore.disableWorkspace).toHaveBeenCalledWith(pageWorkspace.id);
     expect(requests).toEqual([
-      expect.objectContaining({ status: "Active", page: 2, pageSize: 10, sortBy: "healthScore", sortOrder: "asc" }),
-      expect.objectContaining({ status: "Active", page: 1, pageSize: 10, sortBy: "healthScore", sortOrder: "asc" }),
+      expect.objectContaining({ status: "ACTIVE", page: 2, pageSize: 10, sortBy: "healthScore", sortOrder: "asc" }),
+      expect.objectContaining({ status: "ACTIVE", page: 1, pageSize: 10, sortBy: "healthScore", sortOrder: "asc" }),
     ]);
     expect(wrapper.get('[data-test="management-list"]').attributes()).toMatchObject({
       "data-page": "1",

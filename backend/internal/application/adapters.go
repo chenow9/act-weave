@@ -65,8 +65,12 @@ func (dispatcher aapRunDispatcher) DispatchRun(input aap.RunDispatch) error {
 	return nil
 }
 
+type securityChangePublisher interface {
+	Publish(agentaccessauth.SecurityChange) error
+}
+
 type agentAccessSecurityPublisher struct {
-	source *agentaccessauth.InProcessSecurityChanges
+	source securityChangePublisher
 	cache  *agentaccessauth.SecurityVersionCache
 }
 

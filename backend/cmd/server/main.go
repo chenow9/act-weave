@@ -18,6 +18,7 @@ import (
 	"actweave/backend/internal/database"
 	"actweave/backend/internal/logging"
 	"actweave/backend/internal/outboundidentity"
+	"actweave/backend/internal/redisx"
 	"actweave/backend/internal/secret"
 	"actweave/backend/internal/storedobject"
 )
@@ -118,6 +119,12 @@ func main() {
 				BootstrapAdmin:              bootstrapAdminFromConfig(config.BootstrapAdmin),
 				OutboundIdentitySigningKeys: outboundSigningKeys,
 				OutboundIdentityIssuer:      strings.TrimSpace(config.OutboundIdentity.Issuer),
+				Redis: redisx.Config{
+					Addr:      config.Redis.Addr,
+					Password:  config.Redis.Password,
+					DB:        config.Redis.DB,
+					KeyPrefix: config.Redis.KeyPrefix,
+				},
 			})
 			if err != nil {
 				return fmt.Errorf("initialize application: %w", err)

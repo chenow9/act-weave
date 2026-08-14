@@ -50,4 +50,4 @@ When Agent policy `aap.includeCompactionSummary=true` (default false) is snapsho
 
 ## Related docs
 
-Design baselines (product / technical / checklist) are kept **locally** under `docs/design/` and are not published in this repository.
+See [AAP integration](../aap-integration-guide.md) for caller-visible compaction items and [architecture](../architecture.md) for the runtime-plane boundary.

@@ -16,8 +16,10 @@ import (
 	"actweave/backend/internal/application"
 	"actweave/backend/internal/config"
 	"actweave/backend/internal/database/dbtest"
+	"actweave/backend/internal/redisx"
 	"actweave/backend/internal/storedobject"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/lib/pq"
 )
 
@@ -33,7 +35,7 @@ func TestCleanSchemaAcceptance(t *testing.T) {
 		t.Fatalf("expected clean latest migration 22, got %+v", version)
 	}
 	db := testDatabase.Open(t)
-	config := cleanSchemaApplicationConfig(testDatabase.DSN())
+	config := cleanSchemaApplicationConfig(t, testDatabase.DSN())
 
 	first, err := application.Open(context.Background(), config)
 	if err != nil {
@@ -145,9 +147,12 @@ func TestCleanSchemaAcceptance(t *testing.T) {
 	}
 }
 
-func cleanSchemaApplicationConfig(dsn string) application.Config {
+func cleanSchemaApplicationConfig(t *testing.T, dsn string) application.Config {
+	t.Helper()
+	mini := miniredis.RunT(t)
 	return application.Config{
 		PostgresDSN:              dsn,
+		Redis:                    redisx.Config{Addr: mini.Addr(), KeyPrefix: "test"},
 		JWTSecret:                "clean-schema-jwt-secret-at-least-32-bytes",
 		SecretMasterKey:          "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
 		AgentAccessSigningKeys:   cleanSchemaAgentAccessSigningKeys(),

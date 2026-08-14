@@ -47,7 +47,17 @@ type Config struct {
 	Runtime        RuntimeConfig        `yaml:"runtime"`
 	Encryption     EncryptionConfig     `yaml:"encryption"`
 	Storage        StorageConfig        `yaml:"storage"`
+	Redis          RedisConfig          `yaml:"redis"`
 	BootstrapAdmin BootstrapAdminConfig `yaml:"bootstrapAdmin"`
+}
+
+// RedisConfig is required for process start. Redis is the multi-replica
+// wakeup, rate-limit, and cancel/security broadcast layer — not a fact store.
+type RedisConfig struct {
+	Addr      string `yaml:"addr"`
+	Password  string `yaml:"password"`
+	DB        int    `yaml:"db"`
+	KeyPrefix string `yaml:"keyPrefix"`
 }
 
 // ToolsConfig gates high-risk tool management operations.
@@ -421,6 +431,9 @@ func (config *Config) applyEnvironment(lookup LookupEnv) error {
 		{name: "ACTWEAVE_LOG_LEVEL", target: &config.Logging.Level},
 		{name: "ACTWEAVE_LOG_FORMAT", target: &config.Logging.Format},
 		{name: "ACTWEAVE_POSTGRES_DSN", target: &config.Database.DSN},
+		{name: "ACTWEAVE_REDIS_ADDR", target: &config.Redis.Addr},
+		{name: "ACTWEAVE_REDIS_PASSWORD", target: &config.Redis.Password},
+		{name: "ACTWEAVE_REDIS_KEY_PREFIX", target: &config.Redis.KeyPrefix},
 		{name: "ACTWEAVE_JWT_SECRET", target: &config.Authentication.JWTSecret},
 		{name: "ACTWEAVE_AAP_TOKEN_ENDPOINT", target: &config.AgentAccess.TokenEndpoint},
 		{name: "ACTWEAVE_AAP_SIGNING_ACTIVE_KID", target: &config.AgentAccess.SigningKeys.ActiveKeyID},
@@ -446,6 +459,13 @@ func (config *Config) applyEnvironment(lookup LookupEnv) error {
 	}
 	if raw, ok := lookup("ACTWEAVE_MODEL_EGRESS_ALLOWED_CIDRS"); ok {
 		config.Models.Egress.AllowedCIDRs = splitCSV(raw)
+	}
+	if raw, ok := lookup("ACTWEAVE_REDIS_DB"); ok {
+		value, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err != nil || value < 0 {
+			return errors.New("ACTWEAVE_REDIS_DB must be an integer >= 0")
+		}
+		config.Redis.DB = value
 	}
 	if raw, ok := lookup("ACTWEAVE_MINIO_USE_SSL"); ok {
 		value, err := strconv.ParseBool(strings.TrimSpace(raw))
@@ -644,6 +664,12 @@ func (config Config) ValidateServer() error {
 	}
 	if strings.TrimSpace(config.Encryption.MasterKey) == "" {
 		return errors.New("encryption.masterKey is required")
+	}
+	if strings.TrimSpace(config.Redis.Addr) == "" {
+		return errors.New("redis.addr is required")
+	}
+	if config.Redis.DB < 0 {
+		return errors.New("redis.db must be >= 0")
 	}
 	minIO := config.Storage.MinIO
 	if strings.TrimSpace(minIO.Endpoint) == "" || strings.TrimSpace(minIO.AccessKey) == "" ||

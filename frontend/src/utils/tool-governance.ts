@@ -68,9 +68,11 @@ export function getToolTestStatus(tool: Tool): GovernanceStatusMeta {
 export function hasPassingToolTest(tool: Tool): boolean {
   // ZKL-56: never infer success from Published lifecycle alone.
   if (tool.latestTest) {
-    return tool.latestTest.status === "SUCCEEDED" || tool.latestTest.status === "Tested";
+    return tool.latestTest.status === "SUCCEEDED";
   }
-  if (tool.lastTestResult) return tool.lastTestResult.status === "Tested";
+  if (tool.lastTestResult) {
+    return tool.lastTestResult.status === "SUCCEEDED" || tool.lastTestResult.status === "Tested";
+  }
   return false;
 }
 

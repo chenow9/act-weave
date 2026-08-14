@@ -492,10 +492,6 @@ Partners must **not** be required to hold an AAP token and call `:download` them
 
 ### 9.2 A2UI (optional, additive)
 
-Design (normative product locks): [`designs/a2ui-additive-capability.md`](./designs/a2ui-additive-capability.md).  
-Implementation checklist: [`designs/a2ui-additive-capability-checklist.md`](./designs/a2ui-additive-capability-checklist.md).  
-Surface contract (component catalog, chart semantics, strict validation): [`designs/a2ui-catalog-refactor.md`](./designs/a2ui-catalog-refactor.md).
-
 A2UI is an **optional, additive** capability: **text is always first-class**. Enabling it means the Agent **may** attach a declarative UI surface when useful — it does **not** require every reply to include A2UI. Simple Q&A can remain text-only; the same Conversation may mix pure-text turns and text+a2ui turns.
 
 #### Enable (ActWeave admin / Agents Studio)
@@ -597,8 +593,6 @@ component catalog before storing it, and rejects the whole surface if it does no
 conform (the message then arrives as text alone). What you receive is therefore
 already inside these bounds — the contract exists so your renderer can rely on
 that instead of guessing.
-
-Design and rationale: [`designs/a2ui-catalog-refactor.md`](./designs/a2ui-catalog-refactor.md).
 
 **Shape.** A surface is the A2UI `createSurface` payload, so a conforming
 renderer can consume it unchanged:
@@ -1007,8 +1001,6 @@ Unauthorized `Origin` is not reflected. Prefer moving secrets server-side and di
 | **对接指南（中文）** | `docs/aap-integration-guide.zh-CN.md` | Same content in Chinese |
 | OpenAPI | `docs/openapi/agent-access-v1.yaml` | Machine-readable HTTP contract |
 | TypeScript SDK | `sdk/typescript/` | Client library |
-| A2UI design | `docs/designs/a2ui-additive-capability.md` | Additive A2UI capability (product locks) |
-| A2UI checklist | `docs/designs/a2ui-additive-capability-checklist.md` | Implementation checklist |
 | Product README (EN) | `README.md` | Product overview & local run |
 | Product README (ZH) | `README.zh-CN.md` | 产品说明与本地运行 |
 

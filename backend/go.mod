@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/a2aproject/a2a-go v0.3.15
+	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/cloudwego/eino v0.9.13
 	github.com/cloudwego/eino-ext/components/model/agenticopenai v0.2.2
 	github.com/eino-contrib/jsonschema v1.0.3
@@ -16,6 +17,7 @@ require (
 	github.com/minio/minio-go/v7 v7.2.1
 	github.com/openai/openai-go/v3 v3.35.0
 	github.com/pkoukk/tiktoken-go v0.1.7
+	github.com/redis/go-redis/v9 v9.11.0
 	golang.org/x/crypto v0.53.0
 	golang.org/x/sync v0.21.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -32,6 +34,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.18-0.20260527084435-846f52bd97c6 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dlclark/regexp2 v1.12.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/evanphx/json-patch v0.5.2 // indirect
@@ -80,6 +83,7 @@ require (
 	github.com/ugorji/go/codec v1.3.1 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/yargevad/filepathx v1.0.0 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect

@@ -10,6 +10,14 @@ logging:
 database:
   dsn: postgres://actweave:actweave-dev@127.0.0.1:15432/actweave?sslmode=disable
 
+# Required. Cross-replica SSE wakeup, AAP rate limits, cancel and security
+# broadcasts. Not a durable fact store. Env: ACTWEAVE_REDIS_ADDR.
+redis:
+  addr: 127.0.0.1:16379
+  password: ""
+  db: 0
+  keyPrefix: actweave
+
 authentication:
   jwtSecret: actweave-development-jwt-secret-change-me
 

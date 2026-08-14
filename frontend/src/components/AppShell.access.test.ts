@@ -65,8 +65,8 @@ describe("AppShell platform-administrator navigation", () => {
     fixtures.route.path = "/agents";
     fixtures.workspaces.activeWorkspaceId = "workspace-1";
     fixtures.workspaces.items = [
-      { id: "workspace-1", name: "legacy", displayName: "Legacy Workspace", status: "Active", mode: "Production" },
-      { id: "workspace-2", name: "neiops", displayName: "NeiOps", status: "Active", mode: "Production" },
+      { id: "workspace-1", name: "legacy", displayName: "Legacy Workspace", status: "ACTIVE", mode: "PRODUCTION" },
+      { id: "workspace-2", name: "neiops", displayName: "NeiOps", status: "ACTIVE", mode: "PRODUCTION" },
     ];
     fixtures.workspaces.activeWorkspace = { ...fixtures.workspaces.items[0], healthScore: 75 };
     const wrapper = mountShell();
@@ -82,7 +82,7 @@ describe("AppShell platform-administrator navigation", () => {
     fixtures.route.path = "/overview";
     fixtures.workspaces.activeWorkspaceId = "workspace-1";
     fixtures.workspaces.items = [
-      { id: "workspace-1", name: "legacy", displayName: "Legacy Workspace", status: "Active", mode: "Production" },
+      { id: "workspace-1", name: "legacy", displayName: "Legacy Workspace", status: "ACTIVE", mode: "PRODUCTION" },
     ];
     fixtures.workspaces.activeWorkspace = { ...fixtures.workspaces.items[0], healthScore: 75 };
     const wrapper = mountShell();

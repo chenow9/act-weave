@@ -1853,7 +1853,7 @@ export function createWorkflowPageModel() {
         workflowActionNote.value = tt("workflow.compilationStale", { name: workflow.name });
         return;
       }
-      if (workflow && (latestCompilation?.status === "Invalid" || latestCompilation?.status === "INVALID")) {
+      if (workflow && latestCompilation?.status === "Invalid") {
         closeTrialRunDialog();
         workflowActionNote.value = buildCompilationBlockedMessage(workflow, "trial");
         focusCompilationIssue(latestCompilation.issues[0]);
@@ -1985,7 +1985,18 @@ export function createWorkflowPageModel() {
       return undefined;
     }
     const payload = error.response?.data as { latestCompilation?: WorkflowCompilation } | undefined;
-    return payload?.latestCompilation;
+    const compilation = payload?.latestCompilation;
+    if (!compilation) {
+      return undefined;
+    }
+    return { ...compilation, status: normalizeCompilationStatus(compilation.status) };
+  }
+
+  function normalizeCompilationStatus(value: string | undefined): WorkflowCompilation["status"] {
+    const upper = String(value || "").trim().toUpperCase();
+    if (upper === "VALID") return "Valid";
+    if (upper === "INVALID") return "Invalid";
+    return "Pending";
   }
 
   function hasStaleCompilation(workflowId: string) {

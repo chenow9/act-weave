@@ -112,8 +112,8 @@ export interface Workspace {
   name: string;
   slug?: string;
   displayName: string;
-  mode: string;
-  status: "Active" | "Disabled";
+  mode: "PRODUCTION" | "SANDBOX" | string;
+  status: "ACTIVE" | "DISABLED";
   ownerUserId?: string;
   defaultAgentId: string;
   defaultModelConfigId?: string;
@@ -175,8 +175,8 @@ export interface PaginatedListQuery {
 }
 
 export interface WorkspaceListQuery extends PaginatedListQuery {
-  status?: "Active" | "Disabled";
-  mode?: "Production" | "Sandbox";
+  status?: "ACTIVE" | "DISABLED";
+  mode?: "PRODUCTION" | "SANDBOX";
 }
 
 export interface AgentListQuery extends PaginatedListQuery {
@@ -839,15 +839,8 @@ export type ExecutionStepStatus =
   | "Failed"
   | "Cancelled";
 export type WorkflowIssueStage = "graph" | "semantic" | "spec" | "plan" | "runtime";
-export type WorkflowCompilationStatus = "PENDING" | "VALID" | "INVALID" | "Pending" | "Valid" | "Invalid";
+export type WorkflowCompilationStatus = "Pending" | "Valid" | "Invalid";
 export type WorkflowReadinessStage =
-  | "DRAFT_MISSING"
-  | "COMPILE_REQUIRED"
-  | "COMPILE_FAILED"
-  | "TRIAL_REQUIRED"
-  | "PUBLISH_READY"
-  | "PUBLISHED"
-  | "DISABLED"
   | "DraftMissing"
   | "CompileRequired"
   | "CompileFailed"

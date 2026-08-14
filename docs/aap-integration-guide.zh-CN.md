@@ -487,10 +487,6 @@ X-ActWeave-Signature: t=<unix>,v1=<hmac_sha256_hex>
 
 ### 9.2 A2UI（可选、附加）
 
-设计（产品锁定规范）：[`designs/a2ui-additive-capability.md`](./designs/a2ui-additive-capability.md)。  
-实现清单：[`designs/a2ui-additive-capability-checklist.md`](./designs/a2ui-additive-capability-checklist.md)。  
-Surface 契约（组件 catalog、图表语义、严格校验）：[`designs/a2ui-catalog-refactor.md`](./designs/a2ui-catalog-refactor.md)。
-
 A2UI 是**可选、附加（additive）**能力：**文本始终是一等公民**。开启仅表示 Agent **可以**在有用时附带声明式 UI，**不**要求每条回复都含 A2UI。简单问答可只有文本；同一 Conversation 内可混有纯 text 轮与 text+a2ui 轮。
 
 #### 启用（ActWeave 管理员 / Agents Studio）
@@ -590,8 +586,6 @@ function readAssistant(item: ProtocolItem) {
 `surface` **不是**自由格式：服务端在落库前用组件 catalog 校验每个 surface，
 不合规就整体拒绝（此时消息只带文本到达）。因此你收到的 surface 一定已在下述边界内——
 契约存在的意义就是让渲染器可以依赖这一点，而不必去猜。
-
-设计与理由：[`designs/a2ui-catalog-refactor.md`](./designs/a2ui-catalog-refactor.md)。
 
 **形态。** surface 就是 A2UI `createSurface` 载荷，符合规范的渲染器可以零适配直接消费：
 
@@ -995,8 +989,6 @@ SDK 保证：
 | **English guide** | `docs/aap-integration-guide.md` | Same content in English |
 | OpenAPI | `docs/openapi/agent-access-v1.yaml` | HTTP 机器契约 |
 | TypeScript SDK | `sdk/typescript/` | 客户端库 |
-| A2UI 设计 | `docs/designs/a2ui-additive-capability.md` | 附加 A2UI 能力（产品锁定） |
-| A2UI 清单 | `docs/designs/a2ui-additive-capability-checklist.md` | 实现 checklist |
 | 产品 README（中） | `README.zh-CN.md` | 产品与本地运行 |
 | 产品 README（英） | `README.md` | Product overview & local run |
 

@@ -62,7 +62,7 @@ The Agent Runtime freezes/uses the relevant Agent, model, and capability configu
 | --- | --- |
 | PostgreSQL | Source of truth for configuration, identity, versions, Runs, steps, protocol events, audit metadata, and migrations. |
 | MinIO | Compose creates execution, audit, Tool-test, connection-verification, and AAP-file buckets; the backend manages durable objects. |
-| Redis | Rebuildable event fan-out; not a durable fact store. |
+| Redis | Required at process start. Cross-replica SSE wakeup, AAP rate limits, SSE connection leases, cancel and security-change broadcasts. Not a durable fact store; Run events replay from PostgreSQL. |
 | Model API | Model connection configuration used by Agents. |
 | Provider/Connection | Service endpoint, auth contract, environment, and outbound identity for enterprise HTTP APIs. |
 

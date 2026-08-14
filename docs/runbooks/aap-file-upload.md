@@ -149,6 +149,4 @@ Keep **`agentAccess.files.enabled` default `false`** until staging GC health, Mi
 
 ## Related
 
-- Design: `docs/design/aap-file-upload-technical-design.md` (§5.4.3, §10, §11, §12)
-- Checklist: `docs/design/aap-file-upload-implementation-checklist.md` (IC-11)
 - Integration guides: `docs/aap-integration-guide.md` / `.zh-CN.md`

@@ -331,12 +331,13 @@ export const useToolsStore = defineStore("tools", {
     },
 
     connectionForTool(tool: Tool) {
-      // Strict workspace key — never fall back to active workspace / global catalog.
       const scopedConnections = this.toolConnectionsByWorkspace[tool.workspaceId];
-      if (!scopedConnections) {
-        return undefined;
+      if (scopedConnections) {
+        return scopedConnections.find((connection) => connection.id === tool.connectionId);
       }
-      return scopedConnections.find((connection) => connection.id === tool.connectionId);
+      return useConnectionsStore().serviceConnectionCatalog.find(
+        (connection) => connection.id === tool.connectionId && connection.workspaceId === tool.workspaceId,
+      );
     },
 
     async createTool(tool: Tool) {

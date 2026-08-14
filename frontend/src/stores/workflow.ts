@@ -286,7 +286,7 @@ export const useWorkflowStore = defineStore("workflow", {
       const compilation = compilationFromDTO(response.data, workflowId);
       this.activeCompilation = compilation;
       this.lastValidation = {
-        valid: compilation.status === "VALID",
+        valid: compilation.status === "Valid",
         issues: compilation.issues.map((issue) => ({
           nodeId: issue.nodeId,
           edgeId: issue.edgeId,
@@ -791,9 +791,16 @@ function compilationFromDTO(value: WorkflowCompilationDTO, workflowId: string): 
   return {
     ...value,
     workflowId,
-    status: value.status as WorkflowCompilation["status"],
+    status: normalizeCompilationStatus(value.status),
     issues: value.issues || [],
   };
+}
+
+function normalizeCompilationStatus(value: string): WorkflowCompilation["status"] {
+  const upper = value.trim().toUpperCase();
+  if (upper === "VALID") return "Valid";
+  if (upper === "INVALID") return "Invalid";
+  return "Pending";
 }
 
 function revisionFromDTO(value: WorkflowRevisionDTO, workflowId: string): WorkflowRevision {

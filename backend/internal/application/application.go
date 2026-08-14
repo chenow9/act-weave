@@ -41,6 +41,7 @@ import (
 	"actweave/backend/internal/outboundidentity"
 	"actweave/backend/internal/protocolevent"
 	"actweave/backend/internal/provider"
+	"actweave/backend/internal/redisx"
 	"actweave/backend/internal/secret"
 	"actweave/backend/internal/smartdag"
 	"actweave/backend/internal/storedobject"
@@ -111,13 +112,18 @@ type Config struct {
 	// PreviewPurge paces the create-preview body cleanup worker (ZKL-69).
 	// Zero values use agent.DefaultPreviewPurgeConfig.
 	PreviewPurge agent.PreviewPurgeConfig
+	// Redis is required. Cross-replica wakeup, rate limits, cancel and
+	// security broadcasts. Not a durable fact store.
+	Redis redisx.Config
 }
 
 type Application struct {
 	db                         *sql.DB
 	handler                    http.Handler
-	eventNotifier              *protocolevent.InProcessLiveNotifier
-	securityChanges            *agentaccessauth.InProcessSecurityChanges
+	redis                      *redisx.Client
+	eventNotifier              *protocolevent.RedisLiveNotifier
+	securityChanges            *agentaccessauth.RedisSecurityChanges
+	cancelBus                  *agentrun.RedisCancelBus
 	clientSecretAuthenticator  *agentaccessauth.ClientSecretAuthenticator
 	privateKeyJWTAuthenticator *agentaccessauth.PrivateKeyJWTAuthenticator
 	agentAccessAuthorizer      *agentaccessauth.AAPAuthorizationService
@@ -166,16 +172,34 @@ func (application *Application) Close() error {
 	if application.securityChanges != nil {
 		securityChangesErr = application.securityChanges.Close()
 	}
-	return errors.Join(notifierErr, securityChangesErr, application.db.Close())
+	var cancelBusErr error
+	if application.cancelBus != nil {
+		cancelBusErr = application.cancelBus.Close()
+	}
+	var redisErr error
+	if application.redis != nil {
+		redisErr = application.redis.Close()
+	}
+	return errors.Join(notifierErr, securityChangesErr, cancelBusErr, redisErr, application.db.Close())
 }
 
 func Open(ctx context.Context, config Config) (_ *Application, returnErr error) {
 	if config.PostgresDSN == "" || config.JWTSecret == "" || config.SecretMasterKey == "" ||
 		config.AgentAccessSigningKeys == nil || config.AgentAccessTokenEndpoint == "" ||
 		config.AgentAccessMaxTokenTTL < agentaccessauth.MinimumAccessTokenTTL ||
-		config.AgentAccessMaxTokenTTL > agentaccessauth.DefaultMaxAccessTokenTTL {
-		return nil, errors.New("application database, JWT, encryption, and Agent Access signing configuration are required")
+		config.AgentAccessMaxTokenTTL > agentaccessauth.DefaultMaxAccessTokenTTL ||
+		strings.TrimSpace(config.Redis.Addr) == "" {
+		return nil, errors.New("application database, JWT, encryption, Agent Access signing, and Redis configuration are required")
 	}
+	redisClient, err := redisx.Open(ctx, config.Redis)
+	if err != nil {
+		return nil, fmt.Errorf("open redis: %w", err)
+	}
+	defer func() {
+		if returnErr != nil {
+			_ = redisClient.Close()
+		}
+	}()
 	client := config.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
@@ -212,7 +236,10 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if err != nil {
 		return nil, err
 	}
-	securityChanges := agentaccessauth.NewInProcessSecurityChanges()
+	securityChanges, err := agentaccessauth.NewRedisSecurityChanges(ctx, redisClient)
+	if err != nil {
+		return nil, fmt.Errorf("redis security changes: %w", err)
+	}
 	securityVersionCache, err := agentaccessauth.NewSecurityVersionCache(30 * time.Second)
 	if err != nil {
 		return nil, err
@@ -352,10 +379,10 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if err != nil {
 		return nil, err
 	}
-	clientAuthenticationLimiter, err := agentaccessauth.NewInMemoryClientAuthenticationLimiter(
+	clientAuthenticationLimiter, err := agentaccessauth.NewRedisClientAuthenticationLimiter(
+		redisClient,
 		agentaccessauth.DefaultClientAuthenticationMaxFailures,
 		agentaccessauth.DefaultClientAuthenticationWindow,
-		agentaccessauth.DefaultClientAuthenticationLimiterEntries,
 	)
 	if err != nil {
 		return nil, err
@@ -449,10 +476,8 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if err != nil {
 		return nil, err
 	}
-	// Production baseline: client × IP × grant token endpoint rate limits.
-	// Multi-replica deployments should inject a Redis/Gateway TokenEndpointLimiter.
-	tokenIssueLimiter, err := agentaccessauth.NewInMemoryTokenEndpointLimiter(
-		agentaccessauth.DefaultTokenEndpointLimiterConfig(),
+	tokenIssueLimiter, err := agentaccessauth.NewRedisTokenEndpointLimiter(
+		redisClient, agentaccessauth.DefaultTokenEndpointLimiterConfig(),
 	)
 	if err != nil {
 		return nil, err
@@ -944,8 +969,8 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if err := aapConversations.ConfigureCommandReceipts(aapCommandReceipts); err != nil {
 		return nil, err
 	}
-	aapRateQuota, err := agentaccess.NewInMemoryDataPlaneQuota(
-		agentaccess.DefaultDataPlaneQuotaConfig(),
+	aapRateQuota, err := agentaccess.NewRedisDataPlaneQuota(
+		redisClient, agentaccess.DefaultDataPlaneQuotaConfig(),
 	)
 	if err != nil {
 		return nil, err
@@ -1078,7 +1103,10 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if err != nil {
 		return nil, err
 	}
-	liveEvents := protocolevent.NewInProcessLiveNotifier()
+	liveEvents, err := protocolevent.NewRedisLiveNotifier(ctx, redisClient)
+	if err != nil {
+		return nil, fmt.Errorf("redis live notifier: %w", err)
+	}
 	protocolUnit, err := protocolevent.NewProtocolUnitOfWork(db, liveEvents)
 	if err != nil {
 		return nil, err
@@ -1133,7 +1161,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		return nil, err
 	}
 	streamPolicy := ssetransport.DefaultBackpressurePolicy()
-	streamLimiter, err := ssetransport.NewInMemoryConnectionLimiter(streamPolicy)
+	streamLimiter, err := ssetransport.NewRedisConnectionLimiter(redisClient, streamPolicy)
 	if err != nil {
 		return nil, err
 	}
@@ -1359,10 +1387,16 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		return nil, fmt.Errorf("eino chat runtime bridge required after PR16: %w", bridgeErr)
 	}
 	einoRuntime := agentrun.Runtime(bridge)
-	agentRuntime, err := agentrun.NewFactory(runtimeCfg.Agent, einoRuntime)
+	factoryRuntime, err := agentrun.NewFactory(runtimeCfg.Agent, einoRuntime)
 	if err != nil {
 		return nil, err
 	}
+	cancelBus, err := agentrun.NewRedisCancelBus(ctx, redisClient)
+	if err != nil {
+		return nil, fmt.Errorf("redis cancel bus: %w", err)
+	}
+	go cancelBus.Listen(factoryRuntime)
+	agentRuntime := agentrun.BroadcastingRuntime{Local: factoryRuntime, Bus: cancelBus}
 
 	continuationRecovery, err := execution.NewContinuationRecoveryService(
 		executionConfirmations, resumeService, interactionDecisions,
@@ -1642,8 +1676,9 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	fileStagingGC.Start(context.WithoutCancel(ctx))
 	finalizeWorker.Start(context.WithoutCancel(ctx))
 	return &Application{
-		db: db, handler: handler, eventNotifier: liveEvents,
-		securityChanges: securityChanges, clientSecretAuthenticator: clientSecretAuthenticator,
+		db: db, redis: redisClient, handler: handler, eventNotifier: liveEvents,
+		securityChanges: securityChanges, cancelBus: cancelBus,
+		clientSecretAuthenticator: clientSecretAuthenticator,
 		privateKeyJWTAuthenticator: privateKeyJWTAuthenticator,
 		agentAccessAuthorizer:      agentAccessAuthorizer,
 		securityVersionCache:       securityVersionCache,

@@ -146,6 +146,7 @@ func (handler *AAPEventCatchUp) stream(
 		}
 		return
 	}
+	var streamLease sse.ConnectionLease
 	if handler.connections != nil {
 		if len(sessions) != 1 {
 			RespondError(c, sse.ErrBackpressureInvalid)
@@ -159,6 +160,7 @@ func (handler *AAPEventCatchUp) stream(
 		if stats, ok := handler.connections.(interface{ Stats() sse.ConnectionLimiterStats }); ok {
 			metrics.Default().SetSSEActiveConnections(int64(stats.Stats().Active))
 		}
+		streamLease = lease
 		defer func() {
 			_ = lease.Close()
 			if stats, ok := handler.connections.(interface{ Stats() sse.ConnectionLimiterStats }); ok {
@@ -345,6 +347,9 @@ func (handler *AAPEventCatchUp) stream(
 		err = heartbeatFollower.FollowWithHeartbeat(
 			streamContext, scope, cursor, deliver,
 			func(occurredAt time.Time) error {
+				if refresher, ok := streamLease.(interface{ Refresh(context.Context) error }); ok {
+					_ = refresher.Refresh(streamContext)
+				}
 				if heartbeatErr := handler.encoder.Heartbeat(streamWriter, occurredAt); heartbeatErr != nil {
 					return heartbeatErr
 				}

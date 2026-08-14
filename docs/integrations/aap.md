@@ -10,7 +10,7 @@ AAP (Agent Access Protocol) is the application-to-ActWeave-Agent-Runtime path, n
 2. [OpenAPI](../openapi/agent-access-v1.yaml): machine-readable HTTP contract and source of truth for field schemas.
 3. [TypeScript SDK](../../sdk/typescript/): `@actweave/agent-client` (helpers `joinTextParts` / `findA2UIPart`, plus `isKnownA2UICatalog` / `resolveBinding` / `iterCharts` for reading a surface when `enableA2UI`).
 4. [AAP Chat Demo](../../demos/aap-chat/): local demonstration where a BFF holds the Client Secret.
-5. A2UI design: [additive capability](../designs/a2ui-additive-capability.md) for the product locks (`actions: false` in MVP), and [catalog contract](../designs/a2ui-catalog-refactor.md) for what a surface may contain and how it is validated.
+5. Optional A2UI is documented in the [integration guide §9.2](../aap-integration-guide.md#92-a2ui-optional-additive) (`actions: false` in MVP; surfaces are catalog-validated).
 
 ## Shortest call chain
 

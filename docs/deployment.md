@@ -22,7 +22,7 @@ Do not copy the development keys and bootstrap administrator settings in `backen
 
 | Area | Confirm or replace |
 | --- | --- |
-| Data and encryption | `ACTWEAVE_POSTGRES_DSN`, `ACTWEAVE_JWT_SECRET`, `ACTWEAVE_SECRET_MASTER_KEY`; use managed PostgreSQL with a backup policy. |
+| Data and encryption | `ACTWEAVE_POSTGRES_DSN`, `ACTWEAVE_REDIS_ADDR`, `ACTWEAVE_JWT_SECRET`, `ACTWEAVE_SECRET_MASTER_KEY`; use managed PostgreSQL with a backup policy. Redis is required for cross-replica wakeup and rate limits; it is not a substitute for PostgreSQL. |
 | Object storage | MinIO/S3-compatible endpoint, access key, secret key, bucket lifecycle, and backups. |
 | AAP signing | `ACTWEAVE_AAP_TOKEN_ENDPOINT`, active key ID, private-key file, rotation/prepublished public keys, and token TTL. AAP access tokens use EdDSA/Ed25519. |
 | Bootstrap identity | `ACTWEAVE_BOOTSTRAP_ADMIN_*`. Bootstrap creates the first platform administrator only when `users` is empty, but development defaults still must not be reused. |
@@ -41,7 +41,7 @@ go run ./cmd/migrate version
 go run ./cmd/migrate up
 ```
 
-PostgreSQL is the source of truth for configuration, runs, protocol events, and audit metadata. MinIO holds durable/encrypted objects; Redis is rebuildable event fan-out and cannot replace durable facts. Design backup, restore testing, retention, and access control separately for PostgreSQL and object storage.
+PostgreSQL is the source of truth for configuration, runs, protocol events, and audit metadata. MinIO holds durable/encrypted objects. Redis is required at process start for cross-replica SSE wakeup, AAP rate limits, connection leases, and cancel/security broadcasts; it cannot replace durable facts. Design backup, restore testing, retention, and access control separately for PostgreSQL and object storage.
 
 ## Runtime and reverse proxy
 

@@ -26,6 +26,7 @@
     "e2e": "playwright test e2e/smoke.spec.ts e2e/a2ui-enable.spec.ts --reporter=line"
   },
   "dependencies": {
+    "@actweave/agent-client": "file:../sdk/typescript",
     "@codemirror/language": "6.11.3",
     "@codemirror/merge": "6.12.2",
     "@codemirror/state": "6.5.2",

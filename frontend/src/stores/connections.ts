@@ -10,7 +10,6 @@ import { requireActiveWorkspaceId } from "../services/integration/workspace";
 import * as mappers from "../services/integration/mappers";
 import type { ServiceConnection, ServiceConnectionListQuery, ServiceConnectionVerification } from "../types/domain";
 import { useProvidersStore } from "./providers";
-import { useToolsStore } from "./tools";
 
 const { connectionFromDTO, connectionWritePayload, verificationFromDTO, filterConnections, sortConnections } = mappers;
 type ConnectionDTO = mappers.ConnectionDTO;
@@ -136,12 +135,6 @@ export const useConnectionsStore = defineStore("connections", {
       const created = connectionFromDTO(response.data, provider, workspaceID);
       this.serviceConnectionCatalog = [created, ...this.serviceConnectionCatalog];
       this.serviceConnectionPageItems = [created, ...this.serviceConnectionPageItems];
-      if (useToolsStore().toolConnectionsByWorkspace[workspaceID]) {
-        useToolsStore().toolConnectionsByWorkspace[workspaceID] = [
-          created,
-          ...useToolsStore().toolConnectionsByWorkspace[workspaceID],
-        ];
-      }
       this.serviceConnectionPagination = {
         ...this.serviceConnectionPagination,
         total: this.serviceConnectionPagination.total + 1,
@@ -168,9 +161,6 @@ export const useConnectionsStore = defineStore("connections", {
       this.serviceConnectionPageItems = this.serviceConnectionPageItems.map((item) =>
         item.id === connectionId ? updated : item,
       );
-      useToolsStore().toolConnectionsByWorkspace[workspaceID] = (
-        useToolsStore().toolConnectionsByWorkspace[workspaceID] || []
-      ).map((item) => (item.id === connectionId ? updated : item));
       return updated;
     },
 
@@ -207,9 +197,6 @@ export const useConnectionsStore = defineStore("connections", {
       this.serviceConnectionPageItems = this.serviceConnectionPageItems.filter(
         (connection) => connection.id !== connectionId,
       );
-      useToolsStore().toolConnectionsByWorkspace[workspaceID] = (
-        useToolsStore().toolConnectionsByWorkspace[workspaceID] || []
-      ).filter((connection) => connection.id !== connectionId);
       this.serviceConnectionPagination = {
         ...this.serviceConnectionPagination,
         total: Math.max(0, this.serviceConnectionPagination.total - 1),
@@ -231,9 +218,6 @@ export const useConnectionsStore = defineStore("connections", {
       this.serviceConnectionPageItems = this.serviceConnectionPageItems.map((connection) =>
         connection.id === connectionId ? { ...connection, status: nextStatus } : connection,
       );
-      useToolsStore().toolConnectionsByWorkspace[workspaceID] = (
-        useToolsStore().toolConnectionsByWorkspace[workspaceID] || []
-      ).map((connection) => (connection.id === connectionId ? { ...connection, status: nextStatus } : connection));
       return verification;
     },
 

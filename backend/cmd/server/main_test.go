@@ -316,5 +316,6 @@ func validServerConfig() backendconfig.Config {
 		Storage: backendconfig.StorageConfig{MinIO: backendconfig.MinIOConfig{
 			Endpoint: "127.0.0.1:9000", AccessKey: "access", SecretKey: "secret",
 		}},
+		Redis: backendconfig.RedisConfig{Addr: "127.0.0.1:16379", KeyPrefix: "actweave"},
 	}
 }
