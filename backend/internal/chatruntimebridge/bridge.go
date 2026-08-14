@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"actweave/backend/internal/aapfile"
 	"actweave/backend/internal/agent"
 	"actweave/backend/internal/agentdelegation"
 	"actweave/backend/internal/agentrun"
@@ -156,6 +157,10 @@ type Bridge struct {
 	// pendingConfirms captures tool confirm metadata from PipelineTool hooks.
 	pendingMu       sync.Mutex
 	pendingConfirms map[string][]einoruntime.PendingConfirmInterrupt
+
+	// outboundCollectors holds the per-drive publish quota (HITL memory fallback).
+	outboundMu         sync.Mutex
+	outboundCollectors map[string]*aapfile.OutboundCollector
 }
 
 type activeRunExecution struct {
@@ -207,16 +212,17 @@ func NewBridge(deps Dependencies) (*Bridge, error) {
 		textSinkFactory:   deps.TextSinkFactory,
 		maxIterations:     maxIter, maxTools: maxTools,
 		logger: logger, now: now, agentAuditDebug: deps.AgentAuditDebug,
-		assemblies:      deps.Assemblies,
-		compact:         deps.Compact,
-		multimodal:      deps.Multimodal,
-		delegation:      deps.Delegation,
-		toolDisclosure:  deps.ToolDisclosure.Normalized(),
-		platformCalls:   deps.PlatformCalls,
-		files:           deps.Files,
-		filesCfg:        deps.FilesConfig,
-		activeRuns:      make(map[string]*activeRunExecution),
-		pendingConfirms: make(map[string][]einoruntime.PendingConfirmInterrupt),
+		assemblies:         deps.Assemblies,
+		compact:            deps.Compact,
+		multimodal:         deps.Multimodal,
+		delegation:         deps.Delegation,
+		toolDisclosure:     deps.ToolDisclosure.Normalized(),
+		platformCalls:      deps.PlatformCalls,
+		files:              deps.Files,
+		filesCfg:           deps.FilesConfig,
+		activeRuns:         make(map[string]*activeRunExecution),
+		pendingConfirms:    make(map[string][]einoruntime.PendingConfirmInterrupt),
+		outboundCollectors: make(map[string]*aapfile.OutboundCollector),
 	}, nil
 }
 
@@ -979,6 +985,7 @@ func (b *Bridge) completeRun(
 	outbound := b.snapshotOutboundFiles(ctx, run.WorkspaceID, run.AgentID, job.RunID)
 	content, attached := attachOutboundFiles(content, outbound)
 	metrics.Default().ObserveOutboundTurnFiles(len(attached))
+	b.forgetOutboundCollector(run.WorkspaceID, job.RunID)
 
 	run, err := b.runs.GetAgentRun(ctx, job.WorkspaceID, job.RunID)
 	if err != nil {

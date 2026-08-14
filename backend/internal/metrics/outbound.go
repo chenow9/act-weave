@@ -40,13 +40,21 @@ func (c *AAPCollector) ObserveOutboundTurnFiles(n int) {
 	default:
 		bucket = "8"
 	}
-	c.labeled.add("aap_outbound_turn_files", map[string]string{"result": bucket}, 1)
+	c.labeled.add("aap_outbound_turn_files", map[string]string{"bucket": bucket}, 1)
 }
 
-// ObserveOutboundIngestBytes records one ingest size sample.
+// ObserveOutboundIngestBytes increments aap_outbound_ingest_bytes_total (byte sum).
 func (c *AAPCollector) ObserveOutboundIngestBytes(n int64) {
 	if c == nil || n < 0 {
 		return
 	}
-	c.labeled.add("aap_outbound_ingest_bytes", nil, uint64(n))
+	c.labeled.add("aap_outbound_ingest_bytes_total", nil, uint64(n))
+}
+
+// ObserveOutboundSnapshotFail increments aap_outbound_snapshot_fail_total.
+func (c *AAPCollector) ObserveOutboundSnapshotFail() {
+	if c == nil {
+		return
+	}
+	c.labeled.add("aap_outbound_snapshot_fail_total", nil, 1)
 }

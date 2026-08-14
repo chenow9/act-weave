@@ -43,15 +43,10 @@ func (b *Bridge) maybeInjectOutboundPublish(
 	frozenCaps []chatruntime.SnapshotCapability,
 	cfg modelconfig.Config,
 ) ([]tool.BaseTool, map[string]catalogEntryFlags) {
-	capByName := map[string]chatruntime.SnapshotCapability{}
-	for _, cap := range frozenCaps {
-		name := strings.TrimSpace(cap.CallableName)
-		if name != "" {
-			capByName[name] = cap
-		}
-	}
 	calling := frozenToolCalling(cfg)
-	if _, exists := capByName[aapfile.PublishAttachmentToolName]; exists {
+	// Injecting into a previously empty FC catalog makes disclosure platform_bounded
+	// and requires runtime.toolDisclosure (fail-closed if that rollout is off).
+	if outboundNameTaken(ctx, tools, frozenCaps, aapfile.PublishAttachmentToolName) {
 		if b.shouldInjectOutboundPublish(run, calling) {
 			metrics.Default().ObserveOutboundPublish("denied")
 		}
@@ -68,13 +63,18 @@ func (b *Bridge) maybeInjectOutboundPublish(
 		return tools, nil
 	}
 	collector := aapfile.NewOutboundCollector(b.files, run.WorkspaceID, run.AgentID, run.ID, b.outboundMaxBytes())
-	if err := collector.RebuildFromDB(ctx); err != nil && b.logger != nil {
-		b.logger.Warn("outbound collector rebuild failed",
+	if err := collector.RebuildFromDB(ctx); err != nil {
+		logger := slog.Default()
+		if b != nil && b.logger != nil {
+			logger = b.logger
+		}
+		logger.Error("outbound collector rebuild failed; skip inject",
 			"event", "chatruntimebridge.outbound.collector_rebuild_failed",
 			"workspace_id", run.WorkspaceID,
 			"run_id", run.ID,
 			"error", err.Error(),
 		)
+		return tools, nil
 	}
 	principalToken, clientID, policyVer, ok := aapPrincipalFromRun(run)
 	if !ok {
@@ -112,7 +112,74 @@ func (b *Bridge) maybeInjectOutboundPublish(
 			PlatformControl: true,
 		},
 	}
+	if b != nil {
+		b.rememberOutboundCollector(run.WorkspaceID, run.ID, collector)
+	}
 	return append(tools, wrapped), flags
+}
+
+func outboundNameTaken(
+	ctx context.Context,
+	tools []tool.BaseTool,
+	frozenCaps []chatruntime.SnapshotCapability,
+	name string,
+) bool {
+	for _, cap := range frozenCaps {
+		if strings.TrimSpace(cap.CallableName) == name {
+			return true
+		}
+	}
+	for _, existing := range tools {
+		if existing == nil {
+			continue
+		}
+		info, err := existing.Info(ctx)
+		if err != nil || info == nil {
+			continue
+		}
+		if strings.TrimSpace(info.Name) == name {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldAppendOutboundPrompt(flags map[string]catalogEntryFlags) bool {
+	return flags[aapfile.PublishAttachmentToolName].PlatformControl
+}
+
+func outboundCollectorKey(workspaceID, runID string) string {
+	return strings.TrimSpace(workspaceID) + "/" + strings.TrimSpace(runID)
+}
+
+func (b *Bridge) rememberOutboundCollector(workspaceID, runID string, collector *aapfile.OutboundCollector) {
+	if b == nil || collector == nil {
+		return
+	}
+	b.outboundMu.Lock()
+	defer b.outboundMu.Unlock()
+	if b.outboundCollectors == nil {
+		b.outboundCollectors = make(map[string]*aapfile.OutboundCollector)
+	}
+	b.outboundCollectors[outboundCollectorKey(workspaceID, runID)] = collector
+}
+
+func (b *Bridge) outboundCollector(workspaceID, runID string) *aapfile.OutboundCollector {
+	if b == nil {
+		return nil
+	}
+	b.outboundMu.Lock()
+	defer b.outboundMu.Unlock()
+	return b.outboundCollectors[outboundCollectorKey(workspaceID, runID)]
+}
+
+func (b *Bridge) forgetOutboundCollector(workspaceID, runID string) {
+	if b == nil {
+		return
+	}
+	b.outboundMu.Lock()
+	defer b.outboundMu.Unlock()
+	delete(b.outboundCollectors, outboundCollectorKey(workspaceID, runID))
 }
 
 func (b *Bridge) shouldInjectOutboundPublish(run execution.AgentRun, toolCalling string) bool {

@@ -30,6 +30,7 @@ var allowedLabelKeys = map[string]struct{}{
 	// a2ui.go before they reach here, so cardinality stays bounded.
 	"keyword":    {},
 	"chart_type": {},
+	"bucket":     {},
 }
 
 // AAPCollector is the shared AAP metrics surface for one process.

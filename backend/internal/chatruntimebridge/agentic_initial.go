@@ -531,7 +531,7 @@ func (b *Bridge) planAgenticRun(
 	if sessioncontext.EnableA2UIFromSnapshot(run.ContextPolicySnapshot) {
 		instruction = a2ui.AppendPromptRules(instruction)
 	}
-	if _, ok := catalog.Entry(aapfile.PublishAttachmentToolName); ok {
+	if shouldAppendOutboundPrompt(catalogFlags) {
 		instruction = aapfile.AppendOutboundPromptRules(instruction)
 	}
 

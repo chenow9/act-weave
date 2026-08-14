@@ -2,6 +2,7 @@ package chatruntimebridge
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 
 	"actweave/backend/internal/a2ui"
@@ -12,17 +13,43 @@ import (
 )
 
 func (b *Bridge) snapshotOutboundFiles(ctx context.Context, workspaceID, agentID, runID string) []protocolevent.OutputFileContentPart {
-	if b == nil || b.files == nil {
+	if b == nil {
 		return nil
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if collector := b.outboundCollector(workspaceID, runID); collector != nil {
+		files, err := collector.Snapshot(ctx)
+		if err != nil {
+			b.observeOutboundSnapshotFail(workspaceID, runID, err)
+			return nil
+		}
+		return filesToOutputParts(files)
+	}
+	if b.files == nil {
+		return nil
+	}
 	files, err := b.files.ListGeneratedForRun(ctx, workspaceID, agentID, runID)
 	if err != nil {
+		b.observeOutboundSnapshotFail(workspaceID, runID, err)
 		return nil
 	}
 	return filesToOutputParts(files)
+}
+
+func (b *Bridge) observeOutboundSnapshotFail(workspaceID, runID string, err error) {
+	metrics.Default().ObserveOutboundSnapshotFail()
+	logger := slog.Default()
+	if b != nil && b.logger != nil {
+		logger = b.logger
+	}
+	logger.Error("outbound file snapshot failed",
+		"event", "chatruntimebridge.outbound.snapshot_failed",
+		"workspace_id", workspaceID,
+		"run_id", runID,
+		"error", err.Error(),
+	)
 }
 
 func filesToOutputParts(files []aapfile.File) []protocolevent.OutputFileContentPart {

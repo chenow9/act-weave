@@ -38,6 +38,7 @@ type fakeOutboundFiles struct {
 	ingest    aapfile.File
 	ingestErr error
 	listed    []aapfile.File
+	listErr   error
 	promoted  []string
 }
 
@@ -61,6 +62,9 @@ func (f *fakeOutboundFiles) IngestGenerated(_ context.Context, in aapfile.Ingest
 }
 
 func (f *fakeOutboundFiles) ListGeneratedForRun(context.Context, string, string, string) ([]aapfile.File, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	return append([]aapfile.File(nil), f.listed...), nil
 }
 
@@ -324,6 +328,54 @@ func TestInjectSkipsNameCollision(t *testing.T) {
 	if len(got) != 1 || flags != nil {
 		t.Fatalf("collision must skip inject tools=%d flags=%v", len(got), flags)
 	}
+	if shouldAppendOutboundPrompt(flags) {
+		t.Fatal("collision must not append outbound prompt rules")
+	}
+}
+
+func TestInjectSkipsExistingToolInfoName(t *testing.T) {
+	run := testAAPRun(t)
+	b := &Bridge{files: &fakeOutboundFiles{}, filesCfg: openFilesCfg()}
+	cfg := testFCCaps(t)
+	tools := []tool.BaseTool{&stubTool{name: aapfile.PublishAttachmentToolName, desc: "graph"}}
+	got, flags := b.maybeInjectOutboundPublish(context.Background(), agentrun.Job{}, run, tools, nil, cfg)
+	if len(got) != 1 || flags != nil {
+		t.Fatalf("Info().Name collision must skip inject tools=%d flags=%v", len(got), flags)
+	}
+}
+
+func TestRebuildFromDBFailureSkipsInject(t *testing.T) {
+	run := testAAPRun(t)
+	files := &fakeOutboundFiles{listErr: errors.New("list down")}
+	b := &Bridge{files: files, filesCfg: openFilesCfg()}
+	cfg := testFCCaps(t)
+	got, flags := b.maybeInjectOutboundPublish(context.Background(), agentrun.Job{
+		WorkspaceID: run.WorkspaceID, RunID: run.ID,
+	}, run, nil, nil, cfg)
+	if len(got) != 0 || flags != nil {
+		t.Fatalf("rebuild fail must skip inject tools=%d flags=%v", len(got), flags)
+	}
+	if b.outboundCollector(run.WorkspaceID, run.ID) != nil {
+		t.Fatal("must not store an empty-quota collector after rebuild failure")
+	}
+}
+
+func TestShouldAppendOutboundPromptOnlyWhenInjected(t *testing.T) {
+	if shouldAppendOutboundPrompt(nil) {
+		t.Fatal("nil flags")
+	}
+	if shouldAppendOutboundPrompt(map[string]catalogEntryFlags{
+		aapfile.PublishAttachmentToolName: {Exposure: einoruntime.ToolExposureDeferred},
+	}) {
+		t.Fatal("deferred/non-platform must not append")
+	}
+	if !shouldAppendOutboundPrompt(map[string]catalogEntryFlags{
+		aapfile.PublishAttachmentToolName: {
+			Exposure: einoruntime.ToolExposureImmediate, PlatformControl: true,
+		},
+	}) {
+		t.Fatal("injected platform tool must append")
+	}
 }
 
 func TestCompleteRunPromotesAfterRecord(t *testing.T) {
@@ -348,6 +400,53 @@ func TestCompleteRunPromotesAfterRecord(t *testing.T) {
 	}
 	if len(files.promoted) != 1 || files.promoted[0] != fileID {
 		t.Fatalf("promoted=%v", files.promoted)
+	}
+}
+
+func TestCompleteRunUsesCollectorMemoryWhenListFails(t *testing.T) {
+	run := testAAPRun(t)
+	filename := "invoice.csv"
+	fileID := "019f0000-0000-7000-8000-00000000f001"
+	files := &fakeOutboundFiles{listErr: errors.New("db down")}
+	collector := aapfile.NewOutboundCollector(files, run.WorkspaceID, run.AgentID, run.ID, aapfile.MaxOutboundTurnBytes)
+	collector.Remember(aapfile.File{
+		ID: fileID, Filename: &filename, DeclaredMediaType: "text/csv", SizeBytes: 4,
+	})
+	results := &captureAssistantResults{}
+	runs := &staticRunReader{run: run}
+	b := &Bridge{files: files, filesCfg: openFilesCfg(), results: results, runs: runs, now: func() time.Time { return time.Now().UTC() }}
+	b.rememberOutboundCollector(run.WorkspaceID, run.ID, collector)
+	if err := b.completeRun(context.Background(), agentrun.Job{
+		WorkspaceID: run.WorkspaceID, SessionID: run.SessionID, RunID: run.ID,
+		UserMessageID: uuid.NewString(), ActorID: run.TriggeredByID,
+	}, run, "", uuid.NewString(), false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(results.content, "output_file") {
+		t.Fatalf("memory fallback missing: %s", results.content)
+	}
+	if len(files.promoted) != 1 || files.promoted[0] != fileID {
+		t.Fatalf("promoted=%v", files.promoted)
+	}
+}
+
+func TestCompleteRunListErrorNoPromote(t *testing.T) {
+	run := testAAPRun(t)
+	files := &fakeOutboundFiles{listErr: errors.New("db down")}
+	results := &captureAssistantResults{}
+	runs := &staticRunReader{run: run}
+	b := &Bridge{files: files, filesCfg: openFilesCfg(), results: results, runs: runs, now: func() time.Time { return time.Now().UTC() }}
+	if err := b.completeRun(context.Background(), agentrun.Job{
+		WorkspaceID: run.WorkspaceID, SessionID: run.SessionID, RunID: run.ID,
+		UserMessageID: uuid.NewString(), ActorID: run.TriggeredByID,
+	}, run, "plain", uuid.NewString(), false); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(results.content, "output_file") {
+		t.Fatalf("degraded content leaked files: %s", results.content)
+	}
+	if len(files.promoted) != 0 {
+		t.Fatalf("must not promote when snapshot fails: %v", files.promoted)
 	}
 }
 

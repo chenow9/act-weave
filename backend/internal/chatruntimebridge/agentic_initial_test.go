@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"actweave/backend/internal/aapfile"
 	"actweave/backend/internal/agent"
 	"actweave/backend/internal/agentdelegation"
 	"actweave/backend/internal/agenticmsg"
@@ -28,6 +29,7 @@ import (
 	"actweave/backend/internal/execution"
 	"actweave/backend/internal/modelapi"
 	"actweave/backend/internal/modelconfig"
+	"actweave/backend/internal/principal"
 	"actweave/backend/internal/sessioncontext"
 
 	"github.com/cloudwego/eino/components/model"
@@ -619,6 +621,8 @@ type agenticFixture struct {
 	agents         agenticAgents
 	invoker        *bridgeToolInvoker
 	toolDisclosure config.RuntimeFeatureRollout
+	files          *fixtureOutboundFiles
+	filesCfg       *config.AgentAccessFilesConfig
 	// steps and modelTurns are opt-in: MODEL audit evidence is only persisted
 	// when both are wired, so tests that do not assert on it leave them nil.
 	steps      *agenticSteps
@@ -678,6 +682,10 @@ func (f *agenticFixture) bridge(t *testing.T) *chatruntimebridge.Bridge {
 		Assemblies:        f.assemblies,
 		Delegation:        f.delegation,
 		ToolDisclosure:    f.toolDisclosure,
+		FilesConfig:       f.filesCfg,
+	}
+	if f.files != nil {
+		deps.Files = f.files
 	}
 	if f.steps != nil {
 		deps.Steps = f.steps
@@ -718,6 +726,85 @@ func (f *agenticFixture) assertNoSideEffects(t *testing.T) {
 	}
 	// Protocol events may record run.failed on failRun — allow 0 only for pure pre-failRun paths.
 	// Failures after Execute's failRun may emit; we check builder/model/sink only.
+}
+
+func TestAgenticInitial_OutboundInjectEmptyFCRequiresDisclosureRollout(t *testing.T) {
+	// Function-calling + previously empty catalog becomes platform_bounded after
+	// publish_attachment inject, so runtime.toolDisclosure must be rolled out.
+	f := newAgenticFixture(t, func(f *agenticFixture) {
+		f.cfg.AgenticCapabilities = mustAgenticCapsV2(t, f.cfg, modelconfig.ToolCallingFunctionCalling)
+		f.run.ModelSnapshot = marshalTestModelSnapshot(t, f.cfg)
+		f.run.ContextPolicySnapshot = mustOutboundSnapshot(t)
+		f.run.PrincipalSnapshot = mustAAPPrincipal(t, testWSUUID)
+		f.files = &fixtureOutboundFiles{}
+		f.filesCfg = &config.AgentAccessFilesConfig{
+			Enabled: true, AllowAllWorkspaces: true, AllowAllClients: true,
+			RuntimeOutboundAttachments: true,
+		}
+		f.toolDisclosure = config.RuntimeFeatureRollout{}
+	})
+	err := f.bridge(t).Execute(context.Background(), f.job())
+	if !errors.Is(err, modelconfig.ErrToolDisclosureNotRolledOut) {
+		t.Fatalf("got %v want ErrToolDisclosureNotRolledOut", err)
+	}
+	if f.mdl.calls.Load() != 0 {
+		t.Fatal("model must not run when disclosure rollout denies the injected catalog")
+	}
+}
+
+func mustOutboundSnapshot(t *testing.T) json.RawMessage {
+	t.Helper()
+	_, raw, err := sessioncontext.Resolve(sessioncontext.ResolveInput{
+		AgentPolicy: json.RawMessage(`{
+			"schemaVersion":"session-context-policy.v2",
+			"mode":"token_window",
+			"aap":{"enableOutboundAttachments":true}
+		}`),
+		ContextWindowTokens:        128000,
+		DefaultOutputReserveTokens: 4096,
+		OutputTokenLimitMode:       "max_tokens",
+		TokenizerProfile:           "o200k_base",
+		TokenizerVersion:           "2026-01",
+		GateEnabled:                true,
+		CompactionGateEnabled:      false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+func mustAAPPrincipal(t *testing.T, workspaceID string) principal.ExecutionSnapshot {
+	t.Helper()
+	const (
+		client = "a18f1f2e-7b5a-7c3d-8e9f-123456789005"
+		sp     = "a18f1f2e-7b5a-7c3d-8e9f-123456789006"
+		grant  = "a18f1f2e-7b5a-7c3d-8e9f-123456789007"
+	)
+	ident, err := principal.NewInvocationIdentity(
+		principal.Ref{WorkspaceID: workspaceID, Type: principal.TypeServicePrincipal, ID: sp},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := principal.NewExecutionSnapshot(ident, client, grant, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return snap
+}
+
+type fixtureOutboundFiles struct{}
+
+func (fixtureOutboundFiles) IngestGenerated(context.Context, aapfile.IngestGeneratedInput) (aapfile.File, error) {
+	return aapfile.File{}, nil
+}
+func (fixtureOutboundFiles) ListGeneratedForRun(context.Context, string, string, string) ([]aapfile.File, error) {
+	return nil, nil
+}
+func (fixtureOutboundFiles) PromoteRetentionOnReference(context.Context, string, string) error {
+	return nil
 }
 
 // --- cumulative first-cycle + repair-cycle ledger ---
