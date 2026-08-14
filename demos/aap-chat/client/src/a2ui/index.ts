@@ -27,30 +27,57 @@ export interface A2UIExtract {
   rawJson: string;
 }
 
-/** Renders a full A2UI card: header, the surface itself, and the raw JSON. */
-export function renderA2UICard(extract: A2UIExtract): string {
+export interface A2UICardOptions {
+  /** Distinguishes control ids when several surfaces sit in one transcript. */
+  uid?: string;
+  /** Protocol header + raw JSON. Off in the product transcript. */
+  developer?: boolean;
+  /** One-line reminder under surfaces that have buttons. */
+  footnote?: boolean;
+}
+
+/**
+ * Renders one A2UI surface for the transcript.
+ * Default chrome is the product card. Protocol meta stays behind developer mode.
+ */
+export function renderA2UICard(extract: A2UIExtract, options: A2UICardOptions = {}): string {
+  const uid = options.uid || "s";
+  const body = renderSurface(extract.surface, uid);
+  const hasAction = body.includes("data-a2ui-action");
   const meta =
     [extract.version, extract.catalogId ? `catalog ${extract.catalogId}` : ""].filter(Boolean).join(" · ") || "surface";
 
-  return `
-    <div class="a2ui-card" data-a2ui-card>
-      <header>
+  const head = options.developer
+    ? `<header class="a2ui-surface-head">
         <span><i class="fa-solid fa-table-cells"></i> A2UI</span>
         <span class="a2ui-meta">${escapeHtml(meta)} · display-only</span>
-      </header>
-      <div class="a2ui-surface">
-        ${renderSurface(extract.surface)}
-      </div>
-      <details class="a2ui-raw">
+      </header>`
+    : "";
+
+  const footnote =
+    options.footnote !== false && hasAction && !options.developer
+      ? `<p class="a2ui-footnote">展示态 · 本轮不提交</p>`
+      : "";
+
+  const raw = options.developer
+    ? `<details class="a2ui-raw">
         <summary>原始 surface JSON</summary>
         <pre>${escapeHtml(extract.rawJson)}</pre>
-      </details>
-    </div>
+      </details>`
+    : "";
+
+  return `
+    <section class="a2ui-surface" data-a2ui-card>
+      ${head}
+      ${body}
+      ${footnote}
+      ${raw}
+    </section>
   `;
 }
 
 /** Renders a surface body. Exported for the fixture tests. */
-export function renderSurface(surface: unknown): string {
+export function renderSurface(surface: unknown, uid = "s"): string {
   const components = componentsOf(surface);
   if (!components.length) return placeholder("（空 surface）");
 
@@ -63,7 +90,7 @@ export function renderSurface(surface: unknown): string {
   if (!root) return placeholder(`（surface 缺少 id 为 "${A2UI_ROOT_ID}" 的根组件）`);
 
   const dataModel = (surface as { dataModel?: unknown }).dataModel;
-  const rendered = renderNode(root, { byId, dataModel, depth: 1, onPath: new Set() });
+  const rendered = renderNode(root, { byId, dataModel, depth: 1, onPath: new Set(), uid });
   return `<div class="a2ui-stack">${rendered}</div>`;
 }
 
@@ -71,6 +98,7 @@ interface Walk {
   byId: Map<string, A2UIComponentNode>;
   dataModel: unknown;
   depth: number;
+  uid: string;
   /** Ids on the current path, so a cycle becomes a placeholder instead of a hang. */
   onPath: Set<string>;
 }
@@ -85,10 +113,11 @@ function renderNode(node: A2UIComponentNode, walk: Walk): string {
   }
 
   const onPath = new Set([...walk.onPath, node.id]);
-  const ctx: A2UIRenderCtx<string> = {
+  const ctx: A2UIRenderCtx<string> & { uid: string } = {
     byId: walk.byId,
     dataModel: walk.dataModel,
     depth: walk.depth,
+    uid: walk.uid,
     resolveString: (value) => resolveString(value, walk.dataModel),
     resolveBoolean: (value) => resolveBoolean(value, walk.dataModel),
     resolveChoiceValues: (value) => resolveChoiceValues(value, walk.dataModel),
@@ -97,7 +126,13 @@ function renderNode(node: A2UIComponentNode, walk: Walk): string {
       if (onPath.has(id)) return placeholder(`（组件 ${id} 形成了循环引用）`);
       const child = walk.byId.get(id);
       if (!child) return placeholder(`（引用了不存在的组件 ${id}）`);
-      return renderNode(child, { byId: walk.byId, dataModel: walk.dataModel, depth: walk.depth + 1, onPath });
+      return renderNode(child, {
+        byId: walk.byId,
+        dataModel: walk.dataModel,
+        depth: walk.depth + 1,
+        onPath,
+        uid: walk.uid,
+      });
     },
     placeholder,
   };

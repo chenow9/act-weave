@@ -30,7 +30,7 @@ const DATE_TIME_TYPES: Record<DateTimeMode, string> = {
 };
 
 export function renderTextField(node: A2UIComponentNode, ctx: A2UIRenderCtx<string>): string {
-  const id = controlId(node);
+  const id = controlId(node, ctx);
   const label = labelFor(id, ctx.resolveString(node.label), node.required === true);
   const placeholder = ctx.resolveString(node.placeholder);
   const value = ctx.resolveString(node.value);
@@ -51,7 +51,7 @@ export function renderTextField(node: A2UIComponentNode, ctx: A2UIRenderCtx<stri
 }
 
 export function renderCheckBox(node: A2UIComponentNode, ctx: A2UIRenderCtx<string>): string {
-  const id = controlId(node);
+  const id = controlId(node, ctx);
   const checked = ctx.resolveBoolean(node.value) ? " checked" : "";
   return `<div class="a2ui-field a2ui-field-check">
     <label class="a2ui-check-label" for="${escapeAttr(id)}">
@@ -62,34 +62,38 @@ export function renderCheckBox(node: A2UIComponentNode, ctx: A2UIRenderCtx<strin
 }
 
 export function renderChoicePicker(node: A2UIComponentNode, ctx: A2UIRenderCtx<string>): string {
-  const id = controlId(node);
+  const id = controlId(node, ctx);
   const label = labelFor(id, ctx.resolveString(node.label), false);
   const selected = new Set(ctx.resolveChoiceValues(node.value));
   const multiple = node.multiple === true;
   const options = Array.isArray(node.options) ? node.options : [];
+  const type = multiple ? "checkbox" : "radio";
 
-  const rendered = options
+  const chips = options
     .flatMap((option) => {
       if (typeof option !== "object" || option === null) return [];
       const { value, label: optionLabel } = option as Record<string, unknown>;
       if (typeof value !== "string" || typeof optionLabel !== "string") return [];
+      const checked = selected.has(value) ? " checked" : "";
       return [
-        `<option value="${escapeAttr(value)}"${selected.has(value) ? " selected" : ""}>${escapeHtml(optionLabel)}</option>`,
+        `<label class="a2ui-choice-chip">
+          <input type="${type}" name="${escapeAttr(id)}" value="${escapeAttr(value)}"${checked} />
+          <span>${escapeHtml(optionLabel)}</span>
+        </label>`,
       ];
     })
     .join("");
 
   return `<div class="a2ui-field">
     ${label}
-    <select id="${escapeAttr(id)}" class="a2ui-input"${multiple ? ' multiple size="4"' : ""}>
-      ${multiple ? "" : `<option value="">请选择…</option>`}
-      ${rendered || `<option value="" disabled>（无选项）</option>`}
-    </select>
+    <div class="a2ui-choice" id="${escapeAttr(id)}" role="${multiple ? "group" : "radiogroup"}">
+      ${chips || `<span class="a2ui-empty">（无选项）</span>`}
+    </div>
   </div>`;
 }
 
 export function renderDateTimeInput(node: A2UIComponentNode, ctx: A2UIRenderCtx<string>): string {
-  const id = controlId(node);
+  const id = controlId(node, ctx);
   const label = labelFor(id, ctx.resolveString(node.label), false);
   const mode = isDateTimeMode(node.mode) ? node.mode : "date";
   return `<div class="a2ui-field">
@@ -99,19 +103,20 @@ export function renderDateTimeInput(node: A2UIComponentNode, ctx: A2UIRenderCtx<
 }
 
 /**
- * Buttons are display-only. The disabled state and the title are the honest
- * signal that pressing it can do nothing.
+ * Buttons look live so the surface reads as a product form. A click never
+ * submits: catalog v1 has no action, and the page-level listener only toasts.
  */
 export function renderButton(node: A2UIComponentNode, ctx: A2UIRenderCtx<string>): string {
   const label = ctx.resolveString(node.label);
   const primary = node.variant === "primary" ? " a2ui-btn-primary" : node.variant === "borderless" ? " a2ui-btn-borderless" : "";
   return `<div class="a2ui-field a2ui-field-action">
-    <button type="button" class="a2ui-btn${primary}" disabled data-a2ui-action title="此 surface 为展示态，未接入 UI 动作">${escapeHtml(label)}</button>
+    <button type="button" class="a2ui-btn${primary}" data-a2ui-action data-a2ui-toast="展示态 · 本轮不提交" title="展示态，点击可预览，不会提交">${escapeHtml(label)}</button>
   </div>`;
 }
 
-function controlId(node: A2UIComponentNode): string {
-  return `a2ui-${node.id}`;
+function controlId(node: A2UIComponentNode, ctx: A2UIRenderCtx<string>): string {
+  const uid = "uid" in ctx && typeof (ctx as { uid?: unknown }).uid === "string" ? (ctx as { uid: string }).uid : "s";
+  return `a2ui-${uid}-${node.id}`;
 }
 
 function labelFor(id: string, text: string, required: boolean): string {

@@ -292,21 +292,47 @@ describe("form components", () => {
   it("renders every input type from the catalog variants", () => {
     expect(html).toContain('type="text"');
     expect(html).toContain("<textarea");
-    expect(html).toContain("<select");
+    expect(html).toContain("a2ui-choice-chip");
     expect(html).toContain('type="checkbox"');
     expect(html).toContain('type="datetime-local"');
     expect(html).toContain("<hr");
   });
 
-  it("keeps every button disabled, because the catalog defines no action", () => {
+  it("renders action buttons as local previews, not as disabled controls", () => {
     const buttons = html.match(/<button[^>]*>/g) ?? [];
     expect(buttons.length).toBe(2);
-    for (const button of buttons) expect(button).toContain("disabled");
+    for (const button of buttons) {
+      expect(button).toContain("data-a2ui-action");
+      expect(button).toContain('type="button"');
+      expect(button).not.toContain("disabled");
+    }
   });
 
   it("marks a required field and preselects a bound choice", () => {
     expect(html).toContain("a2ui-req");
-    expect(html).toContain('value="api" selected');
+    expect(html).toContain('value="api"');
+    expect(html).toMatch(/value="api"[^>]*checked|checked[^>]*value="api"/);
+  });
+
+  it("renders a single ChoicePicker as radio chips", () => {
+    const single = renderSurface({
+      components: [
+        {
+          id: "root",
+          component: "ChoicePicker",
+          label: "优先级",
+          options: [
+            { value: "low", label: "低" },
+            { value: "high", label: "高" },
+          ],
+          value: ["high"],
+        },
+      ],
+    });
+    expect(single).toContain('type="radio"');
+    expect(single).toContain('value="high"');
+    expect(single).toMatch(/value="high"[^>]*checked|checked[^>]*value="high"/);
+    expect(single).not.toContain("<select");
   });
 });
 
@@ -337,14 +363,34 @@ describe("escaping", () => {
   });
 
   it("escapes the card header meta", () => {
-    const card = renderA2UICard({
-      version: `<img src=x>`,
-      catalogId: "https://catalog.actweave.dev/standard/v1/catalog.json",
-      surface: fixture("chart-bar").surface,
-      rawJson: `{"note":"<script>"}`,
-    });
+    const card = renderA2UICard(
+      {
+        version: `<img src=x>`,
+        catalogId: "https://catalog.actweave.dev/standard/v1/catalog.json",
+        surface: fixture("chart-bar").surface,
+        rawJson: `{"note":"<script>"}`,
+      },
+      { developer: true },
+    );
     expect(card).not.toContain("<img");
     expect(card).not.toContain("<script>");
     expect(card).toContain("display-only");
+  });
+
+  it("hides protocol chrome unless developer mode is on", () => {
+    const extract = {
+      version: "a2ui-surface.v1",
+      catalogId: "https://catalog.actweave.dev/standard/v1/catalog.json",
+      surface: fixture("form").surface,
+      rawJson: `{"ok":true}`,
+    };
+    const product = renderA2UICard(extract);
+    expect(product).not.toContain("display-only");
+    expect(product).not.toContain("原始 surface JSON");
+    expect(product).toContain("展示态 · 本轮不提交");
+
+    const debug = renderA2UICard(extract, { developer: true });
+    expect(debug).toContain("display-only");
+    expect(debug).toContain("原始 surface JSON");
   });
 });

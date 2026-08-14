@@ -15,7 +15,7 @@ npm install
 npm run dev:mock
 ```
 
-Open http://127.0.0.1:5188  
+Open http://127.0.0.1:5188 and use the suggestion chips (booking form, trend, KPIs) or **插入富文本样例**. **开发者** reveals protocol chrome, raw surface JSON, and the shared rendering fixtures.
 
 Use the paperclip **附件** control (or drag/paste) to stage images/PDFs; Mock renders local previews in the user bubble without uploading.
 

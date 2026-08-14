@@ -15,6 +15,10 @@ import {
   type OutboundStatus,
 } from "./aap";
 import { renderA2UICard } from "./a2ui";
+import { installA2UIActions } from "./a2ui/actions";
+import { A2UI_CATALOG_ID, A2UI_SURFACE_VERSION } from "./a2ui/generated/catalog.gen";
+import { A2UI_FIXTURES } from "./a2ui/generated/fixtures.gen";
+import { DEMO_STORIES, MARKDOWN_RICH_PROMPT, SUGGESTION_STORIES } from "./demo-stories";
 import { escapeHtml, renderMarkdown } from "./markdown";
 import { mockAssistantStream } from "./mock-stream";
 import type { ProtocolItem } from "@actweave/agent-client";
@@ -47,6 +51,7 @@ interface UiMessage {
   attachments?: UiAttachment[];
   pending?: boolean;
   error?: boolean;
+  createdAt?: string;
 }
 
 const DEMO_MODE = (import.meta.env.VITE_DEMO_MODE as string | undefined) || "";
@@ -75,19 +80,15 @@ const state = {
   pendingAttachments: [] as UiAttachment[],
   status: "",
   statusTone: "ok" as "ok" | "error" | "muted",
+  /** Protocol chrome, raw JSON, fixture gallery, tool cards. */
+  developer: false,
 };
 
 /** Keep File blobs out of render state (not serializable in HTML). */
 const pendingFileByLocalId = new Map<string, File>();
 
-const SUGGESTIONS = [
-  "展示一段 Markdown + 数学公式样例",
-  "用结构化表单收集：姓名、公司、手机、演示日期",
-  "用统计图展示近 6 个月预约与成交趋势",
-  "用饼图展示线索来源分布",
-];
-
 async function boot() {
+  installA2UIActions();
   render();
   if (DEMO_MODE === "mock") {
     state.mode = "mock";
@@ -123,7 +124,8 @@ function outboundStatusLine(config: BffConfig): string {
   return `Live AAP · 请先绑定业务出站 Token · agent ${shortId(config.agentId)}`;
 }
 
-function render() {
+function render(opts?: { keepDraft?: boolean }) {
+  const draft = opts?.keepDraft ? composerText(root.querySelector<HTMLElement>("#composer")) : "";
   root.innerHTML = `
     <div class="demo-shell">
       <header class="demo-topbar">
@@ -131,7 +133,7 @@ function render() {
           <div class="demo-brand-mark" aria-hidden="true"><i class="fa-solid fa-hexagon-nodes"></i></div>
           <div>
             <h1>ActWeave AAP Chat</h1>
-            <p>Agent Access Protocol 对接示例 · 富文本对话 + A2UI 真实渲染（Markdown / 公式 / 代码 / 图片 / 表单）</p>
+            <p>对话里的富文本与结构化界面 · 表单 / 图表 / 指标（AAP 对接示例）</p>
           </div>
         </div>
         <div class="demo-top-meta">
@@ -161,6 +163,9 @@ function render() {
             </div>
           </div>
           <div class="chat-header-actions">
+            <button class="ghost-btn ${state.developer ? "is-on" : ""}" type="button" id="btn-dev" aria-pressed="${state.developer}">
+              开发者
+            </button>
             <button class="ghost-btn" type="button" id="btn-clear" ${state.busy ? "disabled" : ""}>
               清空
             </button>
@@ -169,6 +174,7 @@ function render() {
             </button>
           </div>
         </header>
+        ${developerDrawerHtml()}
 
         <div class="chat-scroll" id="chat-scroll" role="log" aria-live="polite">
           ${
@@ -229,7 +235,7 @@ function render() {
               }
               ${escapeHtml(state.status || "就绪")}
             </span>
-            <span>附件经 AAP 预签名上传 · 气泡内渲染预览</span>
+            <span>附件经 AAP 预签名上传 · 图片与 PDF 在对话中预览</span>
           </div>
         </footer>
       </section>
@@ -237,7 +243,33 @@ function render() {
   `;
 
   bindEvents();
+  const composer = root.querySelector<HTMLElement>("#composer");
+  if (composer && draft.trim()) composer.innerText = draft;
   scrollToBottom();
+}
+
+function developerDrawerHtml(): string {
+  if (!state.developer) return "";
+  const stories = DEMO_STORIES.map(
+    (story) =>
+      `<button type="button" class="dev-chip" data-story="${escapeHtml(story.id)}" ${state.busy ? "disabled" : ""}>${escapeHtml(story.label)}</button>`,
+  ).join("");
+  const fixtures = A2UI_FIXTURES.map(
+    (fixture) =>
+      `<button type="button" class="dev-chip ${fixture.expect === "degrades" ? "is-warn" : ""}" data-fixture="${escapeHtml(fixture.name)}" title="${escapeHtml(fixture.title)}" ${state.busy ? "disabled" : ""}>${escapeHtml(fixture.name)}</button>`,
+  ).join("");
+  return `
+    <div class="dev-drawer" aria-label="开发者案例">
+      <div class="dev-drawer-row">
+        <span>产品案例</span>
+        <div>${stories}</div>
+      </div>
+      <div class="dev-drawer-row">
+        <span>渲染基线</span>
+        <div>${fixtures}</div>
+      </div>
+    </div>
+  `;
 }
 
 function outboundPillHtml(): string {
@@ -303,19 +335,20 @@ function emptyStateHtml() {
   const needOutbound = state.mode === "live" && state.outbound?.required && !state.outbound.bound;
   return `
     <div class="chat-empty">
-      <h2>开始一段 AAP 对话</h2>
+      <h2>从一段业务对话开始</h2>
       <p>
         ${
           state.mode === "live"
             ? needOutbound
               ? "请先在上方绑定业务出站 Token，再发送消息（否则工具调用无法注入业务鉴权）。"
               : "已连接 BFF。消息经 AAP 创建 Run 并通过 SSE 跟随事件。"
-            : "当前为 Mock 模式，可先预览富文本渲染；配置 demos/aap-chat/.env 后运行 npm run dev 即可对接真实 Agent。"
+            : "当前为 Mock 模式。点一条建议，看表单、图表和指标怎么长在对话里；配置 .env 后可对接真实 Agent。"
         }
       </p>
       <div class="chat-suggestions">
-        ${SUGGESTIONS.map(
-          (s, i) => `<button type="button" data-suggest="${i}">${escapeHtml(s)}</button>`,
+        ${SUGGESTION_STORIES.map(
+          (story) =>
+            `<button type="button" data-story="${escapeHtml(story.id)}">${escapeHtml(story.label)}</button>`,
         ).join("")}
       </div>
     </div>
@@ -395,7 +428,8 @@ function messageHtml(msg: UiMessage): string {
     msg.role === "user" ? "is-user" : msg.role === "assistant" ? "is-assistant" : "is-system";
   const icon =
     msg.role === "user" ? "fa-user" : msg.role === "assistant" ? "fa-robot" : "fa-circle-info";
-  const label = msg.role === "user" ? "你" : msg.role === "assistant" ? "Agent" : "系统";
+  const label = msg.role === "user" ? "" : msg.role === "assistant" ? "Agent" : "系统";
+  const time = msg.createdAt ? formatTime(msg.createdAt) : "";
   const bodyText = msg.text.trim();
   const body =
     msg.role === "user"
@@ -405,11 +439,48 @@ function messageHtml(msg: UiMessage): string {
           ? `<span class="msg-empty-text">（附件）</span>`
           : ""
       : msg.html || renderMarkdown(msg.text || (msg.pending ? "…" : ""));
-  const tools =
-    msg.tools
-      ?.map((t) => {
-        const failed = /fail|error/i.test(t.status);
-        return `
+  const tools = state.developer ? toolsHtml(msg.tools) : "";
+  const hasA2ui = Boolean(msg.a2ui);
+  const leadOnly = hasA2ui && isShortLead(msg.text);
+  const a2ui = msg.a2ui
+    ? renderA2UICard(msg.a2ui, {
+        uid: msg.id,
+        developer: state.developer,
+        footnote: !state.developer,
+      })
+    : "";
+  const showBubble = Boolean(body || msg.attachments?.length);
+
+  return `
+    <div class="msg-row ${roleClass}${hasA2ui ? " has-a2ui" : ""}" data-msg-id="${escapeHtml(msg.id)}">
+      <div class="msg-avatar" aria-hidden="true"><i class="fa-solid ${icon}"></i></div>
+      <div class="msg-col">
+        <div class="msg-meta">
+          ${label ? `<span>${label}</span>` : ""}
+          ${time ? `<time>${escapeHtml(time)}</time>` : ""}
+          ${msg.pending ? `<span class="typing"><span></span><span></span><span></span></span>` : ""}
+        </div>
+        ${
+          showBubble
+            ? `<div class="msg-bubble ${msg.error ? "is-error" : ""} ${leadOnly ? "is-lead" : ""}">
+                ${messageAttachmentsHtml(msg)}
+                ${body ? `<div class="msg-body ${msg.role === "user" ? "" : "md-body"}">${body}</div>` : ""}
+              </div>`
+            : ""
+        }
+        ${a2ui}
+        ${tools}
+      </div>
+    </div>
+  `;
+}
+
+function toolsHtml(tools: UiMessage["tools"]): string {
+  if (!tools?.length) return "";
+  return tools
+    .map((t) => {
+      const failed = /fail|error/i.test(t.status);
+      return `
         <div class="tool-card ${failed ? "is-failed" : ""}">
           <header>
             <span><i class="fa-solid fa-wrench"></i> ${escapeHtml(t.name)}</span>
@@ -417,25 +488,22 @@ function messageHtml(msg: UiMessage): string {
           </header>
           ${t.detail ? `<pre>${escapeHtml(t.detail)}</pre>` : ""}
         </div>`;
-      })
-      .join("") || "";
-  const a2ui = msg.a2ui ? renderA2UICard(msg.a2ui) : "";
+    })
+    .join("");
+}
 
-  return `
-    <div class="msg-row ${roleClass}" data-msg-id="${escapeHtml(msg.id)}">
-      <div class="msg-avatar" aria-hidden="true"><i class="fa-solid ${icon}"></i></div>
-      <div class="msg-bubble ${msg.error ? "is-error" : ""}">
-        <div class="msg-meta">
-          <span>${label}</span>
-          ${msg.pending ? `<span class="typing"><span></span><span></span><span></span></span>` : ""}
-        </div>
-        ${messageAttachmentsHtml(msg)}
-        ${body ? `<div class="msg-body ${msg.role === "user" ? "" : "md-body"}">${body}</div>` : ""}
-        ${a2ui}
-        ${tools}
-      </div>
-    </div>
-  `;
+/** Short captions sit unboxed above a surface. A real markdown report keeps the bubble. */
+function isShortLead(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length > 160) return false;
+  if (/^#{1,6}\s/m.test(trimmed) || /\|.+\|/.test(trimmed) || /```/.test(trimmed)) return false;
+  return true;
+}
+
+function formatTime(iso: string): string {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return "";
+  return new Date(ms).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
 }
 
 function formatBytes(n: number): string {
@@ -456,6 +524,7 @@ function bindEvents() {
   const sendBtn = root.querySelector<HTMLButtonElement>("#btn-send");
   const clearBtn = root.querySelector<HTMLButtonElement>("#btn-clear");
   const richBtn = root.querySelector<HTMLButtonElement>("#btn-rich");
+  const devBtn = root.querySelector<HTMLButtonElement>("#btn-dev");
   const attachBtn = root.querySelector<HTMLButtonElement>("#btn-attach");
   const fileInput = root.querySelector<HTMLInputElement>("#file-input");
   const outboundAttachBtn = root.querySelector<HTMLButtonElement>("#btn-outbound-attach");
@@ -473,7 +542,20 @@ function bindEvents() {
     render();
   });
   richBtn?.addEventListener("click", () => {
-    void submit("展示一段 Markdown + 数学公式 + 代码 + 图片的样例回复");
+    void submit(MARKDOWN_RICH_PROMPT);
+  });
+  devBtn?.addEventListener("click", () => {
+    state.developer = !state.developer;
+    render({ keepDraft: true });
+  });
+  root.querySelectorAll<HTMLButtonElement>("[data-story]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const story = DEMO_STORIES.find((entry) => entry.id === btn.dataset.story);
+      if (story) void submit(story.prompt);
+    });
+  });
+  root.querySelectorAll<HTMLButtonElement>("[data-fixture]").forEach((btn) => {
+    btn.addEventListener("click", () => injectFixture(btn.dataset.fixture || ""));
   });
   attachBtn?.addEventListener("click", () => fileInput?.click());
   fileInput?.addEventListener("change", () => {
@@ -520,12 +602,6 @@ function bindEvents() {
     const de = e as DragEvent;
     const files = de.dataTransfer?.files ? Array.from(de.dataTransfer.files) : [];
     void addPendingFiles(files);
-  });
-  root.querySelectorAll<HTMLButtonElement>("[data-suggest]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const idx = Number(btn.dataset.suggest);
-      void submit(SUGGESTIONS[idx] || "");
-    });
   });
 }
 
@@ -686,6 +762,7 @@ async function submit(raw: string) {
       role: "system",
       text: `调用失败：${message}`,
       error: true,
+      createdAt: new Date().toISOString(),
     });
     state.status = message;
     state.statusTone = "error";
@@ -704,6 +781,7 @@ async function runMock(text: string) {
     role: "user",
     text: text || (attachments.length ? "（见附件）" : ""),
     attachments,
+    createdAt: new Date().toISOString(),
   });
   patchComposerAttachments();
   patchMessages();
@@ -724,6 +802,7 @@ async function runMock(text: string) {
           html: renderMarkdown(chunk.text),
           pending: true,
           tools: [],
+          createdAt: new Date().toISOString(),
         });
       } else {
         const msg = state.messages.find((m) => m.id === assistantId);
@@ -837,6 +916,7 @@ async function runLive(text: string) {
     role: "user",
     text: text || (uploaded.length ? "（见附件）" : ""),
     attachments: uploaded,
+    createdAt: new Date().toISOString(),
   });
   const assistantId = uid();
   state.messages.push({
@@ -846,6 +926,7 @@ async function runLive(text: string) {
     html: "",
     pending: true,
     tools: [],
+    createdAt: new Date().toISOString(),
   });
   patchMessages();
 
@@ -948,11 +1029,10 @@ function patchMessages() {
   }
   scroll.innerHTML =
     state.messages.length === 0 ? emptyStateHtml() : state.messages.map((m) => messageHtml(m)).join("");
-  // re-bind suggestion clicks if empty
-  root.querySelectorAll<HTMLButtonElement>("[data-suggest]").forEach((btn) => {
+  root.querySelectorAll<HTMLButtonElement>("[data-story]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const idx = Number(btn.dataset.suggest);
-      void submit(SUGGESTIONS[idx] || "");
+      const story = DEMO_STORIES.find((entry) => entry.id === btn.dataset.story);
+      if (story) void submit(story.prompt);
     });
   });
   const statusEl = root.querySelector(".status-line");
@@ -970,6 +1050,48 @@ function patchMessages() {
 function scrollToBottom() {
   const el = root.querySelector("#chat-scroll");
   if (el) el.scrollTop = el.scrollHeight;
+}
+
+function injectFixture(name: string) {
+  const fixture = A2UI_FIXTURES.find((entry) => entry.name === name);
+  if (!fixture || state.busy) return;
+  const now = new Date().toISOString();
+  const stamped = {
+    surfaceId: `fixture:${fixture.name}`,
+    catalogId: A2UI_CATALOG_ID,
+    ...fixture.surface,
+  };
+  state.messages.push({
+    id: uid(),
+    role: "user",
+    text: `渲染基线：${fixture.title}`,
+    createdAt: now,
+  });
+  state.messages.push({
+    id: uid(),
+    role: "assistant",
+    text: fixture.note,
+    html: renderMarkdown(fixture.note),
+    createdAt: now,
+    a2ui: {
+      version: A2UI_SURFACE_VERSION,
+      catalogId: A2UI_CATALOG_ID,
+      surface: stamped,
+      rawJson: JSON.stringify(
+        {
+          type: "a2ui",
+          version: A2UI_SURFACE_VERSION,
+          catalogId: A2UI_CATALOG_ID,
+          surface: stamped,
+        },
+        null,
+        2,
+      ),
+    },
+  });
+  state.status = `已插入 fixture ${fixture.name}`;
+  state.statusTone = "ok";
+  render();
 }
 
 function uid() {
