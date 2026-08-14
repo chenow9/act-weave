@@ -1050,6 +1050,86 @@
   line-height: 14px;
 }
 
+.message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.message-attachment-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 280px;
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.message-attachment-card img {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.message-attachment-meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.message-attachment-meta strong {
+  display: block;
+  overflow: hidden;
+  color: #334155;
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-attachment-meta small {
+  display: block;
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.message-attachment-card button {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.message-attachment-card button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.user-message-shell .message-attachment-card {
+  border-color: #334155;
+  background: #1e293b;
+}
+
+.user-message-shell .message-attachment-meta strong {
+  color: #e2e8f0;
+}
+
+.user-message-shell .message-attachment-card button {
+  background: #334155;
+  color: #bbf7d0;
+}
+
 .assistant-working {
   display: flex;
   align-items: center;

@@ -1225,6 +1225,13 @@ export interface WorkspaceChatSession extends ChatSession {
   workspaceId: string;
 }
 
+export interface ChatMessageAttachment {
+  fileId: string;
+  mediaType?: string;
+  filename?: string;
+  sizeBytes?: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: ChatMessageRole;
@@ -1237,6 +1244,11 @@ export interface ChatMessage {
    * and contentSha256/contentLength keep describing exactly that.
    */
   a2ui?: unknown[];
+  /**
+   * File metadata beside the text. Preview/download go through the
+   * session+message content proxy; this field never carries URLs or bytes.
+   */
+  attachments?: ChatMessageAttachment[];
   status: ChatMessageStatus;
   confirmationId?: string;
   runId?: string;

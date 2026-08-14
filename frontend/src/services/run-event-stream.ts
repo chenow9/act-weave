@@ -20,6 +20,7 @@ import type {
   AgentRunStep,
   ChatConfirmation,
   ChatMessage,
+  ChatMessageAttachment,
   WorkflowExecution,
 } from "../types/domain";
 
@@ -106,6 +107,8 @@ export interface ConsoleStreamEffects {
     finalized: boolean;
     /** Surfaces of a completed message; absent while text is still streaming. */
     a2ui?: unknown[];
+    /** File metadata of a completed message; absent while text is still streaming. */
+    attachments?: ChatMessageAttachment[];
   }>;
   /** True when this frame is a known terminal run status. */
   terminal: boolean;
@@ -364,6 +367,7 @@ function projectReducerSnapshot(
     const finalized = item.status === "completed" || item.status === "failed";
     ensureAssistant(state, item.id, content, finalized);
     const surfaces = extractMessageSurfaces(record);
+    const attachments = finalized ? extractMessageAttachments(record) : [];
     effects.assistantMessages.push({
       id: item.id,
       content,
@@ -371,6 +375,7 @@ function projectReducerSnapshot(
       runId: frame.runId,
       finalized,
       ...(surfaces.length ? { a2ui: surfaces } : {}),
+      ...(attachments.length ? { attachments } : {}),
     });
   }
 }
@@ -447,6 +452,7 @@ function applyProtocolFrame(state: ConsoleRunProjectionState, frame: StreamFrame
       if (item.type === "message" && (item.role === "assistant" || state.assistantByItemId[item.id])) {
         const content = extractMessageText(item) || state.assistantByItemId[item.id]?.content || "";
         const surfaces = extractMessageSurfaces(item);
+        const attachments = extractMessageAttachments(item);
         ensureAssistant(state, item.id, content, true);
         effects.assistantMessages.push({
           id: item.id,
@@ -455,6 +461,7 @@ function applyProtocolFrame(state: ConsoleRunProjectionState, frame: StreamFrame
           runId,
           finalized: true,
           ...(surfaces.length ? { a2ui: surfaces } : {}),
+          ...(attachments.length ? { attachments } : {}),
         });
       }
       return;
@@ -577,6 +584,23 @@ function extractMessageSurfaces(item: Record<string, unknown>): unknown[] {
   return surfaces;
 }
 
+function extractMessageAttachments(item: Record<string, unknown>): ChatMessageAttachment[] {
+  if (!Array.isArray(item.content)) return [];
+  const attachments: ChatMessageAttachment[] = [];
+  for (const part of item.content) {
+    if (!isRecord(part) || (part.type !== "output_file" && part.type !== "input_file")) continue;
+    if (typeof part.fileId !== "string" || !part.fileId) continue;
+    const attachment: ChatMessageAttachment = { fileId: part.fileId };
+    if (typeof part.mediaType === "string" && part.mediaType) attachment.mediaType = part.mediaType;
+    if (typeof part.filename === "string" && part.filename) attachment.filename = part.filename;
+    if (typeof part.sizeBytes === "number" && Number.isFinite(part.sizeBytes) && part.sizeBytes > 0) {
+      attachment.sizeBytes = part.sizeBytes;
+    }
+    attachments.push(attachment);
+  }
+  return attachments;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -630,6 +654,7 @@ export function toAssistantChatMessage(patch: ConsoleStreamEffects["assistantMes
     contentSha256: "",
     contentLength: new TextEncoder().encode(patch.content).byteLength,
     ...(patch.a2ui?.length ? { a2ui: patch.a2ui } : {}),
+    ...(patch.attachments?.length ? { attachments: patch.attachments } : {}),
     status: patch.status,
     runId: patch.runId,
     createdAt: new Date().toISOString(),

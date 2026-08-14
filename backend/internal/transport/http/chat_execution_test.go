@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"actweave/backend/internal/aapfile"
 	"actweave/backend/internal/agent"
 	"actweave/backend/internal/authn"
 	"actweave/backend/internal/authz"
@@ -319,6 +320,10 @@ type chatExecutionAPIFixture struct {
 	events        *execution.RunEventRepository
 	confirmations *fakeChatConfirmations
 	workflowStore *workflow.Repository
+	workspaces    *workspace.Repository
+	chats         *chatStoreOverlay
+	files         *stubSessionFileLookup
+	objects       *stubSessionFileObjects
 }
 
 func newChatExecutionAPIFixture(t *testing.T) *chatExecutionAPIFixture {
@@ -406,9 +411,13 @@ func newChatExecutionAPIFixture(t *testing.T) *chatExecutionAPIFixture {
 		t.Fatal(err)
 	}
 	confirmations := newFakeChatConfirmations()
+	chats := &chatStoreOverlay{ChatStore: chatRepository}
+	files := &stubSessionFileLookup{files: map[string]aapfile.File{}}
+	objects := &stubSessionFileObjects{bodies: map[string][]byte{}}
 	routes, err := NewChatExecutionRoutes(ChatExecutionDependencies{Authorizer: authorizer,
-		Chats: chatRepository, Messages: chatService, Content: chatAPIContent{}, Runs: runs,
-		ProtocolEvents: protocolEvents, Confirmations: confirmations})
+		Chats: chats, Messages: chatService, Content: chatAPIContent{}, Runs: runs,
+		ProtocolEvents: protocolEvents, Confirmations: confirmations,
+		Files: files, Objects: objects})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +433,7 @@ func newChatExecutionAPIFixture(t *testing.T) *chatExecutionAPIFixture {
 	return &chatExecutionAPIFixture{router: router, base: "/api/v1/workspaces/" + workspaceID,
 		workspaceID: workspaceID, agentID: agentID, adminToken: adminTokens.AccessToken,
 		otherToken: otherTokens.AccessToken, events: events, confirmations: confirmations,
-		workflowStore: workflowStore}
+		workflowStore: workflowStore, workspaces: workspaces, chats: chats, files: files, objects: objects}
 }
 
 func (fixture *chatExecutionAPIFixture) request(

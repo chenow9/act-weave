@@ -190,6 +190,46 @@ describe("run-event-stream pure projection", () => {
     expect(older.effects.assistantMessages[0]?.a2ui).toBeUndefined();
   });
 
+  it("carries attachments on item.completed only", () => {
+    const completed = parseSSEBlock(
+      sseBlock("item.completed", 7, {
+        item: {
+          id: itemId,
+          type: "message",
+          status: "completed",
+          role: "assistant",
+          content: [
+            { type: "text", text: "对账单已生成。" },
+            {
+              type: "output_file",
+              fileId: "019f0000-0000-7000-8000-00000000f001",
+              mediaType: "text/csv",
+              filename: "invoice-2026-08.csv",
+              sizeBytes: 4096,
+            },
+          ],
+        },
+      }),
+      runId,
+    )!;
+    const patch = applyStreamFrame(createProjectionState(), completed).effects.assistantMessages[0];
+    expect(patch?.content).toBe("对账单已生成。");
+    expect(patch?.attachments).toEqual([
+      {
+        fileId: "019f0000-0000-7000-8000-00000000f001",
+        mediaType: "text/csv",
+        filename: "invoice-2026-08.csv",
+        sizeBytes: 4096,
+      },
+    ]);
+
+    const delta = parseSSEBlock(
+      sseBlock("item.delta", 4, { itemId, delta: { type: "text_delta", index: 0, text: "…" } }),
+      runId,
+    )!;
+    expect(applyStreamFrame(createProjectionState(), delta).effects.assistantMessages[0]?.attachments).toBeUndefined();
+  });
+
   it("leaves a2ui absent while text is still streaming", () => {
     const state = createProjectionState();
     const delta = parseSSEBlock(

@@ -1527,6 +1527,8 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		DebugAttachments: debugAttach,
 		Vault:            debugVault,
 		BootID:           debugBoot,
+		Files:            aapFileDomain,
+		Objects:          secureObjects,
 	})
 	if err != nil {
 		return nil, err

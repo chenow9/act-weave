@@ -2,10 +2,13 @@
 // @ts-nocheck — inject surface under page split (ZKL-64 item 15)
 /** Chat execution page body (ZKL-64 item 15). */
 /* prettier-ignore */
+import { onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import A2UISurface from "./a2ui/A2UISurface.vue";
 import DebugOutboundCredentialPanel from "./DebugOutboundCredentialPanel.vue";
 import { useChatExecutionPageContext } from "../composables/useChatExecutionPageContext";
+import { apiClient } from "../services/api";
+import type { ChatMessage, ChatMessageAttachment } from "../types/domain";
 
 const { t } = useI18n();
 const scp = useChatExecutionPageContext();
@@ -17,6 +20,93 @@ const {
   cancelConfirmation, archiveCurrentSession, renderMessageMarkdown, sessionAgentName, sessionWorkspaceName, sessionDisplayTitle, sessionPreview, sessionDateLabel, shouldShowSessionDate, toggleChatDropdown, closeChatDropdowns, selectWorkspaceOption, selectAgentOption, handleDropdownMenuKeydown, statusBadgeClass, stepStatusIcon, messageTime, messageDateTimeTitle, messageDateLabel, shouldShowMessageDate, sessionTime
 } = scp;
 void DebugOutboundCredentialPanel;
+
+const attachmentPreviewURLs = ref<Record<string, string>>({});
+const downloadingAttachment = ref("");
+
+function attachmentKey(messageId: string, fileId: string) {
+  return `${messageId}:${fileId}`;
+}
+
+function sessionFileContentPath(messageId: string, fileId: string) {
+  const session = chat.activeSession;
+  if (!session) return "";
+  return `/workspaces/${session.workspaceId}/sessions/${session.id}/messages/${messageId}/files/${fileId}/content`;
+}
+
+function isImageAttachment(attachment: ChatMessageAttachment) {
+  return Boolean(attachment.mediaType?.startsWith("image/"));
+}
+
+function attachmentLabel(attachment: ChatMessageAttachment) {
+  return attachment.filename || t("chat.attachmentUntitled");
+}
+
+function formatAttachmentBytes(sizeBytes?: number) {
+  if (!sizeBytes || sizeBytes <= 0) return "";
+  if (sizeBytes < 1024) return `${sizeBytes} B`;
+  if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)} KB`;
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function attachmentMeta(attachment: ChatMessageAttachment) {
+  return [attachment.mediaType, formatAttachmentBytes(attachment.sizeBytes)].filter(Boolean).join(" · ");
+}
+
+async function loadAttachmentPreview(message: ChatMessage, attachment: ChatMessageAttachment) {
+  if (!isImageAttachment(attachment)) return;
+  const key = attachmentKey(message.id, attachment.fileId);
+  if (attachmentPreviewURLs.value[key]) return;
+  const path = sessionFileContentPath(message.id, attachment.fileId);
+  if (!path) return;
+  try {
+    const response = await apiClient.get(path, { responseType: "blob" });
+    attachmentPreviewURLs.value = {
+      ...attachmentPreviewURLs.value,
+      [key]: URL.createObjectURL(response.data),
+    };
+  } catch {
+    // Leave the file card; download still goes through the same proxy.
+  }
+}
+
+async function downloadMessageAttachment(message: ChatMessage, attachment: ChatMessageAttachment) {
+  const path = sessionFileContentPath(message.id, attachment.fileId);
+  if (!path) return;
+  const key = attachmentKey(message.id, attachment.fileId);
+  downloadingAttachment.value = key;
+  try {
+    const response = await apiClient.get(path, { responseType: "blob" });
+    const url = URL.createObjectURL(response.data);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = attachment.filename || attachment.fileId;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  } catch {
+    actionError.value = t("chat.attachmentDownloadFailed");
+  } finally {
+    downloadingAttachment.value = "";
+  }
+}
+
+watch(
+  () => chat.messages,
+  (messages) => {
+    for (const message of messages) {
+      for (const attachment of message.attachments ?? []) {
+        void loadAttachmentPreview(message, attachment);
+      }
+    }
+  },
+  { deep: true, immediate: true },
+);
+
+onBeforeUnmount(() => {
+  for (const url of Object.values(attachmentPreviewURLs.value)) URL.revokeObjectURL(url);
+});
 </script>
 
 <template>
@@ -290,6 +380,34 @@ void DebugOutboundCredentialPanel;
                     }}</time>
                   </div>
                   <div
+                    v-if="message.attachments?.length"
+                    class="message-attachments"
+                    :aria-label="t('chat.attachmentsAria')"
+                  >
+                    <article
+                      v-for="attachment in message.attachments"
+                      :key="attachment.fileId"
+                      class="message-attachment-card"
+                    >
+                      <img
+                        v-if="attachmentPreviewURLs[attachmentKey(message.id, attachment.fileId)]"
+                        :src="attachmentPreviewURLs[attachmentKey(message.id, attachment.fileId)]"
+                        :alt="attachmentLabel(attachment)"
+                      />
+                      <div class="message-attachment-meta">
+                        <strong :title="attachmentLabel(attachment)">{{ attachmentLabel(attachment) }}</strong>
+                        <small v-if="attachmentMeta(attachment)">{{ attachmentMeta(attachment) }}</small>
+                      </div>
+                      <button
+                        type="button"
+                        :disabled="downloadingAttachment === attachmentKey(message.id, attachment.fileId)"
+                        @click="downloadMessageAttachment(message, attachment)"
+                      >
+                        {{ t("chat.attachmentDownload") }}
+                      </button>
+                    </article>
+                  </div>
+                  <div
                     v-if="message.content"
                     class="assistant-bubble"
                     v-html="renderMessageMarkdown(message.content)"
@@ -322,7 +440,35 @@ void DebugOutboundCredentialPanel;
                     }}</time>
                     <strong>{{ activeUserLabel }}</strong>
                   </div>
-                  <div class="user-bubble">{{ message.content }}</div>
+                  <div
+                    v-if="message.attachments?.length"
+                    class="message-attachments"
+                    :aria-label="t('chat.attachmentsAria')"
+                  >
+                    <article
+                      v-for="attachment in message.attachments"
+                      :key="attachment.fileId"
+                      class="message-attachment-card"
+                    >
+                      <img
+                        v-if="attachmentPreviewURLs[attachmentKey(message.id, attachment.fileId)]"
+                        :src="attachmentPreviewURLs[attachmentKey(message.id, attachment.fileId)]"
+                        :alt="attachmentLabel(attachment)"
+                      />
+                      <div class="message-attachment-meta">
+                        <strong :title="attachmentLabel(attachment)">{{ attachmentLabel(attachment) }}</strong>
+                        <small v-if="attachmentMeta(attachment)">{{ attachmentMeta(attachment) }}</small>
+                      </div>
+                      <button
+                        type="button"
+                        :disabled="downloadingAttachment === attachmentKey(message.id, attachment.fileId)"
+                        @click="downloadMessageAttachment(message, attachment)"
+                      >
+                        {{ t("chat.attachmentDownload") }}
+                      </button>
+                    </article>
+                  </div>
+                  <div v-if="message.content" class="user-bubble">{{ message.content }}</div>
                 </div>
               </div>
             </article>

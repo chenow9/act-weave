@@ -394,6 +394,11 @@ func TestParseMessageContentPartsOutputFile(t *testing.T) {
 	if len(files) != 1 || files[0].FileID != fileID || files[0].Filename != "invoice-2026-08.csv" {
 		t.Fatalf("OutputFilesFromDurable=%+v", files)
 	}
+	attachments := chat.FileAttachmentsFromDurable(v1)
+	if len(attachments) != 1 || attachments[0].FileID != fileID || attachments[0].Filename != "invoice-2026-08.csv" ||
+		attachments[0].MediaType != "text/csv" || attachments[0].SizeBytes != 4096 {
+		t.Fatalf("FileAttachmentsFromDurable=%+v", attachments)
+	}
 
 	unknown := `{"schemaVersion":"aap.message-content.v1","parts":[{"type":"text","text":"x"},{"type":"future_part","x":1}]}`
 	if _, err := chat.ParseMessageContentParts(unknown); !errors.Is(err, chat.ErrInvalid) {
@@ -401,6 +406,18 @@ func TestParseMessageContentPartsOutputFile(t *testing.T) {
 	}
 	if got := chat.OutputFilesFromDurable(unknown); len(got) != 0 {
 		t.Fatalf("unknown envelope files=%+v", got)
+	}
+
+	inputID := "019f0000-0000-7000-8000-00000000f010"
+	mixed := `{"schemaVersion":"aap.message-content.v1","parts":[` +
+		`{"type":"text","text":"see files"},` +
+		`{"type":"input_file","fileId":"` + inputID + `","mediaType":"application/pdf"},` +
+		`{"type":"output_file","fileId":"` + fileID + `","mediaType":"text/csv","filename":"invoice-2026-08.csv","sizeBytes":4096}` +
+		`]}`
+	mixedFiles := chat.FileAttachmentsFromDurable(mixed)
+	if len(mixedFiles) != 2 || mixedFiles[0].FileID != inputID || mixedFiles[0].Filename != "" ||
+		mixedFiles[1].FileID != fileID || mixedFiles[1].Filename != "invoice-2026-08.csv" {
+		t.Fatalf("mixed FileAttachmentsFromDurable=%+v", mixedFiles)
 	}
 }
 

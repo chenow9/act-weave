@@ -216,6 +216,39 @@ func OutputFilesFromDurable(content string) []protocolevent.OutputFileContentPar
 	return files
 }
 
+// MessageFileAttachment is a console-facing file reference projected from
+// durable input_file / output_file parts. It never carries URLs or bytes.
+type MessageFileAttachment struct {
+	FileID    string
+	MediaType string
+	Filename  string
+	SizeBytes int64
+}
+
+// FileAttachmentsFromDurable returns input_file and output_file parts in durable
+// order. Used by Console history DTO and the session-scoped content proxy.
+func FileAttachmentsFromDurable(content string) []MessageFileAttachment {
+	parts, err := ParseMessageContentParts(content)
+	if err != nil {
+		return nil
+	}
+	var files []MessageFileAttachment
+	for _, part := range parts {
+		switch typed := part.(type) {
+		case protocolevent.OutputFileContentPart:
+			files = append(files, MessageFileAttachment{
+				FileID: typed.FileID, MediaType: typed.MediaType,
+				Filename: typed.Filename, SizeBytes: typed.SizeBytes,
+			})
+		case protocolevent.InputFileContentPart:
+			files = append(files, MessageFileAttachment{
+				FileID: typed.FileID, MediaType: typed.MediaType,
+			})
+		}
+	}
+	return files
+}
+
 // SerializeAssistantDurableV2 builds the durable chat_messages body.
 //
 //   - files empty and a2ui nil → plain text (zero wire change)

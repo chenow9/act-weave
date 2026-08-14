@@ -6,18 +6,21 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"actweave/backend/internal/a2ui"
+	"actweave/backend/internal/aapfile"
 	"actweave/backend/internal/agentaccessauth"
 	"actweave/backend/internal/authz"
 	"actweave/backend/internal/chat"
 	"actweave/backend/internal/execution"
 	"actweave/backend/internal/outboundidentity"
 	"actweave/backend/internal/protocolevent"
+	"actweave/backend/internal/storedobject"
 	"actweave/backend/internal/transport/sse"
 
 	"github.com/gin-gonic/gin"
@@ -28,7 +31,20 @@ type ChatStore interface {
 	CreateSession(context.Context, chat.CreateSessionInput) (chat.Session, error)
 	GetSession(context.Context, string, string) (chat.Session, error)
 	ArchiveSession(context.Context, string, string, int64) (chat.Session, error)
+	GetMessage(context.Context, string, string) (chat.Message, error)
 	ListMessages(context.Context, string, string) ([]chat.Message, error)
+}
+
+// ChatFileLookup is the workspace-scoped aap_files fact reader used by the
+// session+message content proxy. Callers must already have proven the fileId
+// appears on the message; this must not be an AAP File HTTP principal.
+type ChatFileLookup interface {
+	GetFile(context.Context, string, string) (aapfile.File, error)
+}
+
+// ChatObjectOpener streams a permanent stored object (SecureStore.Open).
+type ChatObjectOpener interface {
+	Open(context.Context, storedobject.ReadRequest) (storedobject.OpenedObject, error)
 }
 
 type ChatMessenger interface {
@@ -70,6 +86,9 @@ type ChatExecutionRoutes struct {
 	debugAttachments *outboundidentity.DebugAttachmentStore
 	vault            outboundidentity.CredentialVault
 	bootID           string
+	// files / objects are optional: nil conceals the session file proxy as 404.
+	files   ChatFileLookup
+	objects ChatObjectOpener
 }
 
 type ChatExecutionDependencies struct {
@@ -88,6 +107,9 @@ type ChatExecutionDependencies struct {
 	DebugAttachments *outboundidentity.DebugAttachmentStore
 	Vault            outboundidentity.CredentialVault
 	BootID           string
+	// Files / Objects serve GET .../sessions/:sid/messages/:mid/files/:fileId/content.
+	Files   ChatFileLookup
+	Objects ChatObjectOpener
 }
 
 func NewChatExecutionRoutes(dependencies ChatExecutionDependencies) (*ChatExecutionRoutes, error) {
@@ -127,6 +149,8 @@ func NewChatExecutionRoutes(dependencies ChatExecutionDependencies) (*ChatExecut
 		debugAttachments: dependencies.DebugAttachments,
 		vault:            dependencies.Vault,
 		bootID:           strings.TrimSpace(dependencies.BootID),
+		files:            dependencies.Files,
+		objects:          dependencies.Objects,
 	}, nil
 }
 
@@ -139,6 +163,8 @@ func (r *ChatExecutionRoutes) RegisterV1(v1 V1Routes) {
 	group.POST("/workspaces/:wid/chat/sessions/:sid/messages", r.sendMessage)
 	// 运行调试台 one-shot outbound credential attach (checklist #11).
 	group.POST("/workspaces/:wid/chat/sessions/:sid/outbound-credentials", r.attachOutboundCredentials)
+	// Session+message scoped file proxy (design §8). Console users never call AAP File as an SP.
+	group.GET("/workspaces/:wid/sessions/:sid/messages/:mid/files/:fileId/content", r.getSessionMessageFileContent)
 	group.GET("/workspaces/:wid/agent-runs/:rid", r.getAgentRun)
 	group.GET("/workspaces/:wid/agent-runs/:rid/events", r.getAgentRunEvents)
 	group.GET("/workspaces/:wid/executions", r.listExecutions)
@@ -189,11 +215,22 @@ type chatMessageDTO struct {
 	// a2ui part. It is a separate channel from Content on purpose: Content stays
 	// the text a human wrote or read, and contentSha256/contentLength keep
 	// describing exactly that (KD-13).
-	A2UI           []json.RawMessage `json:"a2ui,omitempty"`
-	Status         string            `json:"status"`
-	RunID          string            `json:"runId,omitempty"`
-	ConfirmationID string            `json:"confirmationId,omitempty"`
-	CreatedAt      time.Time         `json:"createdAt"`
+	A2UI []json.RawMessage `json:"a2ui,omitempty"`
+	// Attachments is a metadata side channel for input_file / output_file parts.
+	// Content / contentSha256 stay projected text (KD-13); bytes go through the
+	// session+message file proxy.
+	Attachments    []chatMessageAttachmentDTO `json:"attachments,omitempty"`
+	Status         string                     `json:"status"`
+	RunID          string                     `json:"runId,omitempty"`
+	ConfirmationID string                     `json:"confirmationId,omitempty"`
+	CreatedAt      time.Time                  `json:"createdAt"`
+}
+
+type chatMessageAttachmentDTO struct {
+	FileID    string `json:"fileId"`
+	MediaType string `json:"mediaType,omitempty"`
+	Filename  string `json:"filename,omitempty"`
+	SizeBytes int64  `json:"sizeBytes,omitempty"`
 }
 
 func (r *ChatExecutionRoutes) messageDTO(
@@ -213,6 +250,7 @@ func (r *ChatExecutionRoutes) messageDTO(
 	// envelope JSON (including a2ui surface) as the markdown body. Display
 	// contentSha256/contentLength must describe the projected content string.
 	surfaces := chat.A2UISurfacesFromDurable(content, a2ui.EnvelopeVersionV1)
+	attachments := chatMessageAttachmentsDTO(content)
 	content = chat.JoinTextPartsFromDurable(content)
 	digest := sha256.Sum256([]byte(content))
 	return chatMessageDTO{
@@ -220,9 +258,124 @@ func (r *ChatExecutionRoutes) messageDTO(
 		ContentSHA256: hex.EncodeToString(digest[:]),
 		ContentLength: int64(len([]byte(content))),
 		A2UI:          surfaces,
+		Attachments:   attachments,
 		Status:        value.Status, RunID: value.RunID,
 		ConfirmationID: value.ConfirmationID, CreatedAt: value.CreatedAt,
 	}, nil
+}
+
+func chatMessageAttachmentsDTO(content string) []chatMessageAttachmentDTO {
+	files := chat.FileAttachmentsFromDurable(content)
+	if len(files) == 0 {
+		return nil
+	}
+	items := make([]chatMessageAttachmentDTO, 0, len(files))
+	for _, file := range files {
+		items = append(items, chatMessageAttachmentDTO{
+			FileID: file.FileID, MediaType: file.MediaType,
+			Filename: file.Filename, SizeBytes: file.SizeBytes,
+		})
+	}
+	return items
+}
+
+func (r *ChatExecutionRoutes) getSessionMessageFileContent(c *gin.Context) {
+	if !r.authorize(c, authz.ActionView) {
+		return
+	}
+	session, ok := r.ownSession(c)
+	if !ok {
+		return
+	}
+	fileID := strings.TrimSpace(c.Param("fileId"))
+	messageID := strings.TrimSpace(c.Param("mid"))
+	if fileID == "" || messageID == "" {
+		RespondError(c, chat.ErrNotFound)
+		return
+	}
+	message, err := r.chats.GetMessage(c.Request.Context(), c.Param("wid"), messageID)
+	if err != nil {
+		RespondError(c, chat.ErrNotFound)
+		return
+	}
+	if message.SessionID != session.ID {
+		RespondError(c, chat.ErrNotFound)
+		return
+	}
+	content := message.Content
+	if content == "" && message.ContentObjectID != "" {
+		loaded, loadErr := r.content.ReadPermanentChat(
+			c.Request.Context(), message.WorkspaceID, message.ContentObjectID, actor(c),
+		)
+		if loadErr != nil {
+			RespondError(c, chat.ErrNotFound)
+			return
+		}
+		content = loaded
+	}
+	if !durableMessageReferencesFile(content, fileID) {
+		RespondError(c, chat.ErrNotFound)
+		return
+	}
+	if r.files == nil || r.objects == nil {
+		RespondError(c, chat.ErrNotFound)
+		return
+	}
+	file, err := r.files.GetFile(c.Request.Context(), session.WorkspaceID, fileID)
+	if err != nil || file.Status != aapfile.StatusReady || file.StoredObjectID == nil ||
+		strings.TrimSpace(*file.StoredObjectID) == "" {
+		RespondError(c, chat.ErrNotFound)
+		return
+	}
+	opened, err := r.objects.Open(c.Request.Context(), storedobject.ReadRequest{
+		WorkspaceID: file.WorkspaceID,
+		ObjectID:    *file.StoredObjectID,
+		ActorType:   storedobject.CreatorSystem,
+		ActorID:     aapFileSystemDownloadActorID,
+	})
+	if err != nil {
+		if errors.Is(err, storedobject.ErrNotFound) || errors.Is(err, authz.ErrDenied) ||
+			errors.Is(err, authz.ErrNotVisible) {
+			RespondError(c, chat.ErrNotFound)
+			return
+		}
+		RespondError(c, err)
+		return
+	}
+	defer opened.Body.Close()
+	contentType := file.DeclaredMediaType
+	if file.DetectedMediaType != nil && *file.DetectedMediaType != "" {
+		contentType = *file.DetectedMediaType
+	}
+	filename := aapFileDisplayName(file)
+	if name := attachmentFilename(content, fileID); name != "" {
+		filename = name
+	}
+	setAAPFileStreamHeaders(c, contentType, filename)
+	c.Status(http.StatusOK)
+	_, _ = io.Copy(c.Writer, opened.Body)
+}
+
+func durableMessageReferencesFile(content, fileID string) bool {
+	fileID = strings.TrimSpace(fileID)
+	if fileID == "" {
+		return false
+	}
+	for _, attachment := range chat.FileAttachmentsFromDurable(content) {
+		if attachment.FileID == fileID {
+			return true
+		}
+	}
+	return false
+}
+
+func attachmentFilename(content, fileID string) string {
+	for _, attachment := range chat.FileAttachmentsFromDurable(content) {
+		if attachment.FileID == fileID && strings.TrimSpace(attachment.Filename) != "" {
+			return attachment.Filename
+		}
+	}
+	return ""
 }
 
 func (r *ChatExecutionRoutes) listSessions(c *gin.Context) {

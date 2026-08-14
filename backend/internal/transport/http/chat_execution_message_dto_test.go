@@ -206,6 +206,76 @@ func TestMessageDTOPlainTextUnchanged(t *testing.T) {
 	}
 }
 
+func TestMessageDTOProjectsAttachmentsBesideText(t *testing.T) {
+	t.Parallel()
+
+	fileID := "019f0000-0000-7000-8000-00000000f001"
+	durable := `{"schemaVersion":"aap.message-content.v1","parts":[` +
+		`{"type":"text","text":"对账单已生成。"},` +
+		`{"type":"output_file","fileId":"` + fileID + `","mediaType":"text/csv","filename":"invoice-2026-08.csv","sizeBytes":4096}` +
+		`]}`
+	routes := &ChatExecutionRoutes{}
+	message := chat.Message{
+		ID: uuid.NewString(), WorkspaceID: uuid.NewString(), SessionID: uuid.NewString(),
+		Role: "ASSISTANT", Content: durable, ContentSHA256: sha256Hex(durable),
+		ContentLength: int64(len([]byte(durable))), Status: "EXECUTED",
+		RunID: uuid.NewString(), CreatedAt: time.Now().UTC(),
+	}
+	dto, err := routes.messageDTO(context.Background(), message, uuid.NewString())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dto.Content != "对账单已生成。" {
+		t.Fatalf("content=%q", dto.Content)
+	}
+	if dto.ContentSHA256 != sha256Hex(dto.Content) ||
+		dto.ContentLength != int64(len([]byte(dto.Content))) {
+		t.Fatalf("hash/length describe something other than content: %s %d",
+			dto.ContentSHA256, dto.ContentLength)
+	}
+	if len(dto.Attachments) != 1 || dto.Attachments[0].FileID != fileID ||
+		dto.Attachments[0].Filename != "invoice-2026-08.csv" ||
+		dto.Attachments[0].MediaType != "text/csv" || dto.Attachments[0].SizeBytes != 4096 {
+		t.Fatalf("attachments=%+v", dto.Attachments)
+	}
+	body, err := json.Marshal(dto)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(dto.Content, "output_file") || strings.Contains(dto.Content, fileID) {
+		t.Fatalf("file part leaked into content: %q", dto.Content)
+	}
+	if !strings.Contains(string(body), `"attachments":[`) {
+		t.Fatalf("attachments channel missing from the response body: %s", body)
+	}
+}
+
+func TestMessageDTOOmitsAttachmentsWithoutFiles(t *testing.T) {
+	t.Parallel()
+
+	routes := &ChatExecutionRoutes{}
+	message := chat.Message{
+		ID: uuid.NewString(), WorkspaceID: uuid.NewString(), SessionID: uuid.NewString(),
+		Role: "ASSISTANT", Content: "Just text.", ContentSHA256: sha256Hex("Just text."),
+		ContentLength: int64(len([]byte("Just text."))), Status: "EXECUTED",
+		CreatedAt: time.Now().UTC(),
+	}
+	dto, err := routes.messageDTO(context.Background(), message, uuid.NewString())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dto.Attachments) != 0 {
+		t.Fatalf("attachments=%v want nothing", dto.Attachments)
+	}
+	body, err := json.Marshal(dto)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), `"attachments"`) {
+		t.Fatalf("attachments key present without files: %s", body)
+	}
+}
+
 func TestMessageDTOLoadsPermanentAndProjects(t *testing.T) {
 	t.Parallel()
 

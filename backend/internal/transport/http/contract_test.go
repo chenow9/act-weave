@@ -166,6 +166,7 @@ func TestV1ContractCrossWorkspaceGuessingIsNotVisibleAcrossDomains(t *testing.T)
 		"/api/v1/workspaces/" + wid + "/tools/" + id,
 		"/api/v1/workspaces/" + wid + "/workflows/" + id,
 		"/api/v1/workspaces/" + wid + "/chat/sessions/" + id,
+		"/api/v1/workspaces/" + wid + "/sessions/" + id + "/messages/" + id + "/files/" + id + "/content",
 		"/api/v1/workspaces/" + wid + "/audit-events/" + id,
 	}
 	for _, path := range paths {
@@ -373,6 +374,7 @@ func v1ContractRoutes() []v1ContractRoute {
 		{http.MethodPost, root + "/workspaces/:wid/chat/sessions/:sid:archive", false},
 		{http.MethodPost, root + "/workspaces/:wid/chat/sessions/:sid/messages", false},
 		{http.MethodPost, root + "/workspaces/:wid/chat/sessions/:sid/outbound-credentials", false},
+		{http.MethodGet, root + "/workspaces/:wid/sessions/:sid/messages/:mid/files/:fileId/content", false},
 		{http.MethodGet, root + "/workspaces/:wid/agent-runs/:rid", false},
 		{http.MethodGet, root + "/workspaces/:wid/agent-runs/:rid/events", false},
 		{http.MethodGet, root + "/workspaces/:wid/executions", false},
