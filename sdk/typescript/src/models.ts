@@ -79,11 +79,25 @@ export interface InputFileContentPart {
   [key: string]: unknown;
 }
 
+/**
+ * Assistant outbound file part. Wire only stable `fileId` + display metadata —
+ * never embed live download/presign URLs.
+ */
+export interface OutputFileContentPart {
+  type: "output_file";
+  fileId: string;
+  mediaType?: string;
+  filename?: string;
+  sizeBytes?: number;
+  [key: string]: unknown;
+}
+
 /** Known message content part arms + additive unknown parts. */
 export type MessageContentPart =
   | TextContentPart
   | A2UIContentPart
   | InputFileContentPart
+  | OutputFileContentPart
   | { type: string; [key: string]: unknown };
 
 export function isTextContentPart(part: unknown): part is TextContentPart {
@@ -110,6 +124,14 @@ export function isInputFileContentPart(part: unknown): part is InputFileContentP
   );
 }
 
+export function isOutputFileContentPart(part: unknown): part is OutputFileContentPart {
+  return (
+    isPlainObject(part) &&
+    part.type === "output_file" &&
+    typeof part.fileId === "string"
+  );
+}
+
 /**
  * Resolve a message content array from either a content value or a ProtocolItem.
  */
@@ -124,7 +146,7 @@ function resolveMessageContent(contentOrItem: unknown): unknown[] {
 }
 
 /**
- * Join all `type: "text"` parts in order. Ignores a2ui / input_file / unknown parts.
+ * Join all `type: "text"` parts in order. Ignores a2ui / input_file / output_file / unknown parts.
  * Accepts a content array or a ProtocolItem with `content`.
  */
 export function joinTextParts(contentOrItem: unknown): string {
@@ -150,6 +172,20 @@ export function findA2UIPart(contentOrItem: unknown): A2UIContentPart | undefine
     }
   }
   return undefined;
+}
+
+/**
+ * Return `type: "output_file"` parts in order. Accepts a content array or a ProtocolItem.
+ */
+export function findOutputFileParts(contentOrItem: unknown): OutputFileContentPart[] {
+  const parts = resolveMessageContent(contentOrItem);
+  const files: OutputFileContentPart[] = [];
+  for (const part of parts) {
+    if (isOutputFileContentPart(part)) {
+      files.push(part);
+    }
+  }
+  return files;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

@@ -129,15 +129,15 @@ type ProtocolError struct {
 type ItemType string
 
 const (
-	ItemTypeMessage            ItemType = "message"
-	ItemTypeToolCall           ItemType = "tool_call"
-	ItemTypeWorkflowStep       ItemType = "workflow_step"
-	ItemTypeInteraction        ItemType = "interaction"
-	ItemTypeArtifact           ItemType = "artifact"
-	ItemTypeReasoningSummary   ItemType = "reasoning_summary"
-	ItemTypeNotice             ItemType = "notice"
-	ItemTypeContextCompaction  ItemType = "context_compaction"
-	ItemTypeUnknown            ItemType = "unknown"
+	ItemTypeMessage           ItemType = "message"
+	ItemTypeToolCall          ItemType = "tool_call"
+	ItemTypeWorkflowStep      ItemType = "workflow_step"
+	ItemTypeInteraction       ItemType = "interaction"
+	ItemTypeArtifact          ItemType = "artifact"
+	ItemTypeReasoningSummary  ItemType = "reasoning_summary"
+	ItemTypeNotice            ItemType = "notice"
+	ItemTypeContextCompaction ItemType = "context_compaction"
+	ItemTypeUnknown           ItemType = "unknown"
 )
 
 var knownItemTypes = []ItemType{
@@ -203,10 +203,11 @@ func ParseMessageRole(value string) MessageRole {
 type ContentPartType string
 
 const (
-	ContentPartTypeText      ContentPartType = "text"
-	ContentPartTypeInputFile ContentPartType = "input_file"
-	ContentPartTypeA2UI      ContentPartType = "a2ui"
-	ContentPartTypeUnknown   ContentPartType = "unknown"
+	ContentPartTypeText       ContentPartType = "text"
+	ContentPartTypeInputFile  ContentPartType = "input_file"
+	ContentPartTypeA2UI       ContentPartType = "a2ui"
+	ContentPartTypeOutputFile ContentPartType = "output_file"
+	ContentPartTypeUnknown    ContentPartType = "unknown"
 )
 
 func ParseContentPartType(value string) ContentPartType {
@@ -217,6 +218,8 @@ func ParseContentPartType(value string) ContentPartType {
 		return ContentPartTypeInputFile
 	case string(ContentPartTypeA2UI):
 		return ContentPartTypeA2UI
+	case string(ContentPartTypeOutputFile):
+		return ContentPartTypeOutputFile
 	default:
 		return ContentPartTypeUnknown
 	}
@@ -254,6 +257,65 @@ type A2UIContentPart struct {
 }
 
 func (A2UIContentPart) ContentKind() ContentPartType { return ContentPartTypeA2UI }
+
+// OutputFileContentPart is an assistant outbound file reference (stable fileId only).
+// Public write/project paths must rematerialize allowlisted keys; never persist URL/bytes.
+type OutputFileContentPart struct {
+	Type      ContentPartType `json:"type"`
+	FileID    string          `json:"fileId"`
+	MediaType string          `json:"mediaType,omitempty"`
+	Filename  string          `json:"filename,omitempty"`
+	SizeBytes int64           `json:"sizeBytes,omitempty"`
+}
+
+func (OutputFileContentPart) ContentKind() ContentPartType { return ContentPartTypeOutputFile }
+
+// AllowlistedOutputFile rebuilds a part with only type/fileId/mediaType/filename/sizeBytes.
+func AllowlistedOutputFile(part OutputFileContentPart) (OutputFileContentPart, error) {
+	cleaned := OutputFileContentPart{
+		Type:      ContentPartTypeOutputFile,
+		FileID:    strings.TrimSpace(part.FileID),
+		MediaType: strings.TrimSpace(part.MediaType),
+		Filename:  strings.TrimSpace(part.Filename),
+		SizeBytes: part.SizeBytes,
+	}
+	if err := validateOutputFileContentPart(cleaned); err != nil {
+		return OutputFileContentPart{}, err
+	}
+	if part.MediaType != "" && cleaned.MediaType == "" {
+		return OutputFileContentPart{}, ErrModelInvalid
+	}
+	if part.Filename != "" && cleaned.Filename == "" {
+		return OutputFileContentPart{}, ErrModelInvalid
+	}
+	return cleaned, nil
+}
+
+func validateOutputFileContentPart(part OutputFileContentPart) error {
+	if part.Type != ContentPartTypeOutputFile || !modelUUID(part.FileID) {
+		return ErrModelInvalid
+	}
+	if part.MediaType != "" && (len(part.MediaType) < 1 || len(part.MediaType) > 255) {
+		return ErrModelInvalid
+	}
+	if part.Filename != "" && !validOutputFileFilename(part.Filename) {
+		return ErrModelInvalid
+	}
+	if part.SizeBytes < 0 {
+		return ErrModelInvalid
+	}
+	return nil
+}
+
+func validOutputFileFilename(name string) bool {
+	if name == "" || len(name) > 255 {
+		return false
+	}
+	if strings.ContainsAny(name, "/\\\x00") || strings.Contains(name, "..") {
+		return false
+	}
+	return true
+}
 
 type UnknownContentPart struct {
 	Type string
@@ -362,27 +424,27 @@ func (item NoticeItem) ItemStatusValue() ItemStatus { return item.Status }
 // ContextCompactionItem is the AAP projection of a run compact attempt (ZKL-81 / T4-B).
 // Summary body is present only when ContentIncluded and status is completed success.
 type ContextCompactionItem struct {
-	ID                   string     `json:"id"`
-	Type                 ItemType   `json:"type"`
-	Status               ItemStatus `json:"status"`
-	Result               string     `json:"result,omitempty"` // completed|fallback|failed
-	TriggerBps           int64      `json:"triggerBps,omitempty"`
-	TargetBps            int64      `json:"targetBps,omitempty"`
-	BeforeTokens         int64      `json:"beforeTokens,omitempty"`
-	AfterTokens          int64      `json:"afterTokens,omitempty"`
-	EffectiveMaxInput    int64      `json:"effectiveMaxInputTokens,omitempty"`
-	CoverageStartID      string     `json:"coverageStartMessageId,omitempty"`
-	CoverageEndID        string     `json:"coverageEndMessageId,omitempty"`
-	SourceMessageCount   int        `json:"sourceMessageCount,omitempty"`
-	Passes               int        `json:"passes,omitempty"`
-	Reused               bool       `json:"reused,omitempty"`
-	SummaryID            string     `json:"summaryId,omitempty"`
-	SummaryDigest        string     `json:"summaryDigest,omitempty"`
-	FallbackFrom         string     `json:"fallbackFrom,omitempty"`
-	FallbackTo           string     `json:"fallbackTo,omitempty"`
-	FallbackStage        string     `json:"fallbackStage,omitempty"`
-	ErrorCode            string     `json:"errorCode,omitempty"`
-	ContentIncluded      bool       `json:"contentIncluded"`
+	ID                 string     `json:"id"`
+	Type               ItemType   `json:"type"`
+	Status             ItemStatus `json:"status"`
+	Result             string     `json:"result,omitempty"` // completed|fallback|failed
+	TriggerBps         int64      `json:"triggerBps,omitempty"`
+	TargetBps          int64      `json:"targetBps,omitempty"`
+	BeforeTokens       int64      `json:"beforeTokens,omitempty"`
+	AfterTokens        int64      `json:"afterTokens,omitempty"`
+	EffectiveMaxInput  int64      `json:"effectiveMaxInputTokens,omitempty"`
+	CoverageStartID    string     `json:"coverageStartMessageId,omitempty"`
+	CoverageEndID      string     `json:"coverageEndMessageId,omitempty"`
+	SourceMessageCount int        `json:"sourceMessageCount,omitempty"`
+	Passes             int        `json:"passes,omitempty"`
+	Reused             bool       `json:"reused,omitempty"`
+	SummaryID          string     `json:"summaryId,omitempty"`
+	SummaryDigest      string     `json:"summaryDigest,omitempty"`
+	FallbackFrom       string     `json:"fallbackFrom,omitempty"`
+	FallbackTo         string     `json:"fallbackTo,omitempty"`
+	FallbackStage      string     `json:"fallbackStage,omitempty"`
+	ErrorCode          string     `json:"errorCode,omitempty"`
+	ContentIncluded    bool       `json:"contentIncluded"`
 	// Summary is permanent plaintext only when ContentIncluded=true and result=completed (T4-B).
 	// Never present for building/fallback/failed or snapshot=false.
 	Summary string `json:"summary,omitempty"`
@@ -922,6 +984,25 @@ func DecodeContentPart(raw json.RawMessage) (ContentPart, error) {
 			return nil, err
 		}
 		return value, nil
+	case "output_file":
+		var value OutputFileContentPart
+		if err := json.Unmarshal(canonical, &value); err != nil {
+			return nil, ErrModelInvalid
+		}
+		var probe struct {
+			SizeBytes *int64 `json:"sizeBytes"`
+		}
+		if err := json.Unmarshal(canonical, &probe); err != nil {
+			return nil, ErrModelInvalid
+		}
+		if probe.SizeBytes != nil && *probe.SizeBytes < 1 {
+			return nil, ErrModelInvalid
+		}
+		cleaned, err := AllowlistedOutputFile(value)
+		if err != nil {
+			return nil, err
+		}
+		return cleaned, nil
 	default:
 		return UnknownContentPart{Type: discriminator.Type, raw: canonical}, nil
 	}
@@ -987,6 +1068,10 @@ func ValidateItem(item Item) error {
 					return ErrModelInvalid
 				}
 				if err := validateA2UISurface(typed.Surface); err != nil {
+					return err
+				}
+			case OutputFileContentPart:
+				if err := validateOutputFileContentPart(typed); err != nil {
 					return err
 				}
 			}

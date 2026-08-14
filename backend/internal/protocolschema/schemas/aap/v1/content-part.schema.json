@@ -46,9 +46,21 @@
     },
     {
       "type": "object",
+      "required": ["type", "fileId"],
+      "properties": {
+        "type": {"const": "output_file"},
+        "fileId": {"$ref": "common.schema.json#/$defs/uuid"},
+        "mediaType": {"type": "string", "minLength": 1, "maxLength": 255},
+        "filename": {"type": "string", "minLength": 1, "maxLength": 255},
+        "sizeBytes": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": true
+    },
+    {
+      "type": "object",
       "required": ["type"],
       "properties": {
-        "type": {"type": "string", "not": {"enum": ["text", "input_file", "a2ui"]}}
+        "type": {"type": "string", "not": {"enum": ["text", "input_file", "a2ui", "output_file"]}}
       },
       "additionalProperties": true
     }

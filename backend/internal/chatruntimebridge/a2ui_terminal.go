@@ -100,7 +100,7 @@ func preflightAssistantA2UIItem(messageID, durable string) error {
 }
 
 // assistantModelHistoryText projects durable assistant content for model reload (KD-10).
-// Omits a2ui surface; plain/legacy bodies pass through.
+// Omits a2ui / output_file; plain/legacy bodies pass through.
 func assistantModelHistoryText(content string) string {
 	return chat.JoinTextPartsFromDurable(content)
 }

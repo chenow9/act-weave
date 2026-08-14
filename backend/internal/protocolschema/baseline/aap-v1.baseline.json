@@ -1,7 +1,7 @@
 {
-  "protocolVersion": "2026-07-20",
+  "protocolVersion": "2026-08-11",
   "specVersion": "1.0",
-  "schemaSetSha256": "7fd946170432d088c260a0abef59f2fa45a74145b54d641d48c73f12104a58db",
+  "schemaSetSha256": "b831521775532562decbaef0f79ebc82d53d6d10ca4be7afab81390d2c418d27",
   "documents": {
     "common.schema.json": {
       "path": "common.schema.json",

@@ -365,6 +365,80 @@ func TestParseMessageContentPartsA2UI(t *testing.T) {
 	}
 }
 
+func TestParseMessageContentPartsOutputFile(t *testing.T) {
+	fileID := "019f0000-0000-7000-8000-00000000f001"
+	v1 := `{"schemaVersion":"aap.message-content.v1","parts":[` +
+		`{"type":"text","text":"对账单已生成。"},` +
+		`{"type":"output_file","fileId":"` + fileID + `","mediaType":"text/csv","filename":"invoice-2026-08.csv","sizeBytes":4096,` +
+		`"url":"https://example.com/x","downloadUrl":"https://example.com/d"}` +
+		`]}`
+	parts, err := chat.ParseMessageContentParts(v1)
+	if err != nil || len(parts) != 2 {
+		t.Fatalf("parts=%+v err=%v", parts, err)
+	}
+	filePart, ok := parts[1].(protocolevent.OutputFileContentPart)
+	if !ok || filePart.FileID != fileID || filePart.MediaType != "text/csv" ||
+		filePart.Filename != "invoice-2026-08.csv" || filePart.SizeBytes != 4096 {
+		t.Fatalf("file part=%T/%+v", parts[1], parts[1])
+	}
+	encoded, err := json.Marshal(filePart)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "url") || strings.Contains(string(encoded), "downloadUrl") ||
+		strings.Contains(string(encoded), "example.com") {
+		t.Fatalf("parse did not strip URL keys: %s", encoded)
+	}
+
+	files := chat.OutputFilesFromDurable(v1)
+	if len(files) != 1 || files[0].FileID != fileID || files[0].Filename != "invoice-2026-08.csv" {
+		t.Fatalf("OutputFilesFromDurable=%+v", files)
+	}
+
+	unknown := `{"schemaVersion":"aap.message-content.v1","parts":[{"type":"text","text":"x"},{"type":"future_part","x":1}]}`
+	if _, err := chat.ParseMessageContentParts(unknown); !errors.Is(err, chat.ErrInvalid) {
+		t.Fatalf("unknown part error=%v want ErrInvalid", err)
+	}
+	if got := chat.OutputFilesFromDurable(unknown); len(got) != 0 {
+		t.Fatalf("unknown envelope files=%+v", got)
+	}
+}
+
+func TestSerializeAssistantDurableV2(t *testing.T) {
+	plain, err := chat.SerializeAssistantDurableV2("hello", nil, nil)
+	if err != nil || plain != "hello" {
+		t.Fatalf("plain=%q err=%v", plain, err)
+	}
+
+	fileID := "019f0000-0000-7000-8000-00000000f001"
+	empty, err := chat.SerializeAssistantDurableV2("", []protocolevent.OutputFileContentPart{{
+		Type: protocolevent.ContentPartTypeOutputFile, FileID: fileID,
+		MediaType: "text/csv", Filename: "invoice-2026-08.csv", SizeBytes: 4096,
+	}}, nil)
+	if err != nil || strings.TrimSpace(empty) == "" {
+		t.Fatalf("empty text envelope=%q err=%v", empty, err)
+	}
+	if !json.Valid([]byte(empty)) {
+		t.Fatalf("envelope is not valid JSON: %s", empty)
+	}
+	if !strings.Contains(empty, `"text":""`) || !strings.Contains(empty, `"output_file"`) {
+		t.Fatalf("want empty text + output_file in %s", empty)
+	}
+	if strings.Contains(strings.ToLower(empty), "url") {
+		t.Fatalf("serialize leaked url key: %s", empty)
+	}
+	parts, err := chat.ParseMessageContentParts(empty)
+	if err != nil || len(parts) != 2 {
+		t.Fatalf("reparse=%+v err=%v", parts, err)
+	}
+	if text, ok := parts[0].(protocolevent.TextContentPart); !ok || text.Text != "" {
+		t.Fatalf("text part=%T/%+v", parts[0], parts[0])
+	}
+	if chat.JoinTextPartsFromDurable(empty) != "" {
+		t.Fatalf("join of files-only envelope must be empty")
+	}
+}
+
 func TestJoinTextPartsFromDurable(t *testing.T) {
 	// Plain / legacy unchanged.
 	if got := chat.JoinTextPartsFromDurable("hello plain"); got != "hello plain" {
@@ -380,14 +454,16 @@ func TestJoinTextPartsFromDurable(t *testing.T) {
 		`{"type":"text","text":"Hello "},` +
 		`{"type":"text","text":"world"},` +
 		`{"type":"a2ui","surface":{"root":"x","schemaVersion":"must-not-leak"}},` +
-		`{"type":"input_file","fileId":"d41f1f2e-7b5a-7c3d-8e9f-1234567890f1","mediaType":"image/png"}` +
+		`{"type":"input_file","fileId":"d41f1f2e-7b5a-7c3d-8e9f-1234567890f1","mediaType":"image/png"},` +
+		`{"type":"output_file","fileId":"019f0000-0000-7000-8000-00000000f001","filename":"invoice.csv"}` +
 		`]}`
 	got := chat.JoinTextPartsFromDurable(v1)
 	if got != "Hello world" {
 		t.Fatalf("joined=%q want %q", got, "Hello world")
 	}
 	if strings.Contains(got, "schemaVersion") || strings.Contains(got, "surface") ||
-		strings.Contains(got, "a2ui") || strings.Contains(got, "input_file") {
+		strings.Contains(got, "a2ui") || strings.Contains(got, "input_file") ||
+		strings.Contains(got, "output_file") || strings.Contains(got, "invoice") {
 		t.Fatalf("envelope leaked into projected text: %q", got)
 	}
 

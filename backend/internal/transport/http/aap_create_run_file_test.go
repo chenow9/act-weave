@@ -175,7 +175,7 @@ func TestAAPCreateRunInputFile(t *testing.T) {
 				"content": []any{
 					map[string]any{"type": "text", "text": "with ui"},
 					map[string]any{
-						"type": "a2ui",
+						"type":    "a2ui",
 						"surface": map[string]any{"components": []any{}},
 					},
 				},
@@ -198,6 +198,22 @@ func TestValidateCreateRunRequestRejectsA2UI(t *testing.T) {
 			Content: []AAPRunContentPart{
 				{Type: "text", Text: "hello"},
 				{Type: "a2ui"},
+			},
+		}},
+	})
+	if !errors.Is(err, ErrAAPUnsupportedContentType) {
+		t.Fatalf("err=%v want=%v", err, ErrAAPUnsupportedContentType)
+	}
+}
+
+func TestValidateCreateRunRequestRejectsOutputFile(t *testing.T) {
+	err := validateCreateRunRequest(AAPCreateRunRequest{
+		ConversationID: aapRunConversationID,
+		Input: []AAPRunInputItem{{
+			Type: "message", Role: "user",
+			Content: []AAPRunContentPart{
+				{Type: "text", Text: "hello"},
+				{Type: "output_file", FileID: aapRunFileIDReady},
 			},
 		}},
 	})
@@ -395,12 +411,12 @@ func (aapCreateRunFileAuthorizer) Authorize(
 	snapshot := agentaccessauth.AAPAuthorizationSnapshot{
 		SpecVersion: "aap.authorization.v1", WorkspaceID: request.Principal.WorkspaceID,
 		AgentID: request.Principal.AgentID, ClientID: aapRunClientID,
-		AuthorizedParty: request.Principal.AuthorizedParty,
+		AuthorizedParty:    request.Principal.AuthorizedParty,
 		ServicePrincipalID: aapRunServiceID, SubjectID: request.Principal.PrincipalID,
 		GrantID: aapRunGrantID, Action: request.Action, RequiredScope: "run:create",
 		TokenScopes: []string{"run:create", "file:read"}, GrantScopes: []string{"run:create", "file:read"},
-		AgentPolicyScopes: []string{"run:create", "file:read"},
-		EffectiveScopes:   []string{"run:create", "file:read"},
+		AgentPolicyScopes:    []string{"run:create", "file:read"},
+		EffectiveScopes:      []string{"run:create", "file:read"},
 		TokenSecurityVersion: 1, ResolvedSecurityVersion: 1,
 		WorkspaceVersion: 1, ClientVersion: 1, GrantVersion: 1, AgentPolicyVersion: 1,
 		TokenID: aapRunTokenID, ResourceType: request.Resource.Type, ResourceID: request.Resource.ID,
@@ -439,4 +455,3 @@ func parseMessageContentForTest(content string) ([]protocolevent.ContentPart, er
 	}
 	return parts, nil
 }
-

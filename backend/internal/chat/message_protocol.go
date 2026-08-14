@@ -3,9 +3,11 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
+	"actweave/backend/internal/a2ui"
 	"actweave/backend/internal/protocolevent"
 
 	"github.com/google/uuid"
@@ -62,9 +64,9 @@ func (mapper *ProtocolMessageMapper) MapCompleted(
 }
 
 // ParseMessageContentParts projects permanent message body to protocol content parts.
-// aap.message-content.v1 → text + input_file + optional a2ui parts (never download URLs).
+// aap.message-content.v1 → text + input_file + output_file + optional a2ui (never download URLs).
 // a2ui is accepted on durable rehydrate for assistant multi-part (KD-6 / PR-5);
-// inbound createRun / user multimodal paths continue to reject a2ui separately.
+// inbound createRun / user multimodal paths continue to reject a2ui and output_file separately.
 // Legacy non-JSON / missing schemaVersion → single text part (Console/history compat).
 func ParseMessageContentParts(content string) ([]protocolevent.ContentPart, error) {
 	if content == "" {
@@ -92,7 +94,7 @@ func ParseMessageContentParts(content string) ([]protocolevent.ContentPart, erro
 		case protocolevent.InputFileContentPart:
 			// Strip any accidental URL-bearing fields by re-materializing allowlisted keys only.
 			parts = append(parts, protocolevent.InputFileContentPart{
-				Type: protocolevent.ContentPartTypeInputFile,
+				Type:   protocolevent.ContentPartTypeInputFile,
 				FileID: typed.FileID, MediaType: typed.MediaType,
 			})
 		case protocolevent.A2UIContentPart:
@@ -104,6 +106,12 @@ func ParseMessageContentParts(content string) ([]protocolevent.ContentPart, erro
 				Surface:   surface,
 				CatalogID: typed.CatalogID,
 			})
+		case protocolevent.OutputFileContentPart:
+			cleaned, err := protocolevent.AllowlistedOutputFile(typed)
+			if err != nil {
+				return nil, ErrInvalid
+			}
+			parts = append(parts, cleaned)
 		default:
 			return nil, ErrInvalid
 		}
@@ -118,7 +126,7 @@ func ParseMessageContentParts(content string) ([]protocolevent.ContentPart, erro
 //
 //  1. Non-v1 / plain / legacy bodies → returned unchanged.
 //  2. aap.message-content.v1 → concatenate type=="text" parts only; ignore a2ui,
-//     input_file, and unknown parts (KD-10 / KD-13 / §3.4).
+//     input_file, output_file, and unknown parts (KD-10 / KD-13 / §3.4).
 //  3. v1 with no text parts → "" (callers skip empty history rows).
 //
 // Used by Console messageDTO text-first history and (later) model history reload.
@@ -191,6 +199,85 @@ func A2UISurfacesFromDurable(content, wantVersion string) []json.RawMessage {
 		surfaces = append(surfaces, append(json.RawMessage(nil), wire.Surface...))
 	}
 	return surfaces
+}
+
+// OutputFilesFromDurable returns allowlisted output_file parts in durable order.
+func OutputFilesFromDurable(content string) []protocolevent.OutputFileContentPart {
+	parts, err := ParseMessageContentParts(content)
+	if err != nil {
+		return nil
+	}
+	var files []protocolevent.OutputFileContentPart
+	for _, part := range parts {
+		if file, ok := part.(protocolevent.OutputFileContentPart); ok {
+			files = append(files, file)
+		}
+	}
+	return files
+}
+
+// SerializeAssistantDurableV2 builds the durable chat_messages body.
+//
+//   - files empty and a2ui nil → plain text (zero wire change)
+//   - files non-empty and text == "" → non-empty v1 envelope with empty text part
+//
+// Each file part is allowlist-rebuilt (type/fileId/mediaType/filename/sizeBytes only).
+func SerializeAssistantDurableV2(
+	text string,
+	files []protocolevent.OutputFileContentPart,
+	payload *a2ui.Payload,
+) (string, error) {
+	if len(files) == 0 {
+		return a2ui.SerializeAssistantDurable(text, payload)
+	}
+	parts := make([]any, 0, 2+len(files))
+	parts = append(parts, map[string]any{"type": "text", "text": text})
+	for _, file := range files {
+		cleaned, err := protocolevent.AllowlistedOutputFile(file)
+		if err != nil {
+			return "", err
+		}
+		part := map[string]any{
+			"type":   "output_file",
+			"fileId": cleaned.FileID,
+		}
+		if cleaned.MediaType != "" {
+			part["mediaType"] = cleaned.MediaType
+		}
+		if cleaned.Filename != "" {
+			part["filename"] = cleaned.Filename
+		}
+		if cleaned.SizeBytes > 0 {
+			part["sizeBytes"] = cleaned.SizeBytes
+		}
+		parts = append(parts, part)
+	}
+	if payload != nil {
+		if len(payload.Surface) == 0 {
+			return "", fmt.Errorf("a2ui: surface required")
+		}
+		version := payload.Version
+		if version == "" {
+			version = a2ui.EnvelopeVersionV1
+		}
+		a2uiPart := map[string]any{
+			"type":    "a2ui",
+			"version": version,
+			"surface": json.RawMessage(payload.Surface),
+		}
+		if payload.CatalogID != "" {
+			a2uiPart["catalogId"] = payload.CatalogID
+		}
+		parts = append(parts, a2uiPart)
+	}
+	raw, err := json.Marshal(map[string]any{
+		"schemaVersion": MessageContentSchemaVersion,
+		"parts":         parts,
+	})
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
 }
 
 func (mapper *ProtocolMessageMapper) MapStarted(
