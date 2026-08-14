@@ -446,6 +446,71 @@ describe("restoreConversationReplay", () => {
     expect(fallback.messages).toEqual([]);
   });
 
+  it("returns after a terminal snapshot even if followRun keeps yielding", async () => {
+    const terminalItems: ProtocolItem[] = [
+      {
+        id: "u1",
+        type: "message",
+        status: "completed",
+        role: "user",
+        content: [{ type: "text", text: "hi" }, userPng],
+      },
+      csvItem,
+    ];
+    const client: ConversationReplayClient = {
+      getConversation: vi.fn(async () =>
+        conversation([{ object: "run", id: "r1", status: "completed", version: 1, startedAt: "2026-08-01T00:00:00Z" }]),
+      ),
+      getRun: vi.fn(async () => ({ run: apiRun("r1", []) })),
+      followRun: vi.fn(async function* () {
+        yield { snapshot: emptySnapshot(terminalItems) };
+        // Live follow=true keeps the SSE open with heartbeats after completed.
+        while (true) {
+          yield { snapshot: emptySnapshot(terminalItems) };
+        }
+      }),
+    };
+
+    const result = await restoreConversationReplay({
+      aapBaseUrl: "https://aap.example/v1",
+      workspaceId: "ws",
+      agentId: "a1",
+      conversationId: "c1",
+      client,
+    });
+    expect(result.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(result.messages[0]?.files.map((f) => f.fileId)).toEqual([userPng.fileId]);
+    expect(result.messages[1]?.files.map((f) => f.fileId)).toEqual([csv.fileId]);
+  });
+
+  it("skips a run when getRun fails instead of opening followRun", async () => {
+    const followRun = vi.fn(async function* () {
+      while (true) {
+        yield { snapshot: emptySnapshot([]) };
+      }
+    });
+    const client: ConversationReplayClient = {
+      getConversation: vi.fn(async () =>
+        conversation([{ object: "run", id: "r1", status: "completed", version: 1, startedAt: "2026-08-01T00:00:00Z" }]),
+      ),
+      getRun: vi.fn(async () => {
+        throw new Error("run read failed");
+      }),
+      followRun,
+    };
+
+    const result = await restoreConversationReplay({
+      aapBaseUrl: "https://aap.example/v1",
+      workspaceId: "ws",
+      agentId: "a1",
+      conversationId: "c1",
+      client,
+    });
+    expect(result.conversationId).toBe("c1");
+    expect(result.messages).toEqual([]);
+    expect(followRun).not.toHaveBeenCalled();
+  });
+
   it("propagates getConversation failures so boot can empty the session", async () => {
     const err = Object.assign(new Error("gone"), { status: 404 });
     const client: ConversationReplayClient = {

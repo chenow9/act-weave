@@ -4,6 +4,7 @@ import {
   findA2UIPart,
   findOutputFileParts,
   isInputFileContentPart,
+  isTerminalRunStatus,
   joinTextParts,
   type AccessTokenMaterial,
   type AAPFile,
@@ -476,7 +477,7 @@ export async function* followRunLive(options: {
   })) {
     yield snapshot;
     const status = snapshot.run?.status ? String(snapshot.run.status) : "";
-    if (status && ["completed", "failed", "cancelled"].includes(status)) {
+    if (status && isTerminalRunStatus(status)) {
       return;
     }
   }
@@ -784,6 +785,64 @@ function liveReplayClient(aapBaseUrl: string): ConversationReplayClient {
   });
 }
 
+/** Historical catch-up should not sit on a live SSE heartbeat forever. */
+const CATCH_UP_TIMEOUT_MS = 10_000;
+
+function isAbortLike(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const rec = err as { name?: string; code?: string };
+  return rec.name === "AbortError" || rec.code === "STREAM_ABORTED";
+}
+
+function nestAbort(parent?: AbortSignal, timeoutMs?: number): {
+  signal: AbortSignal;
+  abort: () => void;
+  dispose: () => void;
+} {
+  const controller = new AbortController();
+  const onParent = () => controller.abort();
+  if (parent) {
+    if (parent.aborted) controller.abort();
+    else parent.addEventListener("abort", onParent, { once: true });
+  }
+  const timer =
+    typeof timeoutMs === "number" && timeoutMs > 0
+      ? setTimeout(() => controller.abort(), timeoutMs)
+      : undefined;
+  return {
+    signal: controller.signal,
+    abort: () => controller.abort(),
+    dispose: () => {
+      if (timer) clearTimeout(timer);
+      parent?.removeEventListener("abort", onParent);
+    },
+  };
+}
+
+/**
+ * Drain followRun until the run is terminal, then abort SSE so a live
+ * follow=true stream does not hang the caller on heartbeats.
+ */
+export async function drainFollowRunUntilTerminal(
+  follow: AsyncIterable<{ snapshot: ReducedRunSnapshot }>,
+  abort: () => void,
+): Promise<ReducedRunSnapshot | null> {
+  let last: ReducedRunSnapshot | null = null;
+  try {
+    for await (const step of follow) {
+      last = step.snapshot ?? last;
+      const status = step.snapshot?.run?.status ? String(step.snapshot.run.status) : "";
+      if (status && isTerminalRunStatus(status)) {
+        abort();
+        break;
+      }
+    }
+  } catch (err) {
+    if (!isAbortLike(err)) throw err;
+  }
+  return last;
+}
+
 async function catchUpRunItems(
   client: ConversationReplayClient,
   workspaceId: string,
@@ -791,19 +850,23 @@ async function catchUpRunItems(
   runId: string,
   signal?: AbortSignal,
 ): Promise<ProtocolItem[] | null> {
-  let items: ProtocolItem[] | null = null;
+  const gate = nestAbort(signal, CATCH_UP_TIMEOUT_MS);
+  let last: ReducedRunSnapshot | null = null;
   try {
-    for await (const step of client.followRun(workspaceId, agentId, runId, {
-      signal,
-      initialLastSequence: 0,
-      refreshOnAuthFailure: true,
-    })) {
-      if (Array.isArray(step.snapshot?.items)) items = step.snapshot.items;
-    }
+    last = await drainFollowRunUntilTerminal(
+      client.followRun(workspaceId, agentId, runId, {
+        signal: gate.signal,
+        initialLastSequence: 0,
+        refreshOnAuthFailure: true,
+      }),
+      gate.abort,
+    );
   } catch {
-    return items;
+    // Catch-up is best-effort; caller falls back to GET items.
+  } finally {
+    gate.dispose();
   }
-  return items;
+  return Array.isArray(last?.items) ? last.items : null;
 }
 
 async function loadRunItemsForReplay(
@@ -817,10 +880,13 @@ async function loadRunItemsForReplay(
   try {
     run = unwrapRunResponse(await client.getRun(workspaceId, agentId, runId, { signal }));
   } catch {
-    run = null;
+    // Failed GET is not "items incomplete" — do not open SSE for that run.
+    return [];
   }
-  let items = Array.isArray(run?.items) ? run.items : [];
+  if (!run) return [];
+  const items = Array.isArray(run.items) ? run.items : [];
   if (!runItemsNeedCatchUp(run)) return items;
+  if (!isTerminalRunStatus(String(run.status || ""))) return items;
   const caught = await catchUpRunItems(client, workspaceId, agentId, runId, signal);
   return caught ?? items;
 }
