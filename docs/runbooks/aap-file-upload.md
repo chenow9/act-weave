@@ -18,23 +18,43 @@ Config path: `agentAccess.files` in `backend/config.yaml`.
 | `maxReadyBytesPerWorkspace` | `5 GiB` | Soft READY total-bytes quota |
 | `publicUploadBaseUrl` | empty | Public base used for presign rewrite / docs when MinIO is not client-reachable |
 | `runtimeMultimodal` | `false` | Orthogonal: gates model assembly of `input_file`; createRun fails closed with `FILE_RUNTIME_UNAVAILABLE` when false |
-| `virusScan.enabled` / `required` | `false` | Optional pipeline stage |
+| `runtimeOutboundAttachments` | `false` | Orthogonal: gates `IngestGenerated` and `actweave.publish_attachment` injection. Env `ACTWEAVE_AAP_FILES_RUNTIME_OUTBOUND_ATTACHMENTS` |
+| `virusScan.enabled` / `required` | `false` | Optional **inbound** pipeline stage. Outbound ingest does **not** run a virus scanner |
 
 Env overrides (see `config.AgentAccessFilesConfig`): prefer `ACTWEAVE_AAP_FILES_ENABLED` and related `ACTWEAVE_AAP_FILES_*` when present. Changes require process restart.
 
 **Orthogonal gates**
 
 1. Global AAP `agentAccess.feature.enabled` — whole Agent Access surface.
-2. `files.enabled` + workspace/client allowlist — File routes only.
+2. `files.enabled` + workspace/client allowlist — File routes, inbound upload, and outbound ingest.
 3. `runtimeMultimodal` — createRun with `input_file` and model multimodal assembly.
+4. `runtimeOutboundAttachments` + Agent policy `enableOutboundAttachments` + frozen `toolCalling ∈ {function_calling, native_client_search}` — assistant `output_file`. `toolCalling: none` does **not** inject the tool (Run still succeeds as text).
+
+## Outbound attachments (gray)
+
+v1 model publish is the text-only platform tool `actweave.publish_attachment` (`text/plain` \| `text/csv` \| `text/markdown` \| `application/json`, UTF-8 `text` ≤ 256 KiB, **no** `base64`). Successful ingest writes READY `aap_files` with **`purpose=AGENT_OUTPUT`** and `source_run_id`. There is **no public ingest HTTP**; `createFile` does not accept `AGENT_OUTPUT`.
+
+**No virus scanner / webhook DLP on outbound.** Inbound `PipelineWorker.runVirusScan` is a stub that always reports clean; do not invent a fail-closed outbound `VirusScanner` that would break existing `virusScan.required=true` deployments.
+
+Demos: Mock story `export-csv` (**生成本月对账单**) + Live hydrate by `fileId`. Console preview/download is
+
+```
+GET /api/v1/workspaces/:wid/sessions/:sid/messages/:mid/files/:fileId/content
+```
+
+(`ActionView` + session ownership + `fileId` on that message’s durable parts). Not an AAP route.
+
+Integrator contract: [AAP integration guide §9.3](../aap-integration-guide.md#93-outbound-attachments-optional-additive).
 
 ## Rollback
 
-1. Set `agentAccess.files.enabled: false` (or clear allowlists) and restart.
-2. File create/complete/download routes return not-visible (**404**). Non-file AAP routes stay up.
-3. Pipeline / staging GC / retention purge workers idle when there is no work; leave them running.
-4. Do **not** run destructive migration down or delete `aap_files` / permanent objects as the primary rollback.
-5. Optional: keep `runtimeMultimodal: false` so any residual `input_file` createRun fails closed.
+1. Turn **`runtimeOutboundAttachments` off first** (or clear the files allowlist) and restart — stops new outbound writes / tool injection. Historical `fileId`s remain downloadable while `files.enabled` stays on.
+2. Stop new Agent-policy `enableOutboundAttachments: true`.
+3. **Do not** roll back the snapshot parser that understands `enableOutboundAttachments`. In-flight Runs may already have written `"enableOutboundAttachments":true`; pre-parser binaries `DisallowUnknownFields` and would fail those snapshots.
+4. **Do not** run `000023_aap_file_outbound` down while `AGENT_OUTPUT` rows exist (the CHECK rollback raises). Do **not** delete `aap_files` / permanent objects as the primary rollback.
+5. Set `agentAccess.files.enabled: false` **last**. File create/complete/download routes return not-visible (**404**), including historical outbound files. Non-file AAP routes stay up.
+6. Pipeline / staging GC / retention purge workers idle when there is no work; leave them running.
+7. Optional: keep `runtimeMultimodal: false` so any residual `input_file` createRun fails closed.
 
 ## MinIO reachability
 
@@ -101,6 +121,12 @@ Process metrics (no `file_id`, token id, or filename labels):
 | `aap_file_download_*` | Download path results |
 | `aap_file_pending_upload_gauge` | Global `PENDING_UPLOAD` count |
 | `aap_file_staging_orphan_bytes` | Sum `size_bytes` of residual staging rows |
+| `aap_file_ingest_generated_total` | Outbound `IngestGenerated` (`ok` / `disabled` / `denied` / `error`) |
+| `aap_outbound_publish_total` | Publish tool (`ok` / `denied` / `error` / `disabled` / `unsupported`) |
+| `aap_outbound_attach_preflight_fail_total` | Terminal attach degraded to text/A2UI |
+| `aap_outbound_turn_files` | Per-turn attached count (0/1/2/4/8 buckets) |
+
+Do **not** alert on “virus required but scanner nil” for outbound — v1 outbound has no scanner.
 
 ## Logging allowlist
 
@@ -131,22 +157,24 @@ Keep **`agentAccess.files.enabled` default `false`** until staging GC health, Mi
 
 ## Compose / local checklist
 
-1. Postgres + MinIO up; migrations applied through `000006_aap_files`.
+1. Postgres + MinIO up; migrations applied through `000006_aap_files` (outbound also needs `000023_aap_file_outbound`).
 2. `agentAccess.files.enabled: false` in default `config.yaml` (confirm before gray).
 3. Staging GC worker starts with the API process; metrics gauges refresh each pass.
-4. Optional local enable: allowlist a single workspace + client; leave `runtimeMultimodal` false until multimodal IC green.
+4. Optional local enable: allowlist a single workspace + client; leave `runtimeMultimodal` and `runtimeOutboundAttachments` false until those ICs are green.
 5. Exercise: create → PUT staging → complete → poll READY; force integrity fail → GC → no staging object.
 6. If an edge proxy fronts AAP: confirm ops proxy guidance above for content/download streams (operator config only).
+7. Outbound (after inbound gray): set `runtimeOutboundAttachments: true` for the same allowlist; Agent `enableOutboundAttachments`; model `toolCalling` must be `function_calling` or `native_client_search`. Accept Live Demos CSV cards and Console session+message proxy. Confirm `toolCalling: none` Agents still reply with text.
 
 ## Gray rollout sequence (design §12)
 
-1. Dark ship: migrations + code, `files.enabled=false`.
+1. Dark ship: migrations + code, `files.enabled=false`, `runtimeOutboundAttachments=false`.
 2. Confirm GC worker health + MinIO reachability table above.
 3. Internal allowlist workspace/client.
 4. Partner gray + `file:read` / `file:write` scopes.
 5. Enable `runtimeMultimodal` separately for model E2E.
-6. Rollback drill: `files.enabled=false`.
+6. Enable `runtimeOutboundAttachments` separately for outbound E2E (policy + toolCalling). Do not roll back the snapshot parser after the first `"enableOutboundAttachments":true` snapshot.
+7. Rollback drill: `runtimeOutboundAttachments=false` first, then `files.enabled=false`. Do not down `000023` with `AGENT_OUTPUT` data.
 
 ## Related
 
-- Integration guides: `docs/aap-integration-guide.md` / `.zh-CN.md`
+- Integration guides: `docs/aap-integration-guide.md` / `.zh-CN.md` (outbound: §9.3)

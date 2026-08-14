@@ -24,9 +24,10 @@
 4. 通过 SSE 跟随 **Run 事件**（`Last-Event-ID` 断线续传）  
 5. 对 **Interaction** 做 approve / decline / cancel  
 6. （可选，**默认关闭**）上传 **File**、等待 ready，并在 Run 输入中以 `input_file` 部分引用  
-7. （可选，**默认关闭**）当 Agent 开启 `enableA2UI` 时，在助手消息上接收附加的 **A2UI** 声明式界面（MVP 仅展示、无动作回传）
+7. （可选，**默认关闭**）当 Agent 开启 `enableA2UI` 时，在助手消息上接收附加的 **A2UI** 声明式界面（MVP 仅展示、无动作回传）  
+8. （可选，**默认关闭**）当 files HTTP 门（含 workspace/client 白名单）、`runtimeOutboundAttachments` 与 Agent `enableOutboundAttachments` 均打开，且冻结的 `toolCalling` 支持工具时，在助手消息上接收 **出站附件**（`output_file`）。v1 发布通道为纯文本工具 `actweave.publish_attachment`；**没有**公开 ingest HTTP
 
-AAP **不是** ActWeave 管理控制台 API（`/api/v1`）。控制台用户 Session JWT 在 AAP 路由上会被 **拒绝**。v1 **没有**面向 AAP 文件的 Console 产品 UI。
+AAP **不是** ActWeave 管理控制台 API（`/api/v1`）。控制台用户 Session JWT 在 AAP 路由上会被 **拒绝**。Console 聊天可以把会话消息上引用的文件经 session+message 代理渲染出来（见 [§9.3](#93-出站附件可选附加)）；那**不是**文件管理 UI，也**不是** AAP 路由。
 
 | 面 | 路径前缀 | 鉴权 | 使用者 |
 | --- | --- | --- | --- |
@@ -60,8 +61,9 @@ Client Secret / 私钥只应保存在**你方**密钥管理系统中。密钥不
 | **Access Token** | 短期 JWT（`EdDSA` / `at+jwt`），绑定一个 Workspace、一个 Agent、Client、主体及可选 External Subject |
 | **Conversation** | 针对某一 Agent 的对话容器 |
 | **Run** | Conversation 下的一次执行。默认输入为 **text**；在开启 AAP files 后，用户消息还可包含引用稳定 `fileId` 的 `input_file` 部分 |
-| **File** | 可选上传对象，含生命周期状态（`pending_upload` → … → `ready`）。GET 状态为事实源（v1 无 File SSE） |
+| **File** | 可选对象，含生命周期状态。入站上传：`pending_upload` → … → `ready`，以 `input_file` 引用。Agent 生成的出站文件以 READY 写入，`purpose=AGENT_OUTPUT`，以 `output_file` 引用。GET 状态为事实源（v1 无 File SSE） |
 | **A2UI** | 助手消息上可选的声明式 UI（`type: "a2ui"` content part）。Agent 级 `enableA2UI`，默认关闭。文本始终一等 |
+| **出站附件** | 助手消息上可选的 `output_file` content part（仅稳定 `fileId` + 展示元数据，永不含 URL）。默认关闭；三道门 + `toolCalling` — 见 [§9.3](#93-出站附件可选附加) |
 | **Protocol Event** | Run 流上的持久事实（`sequence` 为游标） |
 | **Interaction** | Run 因确认而等待 |
 | **External Subject** | 通过 Token Exchange 绑定的终端用户身份（可选） |
@@ -247,7 +249,7 @@ Content-Type: application/json
 }
 ```
 
-默认部署接受 **text** 消息内容。当 AAP files 已启用且文件为 `ready` 时，还可附加 `{ "type": "input_file", "fileId": "<uuid>" }` 部分（见本页「9.1 文件（可选）」）。未知内容类型 → `UNSUPPORTED_CONTENT_TYPE`。多模态模型装配额外依赖 **`RuntimeMultimodal`**（运营开关；默认关闭）。
+默认部署接受 **text** 消息内容。当 AAP files 已启用且文件为 `ready` 时，还可附加 `{ "type": "input_file", "fileId": "<uuid>" }` 部分（见本页「9.1 文件（可选）」）。`createRun` **拒绝** `output_file`（`UNSUPPORTED_CONTENT_TYPE`）；助手 `output_file` 仅在出站附件开启时出现在 `item.completed` 上（见 [§9.3](#93-出站附件可选附加)）。未知内容类型 → `UNSUPPORTED_CONTENT_TYPE`。多模态模型装配额外依赖 **`RuntimeMultimodal`**（运营开关；默认关闭）。
 
 ### 步骤 4 — 跟随 Run 事件（SSE）
 
@@ -345,13 +347,15 @@ Base：`/api/agent-access/v1`
 | `POST` | `/workspaces/{wid}/agents/{aid}/files/{fid}:download` | `file:read` | 签发不透明下载 token（路径 B） |
 | `GET` | `/files/downloads/{tokenId}` | 无（token） | 经不透明 token 拉流；**不要**带 AAP Bearer |
 
-**v1 不提供** `GET .../files`（列表）或 `DELETE .../files/{id}`。无 Console 产品文件 UI。
+**v1 不提供** `GET .../files`（列表）、`DELETE .../files/{id}` 或公开 ingest 端点。无 Console 文件管理 UI；Console 聊天预览走 session+message 代理（见 [§9.3](#93-出站附件可选附加)）。
 
 请求/响应 schema 以 [`openapi/agent-access-v1.yaml`](./openapi/agent-access-v1.yaml) 为准。
 
 ### 9.1 文件（可选）
 
 功能开关：`agentAccess.files.enabled` 默认 **false**。关闭时文件路由以不可见隐蔽（**404**）。端到端多模态模型输入还要求 **`RuntimeMultimodal=true`**；files 已开但 runtime multimodal 关闭时，带 `input_file` 的 `createRun` 以 **422 `FILE_RUNTIME_UNAVAILABLE`** 失败关闭（不创建 Run）。
+
+助手出站附件是**另一道**运行时旗（`runtimeOutboundAttachments`）加上 Agent 策略 — 见 [§9.3](#93-出站附件可选附加)。GET File 响应里这些行的 `purpose` 可为 `AGENT_OUTPUT`；`createFile` **不接受**该 purpose。
 
 #### 上传流程
 
@@ -398,7 +402,7 @@ Base：`/api/agent-access/v1`
 | **A** | `GET .../files/{fileId}/content` + Bearer + `file:read` | 小文件；简单客户端 |
 | **B** | `POST .../files/{fileId}:download` → 相对 `url` → `GET /files/downloads/{tokenId}`（**无** Bearer） | **`sizeBytes > 4 MiB` 时优先**；工具/处理器一律用不透明 token |
 
-Token id 为不透明 DB 行，**不是** JWT，也**不是** MinIO 凭证。对流式文件响应的反向代理应关闭响应缓冲，并将读超时设为 ≥ 120s（至多 maxBytes）。
+Token id 为不透明 DB 行，**不是** JWT，也**不是** MinIO 凭证。对流式文件响应的反向代理应关闭响应缓冲，并将读超时设为 ≥ 120s（至多 maxBytes）。内容流会设置 `X-Content-Type-Options: nosniff`；非 `image/*` 响应还会设置 `Content-Disposition: attachment`。
 
 #### 处理器 Webhook 契约（合作方 / DLP / 自定义 stage）
 
@@ -503,7 +507,7 @@ Workspace 作用域的 context policy **拒绝**任何 `aap` 字段；仅 Agent 
 
 当 `enableA2UI` 为 true 时，Agent Profile **广告**助手出站能力：
 
-1. `supportedContent` 的 message parts 含 `"a2ui"`（稳定顺序：`text` → 可选 `input_file` → 可选 `a2ui`）。
+1. `supportedContent` 的 message parts 含 `"a2ui"`（稳定顺序：`text` → 可选 `input_file` → 可选 `a2ui` → 可选 `output_file`）。
 2. 顶层 **`a2ui`** 对象（**仅**启用时出现；禁用时 **omit**，不发 `enabled: false`）：
 
 ```json
@@ -665,6 +669,150 @@ GET {base}/api/v1/a2ui/catalogs/standard/v1/surface.schema.json
 - catalog 协商：客户端还不能声明自己能渲染哪些 catalog
 - `standard/v1` 之外的 catalog，以及它未纳入的 Basic Catalog 组件
 
+### 9.3 出站附件（可选、附加）
+
+出站附件是**可选、附加（additive）**能力：**文本始终是一等公民**。开启后，Agent **可以**在助手消息上附带 0..N 个生成文件，形态为 `type: "output_file"` content part。它们按附件卡片渲染（与用户入站附件同构），不是 Markdown 链接，也不是 `artifact` Run Item。
+
+v1 面向模型的生产通道是**纯文本**：平台工具 `actweave.publish_attachment` 只接受 UTF-8 `text`（plain / CSV / Markdown / JSON），硬顶 **256 KiB**。**没有**模型 `base64` 字段，**没有**公开 ingest HTTP。字节落入现有 File 平面（`purpose=AGENT_OUTPUT`）；客户端用与入站相同的路径 A / 路径 B 下载。
+
+#### 启用（三道门 + toolCalling）
+
+下列条件必须**全部为真**，否则运行时**不注入**该工具（Run 仍以纯文本成功）：
+
+| 层 | 字段 | 默认 |
+| --- | --- | --- |
+| Files HTTP 门 | `agentAccess.files.enabled` **且** workspace/client 白名单（`allowAllWorkspaces` / `workspaceIds`，`allowAllClients` / `clientIds`） | **关** |
+| 运行时 | `agentAccess.files.runtimeOutboundAttachments`（环境变量 `ACTWEAVE_AAP_FILES_RUNTIME_OUTBOUND_ATTACHMENTS`） | **`false`** |
+| Agent 策略 | `context_policy.aap.enableOutboundAttachments`（policy v2；缺省 / null → false） | **`false`** |
+| 冻结 `toolCalling` | `function_calling` 或 `native_client_search`（v1 空串按现有 native-client-search 规则） | `none` **不注入** |
+
+Workspace 作用域的 context policy **拒绝**任何 `aap` 字段。进行中 Run **不**随 Agent 中途改配置而变（`context_policy_snapshot.aap.enableOutboundAttachments`）。
+
+| files.enabled | 白名单 ws+client | runtimeOutbound | policy | toolCalling 支持工具 | 行为 |
+| --- | --- | --- | --- | --- | --- |
+| 0 | * | * | * | * | File HTTP 404；不注入；已有 `fileId` 也拉不下 |
+| 1 | 0 | * | * | * | HTTP 404；不注入；ingest 拒绝（`FILE_FEATURE_DISABLED`） |
+| 1 | 1 | 0 | * | * | 入站文件可用；不注入 |
+| 1 | 1 | 1 | 0 | * | 不注入 |
+| 1 | 1 | 1 | 1 | 0（`none`） | **不注入、Run 成功**；纯文本 |
+| 1 | 1 | 1 | 1 | 1 | 完整出站 |
+
+**`toolCalling: none` + 非空 catalog 会打挂整轮**（`ErrAgentModelToolsUnsupported`）。纯聊天 Agent 即使打开 policy 也只是「工具不出现」，回复仍是纯文本。
+
+**没有公开 ingest HTTP。** `createFile` **不接受** `purpose=AGENT_OUTPUT`。
+
+#### Profile 广告（`GET .../profile`）
+
+当 files HTTP 门对该 workspace 打开 **且** `runtimeOutboundAttachments` **且** Agent policy 开启时：
+
+1. `supportedContent` 的 message parts 含 `"output_file"`（稳定顺序：`text` → 可选 `input_file` → 可选 `a2ui` → 可选 `output_file`）。
+2. 追加 `output_file_constraints` 对象：
+
+```json
+{
+  "type": "output_file_constraints",
+  "mediaTypes": ["text/plain", "text/csv", "text/markdown", "application/json"],
+  "maxBytes": 262144
+}
+```
+
+`createRun` 仍**拒绝**用户/入站 `output_file`（`UNSUPPORTED_CONTENT_TYPE`）。旧 SDK 忽略未知 part / 未知 constraints 对象。
+
+#### 线上形态（助手出站）
+
+`output_file` **仅**出现在 **`item.completed`**（与 A2UI 相同）。`item.delta` 永不带文件。
+
+```json
+{
+  "type": "message",
+  "role": "assistant",
+  "status": "completed",
+  "content": [
+    { "type": "text", "text": "对账单已生成。" },
+    {
+      "type": "output_file",
+      "fileId": "019f0000-0000-7000-8000-00000000f001",
+      "mediaType": "text/csv",
+      "filename": "invoice-2026-08.csv",
+      "sizeBytes": 4096
+    }
+  ]
+}
+```
+
+| 规则 | 说明 |
+| --- | --- |
+| **Text 一等** | schema 上始终有 `text` part。仅附件轮仍会落非空信封（空文本 + `output_file`） |
+| **0..N 个文件** | 服务端每轮最多 **8** 个（`MaxOutboundFilesPerTurn`）。每个 part 经 allowlist 重建：只保留 `type`、`fileId`、`mediaType`、`filename`、`sizeBytes` — **永不**含 URL / 字节 |
+| **仅本 Run** | 只挂本 Run 已成功 ingest 的 `fileId`（`aap_files.source_run_id`，`purpose=AGENT_OUTPUT`）。模型不能发明 id |
+| **入站** | `createRun` 拒绝 `output_file` |
+| **降级** | 终态预检失败则丢掉文件、保留 text/A2UI；Run 仍成功 |
+| **A2A** | `completeRunA2A` **不**挂出站附件 |
+
+#### 工具契约（`actweave.publish_attachment`）
+
+模型在 v1 的唯一发布通道：
+
+```json
+{
+  "filename": "invoice-2026-08.csv",
+  "mediaType": "text/csv",
+  "text": "月份,预约,成交\n..."
+}
+```
+
+| 规则 | 说明 |
+| --- | --- |
+| MIME | 仅 `text/plain` \| `text/csv` \| `text/markdown` \| `application/json` |
+| 大小 | UTF-8 `text` ≤ **256 KiB**（`MaxPublishTextBytes`）。JSON `maxLength` 按码点；服务端再查字节长度 |
+| 无 `base64` | `additionalProperties: false`；出现 `base64` 字段即拒绝 |
+| 结果 | `{ ok, fileId, filename, mediaType, sizeBytes, sha256 }` — **永不**返回 URL / `downloadUrl` / content |
+| 配额 | READY 工作区配额超限 → `FILE_SIZE_EXCEEDED`。本轮超过 8 个 → `FILE_OUTBOUND_TURN_LIMIT`。门未开 → `FILE_FEATURE_DISABLED` |
+| 病毒 / DLP | 出站 ingest **没有病毒扫描，也没有工作区 webhook DLP**。不要发明比入站更严的 `VirusScanner`（入站 virus 本身是永 clean 的 stub） |
+
+成功 ingest 写入 READY 的 `aap_files` 行，**`purpose=AGENT_OUTPUT`**，`source_run_id` 为本 Run。下载走现有 File HTTP（`file:read`）。
+
+#### 客户端规则
+
+1. **按今日方式流式文本。** 文件不出现在 `item.delta` 上。
+2. **`item.completed` 为权威。** 从 completed item 读取 `output_file`（SDK：`findOutputFileParts` / `isOutputFileContentPart`）。`joinTextParts` 忽略文件 part。
+3. **按 `fileId` hydrate。** 调用 `getFile` / `getFileContent`。**不要**把 `links.content` 当 `<img src>`。按 `fileId` 调和，避免后续快照（`run.completed`）重置已经 ready 的卡片。
+4. **下载**走路径 A 或 B（与入站相同）。非图片响应带 `Content-Disposition: attachment` 与 `X-Content-Type-Options: nosniff`。
+5. 不实现出站附件时可忽略未知 part；只要出现 `id:` 仍须推进 SSE 游标。
+
+#### Demos（`demos/aap-chat`）
+
+- **Mock：** story `export-csv`（**生成本月对账单**）在 `.msg-row.is-assistant .msg-attachments` 画出 CSV 卡片（及示意 PNG），无需后端（`npm run dev:mock`）。
+- **Live：** `item.completed` → 占位卡片 → 按 `fileId` `getFile` / `getFileContent` hydrate → `patchMessages`。需要 `file:read`。
+
+#### Console（运营面；不是 AAP）
+
+Console 聊天在消息 DTO 上投影 `attachments` 并渲染卡片。预览/下载走：
+
+```
+GET /api/v1/workspaces/{wid}/sessions/{sid}/messages/{mid}/files/{fileId}/content
+```
+
+授权：Console `ActionView` + session 属本 workspace + 调用者可读该 session + **`fileId` 出现在该消息持久化的 `output_file`（或用户 `input_file`）parts 上**。字节来自 SecureStore（`CreatorSystem`）。Console 用户**不得**以 AAP 服务主体身份打 File 路由。这**不是**文件管理 UI，也**不是**第三方 API。
+
+#### 回滚（运营）
+
+1. **先关 `runtimeOutboundAttachments`**（停写 / 停注入）。
+2. 停止新写 Agent 策略 `enableOutboundAttachments: true`。
+3. **不要**回滚能解析 `enableOutboundAttachments` 的快照解析器（旧二进制 `DisallowUnknownFields` 会打挂已经写出该键的在途 Run）。
+4. **不要**在仍有 `AGENT_OUTPUT` 行时执行 `000023` down（CHECK 回滚会拒绝）。
+5. 最后才关 `files.enabled`（否则历史下载也会 404）。
+
+`runtimeMultimodal` 正交。
+
+#### 非目标（v1）
+
+- 无模型 `base64`、无 25 MiB 工具参数、无 `sourceFileId` 转发
+- 无出站病毒扫描 / webhook DLP
+- 无公开 ingest HTTP；`createFile` 不能设 `AGENT_OUTPUT`
+- 图像 / PDF 生成不是 v1 工具 enum（ingest API 可接受它们，留给未来同进程调用方）
+- A2A inbound complete 不挂出站附件
+
 ---
 
 ## 10. SSE 事件流
@@ -798,6 +946,7 @@ data: {"specVersion":"1.0","type":"stream.error","error":{"code":"TOKEN_EXPIRED"
 | `FILE_RUNTIME_UNAVAILABLE` | 422 | 否 | `input_file` 需要 `RuntimeMultimodal`；不创建 Run |
 | `FILE_PROCESSOR_CALLBACK_LATE` | 409 | 否 | Job 已 TIMED_OUT；不改状态 |
 | `FILE_PENDING_LIMIT` | 429 | 是 | 退避；并发 PENDING_UPLOAD 上限 |
+| `FILE_OUTBOUND_TURN_LIMIT` | 工具结果 | 否 | 本轮出站文件超过 8 个 |
 | `MODEL_CONTENT_UNSUPPORTED` | run failed | 否 | 模型供应商不支持该媒体 |
 
 OAuth Token 端点错误遵循 RFC 6749 的 `error` / `error_description`，不得回显密钥。
@@ -936,7 +1085,22 @@ SDK 保证：
 - 文件 PUT **仅**使用 create 返回的 headers（对象存储 PUT 不带 AAP Bearer）  
 - `getFileContent` 在 `sizeBytes > 4MiB` 时优先不透明 `:download`  
 
-另有导出：`StaticTokenProvider`、`RunReducer`、`AAPSESession`、文件类型 / `SDK_PREFER_DOWNLOAD_TOKEN_BYTES`，以及 A2UI 辅助 `joinTextParts` / `findA2UIPart`。详见 `sdk/typescript/README.md` 与[§9.2 A2UI](#92-a2ui可选附加)。
+另有导出：`StaticTokenProvider`、`RunReducer`、`AAPSESession`、文件类型 / `SDK_PREFER_DOWNLOAD_TOKEN_BYTES`，A2UI 辅助 `joinTextParts` / `findA2UIPart`，以及出站辅助 `findOutputFileParts` / `isOutputFileContentPart`。详见 `sdk/typescript/README.md`、[§9.2 A2UI](#92-a2ui可选附加) 与[§9.3 出站附件](#93-出站附件可选附加)。
+
+### 14.2 出站文件（当三道门 + policy + toolCalling 已开）
+
+```ts
+import { findOutputFileParts, joinTextParts, type ProtocolItem } from "@actweave/agent-client";
+
+function readAssistantFiles(item: ProtocolItem) {
+  const text = joinTextParts(item); // 忽略 output_file / a2ui / 未知 part
+  const files = findOutputFileParts(item); // 0..N；纯文本时为空
+  // 按 fileId 用 getFile / getFileContent hydrate。不要把 links.content 当 src。
+  return { text, files };
+}
+```
+
+`CreateRun` 输入类型**不含** `output_file`。下载与入站文件共用 `getFile` / `getFileContent`（`file:read`）。
 
 ---
 
@@ -978,6 +1142,7 @@ SDK 保证：
 - [ ] 若使用文件：PUT 始终发送 create 返回的 `Content-Length` / `Content-Type`；长期日志不保存 live 下载 URL  
 - [ ] 若实现处理器：校验 `X-ActWeave-Signature`、仅 https 回调 URL 策略，并处理晚到回调 `FILE_PROCESSOR_CALLBACK_LATE`  
 - [ ] 若使用 A2UI：Agent 已设 `context_policy.aap.enableA2UI`；客户端以 `item.completed` 为权威；Profile `a2ui.actions: false` → 仅展示 / 提交 no-op  
+- [ ] 若使用出站附件：运营已启用 files HTTP（workspace/client 白名单）**且** `runtimeOutboundAttachments`；Agent `enableOutboundAttachments`；冻结 `toolCalling` 为 `function_calling` 或 `native_client_search`（`none` 不注入）；Grant 含 `file:read`；客户端以 `item.completed` 的 `output_file` 为权威并按 `fileId` hydrate  
 
 ---
 

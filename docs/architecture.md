@@ -68,7 +68,7 @@ The Agent Runtime freezes/uses the relevant Agent, model, and capability configu
 
 ## Configuration boundary and limitations
 
-- AAP file routes exist, but `agentAccess.files.enabled` is off by default. Model multimodal assembly also requires `runtimeMultimodal`. See the [file-upload runbook](./runbooks/aap-file-upload.md).
+- AAP file routes exist, but `agentAccess.files.enabled` is off by default. Model multimodal assembly also requires `runtimeMultimodal`. Assistant outbound attachments (`output_file`) additionally require the files allowlist, `runtimeOutboundAttachments`, Agent policy `enableOutboundAttachments`, and a `toolCalling` mode that supports tools (`function_calling` / `native_client_search`). See the [file-upload runbook](./runbooks/aap-file-upload.md).
 - LLM context compaction has a separate gate and is disabled by default. See the [context-compaction runbook](./runbooks/agent-context-llm-compaction.md).
 - Tool disclosure: `client_bounded` is the only native production mode. `platform_bounded` and `carry_all` are additional Agentic modes, gated by `runtime.toolDisclosure` (omitting the key stays disabled; the checked-in config enables it). Readiness accepts v1 or v2 three-tier capabilities.
 - Compose is the local full-stack startup path, not an HA, backup, TLS, edge-proxy, or production-operations design. See [deployment](./deployment.md).

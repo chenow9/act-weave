@@ -28,8 +28,9 @@ Product overview and local run: root [`README.md`](../README.md) / [`README.zh-C
 5. Decide **Interactions** (human / policy confirmations)
 6. (Optional, **off by default**) Upload **Files**, wait until ready, and reference them from Run input as `input_file` parts
 7. (Optional, **off by default**) Receive additive **A2UI** surfaces on assistant messages when the Agent has `enableA2UI` (display-only in MVP)
+8. (Optional, **off by default**) Receive assistant **outbound attachments** (`output_file`) when the files HTTP gate (including workspace/client allowlist), `runtimeOutboundAttachments`, and Agent `enableOutboundAttachments` are on, and the frozen `toolCalling` supports tools. v1 publish is text-only (`actweave.publish_attachment`); there is no public ingest HTTP
 
-AAP is **not** the ActWeave management console API (`/api/v1`). Console user session JWTs are **rejected** on AAP routes. There is **no** Console product UI for AAP files in v1.
+AAP is **not** the ActWeave management console API (`/api/v1`). Console user session JWTs are **rejected** on AAP routes. Console chat can render files referenced on a session message through a session+message proxy (see [§9.3](#93-outbound-attachments-optional-additive)); that is **not** a file-management UI and **not** an AAP route.
 
 | Surface | Base path | Auth | Who uses it |
 | --- | --- | --- | --- |
@@ -65,8 +66,9 @@ Store the Client Secret / private key in **your** secret manager. Secrets never 
 | **Access Token** | Short-lived JWT (`EdDSA` / `at+jwt`). Binds **one** Workspace, **one** Agent, Client, principal, optional External Subject |
 | **Conversation** | Durable dialogue container for one Agent |
 | **Run** | One execution under a Conversation. Default input is **text**; when AAP files is enabled, user messages may also include `input_file` parts that reference a stable `fileId` |
-| **File** | Optional uploaded blob with lifecycle status (`pending_upload` → … → `ready`). GET status is the source of truth (no File SSE in v1) |
+| **File** | Optional blob with lifecycle status. Inbound upload: `pending_upload` → … → `ready`, referenced as `input_file`. Agent-generated outbound files are written READY with `purpose=AGENT_OUTPUT` and referenced as `output_file`. GET status is the source of truth (no File SSE in v1) |
 | **A2UI** | Optional declarative UI surface on assistant messages (`type: "a2ui"` content part). Agent-level `enableA2UI`; default off. Text remains first-class |
+| **Outbound attachment** | Optional assistant `output_file` content part (stable `fileId` + display metadata, never a URL). Default off; three gates + `toolCalling` — see [§9.3](#93-outbound-attachments-optional-additive) |
 | **Protocol Event** | Durable fact on the Run stream (`sequence` is the cursor) |
 | **Interaction** | Run paused for approve / decline / cancel |
 | **External Subject** | End-user identity from your IdP via Token Exchange (optional) |
@@ -252,7 +254,7 @@ Content-Type: application/json
 }
 ```
 
-Default deployments accept **text** message content. When AAP files is enabled and the file is `ready`, you may also attach `{ "type": "input_file", "fileId": "<uuid>" }` parts (see [§9.1](#91-files-optional)). Unknown content types → `UNSUPPORTED_CONTENT_TYPE`. Multimodal model assembly additionally requires **`RuntimeMultimodal`** (operator flag; default off).
+Default deployments accept **text** message content. When AAP files is enabled and the file is `ready`, you may also attach `{ "type": "input_file", "fileId": "<uuid>" }` parts (see [§9.1](#91-files-optional)). `createRun` **rejects** `output_file` (`UNSUPPORTED_CONTENT_TYPE`); assistant `output_file` parts arrive on `item.completed` only when outbound attachments are enabled (see [§9.3](#93-outbound-attachments-optional-additive)). Unknown content types → `UNSUPPORTED_CONTENT_TYPE`. Multimodal model assembly additionally requires **`RuntimeMultimodal`** (operator flag; default off).
 
 ### Step 4 — Follow Run events (SSE)
 
@@ -350,13 +352,15 @@ Auth: `Authorization: Bearer <access_token>` except Token Endpoint and JWKS.
 | `POST` | `/workspaces/{wid}/agents/{aid}/files/{fid}:download` | `file:read` | Mint opaque download token (path B) |
 | `GET` | `/files/downloads/{tokenId}` | none (token) | Stream via opaque token; **no** AAP Bearer |
 
-**v1 does not provide** `GET .../files` (list) or `DELETE .../files/{id}`. There is no Console product UI for files.
+**v1 does not provide** `GET .../files` (list), `DELETE .../files/{id}`, or a public ingest endpoint. There is no Console file-management UI; Console chat preview uses a session+message proxy (see [§9.3](#93-outbound-attachments-optional-additive)).
 
 Authoritative request/response schemas: [`openapi/agent-access-v1.yaml`](./openapi/agent-access-v1.yaml).
 
 ### 9.1 Files (optional)
 
 Feature gate: `agentAccess.files.enabled` defaults to **false**. When disabled, file routes conceal as not visible (**404**). End-to-end multimodal model input additionally requires **`RuntimeMultimodal=true`**; with files enabled but runtime multimodal off, `createRun` with `input_file` fails closed with **422 `FILE_RUNTIME_UNAVAILABLE`** (no Run is created).
+
+Assistant outbound attachments are a **separate** runtime flag (`runtimeOutboundAttachments`) plus Agent policy — see [§9.3](#93-outbound-attachments-optional-additive). GET File responses may show `purpose=AGENT_OUTPUT` for those rows; `createFile` does **not** accept that purpose.
 
 #### Upload flow
 
@@ -403,7 +407,7 @@ Wire protocol and persisted items carry only stable **`fileId`** — never live 
 | **A** | `GET .../files/{fileId}/content` + Bearer + `file:read` | Small bodies; simple clients |
 | **B** | `POST .../files/{fileId}:download` → relative `url` → `GET /files/downloads/{tokenId}` (**no** Bearer) | **Preferred when `sizeBytes > 4 MiB`**; tools/processors always use opaque tokens |
 
-Token ids are opaque DB rows, **not** JWTs and **not** MinIO credentials. Reverse proxies streaming file bodies should disable response buffering and allow read timeouts ≥ 120s for up to maxBytes.
+Token ids are opaque DB rows, **not** JWTs and **not** MinIO credentials. Reverse proxies streaming file bodies should disable response buffering and allow read timeouts ≥ 120s for up to maxBytes. Content streams set `X-Content-Type-Options: nosniff`; non-`image/*` responses also set `Content-Disposition: attachment`.
 
 #### Processor webhook contract (partner / DLP / custom stages)
 
@@ -508,7 +512,7 @@ Workspace-scoped context policy **rejects** any `aap` fields. Only Agent-level p
 
 When `enableA2UI` is true, the Agent Profile **advertises** assistant outbound capability:
 
-1. `supportedContent` message parts include `"a2ui"` (stable order: `text` → optional `input_file` → optional `a2ui`).
+1. `supportedContent` message parts include `"a2ui"` (stable order: `text` → optional `input_file` → optional `a2ui` → optional `output_file`).
 2. Top-level **`a2ui`** object (present **only** when enabled; **omitted** when disabled — not `enabled: false`):
 
 ```json
@@ -677,6 +681,150 @@ documents siblings if you mirror them.
 - Catalog negotiation: a client cannot yet declare which catalogs it renders
 - Catalogs beyond `standard/v1`, and the Basic Catalog components it omits
 
+### 9.3 Outbound attachments (optional, additive)
+
+Outbound attachments are an **optional, additive** capability: **text remains first-class**. When enabled, the Agent **may** attach 0..N generated files to the assistant message as `type: "output_file"` content parts. They render as attachment cards (same shape as inbound user files), not as Markdown links and not as `artifact` Run Items.
+
+v1 model production is **text-only**: the platform tool `actweave.publish_attachment` accepts UTF-8 `text` (plain / CSV / Markdown / JSON) up to **256 KiB**. There is **no** model `base64` field and **no** public ingest HTTP. Bytes land in the existing File plane (`purpose=AGENT_OUTPUT`); clients download with the same path A / path B used for inbound files.
+
+#### Enable (three gates + toolCalling)
+
+All of the following must be true or the runtime **does not inject** the tool (the Run still succeeds as plain text):
+
+| Layer | Field | Default |
+| --- | --- | --- |
+| Files HTTP gate | `agentAccess.files.enabled` **and** workspace/client allowlist (`allowAllWorkspaces` / `workspaceIds`, `allowAllClients` / `clientIds`) | **off** |
+| Runtime | `agentAccess.files.runtimeOutboundAttachments` (env `ACTWEAVE_AAP_FILES_RUNTIME_OUTBOUND_ATTACHMENTS`) | **`false`** |
+| Agent policy | `context_policy.aap.enableOutboundAttachments` (policy v2; omit / null → false) | **`false`** |
+| Frozen `toolCalling` | `function_calling` or `native_client_search` (v1 empty string follows the existing native-client-search rule) | `none` **does not inject** |
+
+Workspace-scoped context policy **rejects** `aap` fields. Mid-run Agent edits do **not** change an in-flight Run (`context_policy_snapshot.aap.enableOutboundAttachments`).
+
+| files.enabled | allowlist ws+client | runtimeOutbound | policy | toolCalling supports tools | Behavior |
+| --- | --- | --- | --- | --- | --- |
+| 0 | * | * | * | * | File HTTP 404; no inject; existing `fileId` also cannot be fetched |
+| 1 | 0 | * | * | * | HTTP 404; no inject; ingest refuses (`FILE_FEATURE_DISABLED`) |
+| 1 | 1 | 0 | * | * | Inbound files available; no inject |
+| 1 | 1 | 1 | 0 | * | No inject |
+| 1 | 1 | 1 | 1 | 0 (`none`) | **No inject, Run succeeds**; plain text |
+| 1 | 1 | 1 | 1 | 1 | Full outbound |
+
+**`toolCalling: none` + a non-empty catalog fails the turn** (`ErrAgentModelToolsUnsupported`). Pure-chat Agents that flip the policy still get text-only replies — the tool is simply absent.
+
+There is **no public ingest HTTP**. `createFile` **does not** accept `purpose=AGENT_OUTPUT`.
+
+#### Profile advertisement (`GET .../profile`)
+
+When the files HTTP gate is open for the workspace **and** `runtimeOutboundAttachments` **and** Agent policy enable:
+
+1. `supportedContent` message parts include `"output_file"` (stable order: `text` → optional `input_file` → optional `a2ui` → optional `output_file`).
+2. An `output_file_constraints` object is appended:
+
+```json
+{
+  "type": "output_file_constraints",
+  "mediaTypes": ["text/plain", "text/csv", "text/markdown", "application/json"],
+  "maxBytes": 262144
+}
+```
+
+`createRun` still **rejects** user/input `output_file` (`UNSUPPORTED_CONTENT_TYPE`). Old SDKs ignore unknown parts / unknown constraint objects.
+
+#### Wire shape (assistant outbound)
+
+`output_file` appears only on **`item.completed`** (same as A2UI). `item.delta` never carries files.
+
+```json
+{
+  "type": "message",
+  "role": "assistant",
+  "status": "completed",
+  "content": [
+    { "type": "text", "text": "Statement generated." },
+    {
+      "type": "output_file",
+      "fileId": "019f0000-0000-7000-8000-00000000f001",
+      "mediaType": "text/csv",
+      "filename": "invoice-2026-08.csv",
+      "sizeBytes": 4096
+    }
+  ]
+}
+```
+
+| Rule | Detail |
+| --- | --- |
+| **Text first-class** | Schema always has a `text` part. Attachment-only turns still persist a non-empty envelope (empty text + `output_file`) |
+| **0..N files** | Server cap **8** files per turn (`MaxOutboundFilesPerTurn`). Each part is allowlist-rebuilt: `type`, `fileId`, `mediaType`, `filename`, `sizeBytes` only — **never** URL / bytes |
+| **This-run only** | Only `fileId`s successfully ingested for **this Run** (`aap_files.source_run_id`, `purpose=AGENT_OUTPUT`) are attached. The model cannot invent ids |
+| **Inbound** | `createRun` rejects `output_file` |
+| **Degrade** | Terminal preflight failure drops the files and keeps text/A2UI; the Run still succeeds |
+| **A2A** | `completeRunA2A` does **not** attach outbound files |
+
+#### Tool contract (`actweave.publish_attachment`)
+
+The model’s only v1 publish channel:
+
+```json
+{
+  "filename": "invoice-2026-08.csv",
+  "mediaType": "text/csv",
+  "text": "month,booked,closed\n..."
+}
+```
+
+| Rule | Detail |
+| --- | --- |
+| MIME | `text/plain` \| `text/csv` \| `text/markdown` \| `application/json` only |
+| Size | UTF-8 `text` ≤ **256 KiB** (`MaxPublishTextBytes`). JSON `maxLength` is code points; the server also checks byte length |
+| No `base64` | `additionalProperties: false`; a `base64` field is rejected |
+| Result | `{ ok, fileId, filename, mediaType, sizeBytes, sha256 }` — **never** URL / `downloadUrl` / content |
+| Quota | READY workspace quota overflow → `FILE_SIZE_EXCEEDED`. More than 8 files this turn → `FILE_OUTBOUND_TURN_LIMIT`. Gate closed → `FILE_FEATURE_DISABLED` |
+| Virus / DLP | **No virus scanner and no workspace webhook DLP** on outbound ingest. Do not invent a stricter `VirusScanner` than inbound (inbound virus is a stub that always reports clean) |
+
+Successful ingest writes a READY `aap_files` row with **`purpose=AGENT_OUTPUT`** and `source_run_id` = this Run. Download uses existing File HTTP (`file:read`).
+
+#### Client rules
+
+1. **Stream text as today.** Files do not appear on `item.delta`.
+2. **`item.completed` is authoritative.** Read `output_file` parts from the completed item (SDK: `findOutputFileParts` / `isOutputFileContentPart`). `joinTextParts` ignores file parts.
+3. **Hydrate by `fileId`.** Call `getFile` / `getFileContent`. Do **not** use `links.content` as an `<img src>`. Reconcile by `fileId` so later snapshots (`run.completed`) do not reset already-ready cards.
+4. **Download** with path A or B (same as inbound). Non-image responses include `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`.
+5. Ignore unknown parts if you do not implement outbound files; still advance the SSE cursor.
+
+#### Demos (`demos/aap-chat`)
+
+- **Mock:** story `export-csv` (**生成本月对账单**) paints a CSV card (and an illustrative PNG) in `.msg-row.is-assistant .msg-attachments` without a backend (`npm run dev:mock`).
+- **Live:** `item.completed` → placeholder cards → `getFile` / `getFileContent` hydrate by `fileId` → `patchMessages`. Needs `file:read`.
+
+#### Console (operators; not AAP)
+
+Console chat projects `attachments` on the message DTO and renders cards. Preview/download uses:
+
+```
+GET /api/v1/workspaces/{wid}/sessions/{sid}/messages/{mid}/files/{fileId}/content
+```
+
+Authorization: Console `ActionView` + the session belongs to the workspace + the caller can read the session + **`fileId` appears on that message’s durable `output_file` (or user `input_file`) parts**. Bytes come from SecureStore (`CreatorSystem`). Console users **must not** call AAP File routes as a service principal. This is **not** a file-management UI and **not** a third-party API.
+
+#### Rollback (operators)
+
+1. Turn **`runtimeOutboundAttachments` off first** (stops new writes / injection).
+2. Stop new Agent-policy `enableOutboundAttachments: true`.
+3. **Do not** roll back the snapshot parser that understands `enableOutboundAttachments` (old binaries `DisallowUnknownFields` would fail in-flight Runs that already wrote the key).
+4. **Do not** run the `000023` down migration while `AGENT_OUTPUT` rows exist (the CHECK rollback refuses).
+5. Turn `files.enabled` off last (otherwise historical downloads also 404).
+
+`runtimeMultimodal` is orthogonal.
+
+#### Non-goals (v1)
+
+- No model `base64`, no 25 MiB tool arguments, no `sourceFileId` forwarding
+- No outbound virus scanner / webhook DLP
+- No public ingest HTTP; `createFile` cannot set `AGENT_OUTPUT`
+- Image / PDF generation is not a v1 tool enum (ingest API may accept them for future same-process callers)
+- A2A inbound complete does not attach outbound files
+
 ---
 
 ## 10. SSE event stream
@@ -810,6 +958,7 @@ When a Run needs confirmation:
 | `FILE_RUNTIME_UNAVAILABLE` | 422 | no | `input_file` requires `RuntimeMultimodal`; no Run created |
 | `FILE_PROCESSOR_CALLBACK_LATE` | 409 | no | Job already TIMED_OUT; leave state |
 | `FILE_PENDING_LIMIT` | 429 | yes | Back off; concurrent PENDING_UPLOAD cap |
+| `FILE_OUTBOUND_TURN_LIMIT` | tool result | no | More than 8 outbound files this turn |
 | `MODEL_CONTENT_UNSUPPORTED` | run failed | no | Provider cannot consume media |
 
 OAuth Token Endpoint errors use RFC 6749-style `error` / `error_description` and **must not** echo secrets.
@@ -948,7 +1097,22 @@ SDK guarantees:
 - File PUT uses **only** create-returned headers (no AAP Bearer on object storage)
 - `getFileContent` prefers opaque `:download` when `sizeBytes > 4MiB`
 
-Also exported: `StaticTokenProvider`, `RunReducer`, `AAPSESession`, file types / `SDK_PREFER_DOWNLOAD_TOKEN_BYTES`, and A2UI helpers `joinTextParts` / `findA2UIPart`. See `sdk/typescript/README.md` and [§9.2 A2UI](#92-a2ui-optional-additive).
+Also exported: `StaticTokenProvider`, `RunReducer`, `AAPSESession`, file types / `SDK_PREFER_DOWNLOAD_TOKEN_BYTES`, A2UI helpers `joinTextParts` / `findA2UIPart`, and outbound helpers `findOutputFileParts` / `isOutputFileContentPart`. See `sdk/typescript/README.md`, [§9.2 A2UI](#92-a2ui-optional-additive), and [§9.3 outbound attachments](#93-outbound-attachments-optional-additive).
+
+### 14.2 Outbound files (when gates + policy + toolCalling are on)
+
+```ts
+import { findOutputFileParts, joinTextParts, type ProtocolItem } from "@actweave/agent-client";
+
+function readAssistantFiles(item: ProtocolItem) {
+  const text = joinTextParts(item); // ignores output_file / a2ui / unknown
+  const files = findOutputFileParts(item); // 0..N; empty when text-only
+  // Hydrate with getFile / getFileContent by fileId. Never treat links.content as src.
+  return { text, files };
+}
+```
+
+`CreateRun` input types do **not** include `output_file`. Download uses the same `getFile` / `getFileContent` helpers as inbound files (`file:read`).
 
 ---
 
@@ -989,7 +1153,8 @@ Unauthorized `Origin` is not reflected. Prefer moving secrets server-side and di
 - [ ] If using files: operator enabled `agentAccess.files` **and** (for model vision/PDF) `RuntimeMultimodal`; Grant includes `file:read` / `file:write`  
 - [ ] If using files: PUT always sends create-returned `Content-Length` / `Content-Type`; never store live download URLs in your long-term logs  
 - [ ] If you implement a processor: verify `X-ActWeave-Signature`, https-only callback URL policy, and late-callback `FILE_PROCESSOR_CALLBACK_LATE` handling  
-- [ ] If using A2UI: Agent has `context_policy.aap.enableA2UI`; client treats `item.completed` as authoritative; Profile `a2ui.actions: false` → display-only / no-op submits  
+- [ ] If using A2UI: Agent has `context_policy.aap.enableA2UI`; client treats `item.completed` as authoritative; Profile `a2ui.actions: false` → display-only / no-op submits
+- [ ] If using outbound attachments: operator enabled files HTTP (workspace/client allowlist) **and** `runtimeOutboundAttachments`; Agent `enableOutboundAttachments`; frozen `toolCalling` is `function_calling` or `native_client_search` (`none` does not inject); Grant includes `file:read`; client treats `item.completed` `output_file` as authoritative and hydrates by `fileId`  
 
 ---
 

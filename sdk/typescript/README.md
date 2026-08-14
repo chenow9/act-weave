@@ -16,6 +16,7 @@ Requires Node.js 20+.
 - Run command client (`createRun`, interaction decisions, cancel)
 - File upload helpers (`createFile` → `putFileUpload` with signed Content-Length/Type → `completeFile` → `waitUntilReady` → `createRun` with `input_file`)
 - `getFileContent` (Bearer for small files; prefers opaque `:download` when `sizeBytes > 4MiB`)
+- Outbound file helpers (`findOutputFileParts` / `isOutputFileContentPart`) for assistant `output_file` parts
 - SSE session with automatic reconnect and `Last-Event-ID` resume
 - Protocol event reducer for conversation/run projections
 - Generated protocol enums and envelope types from the Schema Registry
@@ -133,6 +134,35 @@ function readAssistant(item: ProtocolItem) {
 | Unknown components | Degrade per component: render a placeholder for the one you do not know, keep drawing its siblings. Never fail the message. |
 | Limits | `A2UI_LIMITS` mirrors the server's structural caps (components, depth, series, points). Respect them and a foreign surface cannot drive unbounded work. |
 | Official renderers | The surface is the A2UI `createSurface` payload, so it can be fed to a conforming renderer unchanged. |
+
+## Outbound files (additive)
+
+When files HTTP (including workspace/client allowlist), `runtimeOutboundAttachments`,
+and Agent `enableOutboundAttachments` are on, **and** frozen `toolCalling` is
+`function_calling` or `native_client_search`, assistant messages may carry
+`type: "output_file"` parts **in addition to** `type: "text"`.
+`toolCalling: none` does **not** inject the publish tool.
+
+| Concern | Contract |
+| --- | --- |
+| Streaming | Files appear on `item.completed` only. `item.delta` never carries `output_file`. |
+| Wire | Each part is `fileId` + display metadata (`mediaType` / `filename` / `sizeBytes`). Never a live URL. |
+| Helpers | `findOutputFileParts(item)` / `isOutputFileContentPart(part)`. `joinTextParts` ignores file parts. |
+| Create | `createRun` input does **not** accept `output_file`. |
+| Download | Same `getFile` / `getFileContent` as inbound (`file:read`). Hydrate by `fileId`; do not use `links.content` as `<img src>`. |
+| Publish | v1 model tool `actweave.publish_attachment` is text-only (plain/csv/markdown/json, ≤256 KiB). No `base64`. |
+
+```ts
+import { findOutputFileParts, joinTextParts, type ProtocolItem } from "@actweave/agent-client";
+
+function renderAssistant(item: ProtocolItem) {
+  const text = joinTextParts(item); // ignores output_file / a2ui / unknown
+  const files = findOutputFileParts(item); // 0..N
+  return { text, files };
+}
+```
+
+See [AAP integration guide §9.3](../../docs/aap-integration-guide.md#93-outbound-attachments-optional-additive).
 
 ## Development
 

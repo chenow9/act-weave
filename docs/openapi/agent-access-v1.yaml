@@ -604,6 +604,7 @@ components:
         purpose:
           type: string
           enum: [GENERAL, VISION, DOCUMENT, TOOL_INPUT]
+          description: Inbound create only. AGENT_OUTPUT is server-assigned and rejected here.
     File:
       type: object
       additionalProperties: false
@@ -623,7 +624,12 @@ components:
         detectedMediaType: {type: string}
         sizeBytes: {type: integer, format: int64}
         sha256: {type: string}
-        purpose: {type: string}
+        purpose:
+          type: string
+          enum: [GENERAL, VISION, DOCUMENT, TOOL_INPUT, AGENT_OUTPUT]
+          description: >-
+            AGENT_OUTPUT is assigned by the server when an agent publishes a
+            generated file. createFile does not accept AGENT_OUTPUT.
         error: {$ref: '#/components/schemas/ErrorValue'}
         processing:
           type: object
