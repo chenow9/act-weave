@@ -3,12 +3,17 @@ import {
   MemoryTokenProvider,
   findA2UIPart,
   findOutputFileParts,
+  isInputFileContentPart,
   joinTextParts,
   type AccessTokenMaterial,
   type AAPFile,
+  type APIRun,
+  type Conversation,
+  type InputFileContentPart,
   type OutputFileContentPart,
   type ProtocolItem,
   type ReducedRunSnapshot,
+  type RunResponse,
 } from "@actweave/agent-client";
 
 export interface OutboundStatus {
@@ -249,6 +254,62 @@ export function extractOutputFileParts(items: ProtocolItem[]): OutputFileContent
 }
 
 /**
+ * User `input_file` parts from a run snapshot: user messages only,
+ * first-seen `fileId` order, duplicates dropped.
+ */
+export function extractInputFileParts(items: ProtocolItem[]): InputFileContentPart[] {
+  const seen = new Set<string>();
+  const out: InputFileContentPart[] = [];
+  for (const item of items) {
+    for (const part of extractInputFilePartsFromItem(item)) {
+      if (seen.has(part.fileId)) continue;
+      seen.add(part.fileId);
+      out.push(part);
+    }
+  }
+  return out;
+}
+
+export function extractInputFilePartsFromItem(item: ProtocolItem): InputFileContentPart[] {
+  if (itemRole(item) !== "user") return [];
+  const rawContent = (item as { content?: unknown }).content;
+  const content = Array.isArray(rawContent) ? rawContent : [];
+  const seen = new Set<string>();
+  const out: InputFileContentPart[] = [];
+  for (const part of content) {
+    if (!isInputFileContentPart(part)) continue;
+    const fileId = String(part.fileId || "").trim();
+    if (!fileId || seen.has(fileId)) continue;
+    seen.add(fileId);
+    out.push(part);
+  }
+  return out;
+}
+
+/** Map a wire file part onto the hydrate/reconcile shape (filename/size optional on input_file). */
+export function filePartAsOutputRef(part: {
+  fileId: string;
+  filename?: unknown;
+  mediaType?: unknown;
+  sizeBytes?: unknown;
+}): OutputFileContentPart {
+  const filename = typeof part.filename === "string" && part.filename.trim() ? part.filename.trim() : undefined;
+  const mediaType =
+    typeof part.mediaType === "string" && part.mediaType.trim() ? part.mediaType.trim() : undefined;
+  const sizeBytes =
+    typeof part.sizeBytes === "number" && Number.isFinite(part.sizeBytes) && part.sizeBytes >= 0
+      ? part.sizeBytes
+      : undefined;
+  return {
+    type: "output_file",
+    fileId: String(part.fileId || "").trim(),
+    ...(filename ? { filename } : {}),
+    ...(mediaType ? { mediaType } : {}),
+    ...(sizeBytes !== undefined ? { sizeBytes } : {}),
+  };
+}
+
+/**
  * Reconcile bubble cards by fileId. Never reset ready/error/uploading rows
  * (or their previewUrl) just because another SSE snapshot arrived.
  */
@@ -389,6 +450,8 @@ export async function* followRunLive(options: {
   accessToken?: string;
   expiresIn?: number;
   signal?: AbortSignal;
+  /** SSE catch-up cursor; 0 replays the full durable event log. */
+  initialLastSequence?: number;
 }): AsyncGenerator<ReducedRunSnapshot> {
   const seed =
     options.accessToken && options.accessToken.trim()
@@ -407,6 +470,9 @@ export async function* followRunLive(options: {
     signal: options.signal,
     // Default true: on 401 / TOKEN_EXPIRED, MemoryTokenProvider re-mints via BFF.
     refreshOnAuthFailure: true,
+    ...(typeof options.initialLastSequence === "number"
+      ? { initialLastSequence: options.initialLastSequence }
+      : {}),
   })) {
     yield snapshot;
     const status = snapshot.run?.status ? String(snapshot.run.status) : "";
@@ -511,4 +577,291 @@ export function extractToolSummary(item: ProtocolItem): {
     detail = String(args ?? output ?? "");
   }
   return { name, status, detail };
+}
+
+// --- Conversation replay (PR-4b): sessionStorage + getConversation/getRun ---
+
+/** Namespaced by workspace+agent so a BFF target switch does not replay the wrong conversation. */
+export function conversationStorageKey(workspaceId: string, agentId: string): string {
+  return `aap-chat:${workspaceId}:${agentId}:conversationId`;
+}
+
+function sessionStore(): Pick<Storage, "getItem" | "setItem" | "removeItem"> | null {
+  try {
+    if (typeof sessionStorage === "undefined") return null;
+    return sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+export function readStoredConversationId(workspaceId: string, agentId: string): string {
+  const ws = workspaceId.trim();
+  const agent = agentId.trim();
+  if (!ws || !agent) return "";
+  try {
+    return String(sessionStore()?.getItem(conversationStorageKey(ws, agent)) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+export function writeStoredConversationId(
+  workspaceId: string,
+  agentId: string,
+  conversationId: string,
+): void {
+  const ws = workspaceId.trim();
+  const agent = agentId.trim();
+  if (!ws || !agent) return;
+  const key = conversationStorageKey(ws, agent);
+  const id = conversationId.trim();
+  try {
+    const store = sessionStore();
+    if (!store) return;
+    if (!id) store.removeItem(key);
+    else store.setItem(key, id);
+  } catch {
+    // Private mode / blocked storage must not break Live send.
+  }
+}
+
+export function clearStoredConversationId(workspaceId: string, agentId: string): void {
+  writeStoredConversationId(workspaceId, agentId, "");
+}
+
+export function httpStatusOf(err: unknown): number {
+  if (!err || typeof err !== "object") return 0;
+  const status = (err as { status?: unknown }).status;
+  return typeof status === "number" && Number.isFinite(status) ? status : 0;
+}
+
+/** 4xx that means the stored id is gone or invalid — drop the key so boot does not retry. */
+export function shouldDropStoredConversation(err: unknown): boolean {
+  const status = httpStatusOf(err);
+  return status === 400 || status === 404 || status === 422;
+}
+
+export function unwrapRunResponse(payload: unknown): APIRun | null {
+  if (!payload || typeof payload !== "object") return null;
+  const rec = payload as Record<string, unknown>;
+  if (rec.run && typeof rec.run === "object") {
+    const inner = rec.run as Record<string, unknown>;
+    if (typeof inner.id === "string") return rec.run as APIRun;
+  }
+  if (typeof rec.id === "string" && Array.isArray(rec.items)) {
+    return payload as APIRun;
+  }
+  return null;
+}
+
+/** True when GET run has no items or message snapshots were truncated / not projected. */
+export function runItemsNeedCatchUp(run: APIRun | null | undefined): boolean {
+  if (!run) return true;
+  const items = Array.isArray(run.items) ? run.items : [];
+  if (!items.length) return true;
+  for (const item of items) {
+    if (!item || typeof item !== "object") return true;
+    if (item.type !== "message") continue;
+    if (!Array.isArray((item as { content?: unknown }).content)) return true;
+  }
+  return false;
+}
+
+/** GET conversation lists newest first; replay oldest → newest. */
+export function chronologicalRuns(
+  conversation: Pick<Conversation, "runs"> | null | undefined,
+): Array<{ id: string; startedAt?: string }> {
+  const runs = Array.isArray(conversation?.runs) ? conversation.runs.slice() : [];
+  runs.reverse();
+  const out: Array<{ id: string; startedAt?: string }> = [];
+  for (const run of runs) {
+    const id = String(run?.id || "").trim();
+    if (!id) continue;
+    out.push({
+      id,
+      ...(run.startedAt ? { startedAt: String(run.startedAt) } : {}),
+    });
+  }
+  return out;
+}
+
+export interface ReplayMessage {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  a2ui?: A2UIPartExtract;
+  tools?: Array<{ name: string; status: string; detail: string }>;
+  files: OutputFileContentPart[];
+  createdAt?: string;
+}
+
+export function replayMessagesFromItems(items: ProtocolItem[], createdAt?: string): ReplayMessage[] {
+  const messages: ReplayMessage[] = [];
+  let pendingTools: Array<{ name: string; status: string; detail: string }> = [];
+
+  for (const item of items) {
+    if (itemRole(item) === "tool") {
+      pendingTools.push(extractToolSummary(item));
+      continue;
+    }
+    if (item.type !== "message") continue;
+    const rawRole = String((item as { role?: string }).role || "").toLowerCase();
+    if (rawRole !== "user" && rawRole !== "assistant") continue;
+
+    const files =
+      rawRole === "user"
+        ? extractInputFilePartsFromItem(item).map(filePartAsOutputRef)
+        : findOutputFileParts(item);
+    const text = extractMessageText(item);
+    const a2ui = rawRole === "assistant" ? extractA2UIPart(item) ?? undefined : undefined;
+    if (!text.trim() && !files.length && !a2ui) continue;
+
+    const msg: ReplayMessage = {
+      id: String(item.id || "").trim(),
+      role: rawRole,
+      text,
+      files,
+      ...(a2ui ? { a2ui } : {}),
+      ...(createdAt ? { createdAt } : {}),
+    };
+    if (rawRole === "assistant" && pendingTools.length) {
+      msg.tools = pendingTools;
+      pendingTools = [];
+    }
+    messages.push(msg);
+  }
+
+  if (pendingTools.length) {
+    const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+    if (lastAssistant) {
+      lastAssistant.tools = [...(lastAssistant.tools || []), ...pendingTools];
+    } else {
+      messages.push({
+        id: "",
+        role: "assistant",
+        text: "",
+        tools: pendingTools,
+        files: [],
+        ...(createdAt ? { createdAt } : {}),
+      });
+    }
+  }
+
+  return messages;
+}
+
+export interface ConversationReplayClient {
+  getConversation(
+    workspaceId: string,
+    agentId: string,
+    conversationId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<Conversation | null>;
+  getRun(
+    workspaceId: string,
+    agentId: string,
+    runId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<RunResponse | APIRun | null>;
+  followRun(
+    workspaceId: string,
+    agentId: string,
+    runId: string,
+    options?: { signal?: AbortSignal; initialLastSequence?: number; refreshOnAuthFailure?: boolean },
+  ): AsyncIterable<{ snapshot: ReducedRunSnapshot }>;
+}
+
+export interface ConversationReplayResult {
+  conversationId: string;
+  messages: ReplayMessage[];
+}
+
+function liveReplayClient(aapBaseUrl: string): ConversationReplayClient {
+  return new AgentAccessClient({
+    baseUrl: aapBaseUrl,
+    tokenProvider: createBffTokenProvider(),
+  });
+}
+
+async function catchUpRunItems(
+  client: ConversationReplayClient,
+  workspaceId: string,
+  agentId: string,
+  runId: string,
+  signal?: AbortSignal,
+): Promise<ProtocolItem[] | null> {
+  let items: ProtocolItem[] | null = null;
+  try {
+    for await (const step of client.followRun(workspaceId, agentId, runId, {
+      signal,
+      initialLastSequence: 0,
+      refreshOnAuthFailure: true,
+    })) {
+      if (Array.isArray(step.snapshot?.items)) items = step.snapshot.items;
+    }
+  } catch {
+    return items;
+  }
+  return items;
+}
+
+async function loadRunItemsForReplay(
+  client: ConversationReplayClient,
+  workspaceId: string,
+  agentId: string,
+  runId: string,
+  signal?: AbortSignal,
+): Promise<ProtocolItem[]> {
+  let run: APIRun | null = null;
+  try {
+    run = unwrapRunResponse(await client.getRun(workspaceId, agentId, runId, { signal }));
+  } catch {
+    run = null;
+  }
+  let items = Array.isArray(run?.items) ? run.items : [];
+  if (!runItemsNeedCatchUp(run)) return items;
+  const caught = await catchUpRunItems(client, workspaceId, agentId, runId, signal);
+  return caught ?? items;
+}
+
+/**
+ * Rebuild transcript + file parts from durable conversation/run reads.
+ * Needs conversation:read + run:read. followRun is only a fallback when items
+ * are incomplete (event:read is already in default BFF scopes, not required).
+ */
+export async function restoreConversationReplay(options: {
+  aapBaseUrl: string;
+  workspaceId: string;
+  agentId: string;
+  conversationId: string;
+  signal?: AbortSignal;
+  client?: ConversationReplayClient;
+}): Promise<ConversationReplayResult> {
+  const conversationId = options.conversationId.trim();
+  if (!conversationId) return { conversationId: "", messages: [] };
+
+  const client = options.client ?? liveReplayClient(options.aapBaseUrl);
+  const conversation = await client.getConversation(
+    options.workspaceId,
+    options.agentId,
+    conversationId,
+    { signal: options.signal },
+  );
+  if (!conversation?.id) {
+    throw new Error("conversation not found");
+  }
+
+  const messages: ReplayMessage[] = [];
+  for (const run of chronologicalRuns(conversation)) {
+    const items = await loadRunItemsForReplay(
+      client,
+      options.workspaceId,
+      options.agentId,
+      run.id,
+      options.signal,
+    );
+    messages.push(...replayMessagesFromItems(items, run.startedAt));
+  }
+  return { conversationId: String(conversation.id).trim() || conversationId, messages };
 }

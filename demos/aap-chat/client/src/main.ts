@@ -2,6 +2,7 @@ import "./styles.css";
 import {
   attachOutboundCredential,
   clearOutboundCredential,
+  clearStoredConversationId,
   extractA2UIPart,
   extractMessageText,
   extractOutputFileParts,
@@ -11,13 +12,18 @@ import {
   followRunLive,
   hydrateAttachment,
   itemRole,
+  readStoredConversationId,
   reconcileAssistantAttachments,
+  restoreConversationReplay,
+  shouldDropStoredConversation,
   startChatTurn,
   uploadAttachment,
+  writeStoredConversationId,
   type A2UIPartExtract,
   type AttachmentCard,
   type BffConfig,
   type OutboundStatus,
+  type ReplayMessage,
 } from "./aap";
 import { renderA2UICard } from "./a2ui";
 import { installA2UIActions } from "./a2ui/actions";
@@ -106,7 +112,72 @@ async function boot() {
     state.status = "BFF 不可用 · Mock 模式（npm run dev 会同时启动 BFF）";
     state.statusTone = "muted";
   }
+  if (state.mode === "live") {
+    await restoreLiveConversation();
+  }
   render();
+}
+
+async function restoreLiveConversation() {
+  const config = state.config;
+  if (!config?.workspaceId || !config.agentId || !config.aapBaseUrl) return;
+  const storedId = readStoredConversationId(config.workspaceId, config.agentId);
+  if (!storedId) return;
+
+  state.busy = true;
+  state.status = "正在恢复会话…";
+  state.statusTone = "muted";
+  render();
+  try {
+    const replay = await restoreConversationReplay({
+      aapBaseUrl: config.aapBaseUrl,
+      workspaceId: config.workspaceId,
+      agentId: config.agentId,
+      conversationId: storedId,
+    });
+    state.conversationId = replay.conversationId || storedId;
+    const ctx = {
+      aapBaseUrl: config.aapBaseUrl,
+      workspaceId: config.workspaceId,
+      agentId: config.agentId,
+    };
+    for (const row of replay.messages) {
+      const msg = uiMessageFromReplay(row);
+      const { next, toHydrate } = reconcileAssistantAttachments(undefined, row.files);
+      msg.attachments = next;
+      state.messages.push(msg);
+      if (toHydrate.length) {
+        void hydrateAssistantAttachments(msg, toHydrate, ctx);
+      }
+    }
+    applyLiveStatus(config);
+  } catch (err) {
+    state.conversationId = "";
+    state.messages = [];
+    if (shouldDropStoredConversation(err)) {
+      clearStoredConversationId(config.workspaceId, config.agentId);
+    }
+    applyLiveStatus(config);
+  } finally {
+    state.busy = false;
+  }
+}
+
+function applyLiveStatus(config: BffConfig) {
+  state.status = outboundStatusLine(config);
+  state.statusTone = config.outbound?.required && !config.outbound.bound ? "muted" : "ok";
+}
+
+function uiMessageFromReplay(row: ReplayMessage): UiMessage {
+  return {
+    id: row.id || uid(),
+    role: row.role,
+    text: row.text,
+    html: row.role === "assistant" ? renderMarkdown(row.text || "") : undefined,
+    a2ui: row.a2ui,
+    tools: row.tools,
+    createdAt: row.createdAt,
+  };
 }
 
 function outboundStatusLine(config: BffConfig): string {
@@ -556,6 +627,9 @@ function bindEvents() {
     state.messages = [];
     state.pendingAttachments = [];
     state.conversationId = "";
+    if (state.config?.workspaceId && state.config.agentId) {
+      clearStoredConversationId(state.config.workspaceId, state.config.agentId);
+    }
     state.status =
       state.mode === "live" && state.config ? outboundStatusLine(state.config) : "Mock 就绪";
     state.statusTone = "ok";
@@ -962,6 +1036,7 @@ async function runLive(text: string) {
   state.status = fileIds.length ? "创建 Run（含附件）…" : "创建 Run…";
   const turn = await startChatTurn(text, state.conversationId || undefined, fileIds);
   state.conversationId = turn.conversationId;
+  writeStoredConversationId(config.workspaceId, config.agentId, turn.conversationId);
   state.status = `Run ${shortId(turn.runId)} · SSE 跟随中`;
 
   for await (const snapshot of followRunLive({
