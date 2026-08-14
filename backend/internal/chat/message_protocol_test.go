@@ -416,8 +416,13 @@ func TestParseMessageContentPartsOutputFile(t *testing.T) {
 		`]}`
 	mixedFiles := chat.FileAttachmentsFromDurable(mixed)
 	if len(mixedFiles) != 2 || mixedFiles[0].FileID != inputID || mixedFiles[0].Filename != "" ||
-		mixedFiles[1].FileID != fileID || mixedFiles[1].Filename != "invoice-2026-08.csv" {
+		mixedFiles[0].Type != "input_file" ||
+		mixedFiles[1].FileID != fileID || mixedFiles[1].Filename != "invoice-2026-08.csv" ||
+		mixedFiles[1].Type != "output_file" {
 		t.Fatalf("mixed FileAttachmentsFromDurable=%+v", mixedFiles)
+	}
+	if !chat.HasInboundFileParts(mixed) {
+		t.Fatal("HasInboundFileParts=false for mixed file envelope")
 	}
 }
 

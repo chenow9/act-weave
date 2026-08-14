@@ -36,8 +36,8 @@ type ChatStore interface {
 }
 
 // ChatFileLookup is the workspace-scoped aap_files fact reader used by the
-// session+message content proxy. Callers must already have proven the fileId
-// appears on the message; this must not be an AAP File HTTP principal.
+// session+message content proxy. Callers must already have a download grant
+// from this message; this must not be an AAP File HTTP principal.
 type ChatFileLookup interface {
 	GetFile(context.Context, string, string) (aapfile.File, error)
 }
@@ -163,7 +163,8 @@ func (r *ChatExecutionRoutes) RegisterV1(v1 V1Routes) {
 	group.POST("/workspaces/:wid/chat/sessions/:sid/messages", r.sendMessage)
 	// 运行调试台 one-shot outbound credential attach (checklist #11).
 	group.POST("/workspaces/:wid/chat/sessions/:sid/outbound-credentials", r.attachOutboundCredentials)
-	// Session+message scoped file proxy (design §8). Console users never call AAP File as an SP.
+	// Session+message file proxy: console never calls AAP File as a user SP.
+	// fileId must be an assistant output_file on this row, or a caller-owned user input_file.
 	group.GET("/workspaces/:wid/sessions/:sid/messages/:mid/files/:fileId/content", r.getSessionMessageFileContent)
 	group.GET("/workspaces/:wid/agent-runs/:rid", r.getAgentRun)
 	group.GET("/workspaces/:wid/agent-runs/:rid/events", r.getAgentRunEvents)
@@ -313,7 +314,8 @@ func (r *ChatExecutionRoutes) getSessionMessageFileContent(c *gin.Context) {
 		}
 		content = loaded
 	}
-	if !durableMessageReferencesFile(content, fileID) {
+	grant, ok := messageFileDownloadGrant(message, content, fileID)
+	if !ok {
 		RespondError(c, chat.ErrNotFound)
 		return
 	}
@@ -324,6 +326,11 @@ func (r *ChatExecutionRoutes) getSessionMessageFileContent(c *gin.Context) {
 	file, err := r.files.GetFile(c.Request.Context(), session.WorkspaceID, fileID)
 	if err != nil || file.Status != aapfile.StatusReady || file.StoredObjectID == nil ||
 		strings.TrimSpace(*file.StoredObjectID) == "" {
+		RespondError(c, chat.ErrNotFound)
+		return
+	}
+	if grant.Type == string(protocolevent.ContentPartTypeInputFile) &&
+		!aapFileOwnedByCaller(file, actor(c)) {
 		RespondError(c, chat.ErrNotFound)
 		return
 	}
@@ -356,15 +363,40 @@ func (r *ChatExecutionRoutes) getSessionMessageFileContent(c *gin.Context) {
 	_, _ = io.Copy(c.Writer, opened.Body)
 }
 
-func durableMessageReferencesFile(content, fileID string) bool {
+// messageFileDownloadGrant is the capability check after ownSession.
+// User-authored parts are not a download grant: only assistant output_file, or
+// a user input_file that still has to pass caller ownership after GetFile.
+func messageFileDownloadGrant(message chat.Message, content, fileID string) (chat.MessageFileAttachment, bool) {
 	fileID = strings.TrimSpace(fileID)
 	if fileID == "" {
+		return chat.MessageFileAttachment{}, false
+	}
+	role := strings.ToUpper(strings.TrimSpace(message.Role))
+	for _, attachment := range chat.FileAttachmentsFromDurable(content) {
+		if attachment.FileID != fileID {
+			continue
+		}
+		switch {
+		case role == "ASSISTANT" && attachment.Type == string(protocolevent.ContentPartTypeOutputFile):
+			return attachment, true
+		case role == "USER" && attachment.Type == string(protocolevent.ContentPartTypeInputFile):
+			return attachment, true
+		}
+	}
+	return chat.MessageFileAttachment{}, false
+}
+
+func aapFileOwnedByCaller(file aapfile.File, callerID string) bool {
+	callerID = strings.ToLower(strings.TrimSpace(callerID))
+	if callerID == "" {
 		return false
 	}
-	for _, attachment := range chat.FileAttachmentsFromDurable(content) {
-		if attachment.FileID == fileID {
-			return true
-		}
+	if strings.EqualFold(file.ActorType, "USER") && strings.EqualFold(file.ActorID, callerID) {
+		return true
+	}
+	if file.SubjectType != nil && file.SubjectID != nil &&
+		strings.EqualFold(*file.SubjectType, "USER") && strings.EqualFold(*file.SubjectID, callerID) {
+		return true
 	}
 	return false
 }
@@ -506,6 +538,10 @@ func (r *ChatExecutionRoutes) sendMessage(c *gin.Context) {
 	}
 	var request sendChatMessageRequest
 	if decodeJSON(c, &request) != nil {
+		RespondError(c, chat.ErrInvalid)
+		return
+	}
+	if chat.HasInboundFileParts(request.Content) {
 		RespondError(c, chat.ErrInvalid)
 		return
 	}

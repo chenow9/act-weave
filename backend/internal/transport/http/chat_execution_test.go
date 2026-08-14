@@ -413,7 +413,10 @@ func newChatExecutionAPIFixture(t *testing.T) *chatExecutionAPIFixture {
 	confirmations := newFakeChatConfirmations()
 	chats := &chatStoreOverlay{ChatStore: chatRepository}
 	files := &stubSessionFileLookup{files: map[string]aapfile.File{}}
-	objects := &stubSessionFileObjects{bodies: map[string][]byte{}}
+	objects := &stubSessionFileObjects{
+		bodies:    map[string][]byte{},
+		authorize: authorizeAAPFileSystemRead,
+	}
 	routes, err := NewChatExecutionRoutes(ChatExecutionDependencies{Authorizer: authorizer,
 		Chats: chats, Messages: chatService, Content: chatAPIContent{}, Runs: runs,
 		ProtocolEvents: protocolEvents, Confirmations: confirmations,

@@ -219,6 +219,7 @@ func OutputFilesFromDurable(content string) []protocolevent.OutputFileContentPar
 // MessageFileAttachment is a console-facing file reference projected from
 // durable input_file / output_file parts. It never carries URLs or bytes.
 type MessageFileAttachment struct {
+	Type      string
 	FileID    string
 	MediaType string
 	Filename  string
@@ -237,16 +238,26 @@ func FileAttachmentsFromDurable(content string) []MessageFileAttachment {
 		switch typed := part.(type) {
 		case protocolevent.OutputFileContentPart:
 			files = append(files, MessageFileAttachment{
+				Type:   string(protocolevent.ContentPartTypeOutputFile),
 				FileID: typed.FileID, MediaType: typed.MediaType,
 				Filename: typed.Filename, SizeBytes: typed.SizeBytes,
 			})
 		case protocolevent.InputFileContentPart:
 			files = append(files, MessageFileAttachment{
-				FileID: typed.FileID, MediaType: typed.MediaType,
+				Type:      string(protocolevent.ContentPartTypeInputFile),
+				FileID:    typed.FileID,
+				MediaType: typed.MediaType,
 			})
 		}
 	}
 	return files
+}
+
+// HasInboundFileParts reports whether durable content carries input_file or
+// output_file parts. Console SendMessage must reject these so a user cannot
+// self-bind an arbitrary workspace fileId.
+func HasInboundFileParts(content string) bool {
+	return len(FileAttachmentsFromDurable(content)) > 0
 }
 
 // SerializeAssistantDurableV2 builds the durable chat_messages body.

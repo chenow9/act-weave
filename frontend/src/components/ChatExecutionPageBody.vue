@@ -23,6 +23,7 @@ void DebugOutboundCredentialPanel;
 
 const attachmentPreviewURLs = ref<Record<string, string>>({});
 const downloadingAttachment = ref("");
+const SESSION_FILE_PROXY_TIMEOUT_MS = 120_000;
 
 function attachmentKey(messageId: string, fileId: string) {
   return `${messageId}:${fileId}`;
@@ -60,7 +61,10 @@ async function loadAttachmentPreview(message: ChatMessage, attachment: ChatMessa
   const path = sessionFileContentPath(message.id, attachment.fileId);
   if (!path) return;
   try {
-    const response = await apiClient.get(path, { responseType: "blob" });
+    const response = await apiClient.get(path, {
+      responseType: "blob",
+      timeout: SESSION_FILE_PROXY_TIMEOUT_MS,
+    });
     attachmentPreviewURLs.value = {
       ...attachmentPreviewURLs.value,
       [key]: URL.createObjectURL(response.data),
@@ -76,7 +80,10 @@ async function downloadMessageAttachment(message: ChatMessage, attachment: ChatM
   const key = attachmentKey(message.id, attachment.fileId);
   downloadingAttachment.value = key;
   try {
-    const response = await apiClient.get(path, { responseType: "blob" });
+    const response = await apiClient.get(path, {
+      responseType: "blob",
+      timeout: SESSION_FILE_PROXY_TIMEOUT_MS,
+    });
     const url = URL.createObjectURL(response.data);
     const link = document.createElement("a");
     link.href = url;
@@ -92,20 +99,34 @@ async function downloadMessageAttachment(message: ChatMessage, attachment: ChatM
   }
 }
 
+function revokeStaleAttachmentPreviews(liveKeys: Set<string>) {
+  const stale = Object.keys(attachmentPreviewURLs.value).filter((key) => !liveKeys.has(key));
+  if (!stale.length) return;
+  const next = { ...attachmentPreviewURLs.value };
+  for (const key of stale) {
+    URL.revokeObjectURL(next[key]);
+    delete next[key];
+  }
+  attachmentPreviewURLs.value = next;
+}
+
 watch(
-  () => chat.messages,
-  (messages) => {
+  () => [chat.activeSessionId, chat.messages] as const,
+  ([, messages]) => {
+    const liveKeys = new Set<string>();
     for (const message of messages) {
       for (const attachment of message.attachments ?? []) {
+        liveKeys.add(attachmentKey(message.id, attachment.fileId));
         void loadAttachmentPreview(message, attachment);
       }
     }
+    revokeStaleAttachmentPreviews(liveKeys);
   },
   { deep: true, immediate: true },
 );
 
 onBeforeUnmount(() => {
-  for (const url of Object.values(attachmentPreviewURLs.value)) URL.revokeObjectURL(url);
+  revokeStaleAttachmentPreviews(new Set());
 });
 </script>
 

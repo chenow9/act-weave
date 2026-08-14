@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"actweave/backend/internal/aapfile"
+	"actweave/backend/internal/authz"
 	"actweave/backend/internal/chat"
 	"actweave/backend/internal/storedobject"
 	"actweave/backend/internal/workspace"
@@ -75,12 +76,46 @@ func (store *stubSessionFileLookup) put(file aapfile.File) {
 }
 
 type stubSessionFileObjects struct {
-	bodies map[string][]byte
-	opens  []storedobject.ReadRequest
+	bodies    map[string][]byte
+	opens     []storedobject.ReadRequest
+	authorize func(storedobject.ReadAuthorization) error
+}
+
+func authorizeAAPFileSystemRead(request storedobject.ReadAuthorization) error {
+	kind := strings.ToUpper(strings.TrimSpace(request.Kind))
+	if strings.EqualFold(request.ActorType, storedobject.CreatorSystem) &&
+		(kind == storedobject.KindAAPFile || kind == storedobject.KindAAPFileDerived) {
+		return nil
+	}
+	return authz.ErrDenied
+}
+
+func authorizeWorkspaceReadStyle(request storedobject.ReadAuthorization) error {
+	kind := strings.ToUpper(strings.TrimSpace(request.Kind))
+	if strings.EqualFold(request.ActorType, storedobject.CreatorSystem) &&
+		kind == storedobject.KindChatContextSummary {
+		return nil
+	}
+	if !strings.EqualFold(request.ActorType, storedobject.CreatorUser) {
+		return authz.ErrDenied
+	}
+	return nil
 }
 
 func (store *stubSessionFileObjects) Open(_ context.Context, request storedobject.ReadRequest) (storedobject.OpenedObject, error) {
 	store.opens = append(store.opens, request)
+	if store.authorize != nil {
+		if err := store.authorize(storedobject.ReadAuthorization{
+			WorkspaceID:    request.WorkspaceID,
+			ObjectID:       request.ObjectID,
+			ActorType:      request.ActorType,
+			ActorID:        request.ActorID,
+			Kind:           storedobject.KindAAPFile,
+			Classification: storedobject.ClassificationSensitive,
+		}); err != nil {
+			return storedobject.OpenedObject{}, err
+		}
+	}
 	body, ok := store.bodies[request.ObjectID]
 	if !ok {
 		return storedobject.OpenedObject{}, storedobject.ErrNotFound
@@ -202,6 +237,59 @@ func TestV1SessionMessageFileContentIDOR(t *testing.T) {
 	if len(fixture.objects.opens) != 0 {
 		t.Fatalf("IDOR paths opened stored object: %+v", fixture.objects.opens)
 	}
+
+	// Owned USER message naming another session's ready fileId is not a grant.
+	userBound := fixture.putUserFileMessage(otherSession, fileID, "output_file", "stolen.csv", "text/csv")
+	stolen := fixture.request(http.MethodGet,
+		fixture.sessionFileContentPath(otherSession.ID, userBound.ID, fileID),
+		nil, fixture.adminToken, nil)
+	assertErrorResponse(t, stolen, http.StatusNotFound, "NOT_FOUND")
+	if len(fixture.objects.opens) != 0 {
+		t.Fatalf("user-authored file parts opened stored object: %+v", fixture.objects.opens)
+	}
+}
+
+func TestV1SessionMessageFileContentWorkspaceAuthorizerDeniesAAPFile(t *testing.T) {
+	fixture := newChatExecutionAPIFixture(t)
+	fixture.objects.authorize = authorizeWorkspaceReadStyle
+	session := fixture.createOwnedSession(t, "Wrong store")
+	fileID := uuid.NewString()
+	objectID := uuid.NewString()
+	message := fixture.putAssistantFileMessage(session, fileID, "invoice-2026-08.csv", "text/csv")
+	filename := "invoice-2026-08.csv"
+	fixture.files.put(aapfile.File{
+		ID: fileID, WorkspaceID: fixture.workspaceID, AgentID: fixture.agentID,
+		Status: aapfile.StatusReady, Filename: &filename, DeclaredMediaType: "text/csv",
+		SizeBytes: 12, StoredObjectID: &objectID,
+	})
+	fixture.objects.put(objectID, []byte("date,amount\n"))
+
+	got := fixture.request(http.MethodGet, fixture.sessionFileContentPath(session.ID, message.ID, fileID),
+		nil, fixture.adminToken, nil)
+	assertErrorResponse(t, got, http.StatusNotFound, "NOT_FOUND")
+	if len(fixture.objects.opens) != 1 {
+		t.Fatalf("expected Open attempt through workspace authorizer, opens=%d", len(fixture.objects.opens))
+	}
+
+	fixture.objects.authorize = authorizeAAPFileSystemRead
+	allowed := fixture.request(http.MethodGet, fixture.sessionFileContentPath(session.ID, message.ID, fileID),
+		nil, fixture.adminToken, nil)
+	if allowed.Code != http.StatusOK || allowed.Body.String() != "date,amount\n" {
+		t.Fatalf("AAP-file authorizer status=%d body=%s", allowed.Code, allowed.Body.String())
+	}
+}
+
+func TestV1SendMessageRejectsInboundFileParts(t *testing.T) {
+	fixture := newChatExecutionAPIFixture(t)
+	session := fixture.createOwnedSession(t, "No self bind")
+	fileID := uuid.NewString()
+	payload := `{"schemaVersion":"aap.message-content.v1","parts":[` +
+		`{"type":"text","text":"steal"},` +
+		`{"type":"output_file","fileId":"` + fileID + `","mediaType":"text/csv","filename":"x.csv","sizeBytes":1}` +
+		`]}`
+	sent := fixture.request(http.MethodPost, fixture.base+"/chat/sessions/"+session.ID+"/messages",
+		map[string]any{"content": payload}, fixture.adminToken, nil)
+	assertErrorResponse(t, sent, http.StatusUnprocessableEntity, "VALIDATION_ERROR")
 }
 
 func (fixture *chatExecutionAPIFixture) createOwnedSession(t *testing.T, title string) chatSessionDTO {
@@ -231,6 +319,28 @@ func (fixture *chatExecutionAPIFixture) putAssistantFileMessage(
 		ID: uuid.NewString(), WorkspaceID: fixture.workspaceID, SessionID: session.ID,
 		Role: "ASSISTANT", Content: durable, ContentSHA256: hex.EncodeToString(digest[:]),
 		ContentLength: int64(len([]byte(durable))), Status: "EXECUTED",
+		CreatedAt: time.Now().UTC(),
+	}
+	fixture.chats.put(message)
+	return message
+}
+
+func (fixture *chatExecutionAPIFixture) putUserFileMessage(
+	session chatSessionDTO,
+	fileID, partType, filename, mediaType string,
+) chat.Message {
+	part := `{"type":"` + partType + `","fileId":"` + fileID + `","mediaType":"` + mediaType + `"`
+	if partType == "output_file" {
+		part += `,"filename":"` + filename + `","sizeBytes":12`
+	}
+	part += `}`
+	durable := `{"schemaVersion":"aap.message-content.v1","parts":[` +
+		`{"type":"text","text":"see file"},` + part + `]}`
+	digest := sha256.Sum256([]byte(durable))
+	message := chat.Message{
+		ID: uuid.NewString(), WorkspaceID: fixture.workspaceID, SessionID: session.ID,
+		Role: "USER", Content: durable, ContentSHA256: hex.EncodeToString(digest[:]),
+		ContentLength: int64(len([]byte(durable))), Status: "RECEIVED",
 		CreatedAt: time.Now().UTC(),
 	}
 	fixture.chats.put(message)
