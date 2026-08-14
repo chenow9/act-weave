@@ -29,6 +29,9 @@ models:
     allowedCidrs:
       - 127.0.0.0/8
       - ::1/128
+      # Shadowrocket/Clash/Surge fake-ip (198.18.0.0/15). Needed so local Go
+      # egress can reach public model hosts when system DNS is hijacked. Dev only.
+      - 198.18.0.0/15
 
 agentAccess:
   tokenEndpoint: http://127.0.0.1:8082/api/agent-access/v1/oauth/token

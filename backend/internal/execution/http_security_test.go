@@ -74,6 +74,28 @@ func TestSSRFAllowsOnlyExplicitPrivateCIDR(t *testing.T) {
 	}
 }
 
+func TestDialUsesHostnameForAllowedCIDRs(t *testing.T) {
+	guard, err := NewHTTPNetworkGuard(EgressPolicy{
+		AllowedHosts: []string{"llm.example"},
+		AllowedPorts: []int{443},
+		AllowedCIDRs: []string{"198.18.0.0/15"},
+	}, staticHostResolver{addresses: map[string][]net.IPAddr{
+		"llm.example": {{IP: net.ParseIP("198.18.0.165")}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !guard.anyIPInAllowedCIDRs([]net.IP{net.ParseIP("198.18.0.165")}) {
+		t.Fatal("fake-IP in allowed CIDRs must dial by hostname")
+	}
+	if !guard.anyIPInAllowedCIDRs([]net.IP{net.ParseIP("198.18.0.165"), net.ParseIP("93.184.216.34")}) {
+		t.Fatal("mixed fake-IP + public must still dial by hostname")
+	}
+	if guard.anyIPInAllowedCIDRs([]net.IP{net.ParseIP("93.184.216.34")}) {
+		t.Fatal("public IPs must stay pinned after validation")
+	}
+}
+
 func TestSSRFRevalidatesRedirectAndStripsSensitiveHeaders(t *testing.T) {
 	var redirectedCredential string
 	var serverPort string

@@ -119,15 +119,18 @@ func (guard *HTTPNetworkGuard) ProtectClient(base *http.Client, sensitiveHeaders
 		base = &http.Client{}
 	}
 	client := *base
-	var transport *http.Transport
+	var source *http.Transport
 	switch typed := base.Transport.(type) {
 	case nil:
-		transport = http.DefaultTransport.(*http.Transport).Clone()
+		source = http.DefaultTransport.(*http.Transport)
 	case *http.Transport:
-		transport = typed.Clone()
+		source = typed
 	default:
 		return nil, NewError(ErrorCodeEgressDenied, "POLICY", false, 0, errors.New("unsupported HTTP transport"))
 	}
+	// Fresh Transport, not Clone(). Clone copies unexported HTTP/2 state; on
+	// Shadowrocket/Clash fake-IP that connection then EOFs on POST /responses.
+	transport := newGuardedTransport(source)
 	transport.Proxy = nil
 	transport.DialContext = guard.dialContext
 	transport.DialTLS = nil
@@ -157,6 +160,30 @@ func (guard *HTTPNetworkGuard) ProtectClient(base *http.Client, sensitiveHeaders
 	return &client, nil
 }
 
+func newGuardedTransport(source *http.Transport) *http.Transport {
+	if source == nil {
+		source = http.DefaultTransport.(*http.Transport)
+	}
+	return &http.Transport{
+		Proxy:                 nil,
+		DialContext:           source.DialContext,
+		ForceAttemptHTTP2:     true,
+		TLSClientConfig:       source.TLSClientConfig,
+		TLSHandshakeTimeout:   source.TLSHandshakeTimeout,
+		DisableKeepAlives:     source.DisableKeepAlives,
+		DisableCompression:    source.DisableCompression,
+		MaxIdleConns:          source.MaxIdleConns,
+		MaxIdleConnsPerHost:   source.MaxIdleConnsPerHost,
+		MaxConnsPerHost:       source.MaxConnsPerHost,
+		IdleConnTimeout:       source.IdleConnTimeout,
+		ResponseHeaderTimeout: source.ResponseHeaderTimeout,
+		ExpectContinueTimeout: source.ExpectContinueTimeout,
+		TLSNextProto:          nil,
+		ReadBufferSize:        source.ReadBufferSize,
+		WriteBufferSize:       source.WriteBufferSize,
+	}
+}
+
 func (guard *HTTPNetworkGuard) dialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	if network != "tcp" && network != "tcp4" && network != "tcp6" {
 		return nil, NewError(ErrorCodeEgressDenied, "POLICY", false, 0, nil)
@@ -176,6 +203,13 @@ func (guard *HTTPNetworkGuard) dialContext(ctx context.Context, network, address
 	if err != nil {
 		return nil, err
 	}
+	// Fake-IP / TUN proxies (Shadowrocket, Clash, Surge) only map 198.18/15
+	// when the connect is still keyed by hostname. Dialing the resolved
+	// fake-IP literally lands on a blackhole and the model POST EOFs.
+	// AllowedCIDRs are deployment-owned exceptions, so hostname dial is safe.
+	if guard.anyIPInAllowedCIDRs(addresses) {
+		return guard.dialer.DialContext(ctx, network, net.JoinHostPort(host, port))
+	}
 	var lastError error
 	for _, ip := range addresses {
 		connection, dialErr := guard.dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
@@ -185,6 +219,20 @@ func (guard *HTTPNetworkGuard) dialContext(ctx context.Context, network, address
 		lastError = dialErr
 	}
 	return nil, lastError
+}
+
+func (guard *HTTPNetworkGuard) anyIPInAllowedCIDRs(addresses []net.IP) bool {
+	if guard == nil || len(addresses) == 0 || len(guard.allowedCIDRs) == 0 {
+		return false
+	}
+	for _, ip := range addresses {
+		for _, network := range guard.allowedCIDRs {
+			if network.Contains(ip) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (guard *HTTPNetworkGuard) resolveAllowed(ctx context.Context, host string) ([]net.IP, error) {

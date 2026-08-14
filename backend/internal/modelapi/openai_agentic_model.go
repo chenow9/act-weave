@@ -459,11 +459,26 @@ func (t *responsesGuardTransport) RoundTrip(req *http.Request) (*http.Response, 
 		req = req.Clone(req.Context())
 		req.Body = io.NopCloser(bytes.NewReader(rewritten))
 		req.ContentLength = int64(len(rewritten))
+		// openai-go may have started the original as chunked (unknown length).
+		// After rewrite the body length is known; leaving Transfer-Encoding:
+		// chunked makes some transparent proxies close the POST with EOF.
+		req.TransferEncoding = nil
+		req.Header.Del("Transfer-Encoding")
 		req.GetBody = func() (io.ReadCloser, error) {
 			return io.NopCloser(bytes.NewReader(rewritten)), nil
 		}
+		if req.Host == "" && req.URL != nil {
+			req.Host = req.URL.Host
+		}
 	}
-	return base.RoundTrip(req)
+	resp, err := base.RoundTrip(req)
+	if err != nil {
+		return resp, err
+	}
+	if req != nil && isResponsesPath(req.URL.Path) {
+		wrapResponsesSSEBody(resp)
+	}
+	return resp, nil
 }
 
 func isResponsesPath(path string) bool {
