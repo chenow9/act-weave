@@ -45,6 +45,7 @@ const emit = defineEmits<{
 const { fitView, zoomIn, zoomOut } = useVueFlow();
 const hasUserAdjustedViewport = ref(false);
 const isProgrammaticViewportMove = ref(false);
+const currentZoom = ref(props.graph.viewport?.zoom || 1);
 
 onMounted(() => {
   void nextTick(() => fitCanvasView("auto"));
@@ -75,6 +76,22 @@ const flowNodes = computed(() =>
     },
   })),
 );
+
+const miniMapNodes = computed(() => {
+  if (!props.graph.nodes.length) return [];
+  const xs = props.graph.nodes.map((node) => node.position.x);
+  const ys = props.graph.nodes.map((node) => node.position.y);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  const width = Math.max(1, Math.max(...xs) - minX + 180);
+  const height = Math.max(1, Math.max(...ys) - minY + 72);
+  return props.graph.nodes.map((node) => ({
+    id: node.id,
+    left: `${((node.position.x - minX) / width) * 88 + 4}%`,
+    top: `${((node.position.y - minY) / height) * 78 + 8}%`,
+    selected: node.id === props.selectedNodeId,
+  }));
+});
 
 /** At most one input (left) + one output (right) handle per node. */
 function visiblePortsForNode(node: WorkflowGraphDraft["nodes"][number]) {
@@ -226,6 +243,7 @@ function handleNodeDragStop(event: NodeDragEvent) {
 }
 
 function handleViewportChangeEnd(viewport: ViewportTransform) {
+  currentZoom.value = viewport.zoom;
   emit("update-viewport", {
     x: viewport.x,
     y: viewport.y,
@@ -364,7 +382,7 @@ function fitCanvasView(source: "auto" | "user" = "user") {
       :nodes="flowNodes"
       :edges="flowEdges"
       :default-viewport="props.graph.viewport"
-      :fit-view-on-init="false"
+      :fit-view-on-init="true"
       :nodes-connectable="true"
       :nodes-draggable="true"
       :elements-selectable="true"
@@ -430,16 +448,37 @@ function fitCanvasView(source: "auto" | "user" = "user") {
         </button>
       </template>
       <div class="workflow-flow-controls" role="group" :aria-label="t('workflow.canvasZoomAria')">
+        <span class="workflow-flow-scale">{{ Math.round(currentZoom * 100) }}%</span>
         <button type="button" :aria-label="t('workflow.zoomIn')" @click.stop="zoomInCanvas">
           <i class="fa-solid fa-plus" aria-hidden="true" />
         </button>
         <button type="button" :aria-label="t('workflow.zoomOut')" @click.stop="zoomOutCanvas">
           <i class="fa-solid fa-minus" aria-hidden="true" />
         </button>
-        <button type="button" :aria-label="t('workflow.fitAllNodes')" @click.stop="fitCanvasView()">
+        <button
+          class="workflow-fit-all-button"
+          type="button"
+          :aria-label="t('workflow.fitAllNodes')"
+          @click.stop="fitCanvasView()"
+        >
           <i class="fa-solid fa-compress" aria-hidden="true" />
+          <span>{{ t("workflow.fitAllNodes") }}</span>
         </button>
+        <span class="workflow-flow-node-count">{{ t("workflow.nodeCount", { n: props.graph.nodes.length }) }}</span>
       </div>
+      <button
+        class="workflow-flow-minimap"
+        type="button"
+        :aria-label="t('workflow.minimapFitAria')"
+        @click.stop="fitCanvasView()"
+      >
+        <span
+          v-for="node in miniMapNodes"
+          :key="node.id"
+          :class="{ selected: node.selected }"
+          :style="{ left: node.left, top: node.top }"
+        />
+      </button>
     </VueFlow>
   </section>
 </template>

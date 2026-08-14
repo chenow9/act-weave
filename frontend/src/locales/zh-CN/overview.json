@@ -74,6 +74,7 @@
   "loadFailed": "加载空间总览失败",
   "totalSum": "合计",
   "compositeChartAria": "流量与运行质量趋势",
+  "viewDetails": "查看详情",
   "risk": {
     "noWorkspaceTitle": "尚无可访问业务空间",
     "noWorkspaceDetail": "请先创建或加入至少一个业务空间。",
@@ -89,6 +90,11 @@
     "toolRateDetail": "{span} 全空间工具调用成功率为 {rate}%。",
     "okTitle": "运行状态正常",
     "okDetail": "当前筛选区间内跨全部可访问空间未发现明显风险。",
-    "recentDays": "近 {n} 天"
+    "recentDays": "近 {n} 天",
+    "openWorkspaces": "管理业务空间",
+    "openModels": "配置模型",
+    "openAgents": "创建 Agent",
+    "openConnections": "检查连接",
+    "openFailedTraces": "查看失败链路"
   }
 }

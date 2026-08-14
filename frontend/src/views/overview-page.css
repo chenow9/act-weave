@@ -964,14 +964,40 @@
 }
 
 .overview-risk-item {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  padding: 10px 12px;
+  display: block;
+  padding: 0;
   border: 1px solid #f1f5f9;
   border-radius: 10px;
   background: rgba(248, 250, 252, 0.55);
   transition: background-color 0.2s ease;
+}
+
+.overview-risk-item > button {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.overview-risk-item > button:disabled {
+  cursor: default;
+}
+.overview-risk-copy {
+  min-width: 0;
+}
+.overview-risk-copy > strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+  color: #0f766e;
+  font-size: 11px;
 }
 
 .overview-risk-item:hover {
@@ -1026,9 +1052,28 @@
 }
 
 .overview-health-tile {
+  width: 100%;
   padding: 12px;
+  border: 1px solid transparent;
   border-radius: 12px;
   background: rgba(248, 250, 252, 0.7);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.overview-health-tile:hover {
+  border-color: #bae6fd;
+  background: #f0f9ff;
+}
+.overview-health-tile small {
+  display: block;
+  margin-top: 6px;
+  color: #0f766e;
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .overview-health-tile span {

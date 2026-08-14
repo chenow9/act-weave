@@ -246,17 +246,26 @@ void WorkflowTrialRunDialog;
             >
               {{ pendingEditorAction === "publish" ? t("workflow.publishing") : t("workflow.publish") }}
             </button>
-            <button
-              v-if="canForcePublishWorkflow"
-              data-action="force-publish-editor-workflow"
-              class="workflow-editor-force-publish-button"
-              type="button"
-              :title="workflowEditorForcePublishTitle"
-              :disabled="!selectedWorkflow || workflowEditorBusy || !selectedWorkflowCanForcePublish"
-              @click="forcePublishEditorWorkflow"
-            >
-              {{ pendingEditorAction === "force-publish" ? t("workflow.forcePublishing") : t("workflow.forcePublish") }}
-            </button>
+            <details v-if="canForcePublishWorkflow" class="workflow-editor-more-actions">
+              <summary :aria-label="t('workflow.morePublishActions')" :title="t('workflow.morePublishActions')">
+                <i class="fa-solid fa-ellipsis" aria-hidden="true" />
+              </summary>
+              <div>
+                <button
+                  data-action="force-publish-editor-workflow"
+                  class="workflow-editor-force-publish-button"
+                  type="button"
+                  :title="workflowEditorForcePublishTitle"
+                  :disabled="!selectedWorkflow || workflowEditorBusy || !selectedWorkflowCanForcePublish"
+                  @click="forcePublishEditorWorkflow"
+                >
+                  <i class="fa-solid fa-bolt" aria-hidden="true" />
+                  {{
+                    pendingEditorAction === "force-publish" ? t("workflow.forcePublishing") : t("workflow.forcePublish")
+                  }}
+                </button>
+              </div>
+            </details>
             <button
               class="workflow-editor-close-button"
               type="button"

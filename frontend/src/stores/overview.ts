@@ -135,6 +135,7 @@ function collectRisks(metrics: OverviewMetrics): RiskItem[] {
       tone: "amber",
       title: tt("overview.risk.noWorkspaceTitle"),
       detail: tt("overview.risk.noWorkspaceDetail"),
+      action: { routeName: "workspaces", label: tt("overview.risk.openWorkspaces") },
     });
   }
   if (!inv.hasVerifiedModel) {
@@ -142,6 +143,7 @@ function collectRisks(metrics: OverviewMetrics): RiskItem[] {
       tone: "amber",
       title: tt("overview.risk.modelTitle"),
       detail: tt("overview.risk.modelDetail"),
+      action: { routeName: "model-apis", label: tt("overview.risk.openModels") },
     });
   }
   if (inv.agentCount === 0 && spaces > 0) {
@@ -149,6 +151,7 @@ function collectRisks(metrics: OverviewMetrics): RiskItem[] {
       tone: "red",
       title: tt("overview.risk.noAgentTitle"),
       detail: tt("overview.risk.noAgentDetail"),
+      action: { routeName: "agents", label: tt("overview.risk.openAgents") },
     });
   }
   if (inv.connectionTotal > 0 && inv.connectionVerified < inv.connectionTotal) {
@@ -158,6 +161,7 @@ function collectRisks(metrics: OverviewMetrics): RiskItem[] {
       detail: tt("overview.risk.connectionDetail", {
         n: inv.connectionTotal - inv.connectionVerified,
       }),
+      action: { routeName: "connections", label: tt("overview.risk.openConnections"), query: { status: "UNVERIFIED" } },
     });
   }
   if (kpis.runsTotal >= 5 && kpis.runSuccessRate < 90) {
@@ -168,6 +172,11 @@ function collectRisks(metrics: OverviewMetrics): RiskItem[] {
         span,
         rate: kpis.runSuccessRate.toFixed(1),
       }),
+      action: {
+        routeName: "logs",
+        label: tt("overview.risk.openFailedTraces"),
+        query: { status: "error", from: metrics.fromDate || "", to: metrics.toDate || "" },
+      },
     });
   }
   if (kpis.toolCallsTotal >= 5 && kpis.toolCallSuccessRate < 90) {
@@ -178,6 +187,11 @@ function collectRisks(metrics: OverviewMetrics): RiskItem[] {
         span,
         rate: kpis.toolCallSuccessRate.toFixed(1),
       }),
+      action: {
+        routeName: "logs",
+        label: tt("overview.risk.openFailedTraces"),
+        query: { status: "error", from: metrics.fromDate || "", to: metrics.toDate || "" },
+      },
     });
   }
   return risks.length

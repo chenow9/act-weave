@@ -11,10 +11,10 @@ const { t } = useI18n();
 const scp = useChatExecutionPageContext();
 /* prettier-ignore */
 const {
-  workspaces, agents, chat, composer, selectedWorkspaceId, selectedAgentId, sessionKeyword, sending, confirming, archivingSession, contextLoading, actionError, activeSidePanel, sessionPanelTrigger, runtimePanelTrigger, sessionPanelCloseButton, runtimePanelCloseButton, chatScrollArea, workspaceDropdownTrigger, agentDropdownTrigger,
-  hasUnreadMessages, outboundAttachmentId, debugOutboundPanel, debugPassthroughConnectionId, chatDropdowns, filteredAgents, activeSessionAgent, activeSessionWorkspace, activeWorkspaceLabel, activeAgentLabel, activeUserLabel, activeUserInitials, contextSelectionDirty, activeSessionReadOnly, activeSessionAgentStatusLabel, composerPlaceholder, filteredSessions, latestRunStepRows, runtimeSummary, runStatusLabel,
-  runtimeIntentLabel, capabilityCount, capabilityCountLabel, runtimeTargetReleaseId, conversationBusy, currentSubjectLabel, passthroughConnections, requiresPassthroughToken, effectiveDebugConnectionId, newSession, selectSession, toggleSidePanel, closeSidePanel, trapSidePanelFocus, handleConversationScroll, revealLatestMessages, attachDebugOutboundCredentials, onOutboundAttachment, send, confirm,
-  cancelConfirmation, archiveCurrentSession, renderMessageMarkdown, sessionAgentName, toggleChatDropdown, closeChatDropdowns, selectWorkspaceOption, selectAgentOption, handleDropdownMenuKeydown, statusBadgeClass, stepStatusIcon, messageTime, messageDateTimeTitle, messageDateLabel, shouldShowMessageDate, sessionTime
+  workspaces, agents, chat, composer, selectedWorkspaceId, selectedAgentId, sessionKeyword, sessionStatusFilter, sending, confirming, archivingSession, contextLoading, actionError, activeSidePanel, sessionPanelTrigger, runtimePanelTrigger, sessionPanelCloseButton, runtimePanelCloseButton, chatScrollArea, workspaceDropdownTrigger, agentDropdownTrigger,
+  hasUnreadMessages, outboundAttachmentId, debugOutboundPanel, debugPassthroughConnectionId, debugCredentialPanelOpen, chatDropdowns, filteredAgents, activeSessionAgent, activeSessionWorkspace, activeWorkspaceLabel, activeAgentLabel, activeUserLabel, activeUserInitials, contextSelectionDirty, activeSessionReadOnly, activeSessionAgentStatusLabel, composerPlaceholder, filteredSessions, latestRunStepRows, runtimeSummary, runStatusLabel,
+  runtimeIntentLabel, capabilityCount, capabilityCountLabel, runtimeTargetReleaseId, conversationBusy, currentSubjectLabel, passthroughConnections, requiresPassthroughToken, effectiveDebugConnectionId, newSession, selectSession, toggleDebugCredentialPanel, toggleSidePanel, closeSidePanel, trapSidePanelFocus, handleConversationScroll, revealLatestMessages, attachDebugOutboundCredentials, onOutboundAttachment, send, confirm,
+  cancelConfirmation, archiveCurrentSession, renderMessageMarkdown, sessionAgentName, sessionWorkspaceName, sessionDisplayTitle, sessionPreview, sessionDateLabel, shouldShowSessionDate, toggleChatDropdown, closeChatDropdowns, selectWorkspaceOption, selectAgentOption, handleDropdownMenuKeydown, statusBadgeClass, stepStatusIcon, messageTime, messageDateTimeTitle, messageDateLabel, shouldShowMessageDate, sessionTime
 } = scp;
 void DebugOutboundCredentialPanel;
 </script>
@@ -158,7 +158,7 @@ void DebugOutboundCredentialPanel;
       </button>
     </header>
 
-    <main class="chat-workbench">
+    <div class="chat-workbench">
       <section class="chat-conversation-panel">
         <div class="runtime-console-header">
           <div class="runtime-console-header-content">
@@ -197,7 +197,7 @@ void DebugOutboundCredentialPanel;
             </div>
             <div class="runtime-summary-list" :aria-label="t('chat.runtimeSummaryAria')">
               <span
-                ><small>{{ t("chat.intent") }}</small
+                ><small>{{ t("chat.runPhase") }}</small
                 ><strong>{{ runtimeIntentLabel }}</strong></span
               >
               <span
@@ -208,13 +208,15 @@ void DebugOutboundCredentialPanel;
           </div>
         </div>
 
-        <section class="debug-console-banner" role="status" data-testid="debug-console-nonprod-banner">
-          <i class="fa-solid fa-flask" aria-hidden="true" />
-          <div>
+        <details class="debug-console-banner" data-testid="debug-console-nonprod-banner">
+          <summary>
+            <i class="fa-solid fa-flask" aria-hidden="true" />
             <strong>{{ t("chat.debugBannerTitle") }}</strong>
-            <p>{{ t("chat.debugBannerBody") }}</p>
-          </div>
-        </section>
+            <span>{{ t("chat.debugBannerSummary") }}</span>
+            <i class="fa-solid fa-chevron-down" aria-hidden="true" />
+          </summary>
+          <p>{{ t("chat.debugBannerBody") }}</p>
+        </details>
         <div class="debug-subject-bar" data-testid="debug-console-subject" :aria-label="t('chat.currentSubjectAria')">
           <span
             ><small>{{ t("chat.currentSubject") }}</small
@@ -377,11 +379,32 @@ void DebugOutboundCredentialPanel;
           <div v-if="!chat.messages.length && !activeSessionReadOnly" class="prompt-suggestion-strip">
             <span>{{ t("chat.noShortcuts") }}</span>
           </div>
+          <button
+            v-if="requiresPassthroughToken && chat.activeSession && !activeSessionReadOnly"
+            class="debug-credential-trigger"
+            type="button"
+            :aria-expanded="debugCredentialPanelOpen"
+            aria-controls="debug-outbound-credential-sheet"
+            @click="toggleDebugCredentialPanel"
+          >
+            <i class="fa-solid fa-key" aria-hidden="true" />
+            <span>{{
+              outboundAttachmentId ? t("chat.outboundCredentialBound") : t("chat.bindOutboundCredential")
+            }}</span>
+            <i class="fa-solid fa-chevron-up" :class="{ open: debugCredentialPanelOpen }" aria-hidden="true" />
+          </button>
           <div
-            v-if="chat.activeSession && !activeSessionReadOnly"
+            v-if="requiresPassthroughToken && debugCredentialPanelOpen && chat.activeSession && !activeSessionReadOnly"
+            id="debug-outbound-credential-sheet"
             class="debug-outbound-dock"
             data-testid="debug-outbound-credential-panel"
           >
+            <div class="debug-outbound-sheet-head">
+              <strong>{{ t("chat.outboundTitle") }}</strong>
+              <button type="button" :aria-label="t('chat.closeCredentialPanel')" @click="toggleDebugCredentialPanel">
+                <i class="fa-solid fa-xmark" aria-hidden="true" />
+              </button>
+            </div>
             <label v-if="requiresPassthroughToken && passthroughConnections.length > 1" class="debug-connection-picker">
               {{ t("chat.passthroughConnection") }}
               <select v-model="debugPassthroughConnectionId" :aria-label="t('chat.selectPassthroughConnection')">
@@ -468,31 +491,56 @@ void DebugOutboundCredentialPanel;
               <i class="fa-solid fa-magnifying-glass" aria-hidden="true" />
               <input v-model="sessionKeyword" type="text" :placeholder="t('chat.filterSessions')" />
             </label>
+            <div class="chat-session-status-filter" :aria-label="t('chat.sessionStatusFilter')">
+              <button
+                type="button"
+                :class="{ active: sessionStatusFilter === 'ALL' }"
+                @click="sessionStatusFilter = 'ALL'"
+              >
+                {{ t("chat.allSessions") }}
+              </button>
+              <button
+                type="button"
+                :class="{ active: sessionStatusFilter === 'ACTIVE' }"
+                @click="sessionStatusFilter = 'ACTIVE'"
+              >
+                {{ t("chat.activeSessions") }}
+              </button>
+              <button
+                type="button"
+                :class="{ active: sessionStatusFilter === 'ARCHIVED' }"
+                @click="sessionStatusFilter = 'ARCHIVED'"
+              >
+                {{ t("chat.archived") }}
+              </button>
+            </div>
 
             <div class="chat-session-list">
-              <button
-                v-for="session in filteredSessions"
-                :key="session.id"
-                class="chat-session-card"
-                :class="{ active: session.id === chat.activeSessionId }"
-                type="button"
-                @click="selectSession(session.id)"
-              >
-                <strong :title="session.title">{{ session.title }}</strong>
-                <span class="chat-session-meta">
-                  <small class="chat-session-agent-name">
-                    <span>{{ sessionAgentName(session) }}</span>
-                    <b
-                      v-if="
-                        session.status === 'ARCHIVED' || !agents.items.some((agent) => agent.id === session.agentId)
-                      "
+              <template v-for="(session, sessionIndex) in filteredSessions" :key="session.id">
+                <p v-if="shouldShowSessionDate(sessionIndex)" class="chat-session-date">
+                  {{ sessionDateLabel(session.updatedAt) }}
+                </p>
+                <button
+                  class="chat-session-card"
+                  :class="{ active: session.id === chat.activeSessionId }"
+                  type="button"
+                  @click="selectSession(session.id)"
+                >
+                  <strong :title="sessionDisplayTitle(session)">{{ sessionDisplayTitle(session) }}</strong>
+                  <span v-if="sessionPreview(session)" class="chat-session-preview">{{ sessionPreview(session) }}</span>
+                  <span class="chat-session-meta">
+                    <small class="chat-session-agent-name"
+                      ><span>{{ sessionAgentName(session) }}</span></small
                     >
-                      {{ session.status === "ARCHIVED" ? t("chat.archived") : t("chat.unavailable") }}
-                    </b>
-                  </small>
-                  <small>{{ sessionTime(session.updatedAt) }}</small>
-                </span>
-              </button>
+                    <small>{{ sessionWorkspaceName(session) }} · {{ sessionTime(session.updatedAt) }}</small>
+                  </span>
+                  <b
+                    v-if="session.status === 'ARCHIVED' || !agents.items.some((agent) => agent.id === session.agentId)"
+                    class="chat-session-state"
+                    >{{ session.status === "ARCHIVED" ? t("chat.archived") : t("chat.unavailable") }}</b
+                  >
+                </button>
+              </template>
 
               <div v-if="!filteredSessions.length" class="chat-session-empty">
                 <i class="fa-regular fa-message" aria-hidden="true" />
@@ -614,6 +662,6 @@ void DebugOutboundCredentialPanel;
           </aside>
         </div>
       </Transition>
-    </main>
+    </div>
   </div>
 </template>

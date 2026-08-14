@@ -86,6 +86,7 @@
   "publishing": "正在发布…",
   "forcePublishing": "强制发布中…",
   "forcePublish": "强制发布",
+  "morePublishActions": "更多发布操作",
   "exitEdit": "退出编辑",
   "cannotDeleteTerminal": "起止节点不可删除",
   "deleteNode": "删除节点",
@@ -311,6 +312,10 @@
   "publishReasonHint": "（至少 8 个字符，用于审计）",
   "forcePublishReasonPh": "例如：local-dev skip trial for AI pipeline",
   "forcePublishReasonMinError": "请填写至少 8 个字符的原因。",
+  "forcePublishImpactTitle": "检查项与影响",
+  "forcePublishKeptCompile": "保留：画布编译与静态校验仍必须通过。",
+  "forcePublishSkippedTrial": "跳过：真实试运行与业务链路验证。",
+  "forcePublishAudited": "审计：记录原因及平台管理员身份。",
   "confirmForcePublish": "确认强制发布",
   "snapshotDraft": "Draft 快照",
   "snapshotSpec": "Spec 快照",
@@ -417,5 +422,7 @@
   "zoomIn": "放大画布",
   "zoomOut": "缩小画布",
   "fitAllNodes": "适配全部节点",
+  "nodeCount": "{n} 个节点",
+  "minimapFitAria": "画布总览；点击适配全部节点",
   "noTrialTrace": "暂无试运行执行轨迹。"
 }

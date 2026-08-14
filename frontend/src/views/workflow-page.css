@@ -1205,6 +1205,74 @@
   cursor: not-allowed;
 }
 
+.workflow-editor-more-actions {
+  position: relative;
+}
+.workflow-editor-more-actions > summary {
+  display: inline-flex;
+  width: 36px;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #475569;
+  cursor: pointer;
+  list-style: none;
+}
+.workflow-editor-more-actions > summary::-webkit-details-marker {
+  display: none;
+}
+.workflow-editor-more-actions > div {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  min-width: 180px;
+  padding: 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.16);
+}
+.workflow-editor-more-actions .workflow-editor-force-publish-button {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.workflow-force-publish-checks {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.workflow-force-publish-checks > strong {
+  color: #334155;
+  font-size: 12px;
+}
+.workflow-force-publish-checks ul {
+  display: grid;
+  gap: 7px;
+  margin: 9px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.workflow-force-publish-checks li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #475569;
+  font-size: 11px;
+}
+.workflow-force-publish-checks li:nth-child(2) i {
+  color: #dc2626;
+}
+.workflow-force-publish-checks li:not(:nth-child(2)) i {
+  color: #0f766e;
+}
+
 .workflow-editor-close-button {
   width: 42px;
   padding: 0;
@@ -1579,6 +1647,51 @@
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 12px;
   box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
+}
+
+.workflow-flow-scale,
+.workflow-flow-node-count {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  padding: 0 8px;
+  color: #475569;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.workflow-flow-controls .workflow-fit-all-button {
+  width: auto;
+  gap: 6px;
+  padding: 0 9px;
+}
+
+.workflow-flow-minimap {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 5;
+  width: 128px;
+  height: 84px;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+  cursor: pointer;
+}
+
+.workflow-flow-minimap > span {
+  position: absolute;
+  width: 12px;
+  height: 7px;
+  border-radius: 2px;
+  background: #94a3b8;
+}
+
+.workflow-flow-minimap > span.selected {
+  background: #0f766e;
 }
 
 .workflow-flow-controls button {

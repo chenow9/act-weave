@@ -22,6 +22,7 @@ const {
   verificationPathLabel,
   connectionPortLabel,
   credentialPlacementLabel,
+  connectionUsesAuthentication,
   refreshModeLabel,
   closeConnectionPreview,
   openConnectionEditor,
@@ -116,7 +117,7 @@ const {
             ? t("connections.availableForTools")
             : t("connections.needsAttention")
         }}</strong>
-        <span>{{ verificationSummary(detailConnection.id) }}</span>
+        <span>{{ verificationSummary(detailConnection) }}</span>
       </div>
     </div>
 
@@ -179,15 +180,19 @@ const {
             ><small>{{ t("connections.authType") }}</small
             ><b>{{ authModeLabel(detailConnection.authConfig.mode, detailConnection.authConfig.label) }}</b></span
           >
-          <span
+          <span v-if="connectionUsesAuthentication(detailConnection)"
             ><small>{{ t("connections.credentialPlacement") }}</small
             ><b>{{ credentialPlacementLabel(detailConnection) }}</b></span
+          >
+          <span v-else
+            ><small>{{ t("connections.credentialHandling") }}</small
+            ><b>{{ t("connections.noCredentialInjection") }}</b></span
           >
           <span
             ><small>{{ t("connections.environment") }}</small
             ><em>{{ environmentLabel(detailConnection.environment) }}</em></span
           >
-          <span
+          <span v-if="connectionUsesAuthentication(detailConnection)"
             ><small>{{ t("connections.afterExpires") }}</small
             ><b>{{ refreshModeLabel(detailConnection) }}</b></span
           >

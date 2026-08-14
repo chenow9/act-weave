@@ -4,6 +4,7 @@ export interface ManagementSummaryItem {
   value: string | number;
   icon: string;
   note?: string;
+  ariaLabel?: string;
   tone?: "default" | "info" | "warning" | "danger";
 }
 </script>
@@ -17,9 +18,16 @@ const { t } = useI18n();
 
 <template>
   <section class="management-summary-strip" :aria-label="t('common.pageSummaryAria')">
-    <article v-for="item in items" :key="item.label" :class="`tone-${item.tone || 'default'}`">
-      <span><i :class="item.icon" aria-hidden="true" />{{ item.label }}</span>
-      <strong
+    <article
+      v-for="item in items"
+      :key="item.label"
+      :class="`tone-${item.tone || 'default'}`"
+      :aria-label="item.ariaLabel"
+    >
+      <span :aria-hidden="item.ariaLabel ? 'true' : undefined"
+        ><i :class="item.icon" aria-hidden="true" />{{ item.label }}</span
+      >
+      <strong :aria-hidden="item.ariaLabel ? 'true' : undefined"
         >{{ item.value }}<small v-if="item.note">{{ item.note }}</small></strong
       >
     </article>

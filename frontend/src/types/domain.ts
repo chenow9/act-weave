@@ -327,6 +327,11 @@ export interface RiskItem {
   tone: "amber" | "red" | "cyan";
   title: string;
   detail: string;
+  action?: {
+    routeName: string;
+    label: string;
+    query?: Record<string, string>;
+  };
 }
 
 export interface ExecutionStep {
@@ -1630,6 +1635,15 @@ export interface AgentAuditTraceDetail {
   debugMode: boolean;
   steps: AgentAuditStep[];
   runIds: string[];
+  failure?: {
+    stage: string;
+    stepTitle: string;
+    errorCode: string;
+    errorMessage: string;
+    timeOffsetMs: number;
+    runId?: string;
+    stepId?: string;
+  };
   /** Full timeline length after build (not just this page). */
   stepTotal?: number;
   stepOffset?: number;

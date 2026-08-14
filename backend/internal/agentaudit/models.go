@@ -117,23 +117,35 @@ type Step struct {
 }
 
 type TraceDetail struct {
-	TraceID    string     `json:"traceId"`
-	StartedAt  time.Time  `json:"startedAt"`
-	FinishedAt *time.Time `json:"finishedAt,omitempty"`
-	LatencyMs  *int64     `json:"latencyMs,omitempty"`
-	Status     string     `json:"status"`
-	Model      string     `json:"model"`
-	UserLabel  string     `json:"userLabel"`
-	User       *ActorSummary `json:"user,omitempty"`
-	DebugMode  bool       `json:"debugMode"`
-	Steps      []Step     `json:"steps"`
-	RunIDs     []string   `json:"runIds"`
+	TraceID    string               `json:"traceId"`
+	StartedAt  time.Time            `json:"startedAt"`
+	FinishedAt *time.Time           `json:"finishedAt,omitempty"`
+	LatencyMs  *int64               `json:"latencyMs,omitempty"`
+	Status     string               `json:"status"`
+	Model      string               `json:"model"`
+	UserLabel  string               `json:"userLabel"`
+	User       *ActorSummary        `json:"user,omitempty"`
+	DebugMode  bool                 `json:"debugMode"`
+	Steps      []Step               `json:"steps"`
+	RunIDs     []string             `json:"runIds"`
+	Failure    *TraceFailureSummary `json:"failure,omitempty"`
 	// Step pagination (timeline can be long: many MODEL/TOOL/output cards).
 	// StepTotal is the full built timeline length; Steps is one page slice.
 	StepTotal  int  `json:"stepTotal"`
 	StepOffset int  `json:"stepOffset"`
 	StepLimit  int  `json:"stepLimit"`
 	HasMore    bool `json:"hasMore"`
+}
+
+// TraceFailureSummary keeps the first-screen diagnosis independent from timeline pagination.
+type TraceFailureSummary struct {
+	Stage        string `json:"stage"`
+	StepTitle    string `json:"stepTitle"`
+	ErrorCode    string `json:"errorCode"`
+	ErrorMessage string `json:"errorMessage"`
+	TimeOffsetMs int64  `json:"timeOffsetMs"`
+	RunID        string `json:"runId,omitempty"`
+	StepID       string `json:"stepId,omitempty"`
 }
 
 // DetailFilter pages the built timeline steps (not raw agent_run_steps rows).

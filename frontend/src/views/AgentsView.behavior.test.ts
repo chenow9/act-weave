@@ -471,7 +471,7 @@ describe("agents view behavior", () => {
     await saveButton.trigger("click");
     expect(createAgentMock).not.toHaveBeenCalled();
 
-    const nameInput = wrapper.get<HTMLInputElement>(".agent-studio-panel input[aria-label='Agent 运行名称']");
+    const nameInput = wrapper.get<HTMLInputElement>(".agent-studio-panel input[aria-label='Agent 名称']");
     await nameInput.setValue("新的售后 Agent");
     expect(wrapper.get(".agent-studio-actions .primary-button").attributes("disabled")).toBeUndefined();
 

@@ -34,6 +34,7 @@ export function createChatExecutionPageModel() {
   const selectedWorkspaceId = ref("");
   const selectedAgentId = ref("");
   const sessionKeyword = ref("");
+  const sessionStatusFilter = ref<"ALL" | "ACTIVE" | "ARCHIVED">("ALL");
   const sending = ref(false);
   const confirming = ref(false);
   const archivingSession = ref(false);
@@ -57,6 +58,7 @@ export function createChatExecutionPageModel() {
     clearAttachment?: () => void;
   } | null>(null);
   const debugPassthroughConnectionId = ref("");
+  const debugCredentialPanelOpen = ref(false);
   const chatDropdowns = ref<Record<ChatDropdownKey, boolean>>({
     workspace: false,
     agent: false,
@@ -101,14 +103,21 @@ export function createChatExecutionPageModel() {
   );
   const filteredSessions = computed(() => {
     const keyword = sessionKeyword.value.trim().toLowerCase();
-    if (!keyword) return chat.sessions;
-    return chat.sessions.filter((session) =>
-      [session.title, sessionAgentName(session), sessionWorkspaceName(session), session.latestRunId]
+    return chat.sessions.filter((session) => {
+      if (sessionStatusFilter.value !== "ALL" && session.status !== sessionStatusFilter.value) return false;
+      if (!keyword) return true;
+      return [
+        sessionDisplayTitle(session),
+        sessionPreview(session),
+        sessionAgentName(session),
+        sessionWorkspaceName(session),
+        session.latestRunId,
+      ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
-        .includes(keyword),
-    );
+        .includes(keyword);
+    });
   });
 
   const latestRunStepRows = computed(() =>
@@ -257,6 +266,10 @@ export function createChatExecutionPageModel() {
     }, tt("chat.loadSessionFailed"));
     await scrollToLatestTurn();
     closeSidePanel();
+  }
+
+  function toggleDebugCredentialPanel() {
+    debugCredentialPanelOpen.value = !debugCredentialPanelOpen.value;
   }
 
   async function toggleSidePanel(panel: ChatSidePanel) {
@@ -771,6 +784,32 @@ export function createChatExecutionPageModel() {
     return messageTime(updatedAt);
   }
 
+  function sessionDisplayTitle(session: WorkspaceChatSession) {
+    if (session.id === chat.activeSessionId) {
+      const firstRequest = chat.messages.find((message) => message.role === "USER")?.content.trim();
+      if (firstRequest) return firstRequest.length > 42 ? `${firstRequest.slice(0, 42)}…` : firstRequest;
+    }
+    return session.title;
+  }
+
+  function sessionPreview(session: WorkspaceChatSession) {
+    if (session.id !== chat.activeSessionId) return "";
+    const message = [...chat.messages].reverse().find((item) => item.content.trim());
+    if (!message) return "";
+    const content = message.content.replace(/\s+/g, " ").trim();
+    return content.length > 64 ? `${content.slice(0, 64)}…` : content;
+  }
+
+  function sessionDateLabel(updatedAt?: string) {
+    return messageDateLabel(updatedAt);
+  }
+
+  function shouldShowSessionDate(index: number) {
+    const current = filteredSessions.value[index];
+    const previous = filteredSessions.value[index - 1];
+    return localDateKey(parseMessageDate(current?.updatedAt)) !== localDateKey(parseMessageDate(previous?.updatedAt));
+  }
+
   return {
     workspaces,
     agents,
@@ -782,6 +821,7 @@ export function createChatExecutionPageModel() {
     selectedWorkspaceId,
     selectedAgentId,
     sessionKeyword,
+    sessionStatusFilter,
     sending,
     confirming,
     archivingSession,
@@ -801,6 +841,7 @@ export function createChatExecutionPageModel() {
     outboundAttachmentId,
     debugOutboundPanel,
     debugPassthroughConnectionId,
+    debugCredentialPanelOpen,
     chatDropdowns,
     selectedWorkspace,
     filteredAgents,
@@ -830,6 +871,7 @@ export function createChatExecutionPageModel() {
     effectiveDebugConnectionId,
     newSession,
     selectSession,
+    toggleDebugCredentialPanel,
     toggleSidePanel,
     closeSidePanel,
     trapSidePanelFocus,
@@ -875,5 +917,9 @@ export function createChatExecutionPageModel() {
     parseMessageDate,
     localDateKey,
     sessionTime,
+    sessionDisplayTitle,
+    sessionPreview,
+    sessionDateLabel,
+    shouldShowSessionDate,
   };
 }

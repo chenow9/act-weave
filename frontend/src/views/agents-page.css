@@ -599,6 +599,49 @@
   padding-top: 2px;
 }
 
+.agent-unsaved-count {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #fffbeb;
+  color: #b45309;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.agent-studio-section-nav {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px 18px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.agent-studio-section-nav button {
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.agent-studio-section-nav button:hover,
+.agent-studio-section-nav button:focus-visible {
+  border-color: #5eead4;
+  color: #0f766e;
+}
+.agent-studio-section-anchor,
+.agent-studio-section {
+  scroll-margin-top: 12px;
+}
+
 .agent-studio-inline-warning {
   display: flex;
   flex-shrink: 0;

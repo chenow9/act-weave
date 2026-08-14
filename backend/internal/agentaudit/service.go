@@ -59,6 +59,9 @@ func (s *Service) DebugMode() bool {
 
 type ListFilter struct {
 	Query  string
+	Status string
+	From   string
+	To     string
 	Limit  int
 	Offset int
 }
@@ -77,6 +80,8 @@ func (s *Service) ListTraces(ctx context.Context, workspaceID string, filter Lis
 		offset = 0
 	}
 	query := strings.TrimSpace(filter.Query)
+	status := strings.ToLower(strings.TrimSpace(filter.Status))
+	from, to := strings.TrimSpace(filter.From), strings.TrimSpace(filter.To)
 
 	var total int
 	if err := s.db.QueryRowContext(ctx, `
@@ -84,7 +89,10 @@ func (s *Service) ListTraces(ctx context.Context, workspaceID string, filter Lis
 		FROM agent_runs ar
 		WHERE ar.workspace_id = $1
 		  AND ($2 = '' OR ar.trace_id ILIKE '%' || $2 || '%' OR CAST(ar.triggered_by_id AS text) ILIKE '%' || $2 || '%')
-	`, workspaceID, query).Scan(&total); err != nil {
+		  AND ($3 = '' OR ($3 = 'error' AND ar.status IN ('FAILED','CANCELLED','TIMED_OUT')) OR ($3 = 'success' AND ar.status = 'SUCCEEDED') OR ($3 = 'running' AND ar.status IN ('RUNNING','WAITING_CONFIRMATION','WAITING_INTERACTION','ACCEPTED')))
+		  AND ($4 = '' OR ar.started_at >= NULLIF($4, '')::date)
+		  AND ($5 = '' OR ar.started_at < (NULLIF($5, '')::date + INTERVAL '1 day'))
+	`, workspaceID, query, status, from, to).Scan(&total); err != nil {
 		return ListResult{}, fmt.Errorf("count agent traces: %w", err)
 	}
 
@@ -93,10 +101,13 @@ func (s *Service) ListTraces(ctx context.Context, workspaceID string, filter Lis
 		FROM agent_runs ar
 		WHERE ar.workspace_id = $1
 		  AND ($2 = '' OR ar.trace_id ILIKE '%' || $2 || '%' OR CAST(ar.triggered_by_id AS text) ILIKE '%' || $2 || '%')
+		  AND ($3 = '' OR ($3 = 'error' AND ar.status IN ('FAILED','CANCELLED','TIMED_OUT')) OR ($3 = 'success' AND ar.status = 'SUCCEEDED') OR ($3 = 'running' AND ar.status IN ('RUNNING','WAITING_CONFIRMATION','WAITING_INTERACTION','ACCEPTED')))
+		  AND ($4 = '' OR ar.started_at >= NULLIF($4, '')::date)
+		  AND ($5 = '' OR ar.started_at < (NULLIF($5, '')::date + INTERVAL '1 day'))
 		GROUP BY ar.trace_id
 		ORDER BY MAX(ar.started_at) DESC, ar.trace_id DESC
-		LIMIT $3 OFFSET $4
-	`, workspaceID, query, limit, offset)
+		LIMIT $6 OFFSET $7
+	`, workspaceID, query, status, from, to, limit, offset)
 	if err != nil {
 		return ListResult{}, fmt.Errorf("list agent traces: %w", err)
 	}
@@ -135,7 +146,7 @@ func (s *Service) ListTraces(ctx context.Context, workspaceID string, filter Lis
 		items = append(items, AggregateListItem(runs, stepCount))
 	}
 
-	stats, err := s.computeStats(ctx, workspaceID)
+	stats, err := s.computeStats(ctx, workspaceID, status, from, to)
 	if err != nil {
 		return ListResult{}, err
 	}
@@ -154,7 +165,7 @@ func (s *Service) countSteps(ctx context.Context, workspaceID string, runIDs []s
 	return count, err
 }
 
-func (s *Service) computeStats(ctx context.Context, workspaceID string) (Stats, error) {
+func (s *Service) computeStats(ctx context.Context, workspaceID, status, from, to string) (Stats, error) {
 	var total, succeeded, failed int64
 	var avgMs sql.NullFloat64
 	err := s.db.QueryRowContext(ctx, `
@@ -166,7 +177,10 @@ func (s *Service) computeStats(ctx context.Context, workspaceID string) (Stats, 
 				FILTER (WHERE finished_at IS NOT NULL)
 		FROM agent_runs
 		WHERE workspace_id = $1
-	`, workspaceID).Scan(&total, &succeeded, &failed, &avgMs)
+		  AND ($2 = '' OR ($2 = 'error' AND status IN ('FAILED','CANCELLED','TIMED_OUT')) OR ($2 = 'success' AND status = 'SUCCEEDED') OR ($2 = 'running' AND status IN ('RUNNING','WAITING_CONFIRMATION','WAITING_INTERACTION','ACCEPTED')))
+		  AND ($3 = '' OR started_at >= NULLIF($3, '')::date)
+		  AND ($4 = '' OR started_at < (NULLIF($4, '')::date + INTERVAL '1 day'))
+	`, workspaceID, status, from, to).Scan(&total, &succeeded, &failed, &avgMs)
 	if err != nil {
 		return Stats{}, err
 	}

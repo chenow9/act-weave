@@ -12,7 +12,7 @@ import { useProvidersStore } from "../stores/providers";
 import { useConnectionsStore } from "../stores/connections";
 import { useAuthStore } from "../stores/auth";
 import { tt } from "../i18n/tt";
-import { apiErrorMessage } from "../services/api";
+import { apiClient, apiErrorMessage } from "../services/api";
 import {
   buildBodyContractFromRequestParams,
   buildRequestParamsFromContracts,
@@ -78,6 +78,7 @@ export function createToolsPageModel() {
   const connectionsStore = useConnectionsStore();
   const workspaces = useWorkspaceStore();
   const auth = useAuthStore();
+  const maintainerLabels = ref<Record<string, string>>({});
   const canEditWorkspace = computed(() =>
     workspaces.can(workspaces.activeWorkspaceId || workspaces.items[0]?.id || "", "EDIT"),
   );
@@ -835,6 +836,35 @@ export function createToolsPageModel() {
     return tool.activeReleaseId ? tt("tools.agentBindAvailable") : tt("tools.agentBindUnavailable");
   }
 
+  function toolImpactSummary(tool: Tool) {
+    return tool.activeReleaseId ? tt("tools.impactPublishedSummary") : tt("tools.impactDraftSummary");
+  }
+
+  function toolMaintainerLabel(tool: Tool) {
+    const id = (tool.updatedBy || tool.createdBy || "").trim();
+    const currentUser = auth.user;
+    const name =
+      maintainerLabels.value[id] || (currentUser?.id === id ? currentUser.username || currentUser.displayName : "");
+    const actor = name || tt("tools.maintainerAccount");
+    const time = tool.updatedAt ? formatToolTableUpdatedAt(tool) : "";
+    return time ? `${actor} · ${time}` : actor;
+  }
+
+  async function resolveToolMaintainer(tool: Tool) {
+    const id = (tool.updatedBy || tool.createdBy || "").trim();
+    if (!id || maintainerLabels.value[id] || auth.user?.id === id) return;
+    try {
+      const response = await apiClient.get<{ items?: Array<{ id?: string; username?: string; displayName?: string }> }>(
+        `/admin/users?query=${encodeURIComponent(id)}&page=1&pageSize=10`,
+      );
+      const match = response.data.items?.find((user) => user.id?.toLowerCase() === id.toLowerCase());
+      if (match)
+        maintainerLabels.value = { ...maintainerLabels.value, [id]: match.username || match.displayName || "" };
+    } catch {
+      /* Keep the human-safe fallback; raw UUID remains out of the primary UI. */
+    }
+  }
+
   function riskActionTools(): Tool[] {
     const { type, tool, tools } = pendingRiskAction.value;
     if (type === "batch-delete" || type === "batch-force-publish") return tools;
@@ -1129,6 +1159,7 @@ export function createToolsPageModel() {
     selectedToolId.value = tool.id;
     detailToolId.value = tool.id;
     toolDetailVisible.value = true;
+    void resolveToolMaintainer(tool);
     // List rows only carry headVersion summary; hydrate full versions for detail panel.
     if (!toolHasFullVersions(tool)) {
       try {
@@ -2049,6 +2080,8 @@ export function createToolsPageModel() {
     toolVersionLabel,
     toolEndpointSummary,
     agentImpactLabel,
+    toolImpactSummary,
+    toolMaintainerLabel,
     formatToolTableUpdatedAt,
     serializeDraftForSnapshot,
     selectStatusFilter,

@@ -85,14 +85,22 @@ const filteredNavigationItems = computed(() => {
   });
 });
 
-/** 方案 1：完整分组，常用项仍出现在列表中（不再从分组剔除）。 */
-const groupedNavigation = computed(() => groupNavItemsBySection(filteredNavigationItems.value));
+const groupedNavigation = computed(() =>
+  groupNavItemsBySection(
+    navigationQuery.value.trim()
+      ? filteredNavigationItems.value
+      : filteredNavigationItems.value.filter((item) => !primaryIdSet.has(item.id)),
+  ),
+);
 const visiblePrimaryNavigation = computed(() => {
   if (!navigationQuery.value.trim()) return primaryNavigation.value;
-  return filteredNavigationItems.value.filter((item) => primaryIdSet.has(item.id));
+  return [];
 });
 const hasNavigationResults = computed(() => filteredNavigationItems.value.length > 0);
 const showPrimaryShortcuts = computed(() => visiblePrimaryNavigation.value.length > 0);
+const groupedNavigationLabel = computed(() =>
+  navigationQuery.value.trim() ? t("nav.allModules") : t("nav.moreModules"),
+);
 const activeWorkspace = computed(() => workspaces.activeWorkspace);
 const filteredWorkspaces = computed(() => switcherResults.value);
 const userInitials = computed(() => {
@@ -355,6 +363,7 @@ function handleDocumentKeydown(event: KeyboardEvent) {
                 class="island-card island-module"
                 :class="{ active: item.id === activeModule }"
                 :to="item.route"
+                :title="navLabel(item)"
                 @click="closeNavigation(true)"
               >
                 <span class="island-module-icon"><i :class="item.icon" aria-hidden="true" /></span>
@@ -367,7 +376,7 @@ function handleDocumentKeydown(event: KeyboardEvent) {
           </div>
 
           <div v-if="groupedNavigation.length" class="island-section island-section--all">
-            <span class="island-section-label">{{ t("nav.allModules") }}</span>
+            <span class="island-section-label">{{ groupedNavigationLabel }}</span>
             <div class="island-groups">
               <section v-for="group in groupedNavigation" :key="group.sectionId" class="island-group">
                 <span class="island-group-title">{{ sectionLabel(group.sectionId) }}</span>
@@ -377,6 +386,7 @@ function handleDocumentKeydown(event: KeyboardEvent) {
                   class="island-row island-module"
                   :class="{ active: item.id === activeModule }"
                   :to="item.route"
+                  :title="navLabel(item)"
                   :data-nav-id="item.id"
                   @click="closeNavigation(true)"
                 >

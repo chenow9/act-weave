@@ -17,7 +17,7 @@ const { t } = useI18n();
 
 const dialogRef = ref<HTMLElement>();
 const reasonInputRef = ref<HTMLInputElement>();
-const reason = ref("local-dev skip trial");
+const reason = ref("");
 const touched = ref(false);
 
 const reasonTrimmed = computed(() => reason.value.trim());
@@ -28,7 +28,7 @@ watch(
   () => props.visible,
   (visible) => {
     if (!visible) return;
-    reason.value = "local-dev skip trial";
+    reason.value = "";
     touched.value = false;
     void nextTick(() => {
       reasonInputRef.value?.focus();
@@ -122,6 +122,19 @@ function trapDialogFocus(event: KeyboardEvent) {
             <strong>{{ t("workflow.highRisk") }}</strong>
             <span>{{ t("workflow.highRiskDetail") }}</span>
           </div>
+        </div>
+
+        <div class="workflow-force-publish-checks" role="note">
+          <strong>{{ t("workflow.forcePublishImpactTitle") }}</strong>
+          <ul>
+            <li>
+              <i class="fa-solid fa-circle-check" aria-hidden="true" /> {{ t("workflow.forcePublishKeptCompile") }}
+            </li>
+            <li>
+              <i class="fa-solid fa-circle-xmark" aria-hidden="true" /> {{ t("workflow.forcePublishSkippedTrial") }}
+            </li>
+            <li><i class="fa-solid fa-file-shield" aria-hidden="true" /> {{ t("workflow.forcePublishAudited") }}</li>
+          </ul>
         </div>
 
         <label class="workflow-force-publish-field">

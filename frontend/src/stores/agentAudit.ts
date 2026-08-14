@@ -10,6 +10,9 @@ import type {
 
 export interface AgentAuditListParams {
   q?: string;
+  status?: string;
+  from?: string;
+  to?: string;
   page?: number;
   pageSize?: number;
 }
@@ -21,6 +24,9 @@ interface AgentAuditState {
   debugMode: boolean;
   selected?: AgentAuditTraceDetail;
   searchQuery: string;
+  statusFilter: string;
+  rangeFrom: string;
+  rangeTo: string;
   page: number;
   pageSize: number;
   total: number;
@@ -54,6 +60,9 @@ export const useAgentAuditStore = defineStore("agentAudit", {
     debugMode: false,
     selected: undefined,
     searchQuery: "",
+    statusFilter: "",
+    rangeFrom: "",
+    rangeTo: "",
     page: 1,
     pageSize: DEFAULT_PAGE_SIZE,
     total: 0,
@@ -78,6 +87,9 @@ export const useAgentAuditStore = defineStore("agentAudit", {
       this.loading = true;
       this.workspaceId = workspaceId;
       if (normalized.q !== undefined) this.searchQuery = normalized.q;
+      if (normalized.status !== undefined) this.statusFilter = normalized.status;
+      if (normalized.from !== undefined) this.rangeFrom = normalized.from;
+      if (normalized.to !== undefined) this.rangeTo = normalized.to;
       if (normalized.page !== undefined) this.page = Math.max(1, normalized.page);
       if (normalized.pageSize !== undefined) {
         this.pageSize = Math.min(100, Math.max(1, normalized.pageSize));
@@ -86,6 +98,9 @@ export const useAgentAuditStore = defineStore("agentAudit", {
       try {
         const queryParams = new URLSearchParams();
         if (this.searchQuery.trim()) queryParams.set("q", this.searchQuery.trim());
+        if (this.statusFilter) queryParams.set("status", this.statusFilter);
+        if (this.rangeFrom) queryParams.set("from", this.rangeFrom);
+        if (this.rangeTo) queryParams.set("to", this.rangeTo);
         queryParams.set("limit", String(this.pageSize));
         queryParams.set("page", String(this.page));
         const suffix = queryParams.toString() ? `?${queryParams.toString()}` : "";

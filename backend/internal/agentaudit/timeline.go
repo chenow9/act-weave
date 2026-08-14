@@ -251,7 +251,47 @@ func BuildTimeline(
 		UserLabel: list.UserLabel, User: list.User, DebugMode: debugMode, Steps: out, RunIDs: list.RunIDs,
 		StepTotal: len(out), StepOffset: 0, StepLimit: len(out), HasMore: false,
 	}
+	if list.Status == "error" {
+		detail.Failure = findTraceFailure(out)
+	}
 	return detail
+}
+
+func findTraceFailure(steps []Step) *TraceFailureSummary {
+	var found *TraceFailureSummary
+	var failedOutput *TraceFailureSummary
+	var walk func([]Step)
+	walk = func(items []Step) {
+		for _, step := range items {
+			status := strings.ToUpper(strings.TrimSpace(step.Status))
+			if status == "FAILED" || status == "ERROR" || status == "TIMED_OUT" || status == "CANCELLED" || step.ErrorCode != "" || step.ErrorMessage != "" {
+				code := firstNonEmptyStr(step.ErrorCode, status)
+				if code == "" {
+					code = "RUN_FAILED"
+				}
+				message := firstNonEmptyStr(step.ErrorMessage)
+				if message == "" {
+					message = "Run ended without a structured error message. Review this failed stage and its parameters."
+				}
+				found = &TraceFailureSummary{Stage: step.Type, StepTitle: step.Title, ErrorCode: code, ErrorMessage: message, TimeOffsetMs: step.TimeOffsetMs, RunID: step.RunID, StepID: step.StepID}
+			}
+			if step.Type == "output" && strings.TrimSpace(step.Content) != "" {
+				lower := strings.ToLower(step.Content)
+				if strings.Contains(lower, "failed") || strings.Contains(lower, "error") || strings.Contains(step.Content, "无法") || strings.Contains(step.Content, "失败") || strings.Contains(step.Content, "抱歉") {
+					failedOutput = &TraceFailureSummary{Stage: "output", StepTitle: step.Title, ErrorCode: "RUN_OUTPUT_FAILED", ErrorMessage: strings.TrimSpace(step.Content), TimeOffsetMs: step.TimeOffsetMs, RunID: step.RunID, StepID: step.StepID}
+				}
+			}
+			walk(step.Children)
+		}
+	}
+	walk(steps)
+	if found == nil && failedOutput != nil {
+		found = failedOutput
+	}
+	if found == nil {
+		found = &TraceFailureSummary{Stage: "run", StepTitle: "Run failed", ErrorCode: "RUN_FAILED", ErrorMessage: "The run failed without a structured step error. Review the final persisted step and runtime logs."}
+	}
+	return found
 }
 
 func withAttribution(s Step, fact StepFact) Step {

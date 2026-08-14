@@ -114,6 +114,10 @@ export function createAgentsPageModel() {
         label: tt("agents.summaryRunning"),
         value: active,
         note: total ? `${((active / total) * 100).toFixed(1)}%` : "0%",
+        ariaLabel: tt("agents.summaryRunningAria", {
+          count: active,
+          percent: total ? ((active / total) * 100).toFixed(1) : "0",
+        }),
         icon: "fa-solid fa-circle-check",
       },
       { label: tt("agents.summaryPaused"), value: paused, icon: "fa-solid fa-circle-pause", tone: "warning" },
@@ -206,6 +210,18 @@ export function createAgentsPageModel() {
   const isAgentDeleteConfirmDirty = computed(() => agentDeleteConfirmName.value.trim().length > 0);
   const isAgentStudioDirty = computed(() => {
     return Boolean(studioMode.value && serializeAgentDraft(draftAgent.value) !== agentStudioInitialSnapshot.value);
+  });
+  const agentUnsavedChangeCount = computed(() => {
+    if (!isAgentStudioDirty.value) return 0;
+    try {
+      const before = JSON.parse(agentStudioInitialSnapshot.value || "{}") as Record<string, unknown>;
+      const after = JSON.parse(serializeAgentDraft(draftAgent.value)) as Record<string, unknown>;
+      return [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(
+        (key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]),
+      ).length;
+    } catch {
+      return 1;
+    }
   });
   const agentNameError = computed(() => (draftAgent.value.name.trim() ? "" : tt("agents.nameRequired")));
   const agentWorkspaceError = computed(() => (draftAgent.value.workspaceId ? "" : tt("agents.workspaceRequired")));
@@ -1535,6 +1551,7 @@ export function createAgentsPageModel() {
     agentColumns,
     isAgentDeleteConfirmDirty,
     isAgentStudioDirty,
+    agentUnsavedChangeCount,
     agentNameError,
     agentWorkspaceError,
     agentModelError,

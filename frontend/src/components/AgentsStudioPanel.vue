@@ -8,13 +8,13 @@ import AgentPromptDiffViewer from "./AgentPromptDiffViewer.vue";
 import AgentDelegationPanel from "./AgentDelegationPanel.vue";
 import { useAgentsPageContext } from "../composables/useAgentsPageContext";
 
-import { computed } from "vue";
+import { computed, ref } from "vue";
 
 const scp = useAgentsPageContext();
 /* prettier-ignore */
 const {
   studioMode, draftAgent, savingAgent, agentStudioPanelRef, agentNameInputRef, promptDetailDialogRef, agentStudioInlineWarning, pendingPromptSaveReview, weavePreviewAgent, acceptingPromptRevision, workspaceOptions, modelConfigOptions, selectedDraftModelCannotCallTools, studioTitle, agentNameError, agentWorkspaceError,
-  agentModelError, agentRoleError, agentPromptError, promptLineCount, promptPreviewText, canSaveAgent, originalPrompt, promptSaveDiff, pendingPromptText, weavePreviewDiff, agentSaveButtonLabel, canEnhanceDraftPrompt, formatSignedDelta, isEnhancing, toggleDraftStatus,
+  agentModelError, agentRoleError, agentPromptError, promptLineCount, promptPreviewText, canSaveAgent, originalPrompt, promptSaveDiff, pendingPromptText, weavePreviewDiff, agentSaveButtonLabel, canEnhanceDraftPrompt, formatSignedDelta, isEnhancing, toggleDraftStatus, isAgentStudioDirty, agentUnsavedChangeCount,
   agentContextMode, agentContextMaxInputTokens, agentContextMaxRecentTurns,
   agentContextSummaryMaxTokens, agentContextSummaryMinEvictedTurns, agentContextSummaryMaxPasses,
   agentContextIncludeCompactionSummary, agentContextEnableA2UI, agentContextAdvancedOpen, toggleAgentContextAdvanced,
@@ -31,6 +31,11 @@ const agentContextModeOptions = [
   { label: t("agents.modeInherit"), value: "" },
   { label: t("agents.modeDisabled"), value: "disabled" },
 ];
+
+const studioBodyRef = ref<HTMLElement | null>(null);
+function scrollStudioSection(id: string) {
+  studioBodyRef.value?.querySelector<HTMLElement>(`#${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 /** Options for delegation target picker (exclude self when possible). */
 const delegationAgentOptions = computed(() => {
@@ -79,6 +84,9 @@ void AgentDelegationPanel;
             </div>
           </div>
           <div class="agent-studio-actions">
+            <span v-if="isAgentStudioDirty" class="agent-unsaved-count">{{
+              t("agents.unsavedChanges", { n: agentUnsavedChangeCount })
+            }}</span>
             <button class="ghost-button" type="button" :disabled="savingAgent" @click="closeStudio">
               {{ t("agents.discard") }}
             </button>
@@ -94,8 +102,23 @@ void AgentDelegationPanel;
           <span>{{ agentStudioInlineWarning }}</span>
         </p>
 
-        <div class="agent-studio-body">
-          <section class="agent-studio-section agent-parameters-panel">
+        <nav class="agent-studio-section-nav" :aria-label="t('agents.sectionNavAria')">
+          <button type="button" @click="scrollStudioSection('agent-section-basics')">
+            {{ t("agents.sectionBasics") }}
+          </button>
+          <button type="button" @click="scrollStudioSection('agent-section-runtime')">
+            {{ t("agents.sectionRuntime") }}
+          </button>
+          <button type="button" @click="scrollStudioSection('agent-section-collaboration')">
+            {{ t("agents.sectionCollaboration") }}
+          </button>
+          <button type="button" @click="scrollStudioSection('agent-section-prompt')">
+            {{ t("agents.sectionPrompt") }}
+          </button>
+        </nav>
+
+        <div ref="studioBodyRef" class="agent-studio-body">
+          <section id="agent-section-basics" class="agent-studio-section agent-parameters-panel">
             <header>
               <span><i class="fa-solid fa-sliders" aria-hidden="true" /> {{ t("agents.params") }}</span>
             </header>
@@ -188,7 +211,7 @@ void AgentDelegationPanel;
                 </button>
               </div>
 
-              <div class="agent-context-policy">
+              <div id="agent-section-runtime" class="agent-context-policy agent-studio-section-anchor">
                 <header>
                   <strong>{{ t("agents.contextPolicy") }}</strong>
                   <small>{{ t("agents.contextPolicyHint") }}</small>
@@ -336,42 +359,44 @@ void AgentDelegationPanel;
             </div>
           </section>
 
-          <AgentDelegationPanel
-            v-if="studioMode === 'edit' && draftAgent.id && draftAgent.workspaceId"
-            :workspace-id="draftAgent.workspaceId"
-            :agent-id="draftAgent.id"
-            :agent-options="delegationAgentOptions"
-          />
-          <!-- Create mode: bindings need a persisted agentId — show deferred hint only. -->
-          <section v-else-if="studioMode === 'create'" class="agent-studio-section agent-delegation-deferred">
-            <header>
-              <span><i class="fa-solid fa-sitemap" aria-hidden="true" /> {{ t("agents.collabExternal") }}</span>
-              <span
-                class="agent-delegation-deferred-badge"
-                :class="{ 'is-unavailable': selectedDraftModelCannotCallTools }"
-                >{{
-                  selectedDraftModelCannotCallTools
-                    ? t("agents.modelCannotCallToolsHint")
-                    : t("agents.configureAfterCreate")
-                }}</span
-              >
-            </header>
-            <div class="agent-delegation-deferred-body">
-              <i class="fa-solid fa-lock" aria-hidden="true" />
-              <div>
-                <p>
-                  {{
+          <div id="agent-section-collaboration" class="agent-studio-section-anchor">
+            <AgentDelegationPanel
+              v-if="studioMode === 'edit' && draftAgent.id && draftAgent.workspaceId"
+              :workspace-id="draftAgent.workspaceId"
+              :agent-id="draftAgent.id"
+              :agent-options="delegationAgentOptions"
+            />
+            <!-- Create mode: bindings need a persisted agentId — show deferred hint only. -->
+            <section v-else-if="studioMode === 'create'" class="agent-studio-section agent-delegation-deferred">
+              <header>
+                <span><i class="fa-solid fa-sitemap" aria-hidden="true" /> {{ t("agents.collabExternal") }}</span>
+                <span
+                  class="agent-delegation-deferred-badge"
+                  :class="{ 'is-unavailable': selectedDraftModelCannotCallTools }"
+                  >{{
                     selectedDraftModelCannotCallTools
-                      ? t("agents.collabDeferredNoneModel")
-                      : t("agents.collabDeferredBody")
-                  }}
-                </p>
-                <small v-if="!selectedDraftModelCannotCallTools">{{ t("agents.collabDeferredHint") }}</small>
+                      ? t("agents.modelCannotCallToolsHint")
+                      : t("agents.configureAfterCreate")
+                  }}</span
+                >
+              </header>
+              <div class="agent-delegation-deferred-body">
+                <i class="fa-solid fa-lock" aria-hidden="true" />
+                <div>
+                  <p>
+                    {{
+                      selectedDraftModelCannotCallTools
+                        ? t("agents.collabDeferredNoneModel")
+                        : t("agents.collabDeferredBody")
+                    }}
+                  </p>
+                  <small v-if="!selectedDraftModelCannotCallTools">{{ t("agents.collabDeferredHint") }}</small>
+                </div>
               </div>
-            </div>
-          </section>
+            </section>
+          </div>
 
-          <section class="agent-studio-section studio-prompt-editor">
+          <section id="agent-section-prompt" class="agent-studio-section studio-prompt-editor">
             <header>
               <span
                 ><i class="fa-solid fa-code" aria-hidden="true" />

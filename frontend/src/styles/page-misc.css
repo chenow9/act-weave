@@ -937,9 +937,12 @@
 .island-row > span:nth-child(2) {
   min-width: 0;
   flex: 1;
+  display: -webkit-box;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 12px;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .island-empty {
@@ -1756,6 +1759,19 @@
 @media (max-width: 700px) {
   .fluid-island {
     width: 186px;
+  }
+}
+
+@media (max-width: 700px) {
+  .island-card {
+    height: 68px;
+    padding: 8px;
+  }
+  .island-card > span:last-child {
+    margin-top: 4px;
+  }
+  .island-section--all {
+    margin-top: 7px;
   }
 }
 

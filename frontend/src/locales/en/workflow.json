@@ -86,6 +86,7 @@
   "publishing": "Publishing…",
   "forcePublishing": "Force publishing…",
   "forcePublish": "Force publish",
+  "morePublishActions": "More publish actions",
   "exitEdit": "Exit editor",
   "cannotDeleteTerminal": "Start/end nodes cannot be deleted",
   "deleteNode": "Delete node",
@@ -311,6 +312,10 @@
   "publishReasonHint": "(at least 8 characters, for audit)",
   "forcePublishReasonPh": "e.g. local-dev skip trial for AI pipeline",
   "forcePublishReasonMinError": "Enter a reason of at least 8 characters.",
+  "forcePublishImpactTitle": "Checks and impact",
+  "forcePublishKeptCompile": "Kept: graph compilation and static validation must be valid.",
+  "forcePublishSkippedTrial": "Skipped: live trial run and real business-path verification.",
+  "forcePublishAudited": "Audited: your reason and platform-admin identity are recorded.",
   "confirmForcePublish": "Confirm force publish",
   "snapshotDraft": "Draft snapshot",
   "snapshotSpec": "Spec snapshot",
@@ -417,5 +422,7 @@
   "zoomIn": "Zoom in",
   "zoomOut": "Zoom out",
   "fitAllNodes": "Fit all nodes",
+  "nodeCount": "{n} nodes",
+  "minimapFitAria": "Graph overview; click to fit all nodes",
   "noTrialTrace": "No trial-run execution trace yet."
 }

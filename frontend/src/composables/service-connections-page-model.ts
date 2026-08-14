@@ -451,10 +451,11 @@ export function createServiceConnectionsPageModel() {
 
   onMounted(async () => {
     window.addEventListener("keydown", handleGlobalKeydown);
-    window.addEventListener("popstate", syncConnectionViewFromLocation);
+    window.addEventListener("popstate", syncConnectionPageFromLocation);
     try {
       if (!workspaces.items.length) await workspaces.load();
       if (hasWorkspaceContext.value) {
+        syncConnectionFiltersFromLocation();
         await loadConnections();
         syncConnectionViewFromLocation();
       } else {
@@ -467,7 +468,7 @@ export function createServiceConnectionsPageModel() {
 
   onBeforeUnmount(() => {
     window.removeEventListener("keydown", handleGlobalKeydown);
-    window.removeEventListener("popstate", syncConnectionViewFromLocation);
+    window.removeEventListener("popstate", syncConnectionPageFromLocation);
   });
 
   function snapshotConnection(connection: ServiceConnection) {
@@ -611,25 +612,30 @@ export function createServiceConnectionsPageModel() {
     connectionStatusFilter.value = "ALL";
     connectionMigrationFilter.value = "ALL";
     connectionModeFilter.value = "ALL";
+    updateConnectionListUrl();
     void requestConnectionPage({ page: 1 });
   }
 
   function updateConnectionSearch(value: string) {
     query.value = value;
+    updateConnectionListUrl();
     void requestConnectionPage({ page: 1 });
   }
 
   function updateConnectionStatusFilter(value: string) {
     connectionStatusFilter.value = value as ConnectionStatusFilter;
+    updateConnectionListUrl();
     void requestConnectionPage({ page: 1 });
   }
 
   function updateConnectionMigrationFilter(value: string) {
     connectionMigrationFilter.value = value as ConnectionMigrationFilter;
+    updateConnectionListUrl();
   }
 
   function updateConnectionModeFilter(value: string) {
     connectionModeFilter.value = value as ConnectionModeFilter;
+    updateConnectionListUrl();
   }
 
   const filteredConnectionRows = computed(() => {
@@ -745,6 +751,44 @@ export function createServiceConnectionsPageModel() {
     }
   }
 
+  function updateConnectionListUrl() {
+    const url = new URL(window.location.href);
+    const values = {
+      q: query.value.trim(),
+      status: connectionStatusFilter.value === "ALL" ? "" : connectionStatusFilter.value,
+      migration: connectionMigrationFilter.value === "ALL" ? "" : connectionMigrationFilter.value,
+      identity: connectionModeFilter.value === "ALL" ? "" : connectionModeFilter.value,
+    };
+    for (const [key, value] of Object.entries(values)) {
+      if (value) url.searchParams.set(key, value);
+      else url.searchParams.delete(key);
+    }
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
+  function syncConnectionFiltersFromLocation() {
+    const params = new URLSearchParams(window.location.search);
+    query.value = params.get("q") || "";
+    const status = params.get("status") || "ALL";
+    connectionStatusFilter.value = connectionStatusOptions.value.some((option) => option.value === status)
+      ? (status as ConnectionStatusFilter)
+      : "ALL";
+    const migration = params.get("migration") || "ALL";
+    connectionMigrationFilter.value = connectionMigrationOptions.value.some((option) => option.value === migration)
+      ? (migration as ConnectionMigrationFilter)
+      : "ALL";
+    const identity = params.get("identity") || "ALL";
+    connectionModeFilter.value = connectionModeOptions.value.some((option) => option.value === identity)
+      ? (identity as ConnectionModeFilter)
+      : "ALL";
+  }
+
+  function syncConnectionPageFromLocation() {
+    syncConnectionFiltersFromLocation();
+    syncConnectionViewFromLocation();
+    void requestConnectionPage({ page: 1 });
+  }
+
   function syncConnectionViewFromLocation() {
     const connectionId = new URLSearchParams(window.location.search).get("connectionId") || "";
     if (!connectionId) {
@@ -854,7 +898,21 @@ export function createServiceConnectionsPageModel() {
     if (!connection.id) return tt("connections.statusUnsaved");
     if (isConnectionAvailable(connection)) return tt("connections.statusAvailable");
     if (connection.status === "DISABLED") return tt("connections.statusDisabled");
-    return tt("connections.statusNeedsAttention");
+    if (connection.status === "ERROR" || connection.lastErrorCode) return tt("connections.verificationFailed");
+    if (connection.status === "Expiring soon" || (connection.status === "UNVERIFIED" && connection.lastVerifiedAt)) {
+      return tt("connections.verificationExpired");
+    }
+    return tt("connections.verificationNever");
+  }
+
+  function connectionAttentionReason(connection: ServiceConnection) {
+    if (connection.lastErrorCode) return connection.lastErrorCode;
+    if (connection.status === "ERROR") return tt("connections.reasonLastVerificationFailed");
+    if (connection.status === "Expiring soon" || (connection.status === "UNVERIFIED" && connection.lastVerifiedAt)) {
+      return tt("connections.reasonVerificationExpired");
+    }
+    if (!connection.lastVerifiedAt) return tt("connections.reasonNeverVerified");
+    return tt("connections.reasonNeedsVerification");
   }
 
   function supportsCredentialRenewalConfig(connection: ServiceConnection) {
@@ -1036,6 +1094,7 @@ export function createServiceConnectionsPageModel() {
   }
 
   function credentialPlacementLabel(connection: ServiceConnection) {
+    if (!connectionUsesAuthentication(connection)) return tt("connections.noCredentialInjection");
     const provider = providersStore.providers.find((item) => item.id === connection.providerId);
     const scheme = providerAuthScheme(provider, connection.authConfig.schemeKey);
     if (scheme?.oauth2) return `Header · ${scheme.oauth2.injection.headerName}`;
@@ -1043,6 +1102,11 @@ export function createServiceConnectionsPageModel() {
     if (connection.authConfig.mode === "fixed-token" || connection.authConfig.mode === "api-key-secret")
       return tt("connections.credentialPlacementHeader");
     return tt("connections.credentialPlacementAuthInject");
+  }
+
+  function connectionUsesAuthentication(connection: ServiceConnection) {
+    const mode = (connection.authConfig?.mode || connection.authMode || "").trim().toLowerCase();
+    return Boolean(mode && !["none", "no-auth", "anonymous"].includes(mode));
   }
 
   function refreshModeLabel(connection: ServiceConnection) {
@@ -1920,9 +1984,9 @@ export function createServiceConnectionsPageModel() {
     return tt("connections.notYetVerified");
   }
 
-  function verificationSummary(connectionId: string) {
-    const verification = connectionsStore.verificationByConnectionId[connectionId];
-    if (!verification) return tt("connections.verifyDiagnosticsHint");
+  function verificationSummary(connection: ServiceConnection) {
+    const verification = connectionsStore.verificationByConnectionId[connection.id];
+    if (!verification) return connectionAttentionReason(connection);
     if (verification.status === "SUCCEEDED") {
       return `${verification.diagnostics.category || "OK"} · ${verification.diagnostics.code || "CONNECTION_VERIFIED"}`;
     }
@@ -2055,6 +2119,8 @@ export function createServiceConnectionsPageModel() {
     showActionNote,
     dismissActionNote,
     updateConnectionDetailUrl,
+    updateConnectionListUrl,
+    syncConnectionFiltersFromLocation,
     syncConnectionViewFromLocation,
     copyConnectionText,
     focusConnectionName,
@@ -2065,6 +2131,7 @@ export function createServiceConnectionsPageModel() {
     handleGlobalKeydown,
     trapConnectionFormFocus,
     statusLabel,
+    connectionAttentionReason,
     supportsCredentialRenewalConfig,
     verificationCheckStatus,
     verificationCheckLabel,
@@ -2086,6 +2153,7 @@ export function createServiceConnectionsPageModel() {
     verificationPathLabel,
     connectionPortLabel,
     credentialPlacementLabel,
+    connectionUsesAuthentication,
     refreshModeLabel,
     normalizeServiceAddress,
     providerOutboundSupportedModes,

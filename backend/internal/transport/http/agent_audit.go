@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"actweave/backend/internal/agentaudit"
 	"actweave/backend/internal/authz"
@@ -58,6 +59,16 @@ func (r *AgentAuditRoutes) listTraces(c *gin.Context) {
 	}
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
+	status := strings.ToLower(strings.TrimSpace(c.Query("status")))
+	if status != "" && status != "success" && status != "error" && status != "running" {
+		RespondError(c, identity.ErrInvalid)
+		return
+	}
+	from, to := strings.TrimSpace(c.Query("from")), strings.TrimSpace(c.Query("to"))
+	if !validAuditDate(from) || !validAuditDate(to) {
+		RespondError(c, identity.ErrInvalid)
+		return
+	}
 	if page, err := strconv.Atoi(c.Query("page")); err == nil && page > 0 {
 		if limit <= 0 {
 			limit = 10
@@ -65,13 +76,21 @@ func (r *AgentAuditRoutes) listTraces(c *gin.Context) {
 		offset = (page - 1) * limit
 	}
 	result, err := r.queries.ListTraces(c.Request.Context(), workspaceID, agentaudit.ListFilter{
-		Query: c.Query("q"), Limit: limit, Offset: offset,
+		Query: c.Query("q"), Status: status, From: from, To: to, Limit: limit, Offset: offset,
 	})
 	if err != nil {
 		RespondError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+func validAuditDate(value string) bool {
+	if value == "" {
+		return true
+	}
+	_, err := time.Parse("2006-01-02", value)
+	return err == nil
 }
 
 func (r *AgentAuditRoutes) getTrace(c *gin.Context) {

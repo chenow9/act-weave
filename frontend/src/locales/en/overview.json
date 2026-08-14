@@ -74,6 +74,7 @@
   "loadFailed": "Failed to load overview",
   "totalSum": "Total",
   "compositeChartAria": "Traffic and run quality trend",
+  "viewDetails": "View details",
   "risk": {
     "noWorkspaceTitle": "No accessible workspaces",
     "noWorkspaceDetail": "Create or join at least one workspace first.",
@@ -89,6 +90,11 @@
     "toolRateDetail": "{span}: platform tool call success rate is {rate}%.",
     "okTitle": "Running normally",
     "okDetail": "No major risks detected for the selected range across accessible workspaces.",
-    "recentDays": "Last {n} days"
+    "recentDays": "Last {n} days",
+    "openWorkspaces": "Open workspaces",
+    "openModels": "Configure models",
+    "openAgents": "Create an agent",
+    "openConnections": "Review connections",
+    "openFailedTraces": "Inspect failed traces"
   }
 }

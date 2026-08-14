@@ -518,7 +518,7 @@ describe("workflow graph canvas", () => {
       y: -12,
       zoom: 1.3,
     });
-    expect(wrapper.get(".vue-flow-stub").attributes("data-fit-view-on-init")).toBe("false");
+    expect(wrapper.get(".vue-flow-stub").attributes("data-fit-view-on-init")).toBe("true");
   });
 
   it("renders a single shared exit handle so branches leave from one point", async () => {

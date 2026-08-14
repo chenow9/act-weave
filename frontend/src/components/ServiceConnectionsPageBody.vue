@@ -79,7 +79,9 @@ const {
   dismissActionNote,
   copyConnectionText,
   isConnectionVerifying,
+  verifyConnection,
   statusLabel,
+  connectionAttentionReason,
   statusPillClass,
   statusDotClass,
   lastVerified,
@@ -210,24 +212,33 @@ void WorkspaceContextState;
         >
           <template #filters>
             <div class="connection-management-filters">
-              <ManagementSegmentedFilter
-                :model-value="connectionStatusFilter"
-                :options="connectionStatusOptions"
-                :ariaLabel="t('connections.statusFilterAria')"
-                @update:model-value="updateConnectionStatusFilter"
-              />
-              <ManagementSegmentedFilter
-                :model-value="connectionMigrationFilter"
-                :options="connectionMigrationOptions"
-                :ariaLabel="t('connections.migrationFilterAria')"
-                @update:model-value="updateConnectionMigrationFilter"
-              />
-              <ManagementSegmentedFilter
-                :model-value="connectionModeFilter"
-                :options="connectionModeOptions"
-                :ariaLabel="t('connections.modeFilterAria')"
-                @update:model-value="updateConnectionModeFilter"
-              />
+              <div class="connection-filter-group">
+                <span>{{ t("connections.filterStatusLabel") }}</span
+                ><ManagementSegmentedFilter
+                  :model-value="connectionStatusFilter"
+                  :options="connectionStatusOptions"
+                  :ariaLabel="t('connections.statusFilterAria')"
+                  @update:model-value="updateConnectionStatusFilter"
+                />
+              </div>
+              <div class="connection-filter-group">
+                <span>{{ t("connections.filterMigrationLabel") }}</span
+                ><ManagementSegmentedFilter
+                  :model-value="connectionMigrationFilter"
+                  :options="connectionMigrationOptions"
+                  :ariaLabel="t('connections.migrationFilterAria')"
+                  @update:model-value="updateConnectionMigrationFilter"
+                />
+              </div>
+              <div class="connection-filter-group">
+                <span>{{ t("connections.filterIdentityLabel") }}</span
+                ><ManagementSegmentedFilter
+                  :model-value="connectionModeFilter"
+                  :options="connectionModeOptions"
+                  :ariaLabel="t('connections.modeFilterAria')"
+                  @update:model-value="updateConnectionModeFilter"
+                />
+              </div>
             </div>
           </template>
 
@@ -329,6 +340,22 @@ void WorkspaceContextState;
                 {{ statusLabel(connection) }}
               </span>
               <span class="aw-table-meta" :title="lastVerifiedTitle(connection)">{{ lastVerified(connection) }}</span>
+              <span
+                v-if="statusLabel(connection) !== t('connections.statusAvailable')"
+                class="connection-attention-reason"
+                :title="connectionAttentionReason(connection)"
+                >{{ connectionAttentionReason(connection) }}</span
+              >
+              <button
+                v-if="connection.status !== 'DISABLED' && statusLabel(connection) !== t('connections.statusAvailable')"
+                class="connection-inline-verify"
+                type="button"
+                :disabled="isConnectionVerifying(connection.id)"
+                @click.stop="verifyConnection(connection)"
+              >
+                <i class="fa-solid fa-vial" aria-hidden="true" />
+                {{ isConnectionVerifying(connection.id) ? t("connections.verifying") : t("connections.verifyNow") }}
+              </button>
             </div>
           </template>
 
@@ -386,6 +413,7 @@ void WorkspaceContextState;
                     <span class="connection-status-pill" :class="statusPillClass(connection)">{{
                       statusLabel(connection)
                     }}</span>
+                    <small>{{ connectionAttentionReason(connection) }}</small>
                   </dd>
                 </div>
               </dl>

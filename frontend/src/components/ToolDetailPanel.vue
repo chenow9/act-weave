@@ -37,6 +37,8 @@ const {
   toolPublishButtonLabel,
   toolAvailabilityButtonLabel,
   agentImpactLabel,
+  toolImpactSummary,
+  toolMaintainerLabel,
   workspaceDisplayLabel,
   providerForTool,
   serviceConnectionStatusLabel,
@@ -127,10 +129,13 @@ void buildToolPublishChecklist;
             ><b>{{ t("tools.lastTest") }}</b
             >{{ toolLastTestSummary(detailTool) }}</span
           >
-          <span><b>Capability Binding</b>{{ agentImpactLabel(detailTool) }}</span>
+          <span
+            ><b>{{ t("tools.agentAvailability") }}</b
+            >{{ agentImpactLabel(detailTool) }}</span
+          >
           <span
             ><b>{{ t("tools.impactSurface") }}</b
-            >{{ t("tools.impactByBinding") }}</span
+            >{{ toolImpactSummary(detailTool) }}</span
           >
         </div>
         <p class="form-helper">{{ detailTool.description }}</p>
@@ -165,7 +170,7 @@ void buildToolPublishChecklist;
           <div class="tool-config-grid">
             <div class="config-summary-item">
               <i class="fa-solid fa-user-gear" /><span>{{ t("tools.lastMaintained") }}</span
-              ><strong>{{ detailTool.updatedBy || detailTool.createdBy || "-" }}</strong>
+              ><strong>{{ toolMaintainerLabel(detailTool) }}</strong>
             </div>
             <div class="config-summary-item">
               <i class="fa-solid fa-code-branch" /><span>{{ t("tools.version") }}</span

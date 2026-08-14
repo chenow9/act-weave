@@ -2,7 +2,7 @@
 import "./audit-logs-page.css";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import AgentAuditStepNode from "../components/AgentAuditStepNode.vue";
 import ManagementList, { type ManagementListColumn } from "../components/ManagementList.vue";
@@ -21,11 +21,20 @@ const agentAudit = useAgentAuditStore();
 const auth = useAuthStore();
 const workspaces = useWorkspaceStore();
 const router = useRouter();
+const route = useRoute();
 const pageRef = ref<HTMLElement | null>(null);
 const timelineSentinelRef = ref<HTMLElement | null>(null);
 const actionError = ref("");
 const searchInput = ref("");
 const listHasLoaded = ref(false);
+const activeScopeLabel = computed(() => {
+  const parts: string[] = [];
+  if (agentAudit.statusFilter)
+    parts.push(t(`logs.filterStatus${agentAudit.statusFilter[0].toUpperCase()}${agentAudit.statusFilter.slice(1)}`));
+  if (agentAudit.rangeFrom || agentAudit.rangeTo)
+    parts.push(`${agentAudit.rangeFrom || "…"} → ${agentAudit.rangeTo || "…"}`);
+  return parts.join(" · ");
+});
 let timelineObserver: IntersectionObserver | null = null;
 
 const isPlatformAdmin = computed(() => auth.user?.platformRole === "PLATFORM_ADMIN");
@@ -52,7 +61,7 @@ const SENSITIVE_KEY_NEEDLES = [
 const auditSummaryItems = computed<ManagementSummaryItem[]>(() => [
   {
     label: t("logs.summaryTotal"),
-    value: agentAudit.stats.totalRuns.toLocaleString(),
+    value: agentAudit.total.toLocaleString(),
     icon: "fa-solid fa-layer-group",
   },
   {
@@ -139,7 +148,10 @@ onMounted(async () => {
     }
     if (!workspaces.items.length) await workspaces.load();
     if (!workspaceId.value) return;
-    await agentAudit.loadTraces(workspaceId.value, { q: searchInput.value, page: 1 });
+    const status = typeof route.query.status === "string" ? route.query.status : "";
+    const from = typeof route.query.from === "string" ? route.query.from : "";
+    const to = typeof route.query.to === "string" ? route.query.to : "";
+    await agentAudit.loadTraces(workspaceId.value, { q: searchInput.value, status, from, to, page: 1 });
     listHasLoaded.value = true;
   }, t("logs.initFailed"));
 });
@@ -174,6 +186,14 @@ async function onAuditSearchUpdate(value: string) {
 async function onAuditReset() {
   searchInput.value = "";
   await searchList();
+}
+
+async function clearScopeFilters() {
+  agentAudit.statusFilter = "";
+  agentAudit.rangeFrom = "";
+  agentAudit.rangeTo = "";
+  await router.replace({ name: route.name || "logs", query: {} });
+  await refreshList({ page: 1 });
 }
 
 async function onAuditPageChange(pagination: { page: number; pageSize: number }) {
@@ -248,6 +268,22 @@ async function loadMoreTimeline() {
 
 function stepKey(step: AgentAuditStep, index: number): string {
   return [step.stepId || step.runId || "", step.type, String(step.timeOffsetMs), String(index)].join(":");
+}
+
+function failureStepDomId(step: AgentAuditStep, index: number) {
+  const failure = agentAudit.selected?.failure;
+  if (!failure) return undefined;
+  const matches =
+    (failure.stepId && failure.stepId === step.stepId) ||
+    (!failure.stepId && failure.runId && failure.runId === step.runId && failure.stage === step.type);
+  return matches ? `audit-failed-step-${index}` : undefined;
+}
+
+async function reviewFailedStep() {
+  await nextTick();
+  const target = pageRef.value?.querySelector<HTMLElement>("[id^='audit-failed-step-']");
+  target?.scrollIntoView({ block: "center", behavior: "smooth" });
+  target?.focus({ preventScroll: true });
 }
 
 onBeforeUnmount(() => {
@@ -586,6 +622,17 @@ async function runAction(action: () => Promise<void>, fallback: string) {
     </ManagementPageHeader>
 
     <p v-if="actionError" class="span-12 agent-audit-error">{{ actionError }}</p>
+    <div
+      v-if="isPlatformAdmin && agentAudit.view === 'list' && activeScopeLabel"
+      class="span-12 audit-active-scope"
+      role="status"
+    >
+      <span
+        ><i class="fa-solid fa-filter" aria-hidden="true" /> {{ t("logs.activeScope") }}
+        <strong>{{ activeScopeLabel }}</strong></span
+      >
+      <button type="button" @click="clearScopeFilters">{{ t("logs.clearScope") }}</button>
+    </div>
 
     <template v-if="isPlatformAdmin && agentAudit.view === 'list'">
       <ManagementSummaryStrip class="span-12" :items="auditSummaryItems" />
@@ -663,7 +710,13 @@ async function runAction(action: () => Promise<void>, fallback: string) {
 
     <template v-else-if="isPlatformAdmin && agentAudit.view === 'detail' && agentAudit.selected">
       <div class="span-12 detail-header">
-        <button type="button" class="back-btn" @click="backToList">
+        <button
+          type="button"
+          class="back-btn"
+          :aria-label="t('logs.backToList')"
+          :title="t('logs.backToList')"
+          @click="backToList"
+        >
           <i class="fa-solid fa-arrow-left"></i>
         </button>
         <div>
@@ -711,21 +764,62 @@ async function runAction(action: () => Promise<void>, fallback: string) {
         </div>
       </div>
 
+      <section
+        v-if="agentAudit.selected.status === 'error' && agentAudit.selected.failure"
+        class="span-12 audit-failure-summary"
+        role="alert"
+      >
+        <div class="audit-failure-copy">
+          <div class="audit-failure-heading">
+            <span class="audit-failure-badge"
+              ><i class="fa-solid fa-circle-xmark" aria-hidden="true" /> {{ t("logs.failureBadge") }}</span
+            >
+            <h3>{{ agentAudit.selected.failure.stepTitle || t("logs.failureUnknownStage") }}</h3>
+          </div>
+          <p :title="agentAudit.selected.failure.errorMessage">{{ agentAudit.selected.failure.errorMessage }}</p>
+          <dl>
+            <div>
+              <dt>{{ t("logs.failureStage") }}</dt>
+              <dd>{{ agentAudit.selected.failure.stage }}</dd>
+            </div>
+            <div>
+              <dt>{{ t("logs.failureCode") }}</dt>
+              <dd>
+                <code>{{ agentAudit.selected.failure.errorCode }}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>{{ t("logs.failureTime") }}</dt>
+              <dd>+{{ formatLatency(agentAudit.selected.failure.timeOffsetMs) }}</dd>
+            </div>
+          </dl>
+        </div>
+        <button type="button" @click="reviewFailedStep">
+          <i class="fa-solid fa-location-crosshairs" aria-hidden="true" /> {{ t("logs.reviewFailedStep") }}
+        </button>
+      </section>
+
       <div v-if="agentAudit.detailLoading" class="span-12 empty">{{ t("logs.loadingDetail") }}</div>
       <div v-else class="span-12 timeline">
         <!-- Recursive node supports A→B→C… agent_delegation nesting of any depth -->
-        <AgentAuditStepNode
+        <div
           v-for="(step, index) in agentAudit.selected.steps"
+          :id="failureStepDomId(step, index)"
           :key="stepKey(step, index)"
-          :step="step"
-          :index="index"
-          :depth="0"
-          :format-latency="formatLatency"
-          :step-text="stepText"
-          :display-json="displayJson"
-          :step-icon="stepIcon"
-          :delegation-meta="delegationMeta"
-        />
+          class="audit-step-anchor"
+          :tabindex="failureStepDomId(step, index) ? -1 : undefined"
+        >
+          <AgentAuditStepNode
+            :step="step"
+            :index="index"
+            :depth="0"
+            :format-latency="formatLatency"
+            :step-text="stepText"
+            :display-json="displayJson"
+            :step-icon="stepIcon"
+            :delegation-meta="delegationMeta"
+          />
+        </div>
         <div ref="timelineSentinelRef" class="timeline-sentinel" aria-hidden="true" />
         <div v-if="agentAudit.detailLoadingMore" class="timeline-loading muted">
           {{ t("logs.loadingMoreSteps") }}
@@ -747,6 +841,136 @@ async function runAction(action: () => Promise<void>, fallback: string) {
 <style scoped>
 .agent-audit-page {
   min-width: 0;
+}
+
+.audit-active-scope,
+.audit-failure-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid #bae6fd;
+  border-radius: 10px;
+  background: #f0f9ff;
+  color: #075985;
+  font-size: 12px;
+}
+
+.audit-active-scope button,
+.audit-failure-summary > button {
+  min-height: 36px;
+  padding: 7px 11px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.audit-failure-summary {
+  align-items: center;
+  justify-self: start;
+  gap: 12px;
+  width: calc(100% - 3.5rem);
+  max-width: calc(100% - 3.5rem);
+  margin-inline-start: 3.5rem;
+  padding: 9px 12px;
+  border-color: #fecaca;
+  background: #fff7f7;
+  color: #991b1b;
+}
+
+.audit-failure-copy {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.audit-failure-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.audit-failure-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  font-weight: 800;
+}
+.audit-failure-summary h3 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.audit-failure-summary p {
+  max-width: 680px;
+  margin: 3px 0 0;
+  overflow: hidden;
+  color: #7f1d1d;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.audit-failure-summary dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 5px 0 0;
+}
+.audit-failure-summary dl div {
+  display: flex;
+  gap: 6px;
+}
+.audit-failure-summary dt {
+  color: #b91c1c;
+}
+.audit-failure-summary dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.audit-failure-summary > button {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 5px 10px;
+}
+
+@media (max-width: 720px) {
+  .audit-failure-summary {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+    max-width: 100%;
+    margin-inline-start: 0;
+  }
+
+  .audit-failure-heading {
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+
+  .audit-failure-summary p {
+    display: -webkit-box;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .audit-failure-summary > button {
+    align-self: flex-start;
+  }
+}
+.audit-step-anchor:focus {
+  outline: 3px solid rgba(220, 38, 38, 0.25);
+  outline-offset: 5px;
+  border-radius: 10px;
 }
 
 .audit-user-chip {

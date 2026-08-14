@@ -167,6 +167,19 @@ function goLogs() {
   void router.push({ name: "logs" });
 }
 
+function openRisk(risk: (typeof riskItems.value)[number]) {
+  if (!risk.action) return;
+  void router.push({ name: risk.action.routeName, query: risk.action.query });
+}
+
+function openModelHealth() {
+  void router.push({ name: "model-apis" });
+}
+
+function openConnectionHealth() {
+  void router.push({ name: "connections", query: { status: "UNVERIFIED" } });
+}
+
 function goChat() {
   void router.push({ name: "chat" });
 }
@@ -448,16 +461,21 @@ function exportCsv() {
 
         <ul class="overview-risk-list">
           <li v-for="risk in riskItems" :key="risk.title" :class="['overview-risk-item', `tone-${risk.tone}`]">
-            <span class="overview-risk-icon" aria-hidden="true"><i :class="risk.icon" /></span>
-            <div>
-              <h4>{{ risk.title }}</h4>
-              <p>{{ risk.detail }}</p>
-            </div>
+            <button type="button" :disabled="!risk.action" @click="openRisk(risk)">
+              <span class="overview-risk-icon" aria-hidden="true"><i :class="risk.icon" /></span>
+              <span class="overview-risk-copy">
+                <h4>{{ risk.title }}</h4>
+                <p>{{ risk.detail }}</p>
+                <strong v-if="risk.action"
+                  >{{ risk.action.label }} <i class="fa-solid fa-arrow-right" aria-hidden="true"
+                /></strong>
+              </span>
+            </button>
           </li>
         </ul>
 
         <div class="overview-health-grid">
-          <div class="overview-health-tile">
+          <button type="button" class="overview-health-tile" @click="openModelHealth">
             <span>{{ t("overview.modelConfigRatio") }}</span>
             <strong>
               {{ inventory ? `${inventory.modelConfigVerified}/${inventory.modelConfigTotal}` : "—" }}
@@ -472,8 +490,9 @@ function exportCsv() {
               />
               <i v-else class="fa-solid fa-triangle-exclamation is-warn" aria-hidden="true" />
             </strong>
-          </div>
-          <div class="overview-health-tile">
+            <small>{{ t("overview.viewDetails") }}</small>
+          </button>
+          <button type="button" class="overview-health-tile" @click="openConnectionHealth">
             <span>{{ t("overview.connectionRatio") }}</span>
             <strong>
               {{ inventory ? `${inventory.connectionVerified}/${inventory.connectionTotal}` : "—" }}
@@ -488,7 +507,8 @@ function exportCsv() {
               />
               <i v-else class="fa-solid fa-triangle-exclamation is-warn" aria-hidden="true" />
             </strong>
-          </div>
+            <small>{{ t("overview.viewDetails") }}</small>
+          </button>
         </div>
       </section>
     </div>
