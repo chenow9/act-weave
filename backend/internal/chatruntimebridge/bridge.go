@@ -274,6 +274,7 @@ func (b *Bridge) Enqueue(job agentrun.Job) {
 			}
 			if errors.Is(context.Cause(runContext), ErrRunCancelled) {
 				// Cancel path: durable CAS is owned by the cancel API; do not force FAILED.
+				b.forgetOutboundCollector(job.WorkspaceID, job.RunID)
 				return
 			}
 			b.logger.Error("eino chat run execution failed",
@@ -345,6 +346,7 @@ func (b *Bridge) EnqueueContinueWithLifecycle(
 				return
 			}
 			if errors.Is(context.Cause(runContext), ErrRunCancelled) {
+				b.forgetOutboundCollector(job.WorkspaceID, job.RunID)
 				return
 			}
 			b.logger.Error("eino chat run continue failed",
@@ -387,6 +389,7 @@ func (b *Bridge) Execute(ctx context.Context, job agentrun.Job) error {
 			return runErr
 		}
 		if userCancelledRun(ctx, runErr) {
+			b.forgetOutboundCollector(job.WorkspaceID, job.RunID)
 			return runErr
 		}
 		return b.failRun(persistCtx, job, run, runErr)
@@ -439,6 +442,7 @@ func (b *Bridge) ContinueAfterConfirmation(
 			return runErr
 		}
 		if userCancelledRun(ctx, runErr) {
+			b.forgetOutboundCollector(job.WorkspaceID, job.RunID)
 			return runErr
 		}
 		return b.failRun(persistCtx, job, run, runErr)
@@ -1016,6 +1020,8 @@ func (b *Bridge) completeRun(
 }
 
 func (b *Bridge) failRun(ctx context.Context, job agentrun.Job, run execution.AgentRun, cause error) error {
+	// Terminal for this process (not HITL pause). Waiting-confirmation never calls failRun.
+	b.forgetOutboundCollector(job.WorkspaceID, job.RunID)
 	// Cancel API owns durable CANCELLED. WithoutCancel persist must not rewrite
 	// that race into FAILED. Check the incoming ctx/cause before stripping cancel.
 	if userCancelledRun(ctx, cause) {

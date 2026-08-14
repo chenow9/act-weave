@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"log/slog"
+
 	"actweave/backend/internal/aapfile"
 	"actweave/backend/internal/agentaccessauth"
 	"actweave/backend/internal/agentrun"
@@ -427,6 +429,45 @@ func TestCompleteRunUsesCollectorMemoryWhenListFails(t *testing.T) {
 	}
 	if len(files.promoted) != 1 || files.promoted[0] != fileID {
 		t.Fatalf("promoted=%v", files.promoted)
+	}
+}
+
+func TestFailRunForgetsOutboundCollector(t *testing.T) {
+	run := testAAPRun(t)
+	run.Status = "RUNNING"
+	run.LockVersion = 1
+	collector := aapfile.NewOutboundCollector(&fakeOutboundFiles{}, run.WorkspaceID, run.AgentID, run.ID, aapfile.MaxOutboundTurnBytes)
+	b := &Bridge{
+		results: &captureAssistantResults{},
+		runs:    &staticRunReader{run: run},
+		logger:  slog.Default(),
+		now:     func() time.Time { return time.Now().UTC() },
+	}
+	b.rememberOutboundCollector(run.WorkspaceID, run.ID, collector)
+	_ = b.failRun(context.Background(), agentrun.Job{
+		WorkspaceID: run.WorkspaceID, SessionID: run.SessionID, RunID: run.ID,
+		UserMessageID: uuid.NewString(), ActorID: run.TriggeredByID,
+	}, run, errors.New("model timeout"))
+	if b.outboundCollector(run.WorkspaceID, run.ID) != nil {
+		t.Fatal("failRun must forget the outbound collector")
+	}
+}
+
+func TestCompleteRunA2AForgetsOutboundCollector(t *testing.T) {
+	run := testAAPRun(t)
+	run.Status = "RUNNING"
+	run.LockVersion = 1
+	collector := aapfile.NewOutboundCollector(&fakeOutboundFiles{}, run.WorkspaceID, run.AgentID, run.ID, aapfile.MaxOutboundTurnBytes)
+	store := &staticRunReader{run: run}
+	b := &Bridge{runs: store, steps: &captureStepStoreWithTransitions{}, now: func() time.Time { return time.Now().UTC() }}
+	b.rememberOutboundCollector(run.WorkspaceID, run.ID, collector)
+	if err := b.completeRunA2A(context.Background(), agentrun.Job{
+		WorkspaceID: run.WorkspaceID, RunID: run.ID,
+	}, run, "ok"); err != nil {
+		t.Fatal(err)
+	}
+	if b.outboundCollector(run.WorkspaceID, run.ID) != nil {
+		t.Fatal("completeRunA2A must forget the outbound collector")
 	}
 }
 

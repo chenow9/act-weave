@@ -208,6 +208,7 @@ func (b *Bridge) ExecuteA2AInbound(ctx context.Context, req a2agateway.InboundRu
 	})
 	if runErr != nil {
 		if userCancelledRun(ctx, runErr) {
+			b.forgetOutboundCollector(job.WorkspaceID, job.RunID)
 			return "", runErr
 		}
 		_ = b.failRunA2A(ctx, job, run, runErr)
@@ -307,6 +308,7 @@ func strconvQuote(s string) string {
 }
 
 func (b *Bridge) failRunA2A(ctx context.Context, job agentrun.Job, run execution.AgentRun, runErr error) error {
+	b.forgetOutboundCollector(job.WorkspaceID, job.RunID)
 	// Under inbound lease fence the gateway FencedInboundTerminal owns all terminals
 	// (run+task+delegation) in one atomic TX — do not race a separate run transition.
 	if _, ok := a2agateway.ExecutionFenceFrom(ctx); ok {
@@ -339,6 +341,8 @@ func (b *Bridge) failRunA2A(ctx context.Context, job agentrun.Job, run execution
 }
 
 func (b *Bridge) completeRunA2A(ctx context.Context, job agentrun.Job, run execution.AgentRun, text string) error {
+	// A2A inbound does not attach outbound files; this path is still terminal.
+	b.forgetOutboundCollector(job.WorkspaceID, job.RunID)
 	// Under inbound lease fence: leave agent_run RUNNING; gateway applies
 	// FencedInboundTerminal (atomic run+task+delegation+step).
 	if fence, ok := a2agateway.ExecutionFenceFrom(ctx); ok {
