@@ -9,6 +9,15 @@
 import { A2UI_CATALOG_ID, A2UI_SURFACE_VERSION, type A2UISurface } from "./a2ui/generated/catalog.gen";
 import type { A2UIExtract } from "./a2ui";
 
+export interface DemoStoryAttachment {
+  name: string;
+  mediaType: string;
+  /** UTF-8 payload for text/* / json cards (Mock blob + download). */
+  text?: string;
+  /** 1×1 PNG so the image renderer is exercised offline. */
+  tinyPng?: boolean;
+}
+
 export interface DemoStory {
   id: string;
   /** Empty-state chip. */
@@ -21,6 +30,8 @@ export interface DemoStory {
   /** Assistant prose. Product voice, not protocol notes. */
   reply: string;
   surface?: A2UISurface;
+  /** Mock outbound cards (assistant bubble). */
+  attachments?: readonly DemoStoryAttachment[];
 }
 
 const TREND_MONTHS = ["3月", "4月", "5月", "6月", "7月", "8月"] as const;
@@ -499,6 +510,17 @@ cd demos/aap-chat && npm install && npm run dev
 export const GENERIC_REPLY =
   "可以。点下面的建议就能看预约表单、经营看板、跟进排行或用量成本；也可以直接打字提问。";
 
+export const MONTHLY_STATEMENT_CSV = [
+  "月份,预约,成交",
+  "3月,42,18",
+  "4月,51,22",
+  "5月,58,29",
+  "6月,67,21",
+  "7月,71,24",
+  "8月,76,31",
+  "",
+].join("\n");
+
 export const DEMO_STORIES: readonly DemoStory[] = [
   {
     id: "booking",
@@ -598,6 +620,26 @@ export const DEMO_STORIES: readonly DemoStory[] = [
     keywords: /markdown|数学|公式|代码高亮|富文本/i,
     reply: MARKDOWN_SAMPLE_REPLY,
   },
+  {
+    id: "export-csv",
+    label: "生成本月对账单",
+    prompt: "生成本月对账单",
+    aliases: ["导出本月对账单", "导出 CSV 对账单"],
+    keywords: /对账单|invoice-2026-08|export-csv/i,
+    reply: "这是本月对账单，CSV 可直接下载。",
+    attachments: [
+      {
+        name: "invoice-2026-08.csv",
+        mediaType: "text/csv",
+        text: MONTHLY_STATEMENT_CSV,
+      },
+      {
+        name: "invoice-preview.png",
+        mediaType: "image/png",
+        tinyPng: true,
+      },
+    ],
+  },
 ];
 
 export const SUGGESTION_STORIES: readonly DemoStory[] = DEMO_STORIES;
@@ -611,6 +653,7 @@ export function pickDemoStory(userText: string): DemoStory | undefined {
   if (exact) return exact;
   // More specific stories first so "结合趋势" does not fall through to the trend chart.
   const order = [
+    "export-csv",
     "report",
     "board",
     "cost",

@@ -17,6 +17,7 @@ describe("demo stories", () => {
       "cost",
       "report",
       "markdown",
+      "export-csv",
     ]);
   });
 
@@ -40,6 +41,19 @@ describe("demo stories", () => {
     expect(pickDemoStory("用量成本与现金流")?.id).toBe("cost");
     expect(pickDemoStory("Markdown 月报 + 统计图")?.id).toBe("report");
     expect(pickDemoStory("用 markdown 写月报并配统计图")?.id).toBe("report");
+    expect(pickDemoStory("生成本月对账单")?.id).toBe("export-csv");
+    expect(pickDemoStory("导出本月对账单")?.id).toBe("export-csv");
+    expect(pickDemoStory("帮我出一份对账单")?.id).toBe("export-csv");
+  });
+
+  it("ships a monthly statement story with a csv card and optional png", () => {
+    const story = DEMO_STORIES.find((entry) => entry.id === "export-csv");
+    expect(story?.label).toBe("生成本月对账单");
+    expect(story?.reply).toContain("对账单");
+    expect(story?.attachments?.map((a) => a.mediaType)).toEqual(["text/csv", "image/png"]);
+    expect(story?.attachments?.[0]?.name).toBe("invoice-2026-08.csv");
+    expect(story?.attachments?.[0]?.text).toContain("月份,预约,成交");
+    expect(story?.surface).toBeUndefined();
   });
 
   it("pairs a markdown report table with a matching A2UI chart", () => {

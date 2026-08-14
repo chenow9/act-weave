@@ -4,13 +4,18 @@ import {
   clearOutboundCredential,
   extractA2UIPart,
   extractMessageText,
+  extractOutputFileParts,
   extractToolSummary,
   fetchBffConfig,
+  fetchFileBlob,
   followRunLive,
+  hydrateAttachment,
   itemRole,
+  reconcileAssistantAttachments,
   startChatTurn,
   uploadAttachment,
   type A2UIPartExtract,
+  type AttachmentCard,
   type BffConfig,
   type OutboundStatus,
 } from "./aap";
@@ -25,20 +30,7 @@ import type { ProtocolItem } from "@actweave/agent-client";
 
 type UiRole = "user" | "assistant" | "system";
 
-interface UiAttachment {
-  id: string;
-  /** Local draft key before upload finishes. */
-  localId: string;
-  name: string;
-  mediaType: string;
-  sizeBytes: number;
-  /** AAP file id after READY (live) or mock id. */
-  fileId?: string;
-  /** Object URL for image preview (revoke on clear). */
-  previewUrl?: string;
-  status: "pending" | "uploading" | "ready" | "error";
-  error?: string;
-}
+type UiAttachment = AttachmentCard;
 
 interface UiMessage {
   id: string;
@@ -395,6 +387,28 @@ function attachmentChipHtml(a: UiAttachment, removable: boolean): string {
   `;
 }
 
+function attachmentFileIcon(mediaType: string): string {
+  if (mediaType === "application/pdf") return "fa-file-pdf";
+  if (mediaType === "text/csv") return "fa-file-csv";
+  if (mediaType === "application/json" || mediaType.startsWith("text/")) return "fa-file-lines";
+  return "fa-paperclip";
+}
+
+function downloadButtonHtml(a: UiAttachment): string {
+  const key = a.fileId || a.localId || a.id;
+  const canDownload = a.status === "ready" && Boolean(a.previewUrl || a.fileId);
+  if (!key) return "";
+  return `<button
+      type="button"
+      class="msg-attach-download"
+      data-download-file="${escapeHtml(key)}"
+      aria-label="下载 ${escapeHtml(a.name)}"
+      ${canDownload ? "" : "disabled"}
+    >
+      <i class="fa-solid fa-download" aria-hidden="true"></i>
+    </button>`;
+}
+
 function messageAttachmentsHtml(msg: UiMessage): string {
   if (!msg.attachments?.length) return "";
   return `
@@ -404,18 +418,24 @@ function messageAttachmentsHtml(msg: UiMessage): string {
           const isImage = a.mediaType.startsWith("image/") && a.previewUrl;
           if (isImage) {
             return `
-              <a class="msg-attach-image" href="${escapeHtml(a.previewUrl || "#")}" target="_blank" rel="noopener noreferrer">
-                <img src="${escapeHtml(a.previewUrl || "")}" alt="${escapeHtml(a.name)}" />
-                <span>${escapeHtml(a.name)}</span>
-              </a>`;
+              <div class="msg-attach-image">
+                <a href="${escapeHtml(a.previewUrl || "#")}" target="_blank" rel="noopener noreferrer">
+                  <img src="${escapeHtml(a.previewUrl || "")}" alt="${escapeHtml(a.name)}" />
+                  <span>${escapeHtml(a.name)}</span>
+                </a>
+                ${downloadButtonHtml(a)}
+              </div>`;
           }
+          const statusNote =
+            a.status === "uploading" ? " · 加载中" : a.status === "error" ? " · 失败" : "";
           return `
-            <div class="msg-attach-file">
-              <i class="fa-solid ${a.mediaType === "application/pdf" ? "fa-file-pdf" : "fa-paperclip"}" aria-hidden="true"></i>
+            <div class="msg-attach-file is-${escapeHtml(a.status)}">
+              <i class="fa-solid ${attachmentFileIcon(a.mediaType)}" aria-hidden="true"></i>
               <div>
                 <strong>${escapeHtml(a.name)}</strong>
-                <span>${escapeHtml(formatBytes(a.sizeBytes))}${a.fileId ? ` · ${escapeHtml(shortId(a.fileId))}` : ""}</span>
+                <span>${escapeHtml(formatBytes(a.sizeBytes))}${a.fileId ? ` · ${escapeHtml(shortId(a.fileId))}` : ""}${escapeHtml(statusNote)}</span>
               </div>
+              ${downloadButtonHtml(a)}
             </div>`;
         })
         .join("")}
@@ -603,6 +623,7 @@ function bindEvents() {
     const files = de.dataTransfer?.files ? Array.from(de.dataTransfer.files) : [];
     void addPendingFiles(files);
   });
+  bindDownloadButtons(root);
 }
 
 function revokePendingPreviews() {
@@ -661,7 +682,8 @@ async function addPendingFiles(files: File[]) {
   }
   for (const file of accepted) {
     const localId = uid();
-    const previewUrl = file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined;
+    // Object URL backs image preview and inbound PDF download (Mock + Live local).
+    const previewUrl = URL.createObjectURL(file);
     pendingFileByLocalId.set(localId, file);
     state.pendingAttachments.push({
       id: localId,
@@ -827,6 +849,9 @@ async function runMock(text: string) {
       const msg = state.messages.find((m) => m.id === assistantId);
       if (msg) {
         msg.pending = false;
+        if (chunk.attachments?.length) {
+          msg.attachments = chunk.attachments.map((a) => ({ ...a, status: "ready" as const }));
+        }
         if (chunk.a2ui?.surface != null) {
           const surface = chunk.a2ui.surface;
           msg.a2ui = {
@@ -844,6 +869,10 @@ async function runMock(text: string) {
               2,
             ),
           };
+        }
+        if (!msg.text.trim() && !(msg.attachments && msg.attachments.length)) {
+          msg.text = "_（本轮没有可展示的助手文本）_";
+          msg.html = renderMarkdown(msg.text);
         }
       }
     } else if (chunk.kind === "status") {
@@ -943,7 +972,11 @@ async function runLive(text: string) {
     agentId: turn.agentId,
     runId: turn.runId,
   })) {
-    applySnapshotToAssistant(assistantId, snapshot.items);
+    applySnapshotToAssistant(assistantId, snapshot.items, {
+      aapBaseUrl: turn.aapBaseUrl,
+      workspaceId: turn.workspaceId,
+      agentId: turn.agentId,
+    });
     const status = snapshot.run?.status ? String(snapshot.run.status) : "";
     if (status) state.status = `Run · ${status}`;
     if (snapshot.run?.error) {
@@ -956,7 +989,7 @@ async function runLive(text: string) {
   const msg = state.messages.find((m) => m.id === assistantId);
   if (msg) {
     msg.pending = false;
-    if (!msg.text.trim()) {
+    if (!msg.text.trim() && !(msg.attachments && msg.attachments.length)) {
       msg.text = "_（本轮没有可展示的助手文本）_";
       msg.html = renderMarkdown(msg.text);
     }
@@ -989,7 +1022,11 @@ function patchComposerAttachments() {
   });
 }
 
-function applySnapshotToAssistant(assistantId: string, items: ProtocolItem[]) {
+function applySnapshotToAssistant(
+  assistantId: string,
+  items: ProtocolItem[],
+  ctx: { aapBaseUrl: string; workspaceId: string; agentId: string },
+) {
   const msg = state.messages.find((m) => m.id === assistantId);
   if (!msg) return;
 
@@ -1019,6 +1056,58 @@ function applySnapshotToAssistant(assistantId: string, items: ProtocolItem[]) {
   if (a2ui) {
     msg.a2ui = a2ui;
   }
+
+  const parts = extractOutputFileParts(items);
+  const { next, toHydrate } = reconcileAssistantAttachments(msg.attachments, parts);
+  msg.attachments = next;
+  if (toHydrate.length) {
+    void hydrateAssistantAttachments(msg, toHydrate, ctx);
+  }
+}
+
+async function hydrateAssistantAttachments(
+  msg: UiMessage,
+  parts: Array<{ fileId: string; mediaType?: string; filename?: string; sizeBytes?: number }>,
+  ctx: { aapBaseUrl: string; workspaceId: string; agentId: string },
+) {
+  await Promise.all(
+    parts.map(async (part) => {
+      let hydratedPreview: string | undefined;
+      try {
+        const hydrated = await hydrateAttachment({
+          aapBaseUrl: ctx.aapBaseUrl,
+          workspaceId: ctx.workspaceId,
+          agentId: ctx.agentId,
+          fileId: part.fileId,
+          mediaType: part.mediaType,
+          filename: part.filename,
+          sizeBytes: part.sizeBytes,
+        });
+        hydratedPreview = hydrated.previewUrl;
+        const att = msg.attachments?.find((a) => a.fileId === part.fileId);
+        if (!att || att.status !== "uploading") {
+          if (hydratedPreview) URL.revokeObjectURL(hydratedPreview);
+          return;
+        }
+        if (att.previewUrl && hydratedPreview && att.previewUrl !== hydratedPreview) {
+          URL.revokeObjectURL(att.previewUrl);
+        }
+        att.name = hydrated.name;
+        att.mediaType = hydrated.mediaType;
+        att.sizeBytes = hydrated.sizeBytes;
+        if (hydratedPreview) att.previewUrl = hydratedPreview;
+        att.status = "ready";
+        att.error = undefined;
+      } catch (err) {
+        if (hydratedPreview) URL.revokeObjectURL(hydratedPreview);
+        const att = msg.attachments?.find((a) => a.fileId === part.fileId);
+        if (!att || att.status !== "uploading") return;
+        att.status = "error";
+        att.error = err instanceof Error ? err.message : String(err);
+      }
+    }),
+  );
+  patchMessages();
 }
 
 function patchMessages() {
@@ -1035,6 +1124,7 @@ function patchMessages() {
       if (story) void submit(story.prompt);
     });
   });
+  bindDownloadButtons(scroll);
   const statusEl = root.querySelector(".status-line");
   if (statusEl) {
     statusEl.className = `status-line is-${state.statusTone === "error" ? "error" : state.statusTone === "ok" ? "ok" : ""}`;
@@ -1045,6 +1135,77 @@ function patchMessages() {
     } ${escapeHtml(state.status || "就绪")}`;
   }
   scrollToBottom();
+}
+
+function bindDownloadButtons(scope: ParentNode) {
+  scope.querySelectorAll<HTMLButtonElement>("[data-download-file]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      void downloadAttachment(btn.dataset.downloadFile || "");
+    });
+  });
+}
+
+function findAttachment(key: string): UiAttachment | undefined {
+  if (!key) return undefined;
+  for (const msg of state.messages) {
+    const hit = (msg.attachments || []).find(
+      (a) => a.fileId === key || a.localId === key || a.id === key,
+    );
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+function triggerAnchorDownload(href: string, filename: string) {
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = filename || "download";
+  a.rel = "noopener";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+async function downloadAttachment(key: string) {
+  const att = findAttachment(key);
+  if (!att) return;
+  try {
+    if (state.mode !== "live" && att.previewUrl) {
+      triggerAnchorDownload(att.previewUrl, att.name);
+      return;
+    }
+    const config = state.config;
+    const fileId = att.fileId;
+    if (state.mode === "live" && config?.workspaceId && config.agentId && config.aapBaseUrl && fileId) {
+      const blob = await fetchFileBlob({
+        aapBaseUrl: config.aapBaseUrl,
+        workspaceId: config.workspaceId,
+        agentId: config.agentId,
+        fileId,
+        mediaType: att.mediaType,
+      });
+      const url = URL.createObjectURL(blob);
+      triggerAnchorDownload(url, att.name);
+      URL.revokeObjectURL(url);
+      return;
+    }
+    if (att.previewUrl) {
+      triggerAnchorDownload(att.previewUrl, att.name);
+      return;
+    }
+    throw new Error("无法下载该附件");
+  } catch (err) {
+    state.status = err instanceof Error ? err.message : String(err);
+    state.statusTone = "error";
+    const statusEl = root.querySelector(".status-line");
+    if (statusEl) {
+      statusEl.className = "status-line is-error";
+      statusEl.innerHTML = `<i class="fa-solid fa-circle-info"></i> ${escapeHtml(state.status)}`;
+    }
+  }
 }
 
 function scrollToBottom() {

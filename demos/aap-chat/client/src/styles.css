@@ -511,10 +511,19 @@ textarea {
 }
 
 .msg-attach-image {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
   max-width: 220px;
+  color: inherit;
+}
+
+.msg-attach-image a {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
   text-decoration: none;
   color: inherit;
 }
@@ -559,13 +568,67 @@ textarea {
   border-color: rgba(248, 250, 252, 0.12);
 }
 
-.msg-attach-file i {
+.msg-attach-file > i {
   font-size: 18px;
   color: #0d9488;
 }
 
-.msg-row.is-user .msg-attach-file i {
+.msg-row.is-user .msg-attach-file > i {
   color: #5eead4;
+}
+
+.msg-attach-download {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--aw-text);
+  cursor: pointer;
+}
+
+.msg-attach-image .msg-attach-download {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(15, 23, 42, 0.55);
+  color: #f8fafc;
+}
+
+.msg-attach-download:hover:not(:disabled) {
+  background: rgba(13, 148, 136, 0.16);
+  color: var(--aw-cyan);
+}
+
+.msg-attach-image .msg-attach-download:hover:not(:disabled) {
+  background: rgba(13, 148, 136, 0.85);
+  color: #fff;
+}
+
+.msg-attach-download:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.msg-attach-download i {
+  font-size: 12px;
+  color: inherit;
+}
+
+.msg-row.is-user .msg-attach-download {
+  background: rgba(248, 250, 252, 0.12);
+  color: #f8fafc;
+}
+
+.msg-attach-file.is-error {
+  border-color: rgba(220, 38, 38, 0.28);
+}
+
+.msg-attach-file.is-uploading {
+  opacity: 0.85;
 }
 
 .msg-attach-file strong {

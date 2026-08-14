@@ -2,9 +2,11 @@ import {
   AgentAccessClient,
   MemoryTokenProvider,
   findA2UIPart,
+  findOutputFileParts,
   joinTextParts,
   type AccessTokenMaterial,
   type AAPFile,
+  type OutputFileContentPart,
   type ProtocolItem,
   type ReducedRunSnapshot,
 } from "@actweave/agent-client";
@@ -205,6 +207,144 @@ export async function uploadAttachment(input: UploadAttachmentInput): Promise<AA
   return ready;
 }
 
+export type AttachmentCardStatus = "pending" | "uploading" | "ready" | "error";
+
+/** Composer / bubble attachment card. Wire never stores live URLs — only Object URLs. */
+export interface AttachmentCard {
+  id: string;
+  localId: string;
+  name: string;
+  mediaType: string;
+  sizeBytes: number;
+  fileId?: string;
+  previewUrl?: string;
+  status: AttachmentCardStatus;
+  error?: string;
+}
+
+export interface HydratedAttachment {
+  name: string;
+  mediaType: string;
+  sizeBytes: number;
+  previewUrl?: string;
+}
+
+/**
+ * Assistant `output_file` parts from a run snapshot: assistant messages only,
+ * first-seen `fileId` order, duplicates dropped.
+ */
+export function extractOutputFileParts(items: ProtocolItem[]): OutputFileContentPart[] {
+  const seen = new Set<string>();
+  const out: OutputFileContentPart[] = [];
+  for (const item of items) {
+    if (itemRole(item) !== "assistant") continue;
+    for (const part of findOutputFileParts(item)) {
+      const fileId = String(part.fileId || "").trim();
+      if (!fileId || seen.has(fileId)) continue;
+      seen.add(fileId);
+      out.push(part);
+    }
+  }
+  return out;
+}
+
+/**
+ * Reconcile bubble cards by fileId. Never reset ready/error/uploading rows
+ * (or their previewUrl) just because another SSE snapshot arrived.
+ */
+export function reconcileAssistantAttachments(
+  prev: AttachmentCard[] | undefined,
+  parts: OutputFileContentPart[],
+): { next: AttachmentCard[]; toHydrate: OutputFileContentPart[] } {
+  const prevById = new Map<string, AttachmentCard>();
+  for (const card of prev || []) {
+    if (card.fileId) prevById.set(card.fileId, card);
+  }
+  const next: AttachmentCard[] = [];
+  const toHydrate: OutputFileContentPart[] = [];
+  const keep = new Set<string>();
+
+  for (const part of parts) {
+    const fileId = String(part.fileId || "").trim();
+    if (!fileId) continue;
+    keep.add(fileId);
+    const existing = prevById.get(fileId);
+    if (
+      existing &&
+      (existing.status === "ready" || existing.status === "error" || existing.status === "uploading")
+    ) {
+      next.push(existing);
+      continue;
+    }
+    next.push(placeholderAttachment(part));
+    toHydrate.push(part);
+  }
+
+  for (const [fileId, card] of prevById) {
+    if (keep.has(fileId)) continue;
+    if (card.previewUrl) URL.revokeObjectURL(card.previewUrl);
+  }
+
+  return { next, toHydrate };
+}
+
+export function placeholderAttachment(part: OutputFileContentPart): AttachmentCard {
+  const fileId = String(part.fileId || "").trim();
+  const size =
+    typeof part.sizeBytes === "number" && Number.isFinite(part.sizeBytes) && part.sizeBytes >= 0
+      ? part.sizeBytes
+      : 0;
+  return {
+    id: fileId,
+    localId: fileId,
+    name: (part.filename && String(part.filename).trim()) || "attachment",
+    mediaType: (part.mediaType && String(part.mediaType).trim()) || "application/octet-stream",
+    sizeBytes: size,
+    fileId,
+    status: "uploading",
+  };
+}
+
+/** Metadata via getFile; image preview via Bearer getFileContent — never links.content. */
+export async function hydrateAttachment(options: {
+  aapBaseUrl: string;
+  workspaceId: string;
+  agentId: string;
+  fileId: string;
+  mediaType?: string;
+  filename?: string;
+  sizeBytes?: number;
+}): Promise<HydratedAttachment> {
+  const client = new AgentAccessClient({
+    baseUrl: options.aapBaseUrl,
+    tokenProvider: createBffTokenProvider(),
+  });
+  const meta = await client.getFile(options.workspaceId, options.agentId, options.fileId);
+  const name = meta.filename || options.filename || "attachment";
+  const mediaType = meta.mediaType || options.mediaType || "application/octet-stream";
+  const sizeBytes =
+    typeof meta.sizeBytes === "number" && Number.isFinite(meta.sizeBytes)
+      ? meta.sizeBytes
+      : (options.sizeBytes ?? 0);
+
+  let previewUrl: string | undefined;
+  if (mediaType.startsWith("image/")) {
+    try {
+      const result = await client.getFileContent(
+        options.workspaceId,
+        options.agentId,
+        options.fileId,
+        { prefer: "content" },
+      );
+      const mime = result.contentType || mediaType;
+      previewUrl = URL.createObjectURL(new Blob([result.body], { type: mime }));
+    } catch {
+      previewUrl = undefined;
+    }
+  }
+  return { name, mediaType, sizeBytes, previewUrl };
+}
+
 /** Best-effort blob URL for READY image preview (Bearer content stream). */
 export async function fetchFileObjectUrl(options: {
   aapBaseUrl: string;
@@ -214,22 +354,34 @@ export async function fetchFileObjectUrl(options: {
   mediaType?: string;
 }): Promise<string | null> {
   try {
-    const client = new AgentAccessClient({
-      baseUrl: options.aapBaseUrl,
-      tokenProvider: createBffTokenProvider(),
-    });
-    const result = await client.getFileContent(
-      options.workspaceId,
-      options.agentId,
-      options.fileId,
-      { prefer: "content" },
-    );
-    const mime = result.contentType || options.mediaType || "application/octet-stream";
-    const blob = new Blob([result.body], { type: mime });
+    const blob = await fetchFileBlob({ ...options, prefer: "content" });
     return URL.createObjectURL(blob);
   } catch {
     return null;
   }
+}
+
+/** Bearer getFileContent (path A/B) as a Blob. Never use links.content as src. */
+export async function fetchFileBlob(options: {
+  aapBaseUrl: string;
+  workspaceId: string;
+  agentId: string;
+  fileId: string;
+  mediaType?: string;
+  prefer?: "content" | "download";
+}): Promise<Blob> {
+  const client = new AgentAccessClient({
+    baseUrl: options.aapBaseUrl,
+    tokenProvider: createBffTokenProvider(),
+  });
+  const result = await client.getFileContent(
+    options.workspaceId,
+    options.agentId,
+    options.fileId,
+    options.prefer ? { prefer: options.prefer } : {},
+  );
+  const mime = result.contentType || options.mediaType || "application/octet-stream";
+  return new Blob([result.body], { type: mime });
 }
 
 export async function* followRunLive(options: {

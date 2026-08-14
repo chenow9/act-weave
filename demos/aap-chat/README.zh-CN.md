@@ -3,7 +3,8 @@
 一套与 ActWeave 控制台风格一致的 **Agent Access Protocol（AAP）对话 Demo**。
 
 - 富文本：Markdown、数学公式（KaTeX）、代码高亮、图片  
-- **附件**：选文件 / 拖拽 / 粘贴 → 上传 → 带 `fileId` 发送 → 对话气泡渲染预览  
+- **附件**：选文件 / 拖拽 / 粘贴 → 上传 → 带 `fileId` 发送 → 对话气泡渲染预览；助手 `output_file` 卡片（Mock + Live）可下载  
+
 - 架构：**BFF 持有 Client Secret**，浏览器只拿短期 Access Token  
 - 两种模式：**Live AAP**（真实 Agent） / **Mock**（离线富文本预览）
 
@@ -17,8 +18,8 @@ npm install
 npm run dev:mock
 ```
 
-打开 [http://127.0.0.1:5188](http://127.0.0.1:5188)，点空态建议看预约表单 / 趋势图 / 指标，或「插入富文本样例」。右上角「开发者」可打开协议铬层、surface JSON 和全部渲染基线。  
-也可点作曲家左侧 **附件** 选择图片/PDF：Mock 模式会在气泡中渲染本地预览（不上传）。
+打开 [http://127.0.0.1:5188](http://127.0.0.1:5188)，点空态建议看预约表单 / 趋势图 / 指标 / **生成本月对账单**，或「插入富文本样例」。右上角「开发者」可打开协议铬层、surface JSON 和全部渲染基线。  
+也可点作曲家左侧 **附件** 选择图片/PDF：Mock 模式会在气泡中渲染本地预览（不上传）。「生成本月对账单」会在助手气泡 `.msg-row.is-assistant .msg-attachments` 画出 CSV（及示意 PNG）卡片。
 
 ## 附件（选文件 · 上传 · 气泡渲染）
 
@@ -26,10 +27,13 @@ npm run dev:mock
 | --- | --- |
 | 选择 | 曲作家「附件」按钮、拖到输入区、或粘贴图片 |
 | 类型 / 限制 | `png` / `jpeg` / `webp` / `gif` / `pdf`，单文件 ≤ 25MB，最多 8 个 |
-| Mock | 本地 Object URL 预览进用户气泡，不走 AAP |
+| Mock（用户） | 本地 Object URL 预览进用户气泡，不走 AAP |
+| Mock（助手回传） | `assistant_done.attachments` 画 CSV / PNG 卡片 |
 | Live | 浏览器用短期 Token：`createFile` → 预签名 PUT → `complete` → `waitUntilReady`，再 `POST /bff/chat` 带 `fileIds` |
-| 协议 | BFF 将每个 `fileId` 编入 user message 的 `input_file` content part |
-| 气泡 | 图片缩略图可点击放大；PDF 显示文件名 + 大小 + 短 fileId |
+| Live（助手回传） | SSE `output_file` 先占位，再按 `fileId` `getFile` / `getFileContent` hydrate（**不用** `links.content` 当 `<img src>`） |
+| 协议 | 用户消息 `input_file`；助手消息 `output_file` |
+| 气泡 | 图片缩略图可打开/下载；CSV / PDF 卡片含下载钮（入站 PDF 同样） |
+| 下载 | Live：Bearer `getFileContent` → Blob；Mock：`previewUrl`。需要 `file:read` |
 
 Live 附件还需要：
 
@@ -106,7 +110,7 @@ Browser SDK followRun(SSE)  ← 仅使用短期 access_token
 | 数学 | `markdown-it-texmath` + `katex`（`$...$` / `$$...$$`） |
 | 代码 | `highlight.js` |
 | 图片 | 允许 `http(s)://`，DOMPurify 消毒 |
-| 附件 | 曲作家选/拖/粘贴；Live 走 AAP File；气泡内图/PDF 卡片 |
+| 附件 | 曲作家选/拖/粘贴；Live 走 AAP File；气泡内图/PDF/CSV 卡片（含助手回传与下载） |
 | 工具调用 | 渲染 AAP `tool_call` item 卡片 |
 
 ## 主要文件

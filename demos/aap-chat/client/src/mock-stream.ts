@@ -10,6 +10,17 @@ import {
   stampDemoSurface,
 } from "./demo-stories";
 
+export interface MockAttachment {
+  id: string;
+  localId: string;
+  name: string;
+  mediaType: string;
+  sizeBytes: number;
+  fileId?: string;
+  previewUrl?: string;
+  status: "ready";
+}
+
 export type MockChunk =
   | { kind: "user"; text: string }
   | { kind: "assistant_delta"; text: string }
@@ -20,9 +31,57 @@ export type MockChunk =
         catalogId?: string;
         surface: unknown;
       };
+      attachments?: MockAttachment[];
     }
   | { kind: "tool"; name: string; status: "running" | "succeeded" | "failed"; detail?: string }
   | { kind: "status"; text: string };
+
+/** 1×1 PNG so Mock can exercise the image card without a network. */
+const TINY_PNG_B64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+export function mockAttachmentsForStory(
+  story: { id: string; attachments?: readonly { name: string; mediaType: string; text?: string; tinyPng?: boolean }[] } | undefined,
+): MockAttachment[] {
+  if (!story?.attachments?.length) return [];
+  return story.attachments.map((spec, index) => {
+    const fileId = `mock-${story.id}-${index + 1}`;
+    let bytes: Uint8Array | undefined;
+    if (spec.tinyPng) {
+      bytes = decodeBase64(TINY_PNG_B64);
+    } else if (spec.text != null) {
+      bytes = new TextEncoder().encode(spec.text);
+    }
+    const sizeBytes = bytes?.byteLength ?? 0;
+    let previewUrl: string | undefined;
+    if (bytes) {
+      const copy = new Uint8Array(bytes);
+      const blob = new Blob([copy], { type: spec.mediaType });
+      try {
+        previewUrl = URL.createObjectURL(blob);
+      } catch {
+        previewUrl = undefined;
+      }
+    }
+    return {
+      id: fileId,
+      localId: fileId,
+      name: spec.name,
+      mediaType: spec.mediaType,
+      sizeBytes,
+      fileId,
+      previewUrl,
+      status: "ready" as const,
+    };
+  });
+}
+
+function decodeBase64(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
 
 /** Shared fixtures remain available to the developer drawer. */
 export const MOCK_A2UI_FIXTURES = A2UI_FIXTURES_BY_NAME;
@@ -57,25 +116,32 @@ export async function* mockAssistantStream(
       : story?.reply || GENERIC_REPLY;
 
   const surface = story?.surface ? stampDemoSurface(story.surface, story.id) : null;
+  const outbound = mockAttachmentsForStory(story);
+  const toolName = outbound.length
+    ? "actweave.publish_attachment"
+    : surface
+      ? `demo.story_${story?.id ?? "surface"}`
+      : "demo.compose_reply";
 
   // Assistant exists before tool events so developer-mode tool cards can attach.
   yield { kind: "assistant_delta", text: "" };
   yield {
     kind: "tool",
-    name: surface ? `demo.story_${story?.id ?? "surface"}` : "demo.compose_reply",
+    name: toolName,
     status: "running",
     detail: "{}",
   };
   await sleep(280);
   yield {
     kind: "tool",
-    name: surface ? `demo.story_${story?.id ?? "surface"}` : "demo.compose_reply",
+    name: toolName,
     status: "succeeded",
     detail: JSON.stringify(
       {
         mode: "mock",
         story: story?.id ?? null,
         attachments: names,
+        outbound: outbound.map((a) => ({ name: a.name, mediaType: a.mediaType })),
         a2ui: Boolean(surface),
       },
       null,
@@ -99,7 +165,10 @@ export async function* mockAssistantStream(
         catalogId: A2UI_CATALOG_ID,
         surface,
       },
+      ...(outbound.length ? { attachments: outbound } : {}),
     };
+  } else if (outbound.length) {
+    yield { kind: "assistant_done", attachments: outbound };
   } else {
     yield { kind: "assistant_done" };
   }
