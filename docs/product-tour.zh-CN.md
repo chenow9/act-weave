@@ -30,11 +30,11 @@ Provider 表示上游服务，Connection 保存其运行端点、环境和出站
 
 ## 构建运行单元
 
-| Model API | Smart DAG |
+| Model API | Workflow 生成对话 |
 | --- | --- |
-| ![模型 API](./images/readme/10-model-apis.png) | ![智能编排](./images/readme/07-smart-dag.png) |
+| ![模型 API](./images/readme/10-model-apis.png) | ![Workflow 生成对话](./images/readme/07-smart-dag.png) |
 
-Model API 为 Agent 提供模型接入配置。Smart DAG 用自然语言生成 Workflow 图草案；草案仍需检查、试跑和发布，不能被理解为自动上线。
+Model API 为 Agent 提供模型接入配置。用自然语言生成图草案的对话位于 Workflow 编辑器内，不再是独立的 Console 页面；草案仍需检查、试跑和发布，不会自动上线。
 
 项目首页展示的 [Tool 治理](../README.zh-CN.md#产品预览)、[Agent 配置](../README.zh-CN.md#产品预览)和 [Workflow](../README.zh-CN.md#产品预览)共同构成可执行能力的配置链路。
 

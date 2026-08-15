@@ -36,7 +36,7 @@ An **Agent** makes dynamic choices from its model, prompt, context, and bound ca
 
 A **Workflow** is a deterministic multi-step graph. The current implementation includes graph drafts, compilation, trial runs, revisions, and publishing. An Agent can bind Tools/Workflows; a Workflow calls configured business capabilities through Tool Runtime.
 
-Smart DAG is a console capability that generates graph drafts. It may help create a Workflow draft, but it is not documented as automatic publishing or unattended deployment.
+Generate conversation lives inside the Workflow editor and can produce a graph draft. It is not a standalone Console page, and it is not documented as automatic publishing or unattended deployment.
 
 ## Management plane and runtime plane
 
