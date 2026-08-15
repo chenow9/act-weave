@@ -9,6 +9,10 @@ frontend/e2e/**
 !frontend/e2e/a2ui-enable.spec.ts
 !frontend/e2e/tool-disclosure.spec.ts
 !frontend/e2e/tool-disclosure-live.spec.ts
+!frontend/e2e/workflow-generate.spec.ts
+!frontend/e2e/llm-sse-chrome-verify.mjs
+!frontend/e2e/zkl56-sentinel-chrome-acceptance.mjs
+!frontend/e2e/zkl56-sentinel-retest.mjs
 !frontend/e2e/fixtures/
 !frontend/e2e/fixtures/**
 frontend/e2e/**/*-snapshots/**
