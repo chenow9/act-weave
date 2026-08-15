@@ -421,9 +421,11 @@ function fitCanvasView(source: "auto" | "user" = "user") {
       v-if="props.generating"
       class="workflow-graph-generating"
       role="status"
+      aria-busy="true"
       :aria-label="t('workflow.generateOverlayAria')"
     >
       <span class="workflow-editor-dirty-pill">{{ t("workflow.generateInProgress") }}</span>
+      <small>{{ t("workflow.generateCannotCancel") }}</small>
     </div>
     <VueFlow
       :nodes="flowNodes"

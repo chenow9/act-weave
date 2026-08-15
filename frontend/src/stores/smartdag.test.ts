@@ -358,6 +358,25 @@ describe("smart dag multi-turn session store (P1.5)", () => {
         rawSummary: "compile failed",
       },
     });
+    expect(turnCall?.[1]).not.toHaveProperty("expectedSessionLockVersion");
+  });
+
+  it("does not send expectedSessionLockVersion on the turn body", async () => {
+    const smart = useSmartDagStore();
+    smart.setContext("workspace-1", "agent-1", "model-1");
+    vi.mocked(apiClient.post).mockImplementation(async (url: string) => {
+      if (url.endsWith("/workflow-generate-sessions")) {
+        return {
+          data: { sessionId: "session-1", agentId: "agent-1", modelConfigId: "model-1", status: "OPEN" },
+        };
+      }
+      if (url.includes("/turns")) return turnResponse(1);
+      throw new Error(url);
+    });
+
+    await smart.sendTurn({ workspaceId: "workspace-1", agentId: "agent-1", message: "查询支付状态" });
+    const turnCall = vi.mocked(apiClient.post).mock.calls.find((c) => String(c[0]).includes("/turns"));
+    expect(Object.keys((turnCall?.[1] as object) || {})).toEqual(["message"]);
   });
 
   it("does not create session when agent has no model config", async () => {

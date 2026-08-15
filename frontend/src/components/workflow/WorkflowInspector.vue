@@ -18,6 +18,8 @@ const props = defineProps<{
   tools?: Tool[];
   variableRefs: string[];
   toolCatalogError?: string;
+  aiReason?: string;
+  locked?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -45,6 +47,7 @@ function nodeDataValue(key: string) {
         <input
           name="node-label"
           :value="props.node.label"
+          :disabled="props.locked"
           @input="emit('update-node-label', ($event.target as HTMLInputElement).value)"
         />
       </label>
@@ -62,6 +65,11 @@ function nodeDataValue(key: string) {
           })
         }}</span>
       </div>
+
+      <section v-if="props.aiReason" class="workflow-inspector-ai-reason" data-testid="workflow-generate-ai-reason">
+        <strong>{{ t("workflow.generateAiReason") }}</strong>
+        <p>{{ props.aiReason }}</p>
+      </section>
 
       <section class="workflow-inspector-vars">
         <div class="workflow-section-caption">

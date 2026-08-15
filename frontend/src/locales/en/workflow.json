@@ -481,5 +481,8 @@
   "generateLeftTabsAria": "Generate and node library",
   "generateNodesDisabledHint": "Add nodes after a draft exists",
   "generateLoadingAgents": "Loading agents…",
-  "generateNeedWorkspaceAgent": "Choose a workspace and an Agent first."
+  "generateNeedWorkspaceAgent": "Choose a workspace and an Agent first.",
+  "generateYou": "You",
+  "generateAssistant": "Assistant",
+  "generateErrorCode": "Error code"
 }

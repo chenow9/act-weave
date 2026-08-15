@@ -918,6 +918,36 @@ describe("workflow inspector typed editors", () => {
     expect(wrapper.text()).toContain("JSON 格式不正确");
   });
 
+  it("shows generateAiReason independently from Approval data.reason", () => {
+    const wrapper = mount(WorkflowInspector, {
+      props: {
+        node: {
+          id: "approval-1",
+          type: "Approval",
+          label: "审批",
+          position: { x: 200, y: 180 },
+          ports: [],
+          data: { reason: "审批原因字段" },
+          ui: {},
+        },
+        variableRefs: [],
+        aiReason: "金额大于阈值需要人审",
+      },
+      global: {
+        plugins: testI18nPlugins(),
+        stubs: {
+          AppSelect: AppSelectStub,
+        },
+      },
+    });
+
+    expect(wrapper.get('[data-testid="workflow-generate-ai-reason"]').text()).toContain("AI 为什么加了这一步");
+    expect(wrapper.get('[data-testid="workflow-generate-ai-reason"]').text()).toContain("金额大于阈值需要人审");
+    expect((wrapper.get('textarea[name="node-approval-reason"]').element as HTMLTextAreaElement).value).toBe(
+      "审批原因字段",
+    );
+  });
+
   it("uses the variable picker for end output references instead of free-typing paths", async () => {
     const wrapper = mount(WorkflowInspector, {
       props: {

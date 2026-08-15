@@ -481,5 +481,8 @@
   "generateLeftTabsAria": "生成与节点库",
   "generateNodesDisabledHint": "生成草稿后才能加节点",
   "generateLoadingAgents": "正在加载 Agent…",
-  "generateNeedWorkspaceAgent": "请先选择业务空间和 Agent。"
+  "generateNeedWorkspaceAgent": "请先选择业务空间和 Agent。",
+  "generateYou": "你",
+  "generateAssistant": "助手",
+  "generateErrorCode": "错误码"
 }

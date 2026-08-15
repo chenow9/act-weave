@@ -40,13 +40,30 @@ const {
   leftTab,
   generatePresence,
   generateLock,
+  generateSending,
   generateSheetOpen,
   applyHighlightEpoch,
   prompt,
+  selectedAgentId,
+  agentsLoadState,
+  agentPopoverOpen,
+  generateTranscript,
+  generateAgentOptions,
+  selectedGenerateAgent,
+  selectedGenerateAgentUsable,
+  showGenerateDirtyChip,
+  generateLastFailure,
+  generateReasoningSteps,
+  generateMissingCapabilities,
+  generateSessionClosed,
+  selectedNodeAiReason,
   selectGenerateTab,
   selectNodesTab,
   toggleGenerateFromTopbar,
   closeGenerateSheet,
+  selectGenerateAgentById,
+  sendGenerateTurn,
+  handleGenerateFailureCta,
   workflowEditorBusy,
   selectedWorkflowCanPublish,
   workflowEditorReadinessSteps,
@@ -102,7 +119,7 @@ const isNarrowWorkbench = useWorkflowGenerateNarrow();
 const isGenerateSheet = computed(
   () => leftTab.value === "generate" && generateSheetOpen.value && isNarrowWorkbench.value,
 );
-const canvasEmpty = computed(() => !hasPersistableDraft.value || editorGraph.value.nodes.length === 0);
+const canvasEmpty = computed(() => editorGraph.value.nodes.length === 0);
 
 function handleGenerateSheetKeydown(event: KeyboardEvent) {
   if (event.key !== "Escape" || !isGenerateSheet.value || generateLock.value) {
@@ -365,8 +382,28 @@ void WorkflowTrialRunDialog;
               :has-workspace-context="hasWorkspaceContext"
               :prompt="prompt"
               :sheet="isGenerateSheet"
+              :generating="generateSending"
+              :generate-busy="pendingEditorAction === 'generate'"
+              :has-persistable-draft="hasPersistableDraft"
+              :is-dirty="editorDirtyState === 'dirty'"
+              :show-dirty-chip="showGenerateDirtyChip"
+              :agents-load-state="agentsLoadState"
+              :selected-agent-id="selectedAgentId"
+              :selected-agent-name="selectedGenerateAgent?.name || ''"
+              :selected-agent-usable="selectedGenerateAgentUsable"
+              :agents="generateAgentOptions"
+              :agent-popover-open="agentPopoverOpen"
+              :transcript="generateTranscript"
+              :last-failure="generateLastFailure"
+              :reasoning-steps="generateReasoningSteps"
+              :missing-capabilities="generateMissingCapabilities"
+              :session-closed="generateSessionClosed"
               @update:prompt="prompt = $event"
               @close-sheet="closeGenerateSheet"
+              @submit="sendGenerateTurn"
+              @select-agent="selectGenerateAgentById($event, true)"
+              @toggle-agent-popover="agentPopoverOpen = !agentPopoverOpen"
+              @failure-cta="handleGenerateFailureCta"
             />
             <WorkflowNodePalette
               v-else
@@ -411,6 +448,8 @@ void WorkflowTrialRunDialog;
               :tool-options="availableToolOptions"
               :variable-refs="selectedNodeVariableRefs"
               :tool-catalog-error="workflowToolCatalogError"
+              :ai-reason="selectedNodeAiReason"
+              :locked="generateLock"
               @update-node-label="updateSelectedNodeLabel"
               @update-node-data="updateSelectedNodeData"
             />
@@ -426,6 +465,8 @@ void WorkflowTrialRunDialog;
               :tool-options="availableToolOptions"
               :variable-refs="selectedNodeVariableRefs"
               :tool-catalog-error="workflowToolCatalogError"
+              :ai-reason="selectedNodeAiReason"
+              :locked="generateLock"
               @update-node-label="updateSelectedNodeLabel"
               @update-node-data="updateSelectedNodeData"
             />

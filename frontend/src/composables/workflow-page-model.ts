@@ -6,8 +6,14 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router";
 import {
   WORKFLOW_GENERATE_NARROW_MEDIA,
+  WORKFLOW_GENERATE_PROMPT_MAX,
+  agentHasUsableModel,
   createEmptyWorkflowGraphDraft,
   createWorkflowGenerateDockState,
+  pickPreferredGenerateAgent as pickPreferredGenerateAgentFromCatalog,
+  projectTranscript,
+  resolveNodeAiReason,
+  type WorkflowGenerateFailureCtaKey,
 } from "./workflow-generate-dock";
 import type { ManagementListColumn } from "../components/ManagementList.vue";
 import type { ManagementRowAction } from "../components/ManagementRowActions.vue";
@@ -21,12 +27,15 @@ import {
 } from "../components/workflow/workflow-history";
 import { autoLayoutWorkflowGraph, layoutWorkflowGraphIfNeeded } from "../components/workflow/workflow-layout";
 import { toAPIError } from "../services/api";
+import { useAgentStore } from "../stores/agents";
 import { useAuthStore } from "../stores/auth";
-import { useSmartDagStore } from "../stores/smartdag";
+import { useModelConfigStore } from "../stores/modelConfigs";
+import { useSmartDagStore, type SmartDAGTurnResult } from "../stores/smartdag";
 import { useToolsStore } from "../stores/tools";
 import { useWorkflowStore, WorkflowDraftConflictError } from "../stores/workflow";
 import { useWorkspaceStore } from "../stores/workspaces";
 import type {
+  Agent,
   Execution,
   Tool,
   Workflow,
@@ -75,7 +84,7 @@ export function createWorkflowPageModel() {
   }
 
   type EditorDraftLoadStatus = "loaded" | "failed" | "stale";
-  type EditorActionKind = "save" | "validate" | "trial-run" | "publish" | "force-publish";
+  type EditorActionKind = "save" | "validate" | "trial-run" | "publish" | "force-publish" | "generate";
   type EditorDraftLoadState = "idle" | "loading" | "loaded" | "failed";
   type GraphMutationOptions = {
     recordHistory?: boolean;
@@ -92,6 +101,8 @@ export function createWorkflowPageModel() {
   const workspaces = useWorkspaceStore();
   const auth = useAuthStore();
   const smart = useSmartDagStore();
+  const agentStore = useAgentStore();
+  const modelConfigStore = useModelConfigStore();
   const router = useRouter();
   const route = useRoute();
   const hasWorkspaceContext = computed(() => Boolean(workspaces.activeWorkspaceId || workspaces.items[0]?.id));
@@ -272,7 +283,9 @@ export function createWorkflowPageModel() {
       workflowStore.activeDraft.workflowId === workflowStore.selectedWorkflowId,
     ),
   );
-  const workflowEditorBusy = computed(() => Boolean(pendingEditorAction.value));
+  const workflowEditorBusy = computed(() => Boolean(pendingEditorAction.value) || smart.generating);
+  const generateLock = computed(() => pendingEditorAction.value === "generate" || smart.generating);
+  const generateSending = computed(() => smart.generating);
   const selectedWorkflowCanPublish = computed(() => Boolean(selectedWorkflowReadiness.value?.canPublish));
   /** PLATFORM_ADMIN force-publish: VALID compile enough; skips real trial. Server also gates. */
   const canForcePublishWorkflow = computed(
@@ -311,6 +324,36 @@ export function createWorkflowPageModel() {
     return tt("workflow.forcePublishNeedValid");
   });
   const selectedGraphNode = computed(() => editorGraph.value.nodes.find((node) => node.id === selectedNodeId.value));
+  const selectedNodeAiReason = computed(() => resolveNodeAiReason(selectedGraphNode.value, smart.nodeExplanations));
+  const generateTranscript = computed(() => projectTranscript(smart, generateDock.optimisticUserMessage.value));
+  const generateAgentOptions = computed(() =>
+    agentStore.items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      usable: agentHasUsableModel(item, modelConfigStore.items),
+    })),
+  );
+  const selectedGenerateAgent = computed(
+    () =>
+      agentStore.items.find((item) => item.id === generateDock.selectedAgentId.value) ||
+      pickPreferredGenerateAgentFromCatalog({
+        agents: agentStore.items,
+        modelConfigs: modelConfigStore.items,
+        draftAgentId: draftGenerateAgentId(),
+        sessionAgentId: smart.agentId,
+        selectedAgentId: generateDock.selectedAgentId.value,
+      }),
+  );
+  const selectedGenerateAgentUsable = computed(() =>
+    agentHasUsableModel(selectedGenerateAgent.value, modelConfigStore.items),
+  );
+  const showGenerateDirtyChip = computed(
+    () => isEditorDraftDirty() && String(editorGraph.value.ui?.generatedBy || "").startsWith("smart-dag"),
+  );
+  const generateLastFailure = computed(() => smart.lastFailure);
+  const generateReasoningSteps = computed(() => smart.reasoningSteps);
+  const generateMissingCapabilities = computed(() => smart.missingCapabilities);
+  const generateSessionClosed = computed(() => smart.sessionStatus === "CLOSED");
   const selectedGraphEdge = computed(() => editorGraph.value.edges.find((edge) => edge.id === selectedEdgeId.value));
   const canUndoEditorChange = computed(() => editorHistory.value.past.length > 0);
   const canRedoEditorChange = computed(() => editorHistory.value.future.length > 0);
@@ -370,6 +413,7 @@ export function createWorkflowPageModel() {
     if (pendingEditorAction.value === "trial-run") return tt("workflow.preparingTrial");
     if (pendingEditorAction.value === "publish") return tt("workflow.publishingDraft");
     if (pendingEditorAction.value === "force-publish") return tt("workflow.forcePublishingSkipTrial");
+    if (pendingEditorAction.value === "generate") return tt("workflow.generateBusy");
     if (workflowActionNote.value.trim()) return workflowActionNote.value;
     return tt("workflow.saveHint");
   });
@@ -493,6 +537,220 @@ export function createWorkflowPageModel() {
       return true;
     }
     return !sameGraph(editorGraph.value, draft.graph);
+  }
+
+  function generateWorkspaceId() {
+    return workspaces.activeWorkspaceId || workspaces.items[0]?.id || "";
+  }
+
+  function draftGenerateAgentId() {
+    const draftAgent = workflowStore.activeDraft?.graph?.ui?.agentId;
+    return typeof draftAgent === "string" ? draftAgent : "";
+  }
+
+  function graphGenerateSessionId() {
+    const sessionId = editorGraph.value.ui?.sessionId;
+    return typeof sessionId === "string" ? sessionId.trim() : "";
+  }
+
+  function pickPreferredGenerateAgent() {
+    return pickPreferredGenerateAgentFromCatalog({
+      agents: agentStore.items,
+      modelConfigs: modelConfigStore.items,
+      draftAgentId: draftGenerateAgentId(),
+      sessionAgentId: smart.agentId,
+      selectedAgentId: generateDock.selectedAgentId.value,
+    });
+  }
+
+  function confirmSwitchAgent() {
+    return window.confirm(tt("workflow.generateSwitchAgentConfirm"));
+  }
+
+  function selectGenerateAgent(agent: Agent, options: { userInitiated?: boolean } = {}) {
+    const workspaceId = generateWorkspaceId();
+    const nextModel = (agent.modelConfigId || "").trim();
+    const agentChanged = smart.agentId !== agent.id;
+    // Only a user pick in the popover may wipe the live session.
+    if (agentChanged && options.userInitiated) {
+      if (!confirmSwitchAgent()) return;
+      smart.resetSessionOnly();
+    }
+    generateDock.selectedAgentId.value = agent.id;
+    smart.setContext(workspaceId, agent.id, nextModel);
+    if (options.userInitiated) {
+      generateDock.agentPopoverOpen.value = false;
+    }
+  }
+
+  function selectGenerateAgentById(agentId: string, userInitiated = false) {
+    const agent = agentStore.items.find((item) => item.id === agentId);
+    if (!agent) return;
+    selectGenerateAgent(agent, { userInitiated });
+  }
+
+  function syncGenerateContext(): boolean {
+    const agent = pickPreferredGenerateAgent();
+    if (!agent || !agentHasUsableModel(agent, modelConfigStore.items)) return false;
+    selectGenerateAgent(agent);
+    return Boolean(smart.modelConfigId);
+  }
+
+  function hydrateGenerateAgentChip() {
+    const agent = pickPreferredGenerateAgent();
+    if (agent) selectGenerateAgent(agent);
+  }
+
+  async function restoreGenerateSessionIfNeeded() {
+    const targetId = selectedWorkflow.value?.id || "";
+    const graphSessionId = graphGenerateSessionId();
+    if (smart.sessionId) {
+      const mismatch =
+        !smart.sessionWorkflowId ||
+        (Boolean(targetId) && smart.sessionWorkflowId !== targetId) ||
+        (Boolean(graphSessionId) && graphSessionId !== smart.sessionId);
+      if (mismatch) {
+        smart.resetSessionOnly();
+      }
+    }
+    if (!graphSessionId) return;
+    const workspaceId = generateWorkspaceId();
+    if (!workspaceId) return;
+    try {
+      await smart.loadSession(workspaceId, graphSessionId, { adoptGraph: false });
+    } catch {
+      // CLOSED / GET failure: stay on a new attempt (S10). Do not adopt the graph.
+    }
+  }
+
+  async function loadGenerateAgentsIfNeeded() {
+    const workspaceId = generateWorkspaceId();
+    if (!workspaceId) {
+      generateDock.agentsLoadState.value = "failed";
+      return;
+    }
+    if (generateDock.agentsLoadState.value === "failed" && !agentStore.items.length) {
+      hydrateGenerateAgentChip();
+      return;
+    }
+    if (generateDock.agentsLoadState.value === "loaded" && agentStore.items.length) {
+      hydrateGenerateAgentChip();
+      return;
+    }
+    generateDock.agentsLoadState.value = "loading";
+    try {
+      await agentStore.loadAgents({ workspaceId });
+      try {
+        await modelConfigStore.loadModelConfigs();
+      } catch {
+        // Missing catalog does not block a non-empty modelConfigId.
+      }
+      generateDock.agentsLoadState.value = "loaded";
+      hydrateGenerateAgentChip();
+    } catch {
+      generateDock.agentsLoadState.value = "failed";
+    }
+  }
+
+  async function prepareGenerateDock() {
+    await restoreGenerateSessionIfNeeded();
+    await loadGenerateAgentsIfNeeded();
+  }
+
+  function applyGeneratedDraftToEditor(result: SmartDAGTurnResult) {
+    const draft = result.draft;
+    if (!draft?.graph) return;
+    workflowStore.selectedWorkflowId = result.workflow.id;
+    editorGraph.value = layoutWorkflowGraphIfNeeded(cloneGraph(draft.graph));
+    resetEditorHistory();
+    syncSelection();
+    generateDock.applyHighlightEpoch.value += 1;
+    generateDock.optimisticUserMessage.value = null;
+    void workflowStore.loadWorkflowReadiness(result.workflow.id);
+    void loadWorkflowRegistry({ page: 1 });
+  }
+
+  async function sendGenerateTurn() {
+    if (smart.generating || pendingEditorAction.value) return;
+    const message = generateDock.prompt.value.trim();
+    if (!message || [...message].length > WORKFLOW_GENERATE_PROMPT_MAX) return;
+
+    // Chip default must write modelConfigId before persist / ensureSession.
+    if (!syncGenerateContext()) {
+      workflowActionNote.value = tt("workflow.generateModelRequired");
+      return;
+    }
+
+    const targetId = selectedWorkflow.value?.id;
+    if (
+      smart.sessionId &&
+      ((!smart.sessionWorkflowId && Boolean(targetId)) ||
+        (Boolean(smart.sessionWorkflowId) && smart.sessionWorkflowId !== (targetId || "")))
+    ) {
+      smart.resetSessionOnly();
+    }
+
+    pendingEditorAction.value = "generate";
+    generateDock.generateLock.value = true;
+    try {
+      if (targetId && isEditorDraftDirty()) {
+        const draft = workflowStore.activeDraft;
+        if (!draft || draft.workflowId !== targetId) {
+          workflowActionNote.value = tt("workflow.draftLoadFailedRetry");
+          return;
+        }
+        try {
+          const saved = await persistEditorDraft();
+          if (!saved) return;
+        } catch (error) {
+          workflowActionNote.value = actionErrorMessage(error, tt("workflow.saveDraftFailed"));
+          return;
+        }
+      }
+      generateDock.optimisticUserMessage.value = message;
+      generateDock.prompt.value = "";
+      const result = await smart.sendTurn({
+        workspaceId: generateWorkspaceId(),
+        agentId: smart.agentId,
+        message,
+        ...(targetId ? { workflowId: targetId } : {}),
+        feedback: generateDock.pendingFailureFeedback.value || undefined,
+      });
+      generateDock.pendingFailureFeedback.value = null;
+      applyGeneratedDraftToEditor(result);
+    } catch {
+      // lastFailure + transcript projection; canvas stays on the previous draft.
+    } finally {
+      pendingEditorAction.value = undefined;
+      generateDock.generateLock.value = false;
+    }
+  }
+
+  function handleGenerateFailureCta(key: WorkflowGenerateFailureCtaKey) {
+    if (key === "bind-model") {
+      void router.push({ name: "agents" });
+      return;
+    }
+    if (key === "switch-agent") {
+      generateDock.agentPopoverOpen.value = true;
+      return;
+    }
+    if (key === "new-attempt") {
+      smart.resetSessionOnly();
+      generateDock.optimisticUserMessage.value = null;
+      hydrateGenerateAgentChip();
+      focusGenerateTextarea();
+      return;
+    }
+    if (key === "retry-rewrite") {
+      focusGenerateTextarea();
+    }
+  }
+
+  function focusGenerateTextarea() {
+    void nextTick(() => {
+      workflowEditorShellRef.value?.querySelector<HTMLTextAreaElement>("textarea.workflow-generate-prompt")?.focus();
+    });
   }
 
   function resetEditorHistory() {
@@ -681,15 +939,18 @@ export function createWorkflowPageModel() {
     generateDock.leftTab.value = "generate";
     generateDock.generatePresence.value = isNarrowViewport() ? "sheet" : "open";
     generateDock.generateSheetOpen.value = true;
+    generateDock.autoOpenedReason.value = "list-intent";
     workflowEditorVisible.value = true;
 
     await router?.replace?.({ name: "workflow", query: workflowQueryWithoutGenerateKeys({ generate: "1" }) });
+    await prepareGenerateDock();
     await nextTick();
-    workflowEditorShellRef.value?.querySelector<HTMLTextAreaElement>("textarea.workflow-generate-prompt")?.focus();
+    focusGenerateTextarea();
   }
 
   function selectGenerateTab() {
     generateDock.selectGenerateTab();
+    void prepareGenerateDock();
   }
 
   function selectNodesTab() {
@@ -697,11 +958,16 @@ export function createWorkflowPageModel() {
   }
 
   function toggleGenerateFromTopbar() {
+    const opening = generateDock.leftTab.value !== "generate";
     generateDock.toggleGenerateFromTopbar(hasPersistableDraft.value);
+    if (opening && generateDock.leftTab.value === "generate") {
+      generateDock.autoOpenedReason.value = "editor-toggle";
+      void prepareGenerateDock();
+    }
   }
 
   function closeGenerateSheet() {
-    if (generateDock.generateLock.value) {
+    if (generateLock.value) {
       return;
     }
     generateDock.closeGenerateSheet(hasPersistableDraft.value);
@@ -2316,14 +2582,37 @@ export function createWorkflowPageModel() {
     hasPersistableDraft,
     leftTab: generateDock.leftTab,
     generatePresence: generateDock.generatePresence,
-    generateLock: generateDock.generateLock,
+    generateLock,
+    generateSending,
     generateSheetOpen: generateDock.generateSheetOpen,
     applyHighlightEpoch: generateDock.applyHighlightEpoch,
     prompt: generateDock.prompt,
+    selectedAgentId: generateDock.selectedAgentId,
+    agentsLoadState: generateDock.agentsLoadState,
+    optimisticUserMessage: generateDock.optimisticUserMessage,
+    agentPopoverOpen: generateDock.agentPopoverOpen,
+    generateTranscript,
+    generateAgentOptions,
+    selectedGenerateAgent,
+    selectedGenerateAgentUsable,
+    showGenerateDirtyChip,
+    generateLastFailure,
+    generateReasoningSteps,
+    generateMissingCapabilities,
+    generateSessionClosed,
+    selectedNodeAiReason,
     selectGenerateTab,
     selectNodesTab,
     toggleGenerateFromTopbar,
     closeGenerateSheet,
+    selectGenerateAgent,
+    selectGenerateAgentById,
+    syncGenerateContext,
+    hydrateGenerateAgentChip,
+    prepareGenerateDock,
+    applyGeneratedDraftToEditor,
+    sendGenerateTurn,
+    handleGenerateFailureCta,
     workflowEditorBusy,
     selectedWorkflowCanPublish,
     canForcePublishWorkflow,
