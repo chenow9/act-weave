@@ -15,6 +15,7 @@ import {
   resolveNodeAiReason,
   type WorkflowGenerateFailureCtaKey,
 } from "./workflow-generate-dock";
+import { bindPublishedWorkflowToSessionAgent as bindGeneratedDraftToSessionAgent } from "./workflow-publish-bind";
 import type { ManagementListColumn } from "../components/ManagementList.vue";
 import type { ManagementRowAction } from "../components/ManagementRowActions.vue";
 import type { ManagementSummaryItem } from "../components/ManagementSummaryStrip.vue";
@@ -2210,6 +2211,14 @@ export function createWorkflowPageModel() {
     }
   }
 
+  function appendGenerateBindFailedNote() {
+    workflowActionNote.value = [workflowActionNote.value, tt("workflow.generateBindFailed")].filter(Boolean).join(" ");
+  }
+
+  async function bindPublishedWorkflowToSessionAgent(workflow: Workflow) {
+    await bindGeneratedDraftToSessionAgent(workflow, { onFailure: appendGenerateBindFailedNote });
+  }
+
   async function publishWorkflow(workflow = selectedWorkflow.value) {
     if (!workflow) return;
     if (!workflow.readiness?.canPublish) {
@@ -2217,7 +2226,9 @@ export function createWorkflowPageModel() {
       return;
     }
     const published = await workflowStore.publishWorkflow(workflow.id);
+    // Write success first: bind/GET failure must not become publishFailed.
     workflowActionNote.value = tt("workflow.publishedOnline", { name: published.workflow.name });
+    await bindPublishedWorkflowToSessionAgent(published.workflow);
   }
 
   async function activateRevision(revisionId: string) {
@@ -2351,6 +2362,7 @@ export function createWorkflowPageModel() {
       const published = await workflowStore.forcePublishWorkflow(selectedWorkflow.value.id, trimmed);
       forcePublishDialogVisible.value = false;
       workflowActionNote.value = tt("workflow.forcePublished", { name: published.workflow.name });
+      await bindPublishedWorkflowToSessionAgent(published.workflow);
     } catch (error) {
       workflowActionNote.value = actionErrorMessage(error, tt("workflow.forcePublishFailed"));
     } finally {
@@ -2850,6 +2862,7 @@ export function createWorkflowPageModel() {
     openTrialRunDialog,
     trialRunEditorWorkflow,
     publishWorkflow,
+    bindPublishedWorkflowToSessionAgent,
     activateRevision,
     rollbackRevision,
     compareRevision,

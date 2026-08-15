@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import WorkflowGraphCanvas from "../components/workflow/WorkflowGraphCanvas.vue";
 import { apiClient } from "../services/api";
 import { postLlmJobSse } from "../services/llm-job-sse";
+import { useAuthStore } from "../stores/auth";
 import { useSmartDagStore } from "../stores/smartdag";
 import { useWorkflowStore } from "../stores/workflow";
 import { useWorkspaceStore } from "../stores/workspaces";
@@ -1858,5 +1859,205 @@ describe("workflow view P1.4", () => {
       "utf8",
     );
     expect(pageSource).not.toMatch(/name:\s*"smart-dag"/);
+    expect(pageSource).toMatch(/workflowActionNote.value = tt\("workflow.publishedOnline"/);
+    expect(pageSource).toMatch(/await bindPublishedWorkflowToSessionAgent\(published.workflow/);
+    expect(pageSource).toMatch(/workflowActionNote.value = tt\("workflow.forcePublished"/);
+  });
+
+  function publishReadyReadiness() {
+    return readinessFixture({
+      stage: "PublishReady",
+      canPublish: true,
+      trialCurrent: true,
+      trialSuccessful: true,
+      compilationValid: true,
+      compilationId: "comp-1",
+      blockers: [],
+    });
+  }
+
+  function publishRevision() {
+    return {
+      id: "rev-pub-1",
+      revisionNo: 1,
+      sourceCompilationId: "comp-1",
+      draftSnapshot: draftFixture().graph,
+      specSnapshot: { workflowId: "wf-order-cancel-draft", nodes: [] },
+      planSnapshot: { workflowId: "wf-order-cancel-draft", nodes: [] },
+      planHash: "sha256:plan-1",
+      status: "PUBLISHED",
+      publishNote: "verified",
+      createdBy: "user-1",
+      createdAt: "2026-07-02T00:00:00Z",
+    };
+  }
+
+  function mockPublishGets(options: {
+    draft?: ReturnType<typeof draftFixture>;
+    agents?: ReturnType<typeof agentDto>[];
+    draftError?: Error;
+  } = {}) {
+    const draft = options.draft || draftFixture();
+    const agents = options.agents || [agentDto("agent-draft", "草稿 Agent")];
+    const readiness = publishReadyReadiness();
+    vi.mocked(apiClient.get).mockImplementation(async (url: string) => {
+      const path = String(url);
+      if (path.endsWith("/workflows")) {
+        return { data: { items: [{ ...workflowSummaryFixture(), readiness }] } };
+      }
+      if (path.endsWith("/readiness")) return { data: readiness };
+      if (path.endsWith("/revisions")) return { data: { items: [] } };
+      if (path.endsWith("/draft")) {
+        if (options.draftError) throw options.draftError;
+        return { data: draft, headers: { etag: '"draft-2-2"' } };
+      }
+      if (path.endsWith("/agents")) return { data: { items: agents } };
+      if (path.includes("/model-configs")) return { data: { items: [] } };
+      if (path.includes("/tools")) return { data: { items: [] } };
+      if (path.includes("/executions")) return { data: { items: [] } };
+      if (path.includes("/workflow-generate-sessions/")) {
+        return { data: { session: { sessionId: "", agentId: "", status: "CLOSED" }, turns: [] } };
+      }
+      if (/\/workflows\/[^/]+$/.test(path)) {
+        return { data: { ...workflowFixture(), status: "ACTIVE", activeRevisionId: "rev-pub-1" } };
+      }
+      throw new Error(`unexpected get ${path}`);
+    });
+    vi.mocked(apiClient.post).mockImplementation(async (url: string) => {
+      const path = String(url);
+      if (path.includes(":publish") || path.includes(":force-publish")) {
+        return { data: { revision: publishRevision(), releaseId: "release-1", releaseNo: 1, trialId: "trial-1" } };
+      }
+      throw new Error(`unexpected post ${path}`);
+    });
+    vi.mocked(apiClient.put).mockImplementation(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/capabilities/")) {
+        return {
+          data: {
+            capabilityId: "wf-order-cancel-draft",
+            versionPolicy: "FOLLOW_ACTIVE",
+            enabled: true,
+            configOverrides: {},
+            lockVersion: 1,
+          },
+        };
+      }
+      throw new Error(`unexpected put ${path}`);
+    });
+  }
+
+  async function openDetail(wrapper: ReturnType<typeof mountWorkflowView>) {
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    await wrapper.get('button[aria-label="更多编排操作"]').trigger("click");
+    document.body.querySelector<HTMLButtonElement>('button[data-action-key="detail"]')!.click();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+  }
+
+  it("binds a generated draft from list/detail publish using GET draft ui.agentId after refresh", async () => {
+    const draft = draftFixture();
+    draft.graph.ui = { generatedBy: "smart-dag.v2", agentId: "agent-draft" };
+    mockPublishGets({ draft });
+
+    const wrapper = mountWorkflowView();
+    await openDetail(wrapper);
+    expect(useWorkflowStore().activeDraft).toBeUndefined();
+    expect(useSmartDagStore().agentId).toBe("");
+
+    const publishButton = wrapper
+      .get(".workflow-detail-actions")
+      .findAll("button")
+      .find((button) => button.text() === "发布上线");
+    expect(publishButton).toBeDefined();
+    await publishButton!.trigger("click");
+    await flushPromises();
+
+    expect(apiClient.get).toHaveBeenCalledWith("/workspaces/order/workflows/wf-order-cancel-draft/draft");
+    expect(apiClient.put).toHaveBeenCalledWith(
+      "/workspaces/order/agents/agent-draft/capabilities/wf-order-cancel-draft",
+      expect.objectContaining({ versionPolicy: "FOLLOW_ACTIVE", enabled: true }),
+    );
+    expect(wrapper.get(".action-toast").text()).toContain("已发布上线");
+    expect(wrapper.get(".action-toast").text()).not.toContain("未能自动绑");
+    expect(wrapper.find(".workflow-editor-overlay").exists()).toBe(false);
+  });
+
+  it("keeps the published note and appends generateBindFailed when GET draft fails", async () => {
+    const draft = draftFixture();
+    draft.graph.ui = { generatedBy: "smart-dag.v2", agentId: "agent-draft" };
+    mockPublishGets({ draft, draftError: new Error("draft unavailable") });
+
+    const wrapper = mountWorkflowView();
+    await openDetail(wrapper);
+    const publishButton = wrapper
+      .get(".workflow-detail-actions")
+      .findAll("button")
+      .find((button) => button.text() === "发布上线");
+    await publishButton!.trigger("click");
+    await flushPromises();
+
+    const note = wrapper.get(".action-toast").text();
+    expect(note).toContain("已发布上线");
+    expect(note).toContain("未能自动绑到生成用的 Agent");
+    expect(note).not.toContain("发布失败");
+    expect(apiClient.put).not.toHaveBeenCalled();
+  });
+
+  it("force-publishes through the same bind helper", async () => {
+    useAuthStore().user = {
+      id: "",
+      username: "admin",
+      displayName: "Admin",
+      status: "ACTIVE",
+      platformRole: "PLATFORM_ADMIN",
+      locale: "zh-CN",
+      timezone: "UTC",
+      createdAt: "2026-07-01T00:00:00Z",
+      updatedAt: "2026-07-01T00:00:00Z",
+      lockVersion: 1,
+      role: "Platform Admin",
+    };
+    const draft = draftFixture();
+    draft.graph.ui = { generatedBy: "smart-dag.v2", agentId: "agent-draft" };
+    mockPublishGets({ draft });
+
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+
+    await wrapper.get('[data-action="force-publish-editor-workflow"]').trigger("click");
+    await wrapper.get('input[name="force-publish-reason"]').setValue("local-dev skip trial");
+    await wrapper.get('[data-action="confirm-force-publish"]').trigger("click");
+    await flushPromises();
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      "/workspaces/order/workflows/wf-order-cancel-draft/compilations/comp-1:force-publish",
+      expect.objectContaining({ reason: "local-dev skip trial" }),
+    );
+    expect(apiClient.put).toHaveBeenCalledWith(
+      "/workspaces/order/agents/agent-draft/capabilities/wf-order-cancel-draft",
+      expect.objectContaining({ versionPolicy: "FOLLOW_ACTIVE" }),
+    );
+    const note = wrapper.get(".action-toast").text();
+    expect(note).toContain("已强制发布");
+    expect(note).not.toContain("未能自动绑");
+  });
+
+  it("publishes a hand-authored draft without bindCapability", async () => {
+    mockPublishGets({ draft: draftFixture() });
+
+    const wrapper = mountWorkflowView();
+    await openDetail(wrapper);
+    const publishButton = wrapper
+      .get(".workflow-detail-actions")
+      .findAll("button")
+      .find((button) => button.text() === "发布上线");
+    await publishButton!.trigger("click");
+    await flushPromises();
+
+    expect(apiClient.put).not.toHaveBeenCalled();
+    expect(wrapper.get(".action-toast").text()).toContain("已发布上线");
+    expect(wrapper.get(".action-toast").text()).not.toContain("未能自动绑");
   });
 });

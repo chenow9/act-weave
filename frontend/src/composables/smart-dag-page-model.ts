@@ -13,6 +13,7 @@ import {
   type EdgeSide,
 } from "../components/workflow/workflow-edges";
 import { autoLayoutWorkflowGraph, layoutWorkflowGraphIfNeeded } from "../components/workflow/workflow-layout";
+import { tt } from "../i18n/tt";
 import { apiErrorMessage } from "../services/api";
 import { useAgentStore } from "../stores/agents";
 import { useModelConfigStore } from "../stores/modelConfigs";
@@ -20,6 +21,7 @@ import { useSmartDagStore, type FailureFeedback, type FailureFeedbackIssue } fro
 import { useToolsStore } from "../stores/tools";
 import { useWorkflowStore } from "../stores/workflow";
 import { useWorkspaceStore } from "../stores/workspaces";
+import { bindPublishedWorkflowToSessionAgent as bindGeneratedDraftToSessionAgent } from "./workflow-publish-bind";
 import type {
   Workflow,
   WorkflowDraftRecord,
@@ -1284,59 +1286,15 @@ export function createSmartDagPageModel() {
   }
 
   /**
-   * P3.1 / P3.2: after formal publish, default-bind WORKFLOW capability to the
-   * generate-session agentId (D12). Formal agent_capability_bindings only.
+   * P3.1 / P3.2: after formal publish, bind WORKFLOW capability to the
+   * generate-session agent (D12). Same GET-draft helper as Workflow publish.
    */
   async function bindPublishedWorkflowToSessionAgent(workflow: Workflow) {
-    const draftAgentId = smart.generatedDraft?.graph?.ui?.agentId;
-    const agentId = (
-      smart.agentId ||
-      selectedAgentId.value ||
-      (typeof draftAgentId === "string" ? draftAgentId : "") ||
-      ""
-    ).trim();
-    if (!agentId) {
-      showToast(
-        "Workflow 已发布，但未找到生成会话 Agent。请在 Agent 页将此 Workflow Capability 绑定后即可对话调用。",
-        "info",
-      );
-      return;
-    }
-    let agent =
-      agentStore.items.find((item) => item.id === agentId) || agentStore.pageItems.find((item) => item.id === agentId);
-    if (!agent) {
-      try {
-        await agentStore.loadAgents({ workspaceId: workflow.workspaceId });
-        agent = agentStore.items.find((item) => item.id === agentId);
-      } catch {
-        // fall through
-      }
-    }
-    if (!agent) {
-      showToast(`Workflow 已发布。请在 Agent 页将 Capability 绑定到 Agent（默认目标 ${agentId}）。`, "info");
-      return;
-    }
-    try {
-      const existing = (agentStore.bindingsByAgent[agent.id] || []).find(
-        (binding) => binding.capabilityId === workflow.id,
-      );
-      await agentStore.bindCapability(agent, workflow.id, {
-        capabilityId: workflow.id,
-        versionPolicy: "FOLLOW_ACTIVE",
-        enabled: true,
-        configOverrides: {},
-        lockVersion: existing?.lockVersion ?? 0,
-      });
-      showToast(`Workflow 已发布并绑定到生成会话 Agent「${agent.name}」。可在 Console 对话台调用。`, "success");
-    } catch (error) {
-      showToast(
-        apiErrorMessage(
-          error,
-          `Workflow 已发布，但绑定 Agent 失败。请在 Agent 页手动绑定 Capability（目标 ${agent.name}）。`,
-        ),
-        "error",
-      );
-    }
+    await bindGeneratedDraftToSessionAgent(workflow, {
+      onFailure: () => {
+        showToast(tt("workflow.generateBindFailed"), "error");
+      },
+    });
   }
 
   async function publishWorkflow() {
@@ -1354,7 +1312,7 @@ export function createSmartDagPageModel() {
       const published = await workflowStore.publishWorkflow(workflow.id);
       const draft = blueprintDrafts.get(workflow.id);
       if (draft) registerBlueprint(published.workflow, draft, currentBlueprint.value.aiScore);
-      // P3.2: productize post-publish bind to session agentId (not auto-publish).
+      showToast(tt("workflow.publishedOnline", { name: published.workflow.name }), "success");
       await bindPublishedWorkflowToSessionAgent(published.workflow);
     } catch (error) {
       showToast(apiErrorMessage(error, "发布 Workflow 失败。"), "error");
