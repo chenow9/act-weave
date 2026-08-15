@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { AxiosError } from "axios";
 import { createPinia, setActivePinia } from "pinia";
 import { flushPromises, mount } from "@vue/test-utils";
@@ -745,5 +748,83 @@ describe("workflow view P1.4", () => {
     expect(nodesTab.attributes("disabled")).toBeDefined();
     expect(nodesTab.attributes("title")).toBe("生成草稿后才能加节点");
     expect(wrapper.getComponent(WorkflowGraphCanvas).props("empty")).toBe(true);
+  });
+
+  it("keeps the generate prompt when switching away from the generate tab", async () => {
+    mockWorkflowAssets([workflowSummaryFixture()])
+      .mockResolvedValueOnce({ data: draftFixture(), headers: { etag: '"draft-2-2"' } })
+      .mockResolvedValueOnce({ data: readinessFixture() });
+
+    const wrapper = mountWorkflowView();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    await wrapper.get('button[aria-label="更多编排操作"]').trigger("click");
+    document.body.querySelector<HTMLButtonElement>('button[data-action-key="edit"]')!.click();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await wrapper.vm.$nextTick();
+    await wrapper.get("textarea").setValue("供应商准入，先查资质");
+    await wrapper.vm.$nextTick();
+
+    await wrapper.findAll('[role="tablist"] [role="tab"]')[1].trigger("click");
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(".workflow-generate-dock").exists()).toBe(false);
+
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await wrapper.vm.$nextTick();
+    expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toBe("供应商准入，先查资质");
+  });
+
+  it("lifts the left column above the narrow generate sheet backdrop", () => {
+    const css = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "workflow-page.css"), "utf8");
+    const match = css.match(/\.workflow-workbench\.is-generate-sheet\s+\.workflow-workbench-left\s*\{([^}]+)\}/);
+    expect(match, "expected a sheet-state rule for .workflow-workbench-left").toBeTruthy();
+    expect(match![1]).toMatch(/z-index:\s*4/);
+    expect(match![1]).toMatch(/isolation:\s*auto/);
+  });
+
+  it("returns focus to the topbar generate button after closing the generate sheet", async () => {
+    const previousMatchMedia = window.matchMedia;
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: String(query).includes("1180"),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+      onchange: null,
+    }));
+
+    mockWorkflowAssets([workflowSummaryFixture()])
+      .mockResolvedValueOnce({ data: draftFixture(), headers: { etag: '"draft-2-2"' } })
+      .mockResolvedValueOnce({ data: readinessFixture() });
+
+    const wrapper = mountWorkflowView({ attachTo: document.body });
+    try {
+      await flushPromises();
+      await wrapper.vm.$nextTick();
+
+      await wrapper.get('button[aria-label="更多编排操作"]').trigger("click");
+      document.body.querySelector<HTMLButtonElement>('button[data-action-key="edit"]')!.click();
+      await flushPromises();
+      await wrapper.vm.$nextTick();
+
+      await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+      await wrapper.vm.$nextTick();
+      expect(wrapper.find(".workflow-generate-sheet-backdrop").exists()).toBe(true);
+
+      await wrapper.get('[data-action="close-generate-sheet"]').trigger("click");
+      await flushPromises();
+      await wrapper.vm.$nextTick();
+
+      expect(document.activeElement).toBe(wrapper.get('[data-action="open-generate-dock"]').element);
+    } finally {
+      wrapper.unmount();
+      window.matchMedia = previousMatchMedia;
+    }
   });
 });

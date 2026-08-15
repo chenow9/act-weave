@@ -44,6 +44,7 @@ export function createWorkflowGenerateDockState() {
   const generateLock = ref(false);
   const generateSheetOpen = ref(false);
   const applyHighlightEpoch = ref(0);
+  const prompt = ref("");
 
   function syncLeftTabForOpenEditor(hasPersistableDraft: boolean) {
     leftTab.value = hasPersistableDraft ? "nodes" : "generate";
@@ -72,6 +73,9 @@ export function createWorkflowGenerateDockState() {
   }
 
   function closeGenerateSheet(hasPersistableDraft: boolean) {
+    if (generateLock.value) {
+      return;
+    }
     generateSheetOpen.value = false;
     if (hasPersistableDraft) {
       leftTab.value = "nodes";
@@ -84,6 +88,7 @@ export function createWorkflowGenerateDockState() {
     generateLock.value = false;
     generateSheetOpen.value = false;
     applyHighlightEpoch.value = 0;
+    prompt.value = "";
   }
 
   return {
@@ -92,6 +97,7 @@ export function createWorkflowGenerateDockState() {
     generateLock,
     generateSheetOpen,
     applyHighlightEpoch,
+    prompt,
     syncLeftTabForOpenEditor,
     selectGenerateTab,
     selectNodesTab,

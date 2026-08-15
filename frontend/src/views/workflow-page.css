@@ -2391,6 +2391,8 @@
 
   .workflow-workbench.is-generate-sheet .workflow-workbench-left {
     position: static;
+    z-index: 4;
+    isolation: auto;
   }
 
   .workflow-workbench.is-generate-sheet .workflow-generate-sheet-backdrop {

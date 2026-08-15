@@ -831,14 +831,13 @@ describe("workflow inspector typed editors", () => {
     const wrapper = mount(WorkflowGenerateDock, {
       props: {
         hasWorkspaceContext: false,
+        prompt: "供应商准入",
       },
       global: {
         plugins: testI18nPlugins(),
       },
     });
 
-    const textarea = wrapper.get("textarea");
-    await textarea.setValue("供应商准入");
     expect(wrapper.get('[data-action="submit-generate"]').attributes("disabled")).toBeDefined();
   });
 
@@ -846,20 +845,23 @@ describe("workflow inspector typed editors", () => {
     const wrapper = mount(WorkflowGenerateDock, {
       props: {
         hasWorkspaceContext: true,
+        prompt: "",
       },
       global: {
         plugins: testI18nPlugins(),
       },
     });
 
-    const textarea = wrapper.get("textarea");
     const submit = wrapper.get('[data-action="submit-generate"]');
     expect(submit.attributes("disabled")).toBeDefined();
     expect(wrapper.text()).toContain("试试");
 
     await wrapper.findAll(".workflow-generate-example")[0].trigger("click");
-    expect((textarea.element as HTMLTextAreaElement).value).toContain("供应商准入");
-    expect(submit.attributes("disabled")).toBeUndefined();
+    const nextPrompt = wrapper.emitted("update:prompt")?.[0]?.[0];
+    expect(nextPrompt).toContain("供应商准入");
+    await wrapper.setProps({ prompt: nextPrompt });
+    expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toContain("供应商准入");
+    expect(wrapper.get('[data-action="submit-generate"]').attributes("disabled")).toBeUndefined();
   });
 
   it("builds start input schema fields without requiring raw JSON and surfaces raw JSON parse errors", async () => {

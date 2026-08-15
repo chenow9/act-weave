@@ -41,6 +41,7 @@ const {
   generateLock,
   generateSheetOpen,
   applyHighlightEpoch,
+  prompt,
   selectGenerateTab,
   selectNodesTab,
   toggleGenerateFromTopbar,
@@ -103,7 +104,7 @@ const isGenerateSheet = computed(
 const canvasEmpty = computed(() => !hasPersistableDraft.value || editorGraph.value.nodes.length === 0);
 
 function handleGenerateSheetKeydown(event: KeyboardEvent) {
-  if (event.key !== "Escape" || !isGenerateSheet.value) {
+  if (event.key !== "Escape" || !isGenerateSheet.value || generateLock.value) {
     return;
   }
   event.preventDefault();
@@ -361,7 +362,9 @@ void WorkflowTrialRunDialog;
               v-if="leftTab === 'generate'"
               class="workflow-left-card"
               :has-workspace-context="hasWorkspaceContext"
+              :prompt="prompt"
               :sheet="isGenerateSheet"
+              @update:prompt="prompt = $event"
               @close-sheet="closeGenerateSheet"
             />
             <WorkflowNodePalette

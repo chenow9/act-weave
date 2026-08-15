@@ -1,20 +1,21 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 
 import { WORKFLOW_GENERATE_PROMPT_MAX } from "../../composables/workflow-generate-dock";
 
 const props = defineProps<{
   hasWorkspaceContext: boolean;
+  prompt: string;
   sheet?: boolean;
 }>();
 
 const emit = defineEmits<{
   (event: "close-sheet"): void;
+  (event: "update:prompt", value: string): void;
 }>();
 
 const { t } = useI18n();
-const generatePrompt = ref("");
 
 const examples = computed(() => [
   t("workflow.generateExample1"),
@@ -23,12 +24,19 @@ const examples = computed(() => [
 ]);
 
 const canSubmit = computed(() => {
-  const prompt = generatePrompt.value.trim();
-  return Boolean(props.hasWorkspaceContext && prompt && generatePrompt.value.length <= WORKFLOW_GENERATE_PROMPT_MAX);
+  const nextPrompt = props.prompt.trim();
+  return Boolean(props.hasWorkspaceContext && nextPrompt && props.prompt.length <= WORKFLOW_GENERATE_PROMPT_MAX);
 });
 
 function applyExample(example: string) {
-  generatePrompt.value = example;
+  emit("update:prompt", example);
+}
+
+function onPromptInput(event: Event) {
+  const target = event.target;
+  if (target instanceof HTMLTextAreaElement) {
+    emit("update:prompt", target.value);
+  }
 }
 
 function submitGenerate() {
@@ -60,12 +68,13 @@ function submitGenerate() {
     <div class="workflow-generate-transcript" aria-live="polite" />
 
     <textarea
-      v-model="generatePrompt"
       class="workflow-generate-prompt"
       rows="7"
+      :value="props.prompt"
       :maxlength="WORKFLOW_GENERATE_PROMPT_MAX"
       :aria-label="t('workflow.generateDockTitle')"
       :placeholder="t('workflow.generatePlaceholder')"
+      @input="onPromptInput"
     />
 
     <div class="workflow-generate-examples">
@@ -84,7 +93,7 @@ function submitGenerate() {
     </div>
 
     <div class="workflow-generate-char-count">
-      {{ t("workflow.generateCharCount", { n: generatePrompt.length }) }}
+      {{ t("workflow.generateCharCount", { n: props.prompt.length }) }}
     </div>
 
     <footer class="workflow-generate-footer">

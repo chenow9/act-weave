@@ -591,7 +591,13 @@ export function createWorkflowPageModel() {
   }
 
   function closeGenerateSheet() {
+    if (generateDock.generateLock.value) {
+      return;
+    }
     generateDock.closeGenerateSheet(hasPersistableDraft.value);
+    void nextTick(() => {
+      workflowEditorShellRef.value?.querySelector<HTMLButtonElement>('[data-action="open-generate-dock"]')?.focus();
+    });
   }
 
   function captureWorkflowFocus() {
@@ -2200,6 +2206,7 @@ export function createWorkflowPageModel() {
     generateLock: generateDock.generateLock,
     generateSheetOpen: generateDock.generateSheetOpen,
     applyHighlightEpoch: generateDock.applyHighlightEpoch,
+    prompt: generateDock.prompt,
     selectGenerateTab,
     selectNodesTab,
     toggleGenerateFromTopbar,
