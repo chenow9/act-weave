@@ -16,16 +16,16 @@ npm install
 npm run dev:mock
 ```
 
-Open http://127.0.0.1:5188 and use the suggestion chips (booking form, trend, KPIs, **生成本月对账单**) or **插入富文本样例**. **开发者** reveals protocol chrome, raw surface JSON, and the shared rendering fixtures.
+Open http://127.0.0.1:5188 and use the suggestion chips (booking form, trend, KPIs, **生成本月对账单**, **看看这几张现场图**, **出一份巡检复盘包**) or **插入富文本样例**. **开发者** reveals protocol chrome, raw surface JSON, and the shared rendering fixtures.
 
-Use the paperclip **附件** control (or drag/paste) to stage images/PDFs; Mock renders local previews in the user bubble without uploading. The **生成本月对账单** chip shows assistant CSV (+ PNG) cards in `.msg-row.is-assistant .msg-attachments`.
+Use the paperclip **附件** control (or drag/paste) to stage images/PDFs; Mock renders local previews in the user bubble without uploading. Assistant outbound cards in `.msg-row.is-assistant .msg-attachments`: **生成本月对账单** is a CSV file; **看看这几张现场图** is a 2×2 image gallery; **出一份巡检复盘包** mixes Markdown, photos, file cards, and an A2UI surface.
 
 ## Attachments
 
 | Mode | Behavior |
 | --- | --- |
 | Mock (user) | Local object-URL preview in the user bubble |
-| Mock (assistant) | Story cards from `assistant_done.attachments` (CSV + optional PNG) |
+| Mock (assistant) | Story cards from `assistant_done.attachments` (CSV, JSON, and PNG gallery) |
 | Live (user) | Browser: `createFile` → presigned PUT → `complete` → `waitUntilReady`, then `POST /bff/chat` with `fileIds` |
 | Live (assistant) | Snapshot `output_file` → placeholder card → `getFile` / `getFileContent` hydrate by `fileId` (never `links.content`) |
 | Protocol | BFF adds `input_file` on the user message; assistant returns `output_file` |

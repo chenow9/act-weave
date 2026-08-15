@@ -306,9 +306,22 @@ function render(opts?: { keepDraft?: boolean }) {
   `;
 
   bindEvents();
+  bindDegenerateImageCards();
   const composer = root.querySelector<HTMLElement>("#composer");
   if (composer && draft.trim()) composer.innerText = draft;
   scrollToBottom();
+}
+
+function bindDegenerateImageCards(): void {
+  root.querySelectorAll<HTMLImageElement>(".msg-attach-image img").forEach((img) => {
+    const apply = () => {
+      if (img.naturalWidth > 0 && img.naturalWidth < 16) {
+        img.closest(".msg-attach-image")?.classList.add("is-degenerate");
+      }
+    };
+    if (img.complete) apply();
+    else img.addEventListener("load", apply, { once: true });
+  });
 }
 
 function developerDrawerHtml(): string {
@@ -458,6 +471,17 @@ function attachmentChipHtml(a: UiAttachment, removable: boolean): string {
   `;
 }
 
+function attachmentKindLabel(mediaType: string): string {
+  if (mediaType === "application/pdf") return "PDF";
+  if (mediaType === "text/csv") return "CSV";
+  if (mediaType === "application/json") return "JSON";
+  if (mediaType === "text/markdown") return "MD";
+  if (mediaType === "text/plain") return "TXT";
+  if (mediaType.startsWith("image/")) return mediaType.slice(6).toUpperCase() || "IMG";
+  if (mediaType.startsWith("text/")) return "TXT";
+  return "FILE";
+}
+
 function attachmentFileIcon(mediaType: string): string {
   if (mediaType === "application/pdf") return "fa-file-pdf";
   if (mediaType === "text/csv") return "fa-file-csv";
@@ -465,51 +489,88 @@ function attachmentFileIcon(mediaType: string): string {
   return "fa-paperclip";
 }
 
-function downloadButtonHtml(a: UiAttachment): string {
+function displayFileId(fileId: string | undefined): string {
+  if (!fileId) return "";
+  if (/^mock[-_]/.test(fileId)) return "";
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(fileId)) return "";
+  return shortId(fileId);
+}
+
+function attachmentMetaLine(a: UiAttachment): string {
+  const parts = [attachmentKindLabel(a.mediaType)];
+  if (a.sizeBytes > 0) parts.push(formatBytes(a.sizeBytes));
+  const id = displayFileId(a.fileId);
+  if (id) parts.push(id);
+  if (a.status === "uploading") parts.push("加载中");
+  if (a.status === "error") parts.push("失败");
+  return parts.join(" · ");
+}
+
+function downloadButtonHtml(a: UiAttachment, variant: "icon" | "label" = "label"): string {
   const key = a.fileId || a.localId || a.id;
   const canDownload = a.status === "ready" && Boolean(a.previewUrl || a.fileId);
   if (!key) return "";
+  const label = variant === "label";
   return `<button
       type="button"
-      class="msg-attach-download"
+      class="msg-attach-download${label ? " is-label" : ""}"
       data-download-file="${escapeHtml(key)}"
       aria-label="下载 ${escapeHtml(a.name)}"
       ${canDownload ? "" : "disabled"}
     >
-      <i class="fa-solid fa-download" aria-hidden="true"></i>
+      <i class="fa-solid fa-download" aria-hidden="true"></i>${label ? "<span>下载</span>" : ""}
     </button>`;
+}
+
+function isPreviewableImage(a: UiAttachment): boolean {
+  return a.mediaType.startsWith("image/") && Boolean(a.previewUrl);
+}
+
+function attachmentCardHtml(a: UiAttachment, compact = false): string {
+  if (isPreviewableImage(a)) {
+    return `
+      <figure class="msg-attach-card msg-attach-image">
+        <a class="msg-attach-preview" href="${escapeHtml(a.previewUrl || "#")}" target="_blank" rel="noopener noreferrer">
+          <img src="${escapeHtml(a.previewUrl || "")}" alt="${escapeHtml(a.name)}" />
+        </a>
+        <figcaption class="msg-attach-caption">
+          <div class="msg-attach-copy">
+            <strong title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</strong>
+            ${compact ? "" : `<span>${escapeHtml(attachmentMetaLine(a))}</span>`}
+          </div>
+          ${downloadButtonHtml(a, compact ? "icon" : "label")}
+        </figcaption>
+      </figure>`;
+  }
+  return `
+    <div class="msg-attach-card msg-attach-file is-${escapeHtml(a.status)}">
+      <div class="msg-attach-kind" data-kind="${escapeHtml(attachmentKindLabel(a.mediaType).toLowerCase())}" aria-hidden="true">
+        <i class="fa-solid ${attachmentFileIcon(a.mediaType)}"></i>
+        <em>${escapeHtml(attachmentKindLabel(a.mediaType))}</em>
+      </div>
+      <div class="msg-attach-copy">
+        <strong title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</strong>
+        <span>${escapeHtml(attachmentMetaLine(a))}</span>
+      </div>
+      ${downloadButtonHtml(a, "label")}
+    </div>`;
 }
 
 function messageAttachmentsHtml(msg: UiMessage): string {
   if (!msg.attachments?.length) return "";
+  const images = msg.attachments.filter(isPreviewableImage);
+  const files = msg.attachments.filter((a) => !isPreviewableImage(a));
+  const gallery = images.length >= 2;
   return `
-    <div class="msg-attachments" aria-label="附件">
-      ${msg.attachments
-        .map((a) => {
-          const isImage = a.mediaType.startsWith("image/") && a.previewUrl;
-          if (isImage) {
-            return `
-              <div class="msg-attach-image">
-                <a href="${escapeHtml(a.previewUrl || "#")}" target="_blank" rel="noopener noreferrer">
-                  <img src="${escapeHtml(a.previewUrl || "")}" alt="${escapeHtml(a.name)}" />
-                  <span>${escapeHtml(a.name)}</span>
-                </a>
-                ${downloadButtonHtml(a)}
-              </div>`;
-          }
-          const statusNote =
-            a.status === "uploading" ? " · 加载中" : a.status === "error" ? " · 失败" : "";
-          return `
-            <div class="msg-attach-file is-${escapeHtml(a.status)}">
-              <i class="fa-solid ${attachmentFileIcon(a.mediaType)}" aria-hidden="true"></i>
-              <div>
-                <strong>${escapeHtml(a.name)}</strong>
-                <span>${escapeHtml(formatBytes(a.sizeBytes))}${a.fileId ? ` · ${escapeHtml(shortId(a.fileId))}` : ""}${escapeHtml(statusNote)}</span>
-              </div>
-              ${downloadButtonHtml(a)}
-            </div>`;
-        })
-        .join("")}
+    <div class="msg-attachments${gallery ? " has-gallery" : ""}" aria-label="附件">
+      ${
+        images.length
+          ? gallery
+            ? `<div class="msg-attach-gallery">${images.map((a) => attachmentCardHtml(a, true)).join("")}</div>`
+            : `<div class="msg-attach-stack">${attachmentCardHtml(images[0])}</div>`
+          : ""
+      }
+      ${files.length ? `<div class="msg-attach-stack">${files.map((a) => attachmentCardHtml(a)).join("")}</div>` : ""}
     </div>
   `;
 }
@@ -541,9 +602,21 @@ function messageHtml(msg: UiMessage): string {
       })
     : "";
   const showBubble = Boolean(body || msg.attachments?.length);
+  const gallery = (msg.attachments || []).filter(isPreviewableImage).length >= 2;
+  const rowMods = [roleClass, hasA2ui ? "has-a2ui" : "", gallery ? "has-gallery" : ""]
+    .filter(Boolean)
+    .join(" ");
+  const bubbleMods = [
+    msg.error ? "is-error" : "",
+    leadOnly ? "is-lead" : "",
+    msg.attachments?.length ? "has-attachments" : "",
+    gallery ? "has-gallery" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return `
-    <div class="msg-row ${roleClass}${hasA2ui ? " has-a2ui" : ""}" data-msg-id="${escapeHtml(msg.id)}">
+    <div class="msg-row ${rowMods}" data-msg-id="${escapeHtml(msg.id)}">
       <div class="msg-avatar" aria-hidden="true"><i class="fa-solid ${icon}"></i></div>
       <div class="msg-col">
         <div class="msg-meta">
@@ -553,9 +626,9 @@ function messageHtml(msg: UiMessage): string {
         </div>
         ${
           showBubble
-            ? `<div class="msg-bubble ${msg.error ? "is-error" : ""} ${leadOnly ? "is-lead" : ""}">
-                ${messageAttachmentsHtml(msg)}
+            ? `<div class="msg-bubble ${bubbleMods}">
                 ${body ? `<div class="msg-body ${msg.role === "user" ? "" : "md-body"}">${body}</div>` : ""}
+                ${messageAttachmentsHtml(msg)}
               </div>`
             : ""
         }

@@ -794,7 +794,7 @@ Successful ingest writes a READY `aap_files` row with **`purpose=AGENT_OUTPUT`**
 
 #### Demos (`demos/aap-chat`)
 
-- **Mock:** story `export-csv` (**生成本月对账单**) paints a CSV card (and an illustrative PNG) in `.msg-row.is-assistant .msg-attachments` without a backend (`npm run dev:mock`).
+- **Mock:** stories `export-csv` (**生成本月对账单**, CSV), `site-photos` (**看看这几张现场图**, 2×2 PNG gallery), and `inspection-pack` (**出一份巡检复盘包**, Markdown + photos + file cards + A2UI) paint assistant cards in `.msg-row.is-assistant .msg-attachments` without a backend (`npm run dev:mock`).
 - **Live:** `item.completed` → placeholder cards → `getFile` / `getFileContent` hydrate by `fileId` → `patchMessages`. Needs `file:read`.
 
 #### Console (operators; not AAP)

@@ -18,6 +18,8 @@ describe("demo stories", () => {
       "report",
       "markdown",
       "export-csv",
+      "site-photos",
+      "inspection-pack",
     ]);
   });
 
@@ -44,16 +46,58 @@ describe("demo stories", () => {
     expect(pickDemoStory("生成本月对账单")?.id).toBe("export-csv");
     expect(pickDemoStory("导出本月对账单")?.id).toBe("export-csv");
     expect(pickDemoStory("帮我出一份对账单")?.id).toBe("export-csv");
+    expect(pickDemoStory("看看这几张现场图")?.id).toBe("site-photos");
+    expect(pickDemoStory("多张图片")?.id).toBe("site-photos");
+    expect(pickDemoStory("出一份巡检复盘包")?.id).toBe("inspection-pack");
+    expect(pickDemoStory("图文混合")?.id).toBe("inspection-pack");
+    expect(pickDemoStory("帮我出一份巡检复盘")?.id).toBe("inspection-pack");
   });
 
-  it("ships a monthly statement story with a csv card and optional png", () => {
+  it("ships a monthly statement story with a csv card", () => {
     const story = DEMO_STORIES.find((entry) => entry.id === "export-csv");
     expect(story?.label).toBe("生成本月对账单");
     expect(story?.reply).toContain("对账单");
-    expect(story?.attachments?.map((a) => a.mediaType)).toEqual(["text/csv", "image/png"]);
+    expect(story?.attachments?.map((a) => a.mediaType)).toEqual(["text/csv"]);
     expect(story?.attachments?.[0]?.name).toBe("invoice-2026-08.csv");
     expect(story?.attachments?.[0]?.text).toContain("月份,预约,成交");
     expect(story?.surface).toBeUndefined();
+  });
+
+  it("ships a multi-image site-photo story", () => {
+    const story = DEMO_STORIES.find((entry) => entry.id === "site-photos");
+    expect(story?.label).toBe("看看这几张现场图");
+    expect(story?.attachments).toHaveLength(4);
+    expect(story?.attachments?.every((a) => a.mediaType === "image/png")).toBe(true);
+    expect(story?.attachments?.map((a) => a.name)).toEqual([
+      "storefront.png",
+      "aisle.png",
+      "counter.png",
+      "parking.png",
+    ]);
+  });
+
+  it("ships a mixed inspection pack with markdown, files, images, and a2ui", () => {
+    const story = DEMO_STORIES.find((entry) => entry.id === "inspection-pack");
+    expect(story?.label).toBe("出一份巡检复盘包");
+    expect(story?.reply).toContain("## 星云便利 · 湖滨店巡检复盘");
+    expect(story?.reply).toContain("| 货架 B3 | P1 |");
+    expect(story?.attachments?.map((a) => a.name)).toEqual([
+      "aisle.png",
+      "counter.png",
+      "sku-gaps.csv",
+      "inspection-2026-08-15.json",
+    ]);
+    expect(story?.attachments?.map((a) => a.mediaType)).toEqual([
+      "image/png",
+      "image/png",
+      "text/csv",
+      "application/json",
+    ]);
+    const html = renderSurface(story?.surface);
+    expect(html).not.toContain("data-a2ui-placeholder");
+    expect(html).toContain("巡检结论");
+    expect(html).toContain("缺货 SKU");
+    expect(html).toContain("下发补货单");
   });
 
   it("pairs a markdown report table with a matching A2UI chart", () => {

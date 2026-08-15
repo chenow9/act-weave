@@ -318,6 +318,14 @@ textarea {
   width: min(760px, calc(100% - 48px));
 }
 
+/* Photos-only: pin the column so gallery width:100% is not cyclic with fit-content.
+   Mixed A2UI+gallery keeps the 760px has-a2ui column; the bubble caps itself. */
+.msg-row.is-assistant.has-gallery:not(.has-a2ui) .msg-col {
+  width: min(420px, calc(100% - 48px));
+  max-width: min(420px, calc(100% - 48px));
+  flex: 0 1 auto;
+}
+
 .msg-row.is-user .msg-col {
   max-width: min(460px, calc(100% - 48px));
   align-items: flex-end;
@@ -346,11 +354,18 @@ textarea {
 .msg-bubble {
   width: fit-content;
   max-width: 100%;
+  min-width: 0;
   padding: 10px 14px;
   border-radius: 16px;
   border: 1px solid var(--aw-border);
   background: #fff;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  overflow: hidden;
+}
+
+.msg-bubble.has-gallery {
+  width: min(100%, 420px);
+  max-width: 100%;
 }
 
 .msg-row.is-assistant .msg-bubble {
@@ -504,107 +519,200 @@ textarea {
 
 /* —— Message attachments —— */
 .msg-attachments {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0 0 10px;
-}
-
-.msg-attach-image {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-width: 220px;
-  color: inherit;
-}
-
-.msg-attach-image a {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  width: 100%;
   min-width: 0;
-  text-decoration: none;
-  color: inherit;
+  max-width: 320px;
+  margin: 10px 0 0;
 }
 
-.msg-attach-image img {
-  display: block;
+.msg-attachments:first-child {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.msg-attachments.has-gallery {
+  max-width: none;
+}
+
+.msg-attach-gallery {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.msg-attach-gallery + .msg-attach-stack {
+  margin-top: 8px;
+}
+
+.msg-attach-gallery .msg-attach-card {
+  position: relative;
+  min-width: 0;
   max-width: 100%;
-  max-height: 180px;
+  overflow: hidden;
+  border: 0;
   border-radius: 10px;
-  object-fit: cover;
-  background: #e2e8f0;
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #0f172a;
 }
 
-.msg-attach-image span {
+.msg-attach-gallery .msg-attach-preview {
+  min-width: 0;
+  aspect-ratio: 4 / 3;
+}
+
+.msg-attach-gallery .msg-attach-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.msg-attach-gallery .msg-attach-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  gap: 6px;
+  padding: 18px 8px 6px;
+  background: linear-gradient(180deg, transparent 0%, rgba(15, 23, 42, 0.58) 78%);
+  color: #fff;
+}
+
+.msg-attach-gallery .msg-attach-copy strong {
+  color: #fff;
   font-size: 11px;
   font-weight: 600;
-  opacity: 0.85;
+}
+
+.msg-attach-gallery .msg-attach-download {
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+.msg-attach-gallery .msg-attach-download:hover:not(:disabled) {
+  background: #0d9488;
+  color: #fff;
+}
+
+.msg-attach-stack {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   overflow: hidden;
+  border: 1px solid var(--aw-border);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.msg-attach-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  /* figure UA margin is ~40px inline; it shoves a 2-col gallery out of the bubble. */
+  margin: 0;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.msg-attach-card + .msg-attach-card {
+  border-top: 1px solid var(--aw-border-soft);
+}
+
+.msg-attach-kind {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  background: #f0fdfa;
+  color: #0f766e;
+  line-height: 1;
+}
+
+.msg-attach-kind i {
+  font-size: 15px;
+}
+
+.msg-attach-kind em {
+  display: block;
+  margin-top: 3px;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.msg-attach-kind[data-kind="pdf"] {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.msg-attach-kind[data-kind="json"] {
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+.msg-attach-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.msg-attach-copy strong {
+  display: block;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.msg-row.is-user .msg-attach-image span {
-  color: rgba(248, 250, 252, 0.8);
-}
-
-.msg-attach-file {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  max-width: 280px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(15, 23, 42, 0.04);
-}
-
-.msg-row.is-user .msg-attach-file {
-  background: rgba(248, 250, 252, 0.08);
-  border-color: rgba(248, 250, 252, 0.12);
-}
-
-.msg-attach-file > i {
-  font-size: 18px;
-  color: #0d9488;
-}
-
-.msg-row.is-user .msg-attach-file > i {
-  color: #5eead4;
+.msg-attach-copy span {
+  display: block;
+  margin-top: 2px;
+  color: var(--aw-muted);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .msg-attach-download {
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 8px;
   border: none;
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.06);
-  color: var(--aw-text);
+  background: #ecfdf5;
+  color: #047857;
   cursor: pointer;
 }
 
-.msg-attach-image .msg-attach-download {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  background: rgba(15, 23, 42, 0.55);
-  color: #f8fafc;
+.msg-attach-download.is-label {
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .msg-attach-download:hover:not(:disabled) {
-  background: rgba(13, 148, 136, 0.16);
-  color: var(--aw-cyan);
-}
-
-.msg-attach-image .msg-attach-download:hover:not(:disabled) {
-  background: rgba(13, 148, 136, 0.85);
+  background: #0d9488;
   color: #fff;
 }
 
@@ -614,13 +722,73 @@ textarea {
 }
 
 .msg-attach-download i {
-  font-size: 12px;
+  font-size: 11px;
   color: inherit;
+}
+
+.msg-attach-card.msg-attach-image {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+}
+
+.msg-attach-preview {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  background: #f8fafc;
+  text-decoration: none;
+  color: inherit;
+}
+
+.msg-attach-preview img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+}
+
+.msg-attach-image.is-degenerate .msg-attach-preview {
+  display: none;
+}
+
+.msg-attach-caption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 10px;
+}
+
+.msg-row.is-user .msg-attach-stack {
+  background: rgba(15, 23, 42, 0.22);
+  border-color: rgba(248, 250, 252, 0.12);
+}
+
+.msg-row.is-user .msg-attach-card + .msg-attach-card {
+  border-top-color: rgba(248, 250, 252, 0.1);
+}
+
+.msg-row.is-user .msg-attach-card {
+  background: transparent;
+}
+
+.msg-row.is-user .msg-attach-kind {
+  background: rgba(15, 23, 42, 0.35);
+  color: #5eead4;
+}
+
+.msg-row.is-user .msg-attach-copy span {
+  color: rgba(248, 250, 252, 0.7);
 }
 
 .msg-row.is-user .msg-attach-download {
   background: rgba(248, 250, 252, 0.12);
-  color: #f8fafc;
+  color: #bbf7d0;
+}
+
+.msg-row.is-user .msg-attach-preview {
+  background: rgba(15, 23, 42, 0.35);
 }
 
 .msg-attach-file.is-error {
@@ -629,20 +797,6 @@ textarea {
 
 .msg-attach-file.is-uploading {
   opacity: 0.85;
-}
-
-.msg-attach-file strong {
-  display: block;
-  font-size: 12px;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.msg-attach-file span {
-  font-size: 11px;
-  opacity: 0.75;
 }
 
 /* Markdown body */

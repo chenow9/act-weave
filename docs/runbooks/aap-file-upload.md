@@ -36,7 +36,7 @@ v1 model publish is the text-only platform tool `actweave.publish_attachment` (`
 
 **No virus scanner / webhook DLP on outbound.** Inbound `PipelineWorker.runVirusScan` is a stub that always reports clean; do not invent a fail-closed outbound `VirusScanner` that would break existing `virusScan.required=true` deployments.
 
-Demos: Mock story `export-csv` (**生成本月对账单**) + Live hydrate by `fileId`. Console preview/download is
+Demos: Mock stories `export-csv` (**生成本月对账单**), `site-photos` (**看看这几张现场图**), and `inspection-pack` (**出一份巡检复盘包**) + Live hydrate by `fileId`. Console preview/download is
 
 ```
 GET /api/v1/workspaces/:wid/sessions/:sid/messages/:mid/files/:fileId/content

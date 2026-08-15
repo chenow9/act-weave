@@ -782,7 +782,7 @@ Workspace 作用域的 context policy **拒绝**任何 `aap` 字段。进行中 
 
 #### Demos（`demos/aap-chat`）
 
-- **Mock：** story `export-csv`（**生成本月对账单**）在 `.msg-row.is-assistant .msg-attachments` 画出 CSV 卡片（及示意 PNG），无需后端（`npm run dev:mock`）。
+- **Mock：** story `export-csv`（**生成本月对账单**，CSV）、`site-photos`（**看看这几张现场图**，2×2 PNG 图库）、`inspection-pack`（**出一份巡检复盘包**，Markdown + 现场图 + 文件卡片 + A2UI）在 `.msg-row.is-assistant .msg-attachments` 画出助手卡片，无需后端（`npm run dev:mock`）。
 - **Live：** `item.completed` → 占位卡片 → 按 `fileId` `getFile` / `getFileContent` hydrate → `patchMessages`。需要 `file:read`。
 
 #### Console（运营面；不是 AAP）

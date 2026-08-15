@@ -472,7 +472,7 @@ func TestValidateVerificationSSE_NullResponseRejected(t *testing.T) {
 }
 
 func TestValidateVerificationSSE_CreatedMissingStatusRejected(t *testing.T) {
-	// Exact mapping: created requires status in_progress (absent fails).
+	// created requires status in_progress or queued (absent fails).
 	created := map[string]any{
 		"type":            "response.created",
 		"sequence_number": 0,
@@ -486,7 +486,22 @@ func TestValidateVerificationSSE_CreatedMissingStatusRejected(t *testing.T) {
 		"event: response.completed\ndata: " + string(comp) + "\n\n"
 	err := validateVerificationResponsesPayload([]byte(sse), "text/event-stream")
 	if !errors.Is(err, modelconfig.ErrAgenticStreamInvalid) {
-		t.Fatalf("created without status in_progress must reject, got %v", err)
+		t.Fatalf("created without status in_progress/queued must reject, got %v", err)
+	}
+}
+
+func TestValidateVerificationSSE_CreatedQueuedAccepted(t *testing.T) {
+	created := map[string]any{
+		"type":            "response.created",
+		"sequence_number": 0,
+		"response":        validLifecycleResponse("r1", "queued"),
+	}
+	cb, _ := json.Marshal(created)
+	comp, _ := json.Marshal(validCompletedEnvelope("r1"))
+	sse := "event: response.created\ndata: " + string(cb) + "\n\n" +
+		"event: response.completed\ndata: " + string(comp) + "\n\n"
+	if err := validateVerificationResponsesPayload([]byte(sse), "text/event-stream"); err != nil {
+		t.Fatalf("created+queued must accept (DashScope compatible-mode): %v", err)
 	}
 }
 

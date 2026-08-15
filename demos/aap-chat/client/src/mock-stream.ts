@@ -36,19 +36,23 @@ export type MockChunk =
   | { kind: "tool"; name: string; status: "running" | "succeeded" | "failed"; detail?: string }
   | { kind: "status"; text: string };
 
-/** 1×1 PNG so Mock can exercise the image card without a network. */
-const TINY_PNG_B64 =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
-
 export function mockAttachmentsForStory(
-  story: { id: string; attachments?: readonly { name: string; mediaType: string; text?: string; tinyPng?: boolean }[] } | undefined,
+  story: {
+    id: string;
+    attachments?: readonly {
+      name: string;
+      mediaType: string;
+      text?: string;
+      preview?: { title: string; tone: string };
+    }[];
+  } | undefined,
 ): MockAttachment[] {
   if (!story?.attachments?.length) return [];
   return story.attachments.map((spec, index) => {
     const fileId = `mock-${story.id}-${index + 1}`;
     let bytes: Uint8Array | undefined;
-    if (spec.tinyPng) {
-      bytes = decodeBase64(TINY_PNG_B64);
+    if (spec.preview) {
+      bytes = buildSwatchPng(spec.preview.title, spec.preview.tone);
     } else if (spec.text != null) {
       bytes = new TextEncoder().encode(spec.text);
     }
@@ -76,8 +80,104 @@ export function mockAttachmentsForStory(
   });
 }
 
-function decodeBase64(b64: string): Uint8Array {
-  const bin = atob(b64);
+function parseHexTone(tone: string): [number, number, number] {
+  const match = /^#?([0-9a-f]{6})$/i.exec(tone);
+  if (!match) return [13, 148, 136];
+  const n = Number.parseInt(match[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function mixRgb(a: [number, number, number], b: [number, number, number], t: number): [number, number, number] {
+  return [
+    Math.round(a[0] + (b[0] - a[0]) * t),
+    Math.round(a[1] + (b[1] - a[1]) * t),
+    Math.round(a[2] + (b[2] - a[2]) * t),
+  ];
+}
+
+function cssRgb(rgb: [number, number, number], alpha = 1): string {
+  return alpha === 1 ? `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` : `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
+}
+
+function paintScene(ctx: CanvasRenderingContext2D, title: string, tone: [number, number, number], w: number, h: number) {
+  const sky = ctx.createLinearGradient(0, 0, 0, h);
+  sky.addColorStop(0, cssRgb(mixRgb(tone, [248, 250, 252], 0.55)));
+  sky.addColorStop(0.55, cssRgb(mixRgb(tone, [226, 232, 240], 0.2)));
+  sky.addColorStop(1, cssRgb(mixRgb(tone, [15, 23, 42], 0.55)));
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.fillStyle = cssRgb(mixRgb(tone, [255, 255, 255], 0.35), 0.35);
+  ctx.beginPath();
+  ctx.ellipse(w * 0.78, h * 0.18, 90, 36, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (title.includes("货架")) {
+    for (let col = 0; col < 4; col++) {
+      const x = 70 + col * 150;
+      ctx.fillStyle = cssRgb(mixRgb(tone, [15, 23, 42], 0.35));
+      ctx.fillRect(x, 90, 18, 360);
+      for (let row = 0; row < 5; row++) {
+        ctx.fillStyle = cssRgb(mixRgb(tone, [255, 255, 255], 0.18 + (row % 2) * 0.08));
+        ctx.fillRect(x - 48, 118 + row * 62, 114, 14);
+        ctx.fillStyle = cssRgb(mixRgb(tone, [248, 250, 252], 0.08 + row * 0.05));
+        ctx.fillRect(x - 40, 86 + row * 62, 36, 28);
+        ctx.fillRect(x + 8, 90 + row * 62, 28, 24);
+      }
+    }
+  } else if (title.includes("收银")) {
+    ctx.fillStyle = cssRgb(mixRgb(tone, [15, 23, 42], 0.25));
+    ctx.fillRect(40, 280, w - 80, 160);
+    ctx.fillStyle = cssRgb(mixRgb(tone, [255, 255, 255], 0.12));
+    ctx.fillRect(40, 268, w - 80, 18);
+    ctx.fillStyle = cssRgb(mixRgb(tone, [15, 23, 42], 0.45));
+    ctx.fillRect(470, 150, 150, 120);
+    ctx.fillStyle = cssRgb([226, 232, 240]);
+    ctx.fillRect(488, 168, 114, 72);
+    ctx.fillStyle = cssRgb(mixRgb(tone, [255, 255, 255], 0.55));
+    ctx.fillRect(120, 214, 220, 54);
+  } else if (title.includes("停车") || title.includes("车位")) {
+    ctx.fillStyle = cssRgb(mixRgb(tone, [15, 23, 42], 0.4));
+    ctx.fillRect(0, 220, w, 320);
+    ctx.strokeStyle = "rgba(255,255,255,0.72)";
+    ctx.lineWidth = 8;
+    for (let i = 0; i < 4; i++) {
+      const x = 80 + i * 150;
+      ctx.strokeRect(x, 260, 110, 220);
+    }
+  } else {
+    ctx.fillStyle = cssRgb(mixRgb(tone, [15, 23, 42], 0.28));
+    ctx.fillRect(90, 150, 540, 280);
+    ctx.fillStyle = cssRgb(mixRgb(tone, [255, 255, 255], 0.16));
+    ctx.fillRect(90, 150, 540, 56);
+    ctx.fillStyle = cssRgb(mixRgb(tone, [15, 23, 42], 0.45));
+    ctx.fillRect(310, 250, 100, 180);
+    ctx.fillStyle = cssRgb(mixRgb(tone, [255, 255, 255], 0.22));
+    ctx.fillRect(140, 230, 120, 80);
+    ctx.fillRect(460, 230, 120, 80);
+  }
+
+  const fade = ctx.createLinearGradient(0, h - 90, 0, h);
+  fade.addColorStop(0, "rgba(15,23,42,0)");
+  fade.addColorStop(1, "rgba(15,23,42,0.22)");
+  ctx.fillStyle = fade;
+  ctx.fillRect(0, h - 90, w, 90);
+}
+
+function buildSwatchPng(title: string, tone: string): Uint8Array | undefined {
+  if (typeof document === "undefined") return undefined;
+  const width = 720;
+  const height = 540;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return undefined;
+  paintScene(ctx, title, parseHexTone(tone), width, height);
+  const dataUrl = canvas.toDataURL("image/png");
+  const comma = dataUrl.indexOf(",");
+  if (comma < 0) return undefined;
+  const bin = atob(dataUrl.slice(comma + 1));
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;

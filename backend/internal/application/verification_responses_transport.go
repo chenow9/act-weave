@@ -928,7 +928,7 @@ func requireLifecycleResponseObject(eventType string, top map[string]json.RawMes
 // Status map (pinned ResponseStatus + event contract):
 //
 //	response.queued      → status queued
-//	response.created     → status in_progress
+//	response.created     → status in_progress, or queued (DashScope compatible-mode)
 //	response.in_progress → status in_progress
 //	response.completed   → status completed
 func validateLifecycleResponseShape(eventType string, respRaw json.RawMessage) error {
@@ -964,7 +964,13 @@ func validateLifecycleResponseShape(eventType string, respRaw json.RawMessage) e
 		if status != "queued" {
 			return fmt.Errorf("%w: response.queued requires response.status queued, got %q", modelconfig.ErrAgenticStreamInvalid, status)
 		}
-	case "response.created", "response.in_progress":
+	case "response.created":
+		// Official OpenAI emits in_progress. DashScope compatible-mode emits the
+		// created event while the nested response is still queued.
+		if status != "in_progress" && status != "queued" {
+			return fmt.Errorf("%w: %s requires response.status in_progress or queued, got %q", modelconfig.ErrAgenticStreamInvalid, eventType, status)
+		}
+	case "response.in_progress":
 		if status != "in_progress" {
 			return fmt.Errorf("%w: %s requires response.status in_progress, got %q", modelconfig.ErrAgenticStreamInvalid, eventType, status)
 		}
@@ -986,7 +992,12 @@ func validateLifecycleResponseStatus(eventType string, respRaw json.RawMessage) 
 			return fmt.Errorf("%w: response.queued requires response.status queued, got %q", modelconfig.ErrAgenticStreamInvalid, status)
 		}
 		return nil
-	case "response.created", "response.in_progress":
+	case "response.created":
+		if status != "in_progress" && status != "queued" {
+			return fmt.Errorf("%w: %s requires response.status in_progress or queued, got %q", modelconfig.ErrAgenticStreamInvalid, eventType, status)
+		}
+		return nil
+	case "response.in_progress":
 		if status != "in_progress" {
 			return fmt.Errorf("%w: %s requires response.status in_progress, got %q", modelconfig.ErrAgenticStreamInvalid, eventType, status)
 		}

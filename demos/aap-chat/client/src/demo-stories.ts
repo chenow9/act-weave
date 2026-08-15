@@ -14,8 +14,8 @@ export interface DemoStoryAttachment {
   mediaType: string;
   /** UTF-8 payload for text/* / json cards (Mock blob + download). */
   text?: string;
-  /** 1×1 PNG so the image renderer is exercised offline. */
-  tinyPng?: boolean;
+  /** Browser-only colored preview tile for image/* Mock cards. */
+  preview?: { title: string; tone: string };
 }
 
 export interface DemoStory {
@@ -521,6 +521,72 @@ export const MONTHLY_STATEMENT_CSV = [
   "",
 ].join("\n");
 
+export const INSPECTION_PACK_REPLY = `## 星云便利 · 湖滨店巡检复盘
+
+8 月 15 日巡检总分 **72**。货架缺货和收银台排队是主要扣分项，成交率从上周的 **41%** 掉到 **34%**。
+
+### 问题清单
+
+| 点位 | 等级 | 说明 |
+| --- | --- | --- |
+| 货架 B3 | P1 | 爆款空位超过 4 小时 |
+| 收银台 | P2 | 高峰只有 1 个窗口 |
+
+建议今天先补 \`SKU-1882\` / \`SKU-2041\`，晚高峰加开一个收银窗口。
+
+1. 现场图在气泡里，可点开或下载
+2. CSV / JSON 是同一组明细，方便进表格
+3. 下面的指标卡可以对一下数字
+
+> 图、文件和看板都是这一次巡检，不是另一套数。
+`;
+
+export const INSPECTION_FINDINGS_CSV = [
+  "点位,等级,问题,建议",
+  "货架B3,P1,爆款空位超过4小时,今日补货",
+  "收银台,P2,高峰只有1个窗口,加开窗口",
+  "",
+].join("\n");
+
+export const INSPECTION_FINDINGS_JSON = `${JSON.stringify(
+  {
+    store: "星云便利 · 湖滨店",
+    date: "2026-08-15",
+    score: 72,
+    conversion: 0.34,
+    findings: [
+      { spot: "货架B3", severity: "P1", sku: ["SKU-1882", "SKU-2041"] },
+      { spot: "收银台", severity: "P2", waitMinutes: 7 },
+    ],
+  },
+  null,
+  2,
+)}\n`;
+
+const inspectionPackSurface: A2UISurface = {
+  components: [
+    { id: "root", component: "Column", children: ["heading", "caption", "kpis", "actions"] },
+    { id: "heading", component: "Text", text: "巡检结论", variant: "heading" },
+    { id: "caption", component: "Text", text: "先补货，再开第二个收银窗口。", variant: "caption" },
+    { id: "kpis", component: "Row", children: ["k1", "k2", "k3"], align: "stretch" },
+    { id: "k1", component: "Card", title: "缺货 SKU", child: "k1col" },
+    { id: "k1col", component: "Column", children: ["k1n", "k1s"] },
+    { id: "k1n", component: "Text", text: "6", variant: "heading" },
+    { id: "k1s", component: "Text", text: "其中 2 个爆款", variant: "caption" },
+    { id: "k2", component: "Card", title: "排队峰值", child: "k2col" },
+    { id: "k2col", component: "Column", children: ["k2n", "k2s"] },
+    { id: "k2n", component: "Text", text: "7 分钟", variant: "heading" },
+    { id: "k2s", component: "Text", text: "晚高峰单窗口", variant: "caption" },
+    { id: "k3", component: "Card", title: "成交率", child: "k3col" },
+    { id: "k3col", component: "Column", children: ["k3n", "k3s"] },
+    { id: "k3n", component: "Text", text: "34%", variant: "heading" },
+    { id: "k3s", component: "Text", text: "较上周 −7pt", variant: "caption" },
+    { id: "actions", component: "Row", children: ["restock", "later"], justify: "end" },
+    { id: "restock", component: "Button", label: "下发补货单", variant: "primary" },
+    { id: "later", component: "Button", label: "改到明天", variant: "borderless" },
+  ],
+};
+
 export const DEMO_STORIES: readonly DemoStory[] = [
   {
     id: "booking",
@@ -633,11 +699,35 @@ export const DEMO_STORIES: readonly DemoStory[] = [
         mediaType: "text/csv",
         text: MONTHLY_STATEMENT_CSV,
       },
-      {
-        name: "invoice-preview.png",
-        mediaType: "image/png",
-        tinyPng: true,
-      },
+    ],
+  },
+  {
+    id: "site-photos",
+    label: "看看这几张现场图",
+    prompt: "看看这几张现场图",
+    aliases: ["多张图片", "现场照片", "巡检照片"],
+    keywords: /现场图|现场照片|巡检照片|多张图片|site-photos/i,
+    reply: "这是本次巡检的 4 张现场图，可点开预览或下载。",
+    attachments: [
+      { name: "storefront.png", mediaType: "image/png", preview: { title: "门头", tone: "#0d9488" } },
+      { name: "aisle.png", mediaType: "image/png", preview: { title: "货架", tone: "#d97706" } },
+      { name: "counter.png", mediaType: "image/png", preview: { title: "收银台", tone: "#2563eb" } },
+      { name: "parking.png", mediaType: "image/png", preview: { title: "停车位", tone: "#475569" } },
+    ],
+  },
+  {
+    id: "inspection-pack",
+    label: "出一份巡检复盘包",
+    prompt: "出一份巡检复盘包",
+    aliases: ["图文混合", "图片文件 markdown a2ui", "混合附件"],
+    keywords: /复盘包|图文混合|混合附件|巡检复盘|inspection-pack/i,
+    reply: INSPECTION_PACK_REPLY,
+    surface: inspectionPackSurface,
+    attachments: [
+      { name: "aisle.png", mediaType: "image/png", preview: { title: "货架", tone: "#d97706" } },
+      { name: "counter.png", mediaType: "image/png", preview: { title: "收银台", tone: "#2563eb" } },
+      { name: "sku-gaps.csv", mediaType: "text/csv", text: INSPECTION_FINDINGS_CSV },
+      { name: "inspection-2026-08-15.json", mediaType: "application/json", text: INSPECTION_FINDINGS_JSON },
     ],
   },
 ];
@@ -653,6 +743,8 @@ export function pickDemoStory(userText: string): DemoStory | undefined {
   if (exact) return exact;
   // More specific stories first so "结合趋势" does not fall through to the trend chart.
   const order = [
+    "inspection-pack",
+    "site-photos",
     "export-csv",
     "report",
     "board",

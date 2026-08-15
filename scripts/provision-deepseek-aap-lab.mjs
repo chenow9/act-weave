@@ -4,6 +4,10 @@
  * Usage (do not commit the key):
  *   DEEPSEEK_API_KEY='sk-...' node scripts/provision-deepseek-aap-lab.mjs
  *
+ * Default endpoint is DashScope compatible-mode (`/v1`, Responses + Chat Completions).
+ * The agent enables A2UI + outbound attachments and sets disclosure to carry_all
+ * so business prompts like 「生成本月对账单」 can publish a file and a chart.
+ *
  * Writes demos/aap-chat/.env (gitignored).
  */
 import { writeFileSync } from "node:fs";
@@ -19,11 +23,22 @@ const PASS = process.env.ACTWEAVE_ADMIN_PASS || "actweave-admin-dev-change-me";
 const API_KEY = (process.env.DEEPSEEK_API_KEY || "").trim();
 const API_BASE =
   process.env.DEEPSEEK_API_BASE ||
-  "https://llm-n67ta77ocgtnlpls.cn-beijing.maas.aliyuncs.com/compatible-mode/v1";
+  "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const MODEL_NAME = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
 const SLUG = "deepseek-aap-lab";
 const DISPLAY = "DeepSeek AAP Lab";
-const AGENT_NAME = "DeepSeek 富文本助手";
+const AGENT_NAME = process.env.DEEPSEEK_AGENT_NAME || "DeepSeek 出站附件助手";
+const SYSTEM_PROMPT = [
+  "你是门店经营助手，用简体中文回答。用户说的是业务结果，不是技术操作。",
+  "「本月」指当前自然月。",
+  "遇到对账单、月结、导出明细、给一份表格/清单，或要看趋势/对比时：",
+  "- 先用两三句话说明结论（示例数据须标明）",
+  "- 产出可下载附件，不要追问文件名或格式",
+  "- 再用一张图表展示与附件同一组数字，方便对照",
+  "回文件时只调用目录里已有的工具，名字必须完全一致，禁止自造中文或英文工具名。",
+  "不要把整表再贴进正文，不要提工具名、协议或 fileId。",
+  "不能发图片或外部链接。普通问答用简洁 Markdown。",
+].join("\n");
 
 if (!API_KEY) {
   console.error("DEEPSEEK_API_KEY is required");
@@ -94,7 +109,7 @@ async function main() {
       apiBase: API_BASE,
       modelName: MODEL_NAME,
       credentialSecretId: secret.id,
-      options: { temperature: 0.3 },
+      options: { temperature: 0.2 },
       runtimeCapabilities: {
         schemaVersion: "model-runtime.v1",
         tokenizerProfile: "o200k_base",
@@ -106,7 +121,13 @@ async function main() {
     });
     console.log("created model", model.id, model.status);
   } else {
-    console.log("reusing model", model.id, model.status);
+    model = await req("PATCH", `/workspaces/${wid}/model-configs/${model.id}`, token, {
+      apiBase: API_BASE,
+      modelName: MODEL_NAME,
+      credentialSecretId: secret.id,
+      lockVersion: model.lockVersion,
+    });
+    console.log("updated model endpoint", model.id, model.apiBase, model.status);
   }
 
   try {
@@ -121,23 +142,31 @@ async function main() {
     console.warn("verify failed (agent can still run if runtime accepts it):", String(err.message).slice(0, 300));
   }
 
+  if (model.status === "VERIFIED") {
+    try {
+      model = await req(
+        "POST",
+        `/workspaces/${wid}/model-configs/${model.id}/__command/set-disclosure`,
+        token,
+        {
+          lockVersion: model.lockVersion,
+          toolDisclosurePolicy: { schemaVersion: "tool-disclosure.v1", mode: "carry_all" },
+        },
+      );
+      console.log("disclosure", model.toolDisclosurePolicy);
+    } catch (err) {
+      console.warn("set-disclosure failed:", String(err.message).slice(0, 300));
+    }
+  }
+
   const agents = await req("GET", `/workspaces/${wid}/agents?page=1&pageSize=20`, token);
   let agent = (agents.items || []).find((a) => a.name === AGENT_NAME);
   if (!agent) {
     agent = await req("POST", `/workspaces/${wid}/agents`, token, {
       name: AGENT_NAME,
-      roleDescription:
-        "Live AAP 演示助手：Markdown 富文本、图片/文件理解、以及 A2UI 统计图。",
+      roleDescription: "经营助手：对账单、导出明细等业务问题会回传可下载文件。",
       modelConfigId: model.id,
-      systemPrompt: [
-        "你是 ActWeave 的业务助手。默认用简体中文回答。",
-        "普通问答用 Markdown：标题、列表、表格、加粗、行内代码、必要时用 $...$ 公式。",
-        "用户上传了图片或文件时，先描述你看到的内容，再回答问题。",
-        "当用户要统计图、趋势、分布、看板、KPI 时：先写一段 Markdown 说明（可含表格），再在正文之后附加一个 A2UI 围栏。",
-        "A2UI 围栏必须是完整可解析的 JSON 对象，不要包一层 surface，不要写 surfaceId/catalogId。",
-        "混用场景（月报 / 图文并茂）必须同时给出 Markdown 表格和 A2UI Chart。",
-        "不要编造无法核对的精确财务数字；演示可用合理的示例数据并标明是示例。",
-      ].join("\n"),
+      systemPrompt: SYSTEM_PROMPT,
     });
     console.log("created agent", agent.id);
   } else {
@@ -145,16 +174,21 @@ async function main() {
   }
 
   agent = await req("PATCH", `/workspaces/${wid}/agents/${agent.id}`, token, {
+    modelConfigId: model.id,
     contextPolicy: {
       schemaVersion: "session-context-policy.v2",
       mode: "token_window",
       maxInputTokens: 64000,
       outputReserveTokens: 4096,
-      aap: { includeCompactionSummary: false, enableA2UI: true },
+      aap: {
+        includeCompactionSummary: false,
+        enableA2UI: true,
+        enableOutboundAttachments: true,
+      },
     },
     lockVersion: agent.lockVersion,
   });
-  console.log("enabled A2UI on agent, lock", agent.lockVersion);
+  console.log("enabled outbound attachments on agent, lock", agent.lockVersion, "model", agent.modelConfigId);
 
   const clients = await req(
     "GET",
@@ -182,16 +216,27 @@ async function main() {
     clientId = client.clientId;
     console.log("created AAP client", clientId);
   } else {
-    console.log("reusing AAP client", client.clientId, "— rotate credential");
-    const rotated = await req(
-      "POST",
-      `/workspaces/${wid}/agent-access/clients/${client.id}/credentials`,
-      token,
-      { type: "client_secret" },
-      idem(),
-    );
-    clientSecret = rotated.secret || "";
+    console.log("reusing AAP client", client.clientId);
+    try {
+      const rotated = await req(
+        "POST",
+        `/workspaces/${wid}/agent-access/clients/${client.id}/credentials`,
+        token,
+        { type: "client_secret" },
+        idem(),
+      );
+      clientSecret = rotated.secret || "";
+    } catch (err) {
+      console.warn("rotate failed, reuse demos/aap-chat/.env secret if present:", String(err.message).slice(0, 200));
+    }
     clientId = client.clientId;
+    if (!clientSecret) {
+      const existing = process.env.AAP_CLIENT_SECRET || "";
+      if (existing) {
+        clientSecret = existing;
+        console.log("reusing AAP_CLIENT_SECRET from environment");
+      }
+    }
   }
   if (!clientSecret) {
     throw new Error("AAP client secret was not returned; cannot write demo .env");
