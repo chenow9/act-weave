@@ -60,7 +60,12 @@ test.describe("workflow generate dock e2e", () => {
     await expect(page.locator('.fluid-content a[href="/smart-dag"]')).toHaveCount(0);
     await expect(page.locator(".fluid-content")).not.toContainText("智能编排");
 
-    await page.goto("/smart-dag");
+    // Stay in the authenticated SPA. A full document load of /smart-dag remounts
+    // the app before Pinia auth hydrates and lands on /login.
+    await page.evaluate(() => {
+      window.history.pushState({}, "", "/smart-dag");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
 
     await expect(page).toHaveURL(/\/workflow\?generate=1$/);
     await expect(page.locator(".workflow-generate-dock")).toBeVisible();
