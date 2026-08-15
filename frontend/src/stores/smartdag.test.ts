@@ -293,6 +293,7 @@ describe("smart dag multi-turn session store (P1.5)", () => {
       workspaceId: "workspace-1",
       agentId: "agent-1",
       message: "加审批",
+      workflowId: smart.generatedWorkflow?.id,
     });
     expect(t2.draftVersion).toBe(2);
     expect(smart.canvasEpoch).toBe(epoch0 + 2);
@@ -405,7 +406,14 @@ describe("smart dag multi-turn session store (P1.5)", () => {
     const priorVersion = smart.generatedDraft?.draftVersion;
     const priorEpoch = smart.canvasEpoch;
 
-    await expect(smart.sendTurn({ workspaceId: "workspace-1", agentId: "agent-1", message: "bad" })).rejects.toThrow();
+    await expect(
+      smart.sendTurn({
+        workspaceId: "workspace-1",
+        agentId: "agent-1",
+        message: "bad",
+        workflowId: smart.generatedWorkflow?.id,
+      }),
+    ).rejects.toThrow();
     expect(smart.generatedDraft?.draftVersion).toBe(priorVersion);
     expect(smart.canvasEpoch).toBe(priorEpoch);
     expect(smart.lastErrorCode).toBe("GUARD_REJECTED");
@@ -546,5 +554,71 @@ describe("smart dag multi-turn session store (P1.5)", () => {
     expect(smart.generatedDraft).toBeUndefined();
     expect(smart.canvasEpoch).toBe(epoch);
     expect(useWorkflowStore().selectedWorkflowId).toBe("");
+  });
+
+  it("binds sessionWorkflowId from payload workflow when the session row has none", async () => {
+    const smart = useSmartDagStore();
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: {
+        session: {
+          sessionId: "session-1",
+          agentId: "agent-1",
+          modelConfigId: "model-1",
+          status: "OPEN",
+        },
+        turns: [],
+        workflow: turnResponse(1).data.workflow,
+        draft: turnResponse(1).data.draft,
+      },
+    });
+
+    await smart.loadSession("workspace-1", "session-1", { adoptGraph: false });
+
+    expect(smart.sessionWorkflowId).toBe("workflow-ai-2");
+    expect(smart.generatedDraft).toBeUndefined();
+  });
+
+  it("reuses the first-round session when the next turn requests the adopted workflow", async () => {
+    const smart = useSmartDagStore();
+    smart.setContext("workspace-1", "agent-1", "model-1");
+    vi.mocked(apiClient.post).mockImplementation(async (url: string) => {
+      if (url.endsWith("/workflow-generate-sessions")) {
+        return {
+          data: {
+            sessionId: "session-1",
+            agentId: "agent-1",
+            modelConfigId: "model-1",
+            status: "OPEN",
+          },
+        };
+      }
+      if (url.includes("/turns")) {
+        const call = vi.mocked(apiClient.post).mock.calls.filter((c) => String(c[0]).includes("/turns")).length;
+        return turnResponse(call);
+      }
+      throw new Error("unexpected " + url);
+    });
+
+    await smart.sendTurn({
+      workspaceId: "workspace-1",
+      agentId: "agent-1",
+      message: "查询支付状态",
+    });
+    expect(smart.sessionId).toBe("session-1");
+    expect(smart.sessionWorkflowId).toBe("workflow-ai-2");
+    expect(smart.generatedWorkflow?.id).toBe("workflow-ai-2");
+
+    await smart.sendTurn({
+      workspaceId: "workspace-1",
+      agentId: "agent-1",
+      message: "加审批",
+      workflowId: smart.generatedWorkflow?.id,
+    });
+
+    expect(smart.sessionId).toBe("session-1");
+    expect(smart.sessionWorkflowId).toBe("workflow-ai-2");
+    expect(
+      vi.mocked(apiClient.post).mock.calls.filter((call) => String(call[0]).endsWith("/workflow-generate-sessions")),
+    ).toHaveLength(1);
   });
 });

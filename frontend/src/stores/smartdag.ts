@@ -315,6 +315,10 @@ export const useSmartDagStore = defineStore("smartdag", {
       // Force canvas re-render: SoT is the turn-returned draft (P1.5.3).
       this.generatedWorkflow = created;
       this.generatedDraft = workflows.activeDraft ? cloneDraft(workflows.activeDraft) : undefined;
+      // First successful turn binds the OPEN session to the adopted workflow.
+      if (created.id) {
+        this.sessionWorkflowId = created.id;
+      }
       this.canvasEpoch += 1;
       // Success clears persistent failure card (ZKL-56).
       this.lastFailure = undefined;
@@ -481,7 +485,7 @@ export const useSmartDagStore = defineStore("smartdag", {
       this.sessionStatus = response.data.session.status;
       this.agentId = response.data.session.agentId;
       this.modelConfigId = response.data.session.modelConfigId;
-      this.sessionWorkflowId = response.data.session.workflowId || "";
+      this.sessionWorkflowId = response.data.session.workflowId || response.data.workflow?.id || "";
       this.turns = (response.data.turns || []).map((turn, index) => ({
         ...turn,
         turnId: turn.turnId || (turn as { turnId?: string }).turnId || `turn-${index + 1}`,

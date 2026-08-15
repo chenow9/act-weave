@@ -28,7 +28,6 @@ import { useWorkflowStore, WorkflowDraftConflictError } from "../stores/workflow
 import { useWorkspaceStore } from "../stores/workspaces";
 import type {
   Execution,
-  FailureFeedback,
   Tool,
   Workflow,
   WorkflowCompilation,
@@ -135,9 +134,6 @@ export function createWorkflowPageModel() {
   const workflowEditorShellRef = ref<HTMLElement>();
   const workflowFocusRestoreTarget = ref<HTMLElement>();
   const generateDock = createWorkflowGenerateDockState();
-  const pendingFailureFeedback = ref<FailureFeedback | null>(null);
-  const optimisticUserMessage = ref<string | null>(null);
-  const autoOpenedReason = ref<"" | "list-intent">("");
   let workflowQueryApplied = false;
 
   const workflowStatusOptions = [
@@ -587,7 +583,6 @@ export function createWorkflowPageModel() {
     pendingEditorAction.value = undefined;
     resetEditorHistory();
     generateDock.resetGenerateDock();
-    autoOpenedReason.value = "";
     workflowEditorVisible.value = false;
     stripGenerateQuery();
     if (options.restoreFocus !== false) {
@@ -638,19 +633,29 @@ export function createWorkflowPageModel() {
     }
   }
 
-  function stripGenerateQuery() {
-    const current = currentWorkflowQuery();
+  function workflowQueryWithoutGenerateKeys(options: { generate?: string } = {}) {
     const drop = new Set(["generate", "reviseSource", "feedbackSummary", "feedbackIssues", "compilationId", "agentId"]);
-    let changed = false;
     const next: Record<string, string> = {};
-    for (const [key, value] of Object.entries(current)) {
+    for (const [key, value] of Object.entries(currentWorkflowQuery())) {
       if (drop.has(key) || (key === "edit" && !workflowStore.selectedWorkflowId)) {
-        changed = true;
         continue;
       }
       const text = queryString(value);
       if (text) next[key] = text;
     }
+    if (options.generate) {
+      next.generate = options.generate;
+    }
+    return next;
+  }
+
+  function stripGenerateQuery() {
+    const next = workflowQueryWithoutGenerateKeys();
+    const current = currentWorkflowQuery();
+    const currentKeys = Object.keys(current);
+    const changed =
+      currentKeys.some((key) => queryString(current[key]) !== (next[key] || "")) ||
+      Object.keys(next).length !== currentKeys.filter((key) => queryString(current[key])).length;
     if (!changed) return;
     void router?.replace?.({ name: "workflow", query: next });
   }
@@ -667,8 +672,6 @@ export function createWorkflowPageModel() {
 
     // Drop leftover OPEN Pinia session in memory. Closing the editor must not closeSession.
     smart.resetSessionOnly();
-    pendingFailureFeedback.value = null;
-    optimisticUserMessage.value = null;
 
     editorGraph.value = createEmptyWorkflowGraphDraft();
     resetEditorHistory();
@@ -678,10 +681,9 @@ export function createWorkflowPageModel() {
     generateDock.leftTab.value = "generate";
     generateDock.generatePresence.value = isNarrowViewport() ? "sheet" : "open";
     generateDock.generateSheetOpen.value = true;
-    autoOpenedReason.value = "list-intent";
     workflowEditorVisible.value = true;
 
-    await router?.replace?.({ name: "workflow", query: { generate: "1" } });
+    await router?.replace?.({ name: "workflow", query: workflowQueryWithoutGenerateKeys({ generate: "1" }) });
     await nextTick();
     workflowEditorShellRef.value?.querySelector<HTMLTextAreaElement>("textarea.workflow-generate-prompt")?.focus();
   }
@@ -2318,9 +2320,6 @@ export function createWorkflowPageModel() {
     generateSheetOpen: generateDock.generateSheetOpen,
     applyHighlightEpoch: generateDock.applyHighlightEpoch,
     prompt: generateDock.prompt,
-    pendingFailureFeedback,
-    optimisticUserMessage,
-    autoOpenedReason,
     selectGenerateTab,
     selectNodesTab,
     toggleGenerateFromTopbar,

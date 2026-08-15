@@ -896,6 +896,7 @@ describe("workflow view P1.4", () => {
   });
 
   it("opens the generate dock from generate=1 with an empty graph", async () => {
+    routeQuery.workspaceId = "order";
     routeQuery.generate = "1";
     mockWorkflowAssets([workflowSummaryFixture()]);
 
@@ -909,9 +910,11 @@ describe("workflow view P1.4", () => {
     expect(wrapper.getComponent(WorkflowGraphCanvas).props("empty")).toBe(true);
     expect(useWorkflowStore().selectedWorkflowId).toBe("");
     expect(routeQuery.generate).toBe("1");
+    expect(routeQuery.workspaceId).toBe("order");
   });
 
   it("strips generate from the query when closing an unsent intent-generate dock", async () => {
+    routeQuery.workspaceId = "order";
     routeQuery.generate = "1";
     mockWorkflowAssets([workflowSummaryFixture()]);
 
@@ -927,6 +930,7 @@ describe("workflow view P1.4", () => {
     expect(wrapper.find(".workflow-generate-dock").exists()).toBe(false);
     expect(wrapper.find(".workflow-editor-overlay").exists()).toBe(false);
     expect(routeQuery.generate).toBeUndefined();
-    expect(routerReplace).toHaveBeenCalledWith({ name: "workflow", query: {} });
+    expect(routeQuery.workspaceId).toBe("order");
+    expect(routerReplace).toHaveBeenCalledWith({ name: "workflow", query: { workspaceId: "order" } });
   });
 });
