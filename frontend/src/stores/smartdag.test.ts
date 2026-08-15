@@ -575,6 +575,37 @@ describe("smart dag multi-turn session store (P1.5)", () => {
     expect(useWorkflowStore().selectedWorkflowId).toBe("");
   });
 
+  it("does not apply a loaded session when shouldApply returns false", async () => {
+    const smart = useSmartDagStore();
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: {
+        session: {
+          sessionId: "session-stale",
+          agentId: "agent-1",
+          modelConfigId: "model-1",
+          status: "OPEN",
+          workflowId: "wf-bound",
+        },
+        turns: [
+          {
+            turnId: "turn-1",
+            turnIndex: 1,
+            userMessage: "生成",
+            generationId: "gen-1",
+            guardOk: true,
+            status: "SUCCEEDED",
+          },
+        ],
+      },
+    });
+
+    await smart.loadSession("workspace-1", "session-stale", { adoptGraph: false, shouldApply: () => false });
+
+    expect(apiClient.get).toHaveBeenCalled();
+    expect(smart.sessionId).toBe("");
+    expect(smart.turns).toEqual([]);
+  });
+
   it("binds sessionWorkflowId from payload workflow when the session row has none", async () => {
     const smart = useSmartDagStore();
     vi.mocked(apiClient.get).mockResolvedValue({

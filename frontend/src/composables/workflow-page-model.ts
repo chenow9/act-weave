@@ -653,12 +653,12 @@ export function createWorkflowPageModel() {
     const workspaceId = generateWorkspaceId();
     if (!workspaceId) return;
     try {
-      await smart.loadSession(workspaceId, graphSessionId, { adoptGraph: false });
+      await smart.loadSession(workspaceId, graphSessionId, {
+        adoptGraph: false,
+        shouldApply: () => epoch === generatePrepareEpoch && pendingEditorAction.value !== "generate",
+      });
     } catch {
       // CLOSED / GET failure: stay on a new attempt (S10). Do not adopt the graph.
-    }
-    if (epoch !== generatePrepareEpoch || pendingEditorAction.value === "generate") {
-      return;
     }
   }
 
@@ -819,6 +819,8 @@ export function createWorkflowPageModel() {
 
   async function confirmEndGenerateSession() {
     generateDock.endSessionConfirmVisible.value = false;
+    generatePrepareEpoch += 1;
+    generateRestorePending.value = false;
     try {
       await smart.closeSession();
     } catch {

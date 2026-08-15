@@ -1419,6 +1419,72 @@ describe("workflow view P1.4", () => {
     expect(wrapper.find('[data-testid="generate-end-session-confirm"]').exists()).toBe(false);
   });
 
+  it("ignores a stale loadSession GET after the user ends the generate session", async () => {
+    const draft = draftFixture();
+    draft.graph.ui = { generatedBy: "smart-dag.v2", agentId: "agent-draft", sessionId: "session-keep" };
+    const pendingSession = deferred<{ data: Record<string, unknown> }>();
+    mockEditorGets({ draft, agents: [agentDto("agent-draft", "草稿 Agent")] });
+    vi.mocked(apiClient.get).mockImplementation(async (url: string) => {
+      const path = String(url);
+      if (path.endsWith("/workflows")) {
+        return { data: { items: [{ ...workflowSummaryFixture(), readiness: readinessFixture() }] } };
+      }
+      if (path.endsWith("/readiness")) return { data: readinessFixture() };
+      if (path.endsWith("/draft")) return { data: draft, headers: { etag: '"draft-2-2"' } };
+      if (path.endsWith("/agents")) return { data: { items: [agentDto("agent-draft", "草稿 Agent")] } };
+      if (path.includes("/model-configs")) return { data: { items: [] } };
+      if (path.includes("/workflow-generate-sessions/")) return pendingSession.promise;
+      throw new Error(`unexpected get ${path}`);
+    });
+    vi.mocked(apiClient.post).mockResolvedValue({ data: { sessionId: "session-keep", status: "CLOSED" } });
+
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+    const smart = useSmartDagStore();
+    smart.lastFailure = {
+      stage: "UNKNOWN",
+      code: "NETWORK_ERROR",
+      retryable: true,
+      message: "流结束",
+      requestId: "req-1",
+      traceId: "tr-1",
+      sessionId: "session-keep",
+      sessionStatus: "OPEN",
+    };
+
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await wrapper.vm.$nextTick();
+    await wrapper.get('[data-action="generate-failure-end-session"]').trigger("click");
+    await wrapper.get('[data-action="confirm-end-generate"]').trigger("click");
+    await flushPromises();
+    expect(smart.sessionId).toBe("");
+
+    pendingSession.resolve({
+      data: {
+        session: {
+          sessionId: "session-keep",
+          agentId: "agent-draft",
+          modelConfigId: "model-1",
+          status: "OPEN",
+          workflowId: draft.workflowId,
+        },
+        turns: [
+          {
+            turnId: "turn-keep",
+            turnIndex: 1,
+            userMessage: "先生成",
+            generationId: "gen-keep",
+            guardOk: true,
+            status: "SUCCEEDED",
+          },
+        ],
+      },
+    });
+    await flushPromises();
+    expect(smart.sessionId).toBe("");
+    expect(smart.turns).toEqual([]);
+  });
+
   it("writes modelConfigId via setContext before ensureSession when sending with the default chip", async () => {
     mockEditorGets();
     const ensureOrder: string[] = [];

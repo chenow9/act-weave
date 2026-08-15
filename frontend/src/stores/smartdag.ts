@@ -471,7 +471,11 @@ export const useSmartDagStore = defineStore("smartdag", {
       return response.data;
     },
 
-    async loadSession(workspaceId: string, sessionId: string, options: { adoptGraph?: boolean } = {}) {
+    async loadSession(
+      workspaceId: string,
+      sessionId: string,
+      options: { adoptGraph?: boolean; shouldApply?: () => boolean } = {},
+    ) {
       const adoptGraph = options.adoptGraph !== false;
       const response = await apiClient.get<{
         session: CreateSessionResponse;
@@ -480,6 +484,9 @@ export const useSmartDagStore = defineStore("smartdag", {
         workflow?: WorkflowCreateResponseDTO["workflow"];
         draft?: WorkflowCreateResponseDTO["draft"];
       }>(`/workspaces/${workspaceId}/workflow-generate-sessions/${sessionId}`);
+      if (options.shouldApply && !options.shouldApply()) {
+        return response.data;
+      }
       this.workspaceId = workspaceId;
       this.sessionId = response.data.session.sessionId;
       this.sessionStatus = response.data.session.status;
