@@ -412,4 +412,139 @@ describe("smart dag multi-turn session store (P1.5)", () => {
     expect(smart.lastGuardReport?.ok).toBe(false);
     expect(smart.turns.some((t) => t.status === "GUARD_REJECTED")).toBe(true);
   });
+
+  it("resetSessionOnly clears session fields without bumping canvasEpoch", () => {
+    const smart = useSmartDagStore();
+    smart.sessionId = "session-e1";
+    smart.sessionStatus = "OPEN";
+    smart.sessionWorkflowId = "wf-a";
+    smart.sessionLockVersion = 3;
+    smart.goal = "旧意图";
+    smart.reasoning = "旧推理";
+    smart.confidence = 81;
+    smart.reasoningSteps = [{ id: "goal", label: "解析", status: "COMPLETED", detail: "旧" }];
+    smart.nodeExplanations = [{ nodeId: "start", title: "入口", reason: "旧" }];
+    smart.missingCapabilities = [{ id: "gap", name: "缺能力", reason: "未匹配", suggestedProtocol: "HTTP_OPENAPI" }];
+    smart.turns = [
+      {
+        turnId: "turn-1",
+        turnIndex: 1,
+        userMessage: "旧意图",
+        generationId: "gen-1",
+        guardOk: true,
+        status: "SUCCEEDED",
+      },
+    ];
+    smart.lastFailure = {
+      stage: "MODEL_CALL",
+      code: "SMART_DAG_MODEL_TIMEOUT",
+      retryable: true,
+      message: "timeout",
+      requestId: "req-1",
+      traceId: "tr-1",
+    };
+    smart.generatedDraft = {
+      id: "draft-a",
+      workflowId: "wf-a",
+      draftVersion: 2,
+      schemaVersion: "workflow.graph.v1",
+      graph: graphV1,
+      graphHash: "hash",
+      updatedBy: "user-1",
+      updatedAt: "2026-07-15T00:00:00Z",
+      lockVersion: 2,
+    };
+    const epoch = smart.canvasEpoch;
+
+    smart.resetSessionOnly();
+
+    expect(smart.canvasEpoch).toBe(epoch);
+    expect(smart.sessionId).toBe("");
+    expect(smart.sessionStatus).toBe("");
+    expect(smart.sessionWorkflowId).toBe("");
+    expect(smart.turns).toEqual([]);
+    expect(smart.lastFailure).toBeUndefined();
+    expect(smart.generatedDraft).toBeUndefined();
+    expect(smart.reasoning).toBe("");
+    expect(smart.reasoningSteps).toEqual([]);
+    expect(smart.goal).toBe("");
+    expect(smart.confidence).toBe(0);
+  });
+
+  it("creates a new session when an unbound OPEN leftover is asked to bind to another workflow", async () => {
+    const smart = useSmartDagStore();
+    smart.setContext("workspace-1", "agent-1", "model-1");
+    smart.sessionId = "session-e1";
+    smart.sessionStatus = "OPEN";
+    smart.sessionWorkflowId = "";
+    smart.generatedWorkflow = { id: "leftover-wf" } as never;
+    smart.turns = [
+      {
+        turnId: "failed-1",
+        turnIndex: 1,
+        userMessage: "一句话",
+        generationId: "",
+        guardOk: false,
+        status: "FAILED",
+      },
+    ];
+    vi.mocked(apiClient.post).mockResolvedValue({
+      data: {
+        sessionId: "session-b",
+        agentId: "agent-1",
+        modelConfigId: "model-1",
+        status: "OPEN",
+        workflowId: "workflow-b",
+      },
+    });
+
+    await smart.ensureSession({ workflowId: "workflow-b" });
+
+    expect(apiClient.post).toHaveBeenCalledWith("/workspaces/workspace-1/workflow-generate-sessions", {
+      agentId: "agent-1",
+      workflowId: "workflow-b",
+    });
+    expect(smart.sessionId).toBe("session-b");
+    expect(smart.sessionWorkflowId).toBe("workflow-b");
+    expect(smart.turns).toEqual([]);
+  });
+
+  it("loads session history without adopting graph when adoptGraph is false", async () => {
+    const smart = useSmartDagStore();
+    const epoch = smart.canvasEpoch;
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: {
+        session: {
+          sessionId: "session-1",
+          agentId: "agent-1",
+          modelConfigId: "model-1",
+          status: "OPEN",
+          workflowId: "wf-bound",
+        },
+        turns: [
+          {
+            turnId: "turn-1",
+            turnIndex: 1,
+            userMessage: "生成",
+            generationId: "gen-1",
+            guardOk: true,
+            status: "SUCCEEDED",
+          },
+        ],
+        workflow: turnResponse(1).data.workflow,
+        draft: turnResponse(1).data.draft,
+      },
+    });
+
+    await smart.loadSession("workspace-1", "session-1", { adoptGraph: false });
+
+    expect(smart.sessionId).toBe("session-1");
+    expect(smart.sessionStatus).toBe("OPEN");
+    expect(smart.agentId).toBe("agent-1");
+    expect(smart.sessionWorkflowId).toBe("wf-bound");
+    expect(smart.turns).toHaveLength(1);
+    expect(smart.generatedDraft).toBeUndefined();
+    expect(smart.canvasEpoch).toBe(epoch);
+    expect(useWorkflowStore().selectedWorkflowId).toBe("");
+  });
 });

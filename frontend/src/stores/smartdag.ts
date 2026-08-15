@@ -119,6 +119,8 @@ interface SmartDagState {
   sessionId: string;
   sessionStatus: "OPEN" | "CLOSED" | "";
   sessionLockVersion: number;
+  /** Workflow this OPEN session is bound to. Empty means unbound (E1). */
+  sessionWorkflowId: string;
   modelConfigId: string;
   turns: SmartGenerateTurn[];
   lastGuardReport?: SmartDAGGuardReport;
@@ -146,6 +148,7 @@ export const useSmartDagStore = defineStore("smartdag", {
     sessionId: "",
     sessionStatus: "",
     sessionLockVersion: 0,
+    sessionWorkflowId: "",
     modelConfigId: "",
     turns: [],
     lastGuardReport: undefined,
@@ -188,6 +191,7 @@ export const useSmartDagStore = defineStore("smartdag", {
       if (nextWorkspace !== this.workspaceId || nextAgent !== this.agentId) {
         this.sessionId = "";
         this.sessionStatus = "";
+        this.sessionWorkflowId = "";
         this.turns = [];
         this.lastGuardReport = undefined;
         this.lastErrorCode = "";
@@ -195,6 +199,31 @@ export const useSmartDagStore = defineStore("smartdag", {
       this.workspaceId = nextWorkspace;
       this.agentId = nextAgent;
       this.modelConfigId = modelConfigId.trim();
+    },
+
+    /**
+     * Drop leftover OPEN session identity in memory.
+     * Does not close the session on the server and does not bump canvasEpoch.
+     */
+    resetSessionOnly() {
+      this.sessionId = "";
+      this.sessionStatus = "";
+      this.sessionLockVersion = 0;
+      this.sessionWorkflowId = "";
+      this.turns = [];
+      this.lastFailure = undefined;
+      this.lastGuardReport = undefined;
+      this.lastErrorCode = "";
+      this.generatedWorkflow = undefined;
+      this.generatedDraft = undefined;
+      this.reasoningSteps = [];
+      this.nodeExplanations = [];
+      this.missingCapabilities = [];
+      this.availableToolIds = [];
+      this.selectedToolIds = [];
+      this.goal = "";
+      this.reasoning = "";
+      this.confidence = 0;
     },
 
     /**
@@ -210,17 +239,26 @@ export const useSmartDagStore = defineStore("smartdag", {
         (error as Error & { code?: string }).code = "AGENT_MODEL_REQUIRED";
         throw error;
       }
+      const requested = options.workflowId?.trim() || "";
+      const bound = this.sessionWorkflowId.trim();
       if (this.sessionId && this.sessionStatus === "OPEN") {
-        return {
-          sessionId: this.sessionId,
-          agentId: this.agentId,
-          modelConfigId: this.modelConfigId,
-          status: "OPEN" as const,
-        };
+        // Unbound leftover + requested id, or a bound session that does not match, cannot be reused.
+        const mismatch =
+          (!bound && Boolean(requested)) ||
+          (Boolean(requested) && Boolean(bound) && requested !== bound) ||
+          (!requested && Boolean(bound));
+        if (!mismatch) {
+          return {
+            sessionId: this.sessionId,
+            agentId: this.agentId,
+            modelConfigId: this.modelConfigId,
+            status: "OPEN" as const,
+          };
+        }
+        this.resetSessionOnly();
       }
       const body: { agentId: string; workflowId?: string } = { agentId: this.agentId };
-      if (options.workflowId) body.workflowId = options.workflowId;
-      else if (this.generatedWorkflow?.id) body.workflowId = this.generatedWorkflow.id;
+      if (requested) body.workflowId = requested;
 
       const response = await apiClient.post<CreateSessionResponse>(
         `/workspaces/${this.workspaceId}/workflow-generate-sessions`,
@@ -230,6 +268,7 @@ export const useSmartDagStore = defineStore("smartdag", {
       this.sessionStatus = response.data.status || "OPEN";
       this.modelConfigId = response.data.modelConfigId || this.modelConfigId;
       this.agentId = response.data.agentId || this.agentId;
+      this.sessionWorkflowId = response.data.workflowId || requested;
       this.turns = [];
       this.lastGuardReport = undefined;
       this.lastErrorCode = "";
@@ -428,7 +467,8 @@ export const useSmartDagStore = defineStore("smartdag", {
       return response.data;
     },
 
-    async loadSession(workspaceId: string, sessionId: string) {
+    async loadSession(workspaceId: string, sessionId: string, options: { adoptGraph?: boolean } = {}) {
+      const adoptGraph = options.adoptGraph !== false;
       const response = await apiClient.get<{
         session: CreateSessionResponse;
         turns: SmartGenerateTurn[];
@@ -441,12 +481,13 @@ export const useSmartDagStore = defineStore("smartdag", {
       this.sessionStatus = response.data.session.status;
       this.agentId = response.data.session.agentId;
       this.modelConfigId = response.data.session.modelConfigId;
+      this.sessionWorkflowId = response.data.session.workflowId || "";
       this.turns = (response.data.turns || []).map((turn, index) => ({
         ...turn,
         turnId: turn.turnId || (turn as { turnId?: string }).turnId || `turn-${index + 1}`,
         turnIndex: turn.turnIndex || index + 1,
       }));
-      if (response.data.workflow && response.data.draft) {
+      if (adoptGraph && response.data.workflow && response.data.draft) {
         const workflows = useWorkflowStore();
         const created = workflows.adoptCreatedWorkflowResponse(
           workspaceId,
@@ -517,6 +558,7 @@ export const useSmartDagStore = defineStore("smartdag", {
       this.sessionId = "";
       this.sessionStatus = "";
       this.sessionLockVersion = 0;
+      this.sessionWorkflowId = "";
       this.turns = [];
       this.lastGuardReport = undefined;
       this.lastErrorCode = "";

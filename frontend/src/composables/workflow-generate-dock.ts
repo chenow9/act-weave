@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, ref, type Ref } from "vue";
 import type { WorkflowGraphDraft } from "../types/domain";
 
 export type WorkflowGenerateLeftTab = "generate" | "nodes";
-export type WorkflowGeneratePresence = "open";
+export type WorkflowGeneratePresence = "open" | "sheet";
 
 export const WORKFLOW_GENERATE_PROMPT_MAX = 2000;
 export const WORKFLOW_GENERATE_NARROW_MEDIA = "(max-width: 1180px)";

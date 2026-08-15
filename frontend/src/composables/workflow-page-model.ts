@@ -3,8 +3,12 @@ import { tt } from "../i18n/tt";
  * Workflow page model (ZKL-64 item 13).
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
-import { createWorkflowGenerateDockState } from "./workflow-generate-dock";
+import { useRoute, useRouter } from "vue-router";
+import {
+  WORKFLOW_GENERATE_NARROW_MEDIA,
+  createEmptyWorkflowGraphDraft,
+  createWorkflowGenerateDockState,
+} from "./workflow-generate-dock";
 import type { ManagementListColumn } from "../components/ManagementList.vue";
 import type { ManagementRowAction } from "../components/ManagementRowActions.vue";
 import type { ManagementSummaryItem } from "../components/ManagementSummaryStrip.vue";
@@ -18,11 +22,13 @@ import {
 import { autoLayoutWorkflowGraph, layoutWorkflowGraphIfNeeded } from "../components/workflow/workflow-layout";
 import { toAPIError } from "../services/api";
 import { useAuthStore } from "../stores/auth";
+import { useSmartDagStore } from "../stores/smartdag";
 import { useToolsStore } from "../stores/tools";
 import { useWorkflowStore, WorkflowDraftConflictError } from "../stores/workflow";
 import { useWorkspaceStore } from "../stores/workspaces";
 import type {
   Execution,
+  FailureFeedback,
   Tool,
   Workflow,
   WorkflowCompilation,
@@ -86,7 +92,9 @@ export function createWorkflowPageModel() {
   const toolsStore = useToolsStore();
   const workspaces = useWorkspaceStore();
   const auth = useAuthStore();
+  const smart = useSmartDagStore();
   const router = useRouter();
+  const route = useRoute();
   const hasWorkspaceContext = computed(() => Boolean(workspaces.activeWorkspaceId || workspaces.items[0]?.id));
   let editorDraftLoadRequestId = 0;
   let editorDraftTargetWorkflowId = "";
@@ -127,6 +135,10 @@ export function createWorkflowPageModel() {
   const workflowEditorShellRef = ref<HTMLElement>();
   const workflowFocusRestoreTarget = ref<HTMLElement>();
   const generateDock = createWorkflowGenerateDockState();
+  const pendingFailureFeedback = ref<FailureFeedback | null>(null);
+  const optimisticUserMessage = ref<string | null>(null);
+  const autoOpenedReason = ref<"" | "list-intent">("");
+  let workflowQueryApplied = false;
 
   const workflowStatusOptions = [
     { label: tt("workflow.statusDraft"), value: "Draft" },
@@ -241,7 +253,9 @@ export function createWorkflowPageModel() {
     ];
   });
 
-  const selectedWorkflow = computed(() => workflowStore.selectedWorkflow);
+  const selectedWorkflow = computed(() =>
+    workflowStore.workflows.find((workflow) => workflow.id === workflowStore.selectedWorkflowId),
+  );
   const selectedWorkflowDetail = computed(() => workflowStore.selectedWorkflowDetail);
   const selectedWorkflowReadiness = computed(
     () => selectedWorkflowDetail.value?.readiness || selectedWorkflow.value?.readiness,
@@ -257,9 +271,9 @@ export function createWorkflowPageModel() {
   );
   const hasPersistableDraft = computed(() =>
     Boolean(
-      selectedWorkflow.value &&
+      workflowStore.selectedWorkflowId &&
       workflowStore.activeDraft &&
-      workflowStore.activeDraft.workflowId === selectedWorkflow.value.id,
+      workflowStore.activeDraft.workflowId === workflowStore.selectedWorkflowId,
     ),
   );
   const workflowEditorBusy = computed(() => Boolean(pendingEditorAction.value));
@@ -406,13 +420,10 @@ export function createWorkflowPageModel() {
     window.addEventListener("keydown", handleEditorKeydown);
     try {
       if (!workspaces.items.length) await workspaces.load();
+      applyWorkspaceQuery();
       if (!hasWorkspaceContext.value) return;
       await loadWorkflowPageAssets();
-      const generatedWorkflowId = new URLSearchParams(window.location.search).get("edit") || "";
-      const generatedWorkflow = workflowStore.workflows.find((workflow) => workflow.id === generatedWorkflowId);
-      if (generatedWorkflow) {
-        await openWorkflowEditor(generatedWorkflow);
-      }
+      await applyWorkflowEntryQuery();
     } catch {
       // The shared Workspace state provides recovery actions when bootstrap fails.
     }
@@ -477,8 +488,12 @@ export function createWorkflowPageModel() {
   }
 
   function isEditorDraftDirty() {
+    // No selected workflow (E1 empty canvas) is clean. Missing/mismatched activeDraft stays dirty.
+    if (!workflowStore.selectedWorkflowId) {
+      return false;
+    }
     const draft = workflowStore.activeDraft;
-    if (!draft || draft.workflowId !== selectedWorkflow.value?.id) {
+    if (!draft || draft.workflowId !== workflowStore.selectedWorkflowId) {
       return true;
     }
     return !sameGraph(editorGraph.value, draft.graph);
@@ -572,10 +587,103 @@ export function createWorkflowPageModel() {
     pendingEditorAction.value = undefined;
     resetEditorHistory();
     generateDock.resetGenerateDock();
+    autoOpenedReason.value = "";
     workflowEditorVisible.value = false;
+    stripGenerateQuery();
     if (options.restoreFocus !== false) {
       restoreWorkflowFocus();
     }
+  }
+
+  function currentWorkflowQuery(): Record<string, unknown> {
+    return (
+      (route?.query as Record<string, unknown> | undefined) ??
+      Object.fromEntries(new URLSearchParams(window.location.search))
+    );
+  }
+
+  function queryString(value: unknown): string {
+    if (Array.isArray(value)) {
+      return queryString(value[0]);
+    }
+    return typeof value === "string" ? value.trim() : "";
+  }
+
+  function isNarrowViewport() {
+    return typeof window.matchMedia === "function" && window.matchMedia(WORKFLOW_GENERATE_NARROW_MEDIA).matches;
+  }
+
+  function applyWorkspaceQuery() {
+    const workspaceId = queryString(currentWorkflowQuery().workspaceId);
+    if (workspaceId && workspaces.items.some((item) => item.id === workspaceId)) {
+      workspaces.selectWorkspace(workspaceId);
+    }
+  }
+
+  async function applyWorkflowEntryQuery() {
+    // Apply once on enter. Watching query would fight close, which strips generate.
+    if (workflowQueryApplied) return;
+    workflowQueryApplied = true;
+    const query = currentWorkflowQuery();
+    const editId = queryString(query.edit);
+    if (editId) {
+      const generatedWorkflow = workflowStore.workflows.find((workflow) => workflow.id === editId);
+      if (generatedWorkflow) {
+        await openWorkflowEditor(generatedWorkflow);
+      }
+      return;
+    }
+    if (queryString(query.generate) === "1") {
+      await openIntentGenerateEditor();
+    }
+  }
+
+  function stripGenerateQuery() {
+    const current = currentWorkflowQuery();
+    const drop = new Set(["generate", "reviseSource", "feedbackSummary", "feedbackIssues", "compilationId", "agentId"]);
+    let changed = false;
+    const next: Record<string, string> = {};
+    for (const [key, value] of Object.entries(current)) {
+      if (drop.has(key) || (key === "edit" && !workflowStore.selectedWorkflowId)) {
+        changed = true;
+        continue;
+      }
+      const text = queryString(value);
+      if (text) next[key] = text;
+    }
+    if (!changed) return;
+    void router?.replace?.({ name: "workflow", query: next });
+  }
+
+  async function openIntentGenerateEditor() {
+    captureWorkflowFocus();
+    closeTrialRunDialog({ restoreFocus: false });
+    closeWorkflowEditor({ restoreFocus: false });
+
+    // Persist/send must not target the highlighted list row.
+    workflowStore.selectedWorkflowId = "";
+    workflowStore.activeDraft = undefined;
+    workflowStore.activeCompilation = undefined;
+
+    // Drop leftover OPEN Pinia session in memory. Closing the editor must not closeSession.
+    smart.resetSessionOnly();
+    pendingFailureFeedback.value = null;
+    optimisticUserMessage.value = null;
+
+    editorGraph.value = createEmptyWorkflowGraphDraft();
+    resetEditorHistory();
+    selectedNodeId.value = "";
+    selectedEdgeId.value = "";
+
+    generateDock.leftTab.value = "generate";
+    generateDock.generatePresence.value = isNarrowViewport() ? "sheet" : "open";
+    generateDock.generateSheetOpen.value = true;
+    autoOpenedReason.value = "list-intent";
+    workflowEditorVisible.value = true;
+
+    await router?.replace?.({ name: "workflow", query: { generate: "1" } });
+    await nextTick();
+    workflowEditorShellRef.value?.querySelector<HTMLTextAreaElement>("textarea.workflow-generate-prompt")?.focus();
   }
 
   function selectGenerateTab() {
@@ -1491,14 +1599,17 @@ export function createWorkflowPageModel() {
   }
 
   async function persistEditorDraft() {
-    if (!selectedWorkflow.value || !workflowStore.activeDraft) return undefined;
+    const workflowId = workflowStore.selectedWorkflowId;
+    if (!workflowId || !workflowStore.activeDraft || workflowStore.activeDraft.workflowId !== workflowId) {
+      return undefined;
+    }
     const current = workflowStore.activeDraft;
     const payload: WorkflowDraftRecord = {
       ...current,
       graph: cloneGraph(editorGraph.value),
     };
     try {
-      const saved = await workflowStore.saveWorkflowDraft(selectedWorkflow.value.id, payload);
+      const saved = await workflowStore.saveWorkflowDraft(workflowId, payload);
       editorGraph.value = cloneGraph(saved.graph);
       resetEditorHistory();
       return saved;
@@ -2207,6 +2318,9 @@ export function createWorkflowPageModel() {
     generateSheetOpen: generateDock.generateSheetOpen,
     applyHighlightEpoch: generateDock.applyHighlightEpoch,
     prompt: generateDock.prompt,
+    pendingFailureFeedback,
+    optimisticUserMessage,
+    autoOpenedReason,
     selectGenerateTab,
     selectNodesTab,
     toggleGenerateFromTopbar,
@@ -2250,6 +2364,7 @@ export function createWorkflowPageModel() {
     loadEditorDraft,
     invalidatePendingEditorLoad,
     closeWorkflowEditor,
+    openIntentGenerateEditor,
     captureWorkflowFocus,
     restoreWorkflowFocus,
     focusFirstModalControl,

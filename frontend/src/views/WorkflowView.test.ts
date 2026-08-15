@@ -8,9 +8,26 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import WorkflowGraphCanvas from "../components/workflow/WorkflowGraphCanvas.vue";
 import { apiClient } from "../services/api";
+import { useSmartDagStore } from "../stores/smartdag";
 import { useWorkflowStore } from "../stores/workflow";
 import { useWorkspaceStore } from "../stores/workspaces";
 import WorkflowView from "./WorkflowView.vue";
+
+const { routerReplace, routeQuery } = vi.hoisted(() => ({
+  routerReplace: vi.fn(),
+  routeQuery: {} as Record<string, unknown>,
+}));
+
+vi.mock("vue-router", () => ({
+  useRouter: () => ({
+    replace: routerReplace,
+    push: vi.fn(),
+  }),
+  useRoute: () => ({
+    name: "workflow",
+    query: routeQuery,
+  }),
+}));
 
 vi.mock("../services/api", () => ({
   apiClient: {
@@ -259,6 +276,11 @@ describe("workflow view P1.4", () => {
     document.body.innerHTML = "";
     setActivePinia(createPinia());
     vi.resetAllMocks();
+    Object.keys(routeQuery).forEach((key) => delete routeQuery[key]);
+    routerReplace.mockImplementation(async (location: { query?: Record<string, unknown> }) => {
+      Object.keys(routeQuery).forEach((key) => delete routeQuery[key]);
+      Object.assign(routeQuery, location.query || {});
+    });
     useWorkspaceStore().items = [
       {
         id: "order",
@@ -826,5 +848,85 @@ describe("workflow view P1.4", () => {
       wrapper.unmount();
       window.matchMedia = previousMatchMedia;
     }
+  });
+
+  it("opens intent generate without putting the selected row's leftover draft", async () => {
+    mockWorkflowAssets([workflowSummaryFixture()]);
+    const wrapper = mountWorkflowView();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    const workflows = useWorkflowStore();
+    const leftover = draftFixture();
+    workflows.selectedWorkflowId = leftover.workflowId;
+    workflows.activeDraft = leftover;
+    const smart = useSmartDagStore();
+    smart.sessionId = "session-a";
+    smart.sessionStatus = "OPEN";
+    smart.sessionWorkflowId = leftover.workflowId;
+    smart.workspaceId = "order";
+    smart.agentId = "agent-1";
+    smart.goal = "修订选中行";
+    smart.turns = [
+      {
+        turnId: "turn-a",
+        turnIndex: 1,
+        userMessage: "修订选中行",
+        generationId: "gen-a",
+        guardOk: true,
+        status: "SUCCEEDED",
+      },
+    ];
+
+    await wrapper.get('[data-action="open-intent-generate"]').trigger("click");
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    expect(apiClient.put).not.toHaveBeenCalled();
+    expect(workflows.selectedWorkflowId).toBe("");
+    expect(workflows.activeDraft).toBeUndefined();
+    expect(smart.sessionId).toBe("");
+    expect(smart.sessionStatus).toBe("");
+    expect(smart.sessionWorkflowId).toBe("");
+    expect(smart.turns).toEqual([]);
+    expect(wrapper.find(".workflow-generate-dock").exists()).toBe(true);
+    expect(wrapper.findAll('[role="tablist"] [role="tab"]')[0].attributes("aria-selected")).toBe("true");
+    expect(wrapper.getComponent(WorkflowGraphCanvas).props("graph").nodes).toEqual([]);
+    expect(wrapper.get(".workflow-editor-shell").attributes("data-editor-dirty-state")).toBe("saved");
+  });
+
+  it("opens the generate dock from generate=1 with an empty graph", async () => {
+    routeQuery.generate = "1";
+    mockWorkflowAssets([workflowSummaryFixture()]);
+
+    const wrapper = mountWorkflowView();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find(".workflow-generate-dock").exists()).toBe(true);
+    expect(wrapper.findAll('[role="tablist"] [role="tab"]')[0].attributes("aria-selected")).toBe("true");
+    expect(wrapper.getComponent(WorkflowGraphCanvas).props("graph").nodes).toEqual([]);
+    expect(wrapper.getComponent(WorkflowGraphCanvas).props("empty")).toBe(true);
+    expect(useWorkflowStore().selectedWorkflowId).toBe("");
+    expect(routeQuery.generate).toBe("1");
+  });
+
+  it("strips generate from the query when closing an unsent intent-generate dock", async () => {
+    routeQuery.generate = "1";
+    mockWorkflowAssets([workflowSummaryFixture()]);
+
+    const wrapper = mountWorkflowView();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(".workflow-generate-dock").exists()).toBe(true);
+
+    await wrapper.get('button[aria-label="退出编辑"]').trigger("click");
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find(".workflow-generate-dock").exists()).toBe(false);
+    expect(wrapper.find(".workflow-editor-overlay").exists()).toBe(false);
+    expect(routeQuery.generate).toBeUndefined();
+    expect(routerReplace).toHaveBeenCalledWith({ name: "workflow", query: {} });
   });
 });

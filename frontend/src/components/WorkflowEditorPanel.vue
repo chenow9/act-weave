@@ -38,6 +38,7 @@ const {
   hasWorkspaceContext,
   hasPersistableDraft,
   leftTab,
+  generatePresence,
   generateLock,
   generateSheetOpen,
   applyHighlightEpoch,
@@ -334,7 +335,7 @@ void WorkflowTrialRunDialog;
           <div
             class="workflow-workbench-column workflow-workbench-left"
             :data-left-tab="leftTab"
-            :data-generate-presence="'open'"
+            :data-generate-presence="generatePresence"
           >
             <div class="workflow-left-tabs" role="tablist" :aria-label="t('workflow.generateLeftTabsAria')">
               <button
