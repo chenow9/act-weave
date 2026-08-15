@@ -25,4 +25,10 @@ describe("i18n message parity", () => {
     expect(messages.en.nav.section.space).toBe("Space");
     expect(messages["zh-CN"].common.appTitle).toContain("织行");
   });
+
+  it("ships generate-dock English strings", () => {
+    expect(messages.en.workflow.generateFromIntent).toBe("Generate from a sentence");
+    expect(messages.en.workflow.generateDockTitle).toBe("Generate");
+    expect(messages.en.workflow.generateSubmit).toBe("Generate draft");
+  });
 });
