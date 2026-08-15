@@ -19,7 +19,6 @@ describe("i18n message parity", () => {
   });
 
   it("ships frozen glossary nav labels in English", () => {
-    expect(messages.en.nav.item.smartDag).toBe("Smart Orchestration");
     expect(messages.en.nav.item.chat).toBe("Run Console");
     expect(messages.en.common.appTitle).toBe("ActWeave");
     expect(messages.en.nav.section.space).toBe("Space");

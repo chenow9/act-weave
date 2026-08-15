@@ -30,7 +30,6 @@ describe("navigation information architecture", () => {
   it("places related modules together", () => {
     const byId = Object.fromEntries(navItems.map((item) => [item.id, item]));
     expect(byId.workflow.sectionId).toBe("build");
-    expect(byId["smart-dag"].sectionId).toBe("build");
     expect(byId.agents.sectionId).toBe("build");
     expect(byId["agent-access"].sectionId).toBe("connect");
     expect(byId.providers.sectionId).toBe("connect");
@@ -43,5 +42,10 @@ describe("navigation information architecture", () => {
     for (const item of navItems) {
       expect(item.labelKey.startsWith("nav.item.")).toBe(true);
     }
+  });
+
+  it("does not expose a standalone Smart Orchestration item", () => {
+    expect(navItems.some((item) => item.id === "smart-dag" || item.route === "/smart-dag")).toBe(false);
+    expect(navItems.some((item) => item.labelKey === "nav.item.smartDag")).toBe(false);
   });
 });

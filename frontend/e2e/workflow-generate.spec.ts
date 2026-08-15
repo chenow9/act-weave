@@ -57,9 +57,10 @@ test.describe("workflow generate dock e2e", () => {
     await installStableUi(page);
 
     await page.locator(".fluid-trigger").click();
-    const smartDagLink = page.locator('.fluid-content a[href="/smart-dag"]').first();
-    await expect(smartDagLink).toBeVisible();
-    await smartDagLink.click();
+    await expect(page.locator('.fluid-content a[href="/smart-dag"]')).toHaveCount(0);
+    await expect(page.locator(".fluid-content")).not.toContainText("智能编排");
+
+    await page.goto("/smart-dag");
 
     await expect(page).toHaveURL(/\/workflow\?generate=1$/);
     await expect(page.locator(".workflow-generate-dock")).toBeVisible();

@@ -12,7 +12,6 @@
     "agents": "Agents",
     "tools": "Tools",
     "workflow": "Workflow",
-    "smartDag": "Smart Orchestration",
     "providers": "Providers",
     "connections": "Connections",
     "openapiImports": "OpenAPI Imports",

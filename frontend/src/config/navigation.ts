@@ -56,14 +56,6 @@ export const navItems: NavItem[] = [
     labelKey: "nav.item.workflow",
     route: "/workflow",
   },
-  {
-    id: "smart-dag",
-    sectionId: "build",
-    icon: "fa-solid fa-wand-magic-sparkles",
-    labelKey: "nav.item.smartDag",
-    route: "/smart-dag",
-    badge: "AI",
-  },
 
   {
     id: "providers",

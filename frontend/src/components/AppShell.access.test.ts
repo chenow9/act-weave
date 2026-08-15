@@ -51,7 +51,10 @@ describe("AppShell platform-administrator navigation", () => {
   });
 
   it("hides user management from ordinary users", () => {
-    expect(mountShell().text()).not.toContain("用户与权限");
+    const wrapper = mountShell();
+    expect(wrapper.text()).not.toContain("用户与权限");
+    expect(wrapper.text()).not.toContain("智能编排");
+    expect(wrapper.find('a[href="/smart-dag"]').exists()).toBe(false);
   });
 
   it("shows user management to platform administrators", () => {
@@ -124,8 +127,10 @@ describe("AppShell platform-administrator navigation", () => {
   it("renders English glossary labels when locale is en", async () => {
     const wrapper = mountShell("en");
     await wrapper.get(".fluid-trigger").trigger("click");
-    expect(wrapper.text()).toContain("Smart Orchestration");
+    expect(wrapper.text()).toContain("Workflow");
     expect(wrapper.text()).toContain("Run Console");
+    expect(wrapper.text()).not.toContain("Smart Orchestration");
+    expect(wrapper.find('a[href="/smart-dag"]').exists()).toBe(false);
     expect(wrapper.text()).toContain("ActWeave");
     expect(wrapper.text()).not.toContain("织行");
   });

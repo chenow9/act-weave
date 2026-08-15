@@ -12,7 +12,6 @@
     "agents": "Agent 管理",
     "tools": "工具管理",
     "workflow": "编排",
-    "smartDag": "智能编排",
     "providers": "服务 Provider",
     "connections": "服务连接",
     "openapiImports": "OpenAPI 导入",
