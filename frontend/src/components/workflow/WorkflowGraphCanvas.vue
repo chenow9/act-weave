@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import "@vue-flow/core/dist/style.css";
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import {
   BaseEdge,
@@ -16,6 +16,7 @@ import {
   useVueFlow,
 } from "@vue-flow/core";
 
+import { WORKFLOW_GENERATE_HIGHLIGHT_MS } from "../../composables/workflow-generate-dock";
 import type { WorkflowGraphDraft } from "../../types/domain";
 import { primaryPortKey } from "../../utils/workflow-graph";
 import { getWorkflowBranchOptions } from "./WorkflowEdgeInspector.vue";
@@ -27,6 +28,10 @@ const props = defineProps<{
   graph: WorkflowGraphDraft;
   selectedNodeId: string;
   selectedEdgeId?: string;
+  empty?: boolean;
+  generating?: boolean;
+  lockInteraction?: boolean;
+  applyHighlightEpoch?: number;
 }>();
 
 const emit = defineEmits<{
@@ -46,6 +51,27 @@ const { fitView, zoomIn, zoomOut } = useVueFlow();
 const hasUserAdjustedViewport = ref(false);
 const isProgrammaticViewportMove = ref(false);
 const currentZoom = ref(props.graph.viewport?.zoom || 1);
+const highlightActive = ref(false);
+const showEmptyCanvas = computed(() => Boolean(props.empty) && props.graph.nodes.length === 0);
+let highlightTimer = 0;
+
+watch(
+  () => props.applyHighlightEpoch,
+  (epoch) => {
+    if (!epoch) {
+      return;
+    }
+    highlightActive.value = true;
+    window.clearTimeout(highlightTimer);
+    highlightTimer = window.setTimeout(() => {
+      highlightActive.value = false;
+    }, WORKFLOW_GENERATE_HIGHLIGHT_MS);
+  },
+);
+
+onBeforeUnmount(() => {
+  window.clearTimeout(highlightTimer);
+});
 
 onMounted(() => {
   void nextTick(() => fitCanvasView("auto"));
@@ -65,7 +91,7 @@ const flowNodes = computed(() =>
     id: node.id,
     type: "workflow",
     position: node.position,
-    draggable: true,
+    draggable: !props.lockInteraction,
     selectable: true,
     data: {
       label: node.label,
@@ -235,7 +261,7 @@ function branchLabel(branch: unknown) {
 }
 
 function handleNodeDragStop(event: NodeDragEvent) {
-  if (!event.node.id || !event.node.position) {
+  if (props.lockInteraction || !event.node.id || !event.node.position) {
     return;
   }
 
@@ -266,6 +292,9 @@ function handleConnect(connection: {
   target?: string | null;
   targetHandle?: string | null;
 }) {
+  if (props.lockInteraction) {
+    return;
+  }
   if (!connection.source || !connection.target || !connection.sourceHandle || !connection.targetHandle) {
     return;
   }
@@ -321,6 +350,9 @@ function handleEdgeClick(...args: unknown[]) {
 }
 
 function handleNodeContextMenu(nodeId: string, event: MouseEvent) {
+  if (props.lockInteraction) {
+    return;
+  }
   emit("open-node-context-menu", {
     nodeId,
     position: pointerPosition(event),
@@ -328,6 +360,9 @@ function handleNodeContextMenu(nodeId: string, event: MouseEvent) {
 }
 
 function handleEdgeContextMenu(payload: unknown) {
+  if (props.lockInteraction) {
+    return;
+  }
   const maybePayload =
     payload && typeof payload === "object"
       ? (payload as {
@@ -377,14 +412,26 @@ function fitCanvasView(source: "auto" | "user" = "user") {
 </script>
 
 <template>
-  <section class="workflow-graph-canvas workflow-graph-canvas-grid">
+  <section class="workflow-graph-canvas workflow-graph-canvas-grid" :class="{ 'is-apply-highlight': highlightActive }">
+    <div v-if="showEmptyCanvas" class="workflow-graph-empty">
+      <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true" />
+      <strong>{{ t("workflow.generateEmptyCanvasTitle") }}</strong>
+    </div>
+    <div
+      v-if="props.generating"
+      class="workflow-graph-generating"
+      role="status"
+      :aria-label="t('workflow.generateOverlayAria')"
+    >
+      <span class="workflow-editor-dirty-pill">{{ t("workflow.generateInProgress") }}</span>
+    </div>
     <VueFlow
       :nodes="flowNodes"
       :edges="flowEdges"
       :default-viewport="props.graph.viewport"
       :fit-view-on-init="true"
-      :nodes-connectable="true"
-      :nodes-draggable="true"
+      :nodes-connectable="!props.lockInteraction"
+      :nodes-draggable="!props.lockInteraction"
       :elements-selectable="true"
       :zoom-on-scroll="true"
       :pan-on-drag="true"

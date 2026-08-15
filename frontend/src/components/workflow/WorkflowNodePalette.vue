@@ -6,6 +6,7 @@ import type { WorkflowGraphNodeType } from "../../types/domain";
 
 const props = defineProps<{
   variableRefs: string[];
+  disabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -14,6 +15,13 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const emptyVariableRef = "{{input.orderId}}";
+
+function addNode(nodeType: WorkflowGraphNodeType) {
+  if (props.disabled) {
+    return;
+  }
+  emit("add-node", nodeType);
+}
 
 const nodeLibrary = computed(() => [
   {
@@ -74,7 +82,7 @@ const nodeLibrary = computed(() => [
 </script>
 
 <template>
-  <aside class="workflow-node-palette">
+  <aside class="workflow-node-palette" :aria-disabled="props.disabled ? 'true' : undefined">
     <div class="workflow-panel-heading">
       <span>{{ t("workflow.nodeLibrary") }}</span>
       <h3>Workflow Blocks</h3>
@@ -87,7 +95,8 @@ const nodeLibrary = computed(() => [
         :key="node.type"
         class="workflow-node-library-item"
         type="button"
-        @click="emit('add-node', node.type)"
+        :disabled="props.disabled"
+        @click="addNode(node.type)"
       >
         <i :class="node.icon" />
         <span>

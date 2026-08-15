@@ -3,7 +3,9 @@ import { createPinia, setActivePinia } from "pinia";
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import WorkflowGraphCanvas from "../components/workflow/WorkflowGraphCanvas.vue";
 import { apiClient } from "../services/api";
+import { useWorkflowStore } from "../stores/workflow";
 import { useWorkspaceStore } from "../stores/workspaces";
 import WorkflowView from "./WorkflowView.vue";
 
@@ -571,12 +573,13 @@ describe("workflow view P1.4", () => {
     expect(topbar.get(".workflow-editor-primary-actions").text()).toContain("保存画布");
     expect(topbar.get(".workflow-editor-primary-actions").text()).toContain("发布上线");
     expect(topbar.get(".workflow-editor-header-row").text()).not.toContain("保存画布");
+    expect(topbar.get(".workflow-editor-action-row").text()).toContain("智能生成");
     expect(topbar.get(".workflow-editor-action-row").text()).toContain("基础信息");
     expect(topbar.get(".workflow-editor-action-row").text()).toContain("复制节点");
     expect(topbar.get(".workflow-editor-action-row").text()).toContain("检查问题");
     expect(topbar.get(".workflow-editor-action-row").text()).not.toContain("保存画布");
-    expect(topbar.findAll(".workflow-editor-secondary-actions .workflow-editor-action-group")).toHaveLength(3);
-    expect(topbar.findAll(".workflow-editor-secondary-actions .workflow-editor-action-divider")).toHaveLength(2);
+    expect(topbar.findAll(".workflow-editor-secondary-actions .workflow-editor-action-group")).toHaveLength(4);
+    expect(topbar.findAll(".workflow-editor-secondary-actions .workflow-editor-action-divider")).toHaveLength(3);
     expect(topbar.find(".workflow-editor-dirty-pill").exists()).toBe(false);
     expect(topbar.find(".workflow-readiness-panel.compact").exists()).toBe(false);
     expect(topbar.text()).not.toContain("Run a trial against the latest compiled draft.");
@@ -686,5 +689,61 @@ describe("workflow view P1.4", () => {
     );
     expect(wrapper.text()).toContain("已停用");
     expect(wrapper.text()).toContain("新的 published execution 将被阻止");
+  });
+
+  it("opens an existing workflow editor on the nodes tab with generate chrome available", async () => {
+    mockWorkflowAssets([workflowSummaryFixture()])
+      .mockResolvedValueOnce({ data: draftFixture(), headers: { etag: '"draft-2-2"' } })
+      .mockResolvedValueOnce({ data: readinessFixture() });
+
+    const wrapper = mountWorkflowView();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    await wrapper.get('button[aria-label="更多编排操作"]').trigger("click");
+    document.body.querySelector<HTMLButtonElement>('button[data-action-key="edit"]')!.click();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    const tablist = wrapper.get('[role="tablist"][aria-label="生成与节点库"]');
+    const tabs = tablist.findAll('[role="tab"]');
+    expect(tabs).toHaveLength(2);
+    expect(tabs[0].text()).toBe("智能生成");
+    expect(tabs[0].attributes("aria-selected")).toBe("false");
+    expect(tabs[1].text()).toBe("节点");
+    expect(tabs[1].attributes("aria-selected")).toBe("true");
+    expect(tabs[1].attributes("disabled")).toBeUndefined();
+    expect(wrapper.find(".workflow-node-palette").exists()).toBe(true);
+    expect(wrapper.find(".workflow-generate-dock").exists()).toBe(false);
+    expect(wrapper.getComponent(WorkflowGraphCanvas).props("empty")).toBe(false);
+
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(".workflow-generate-dock").exists()).toBe(true);
+    expect(wrapper.find(".workflow-node-palette").exists()).toBe(false);
+    expect(wrapper.findAll('[role="tablist"] [role="tab"]')[0].attributes("aria-selected")).toBe("true");
+  });
+
+  it("disables the nodes tab when there is no persistable draft", async () => {
+    mockWorkflowAssets([workflowSummaryFixture()])
+      .mockResolvedValueOnce({ data: draftFixture(), headers: { etag: '"draft-2-2"' } })
+      .mockResolvedValueOnce({ data: readinessFixture() });
+
+    const wrapper = mountWorkflowView();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    await wrapper.get('button[aria-label="更多编排操作"]').trigger("click");
+    document.body.querySelector<HTMLButtonElement>('button[data-action-key="edit"]')!.click();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    useWorkflowStore().activeDraft = undefined;
+    await wrapper.vm.$nextTick();
+
+    const nodesTab = wrapper.findAll('[role="tablist"] [role="tab"]')[1];
+    expect(nodesTab.attributes("disabled")).toBeDefined();
+    expect(nodesTab.attributes("title")).toBe("生成草稿后才能加节点");
+    expect(wrapper.getComponent(WorkflowGraphCanvas).props("empty")).toBe(true);
   });
 });

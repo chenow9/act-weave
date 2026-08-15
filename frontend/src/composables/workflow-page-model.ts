@@ -4,6 +4,7 @@ import { tt } from "../i18n/tt";
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import { createWorkflowGenerateDockState } from "./workflow-generate-dock";
 import type { ManagementListColumn } from "../components/ManagementList.vue";
 import type { ManagementRowAction } from "../components/ManagementRowActions.vue";
 import type { ManagementSummaryItem } from "../components/ManagementSummaryStrip.vue";
@@ -125,6 +126,7 @@ export function createWorkflowPageModel() {
   const workflowMetadataModalRef = ref<HTMLElement>();
   const workflowEditorShellRef = ref<HTMLElement>();
   const workflowFocusRestoreTarget = ref<HTMLElement>();
+  const generateDock = createWorkflowGenerateDockState();
 
   const workflowStatusOptions = [
     { label: tt("workflow.statusDraft"), value: "Draft" },
@@ -252,6 +254,13 @@ export function createWorkflowPageModel() {
   );
   const selectedWorkflowDraft = computed(() =>
     workflowStore.activeDraft?.workflowId === selectedWorkflow.value?.id ? workflowStore.activeDraft : undefined,
+  );
+  const hasPersistableDraft = computed(() =>
+    Boolean(
+      selectedWorkflow.value &&
+      workflowStore.activeDraft &&
+      workflowStore.activeDraft.workflowId === selectedWorkflow.value.id,
+    ),
   );
   const workflowEditorBusy = computed(() => Boolean(pendingEditorAction.value));
   const selectedWorkflowCanPublish = computed(() => Boolean(selectedWorkflowReadiness.value?.canPublish));
@@ -417,6 +426,12 @@ export function createWorkflowPageModel() {
     window.removeEventListener("keydown", handleEditorKeydown);
   });
 
+  watch(workflowEditorVisible, (visible) => {
+    if (visible) {
+      generateDock.syncLeftTabForOpenEditor(hasPersistableDraft.value);
+    }
+  });
+
   watch(
     () => [workflowEditorVisible.value, selectedGraphNode.value?.type, selectedWorkflow.value?.workspaceId] as const,
     async ([visible, nodeType, workspaceId]) => {
@@ -556,10 +571,27 @@ export function createWorkflowPageModel() {
     closeContextMenu();
     pendingEditorAction.value = undefined;
     resetEditorHistory();
+    generateDock.resetGenerateDock();
     workflowEditorVisible.value = false;
     if (options.restoreFocus !== false) {
       restoreWorkflowFocus();
     }
+  }
+
+  function selectGenerateTab() {
+    generateDock.selectGenerateTab();
+  }
+
+  function selectNodesTab() {
+    generateDock.selectNodesTab(hasPersistableDraft.value);
+  }
+
+  function toggleGenerateFromTopbar() {
+    generateDock.toggleGenerateFromTopbar(hasPersistableDraft.value);
+  }
+
+  function closeGenerateSheet() {
+    generateDock.closeGenerateSheet(hasPersistableDraft.value);
   }
 
   function captureWorkflowFocus() {
@@ -1993,7 +2025,9 @@ export function createWorkflowPageModel() {
   }
 
   function normalizeCompilationStatus(value: string | undefined): WorkflowCompilation["status"] {
-    const upper = String(value || "").trim().toUpperCase();
+    const upper = String(value || "")
+      .trim()
+      .toUpperCase();
     if (upper === "VALID") return "Valid";
     if (upper === "INVALID") return "Invalid";
     return "Pending";
@@ -2160,6 +2194,16 @@ export function createWorkflowPageModel() {
     selectedWorkflowRevisions,
     selectedWorkflowRevisionDiff,
     selectedWorkflowDraft,
+    hasPersistableDraft,
+    leftTab: generateDock.leftTab,
+    generatePresence: generateDock.generatePresence,
+    generateLock: generateDock.generateLock,
+    generateSheetOpen: generateDock.generateSheetOpen,
+    applyHighlightEpoch: generateDock.applyHighlightEpoch,
+    selectGenerateTab,
+    selectNodesTab,
+    toggleGenerateFromTopbar,
+    closeGenerateSheet,
     workflowEditorBusy,
     selectedWorkflowCanPublish,
     canForcePublishWorkflow,
