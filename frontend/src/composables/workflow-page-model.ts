@@ -37,6 +37,7 @@ import { useWorkspaceStore } from "../stores/workspaces";
 import type {
   Agent,
   Execution,
+  FailureFeedback,
   Tool,
   Workflow,
   WorkflowCompilation,
@@ -351,6 +352,7 @@ export function createWorkflowPageModel() {
     () => isEditorDraftDirty() && String(editorGraph.value.ui?.generatedBy || "").startsWith("smart-dag"),
   );
   const generateLastFailure = computed(() => smart.lastFailure);
+  const generateLastGuardReport = computed(() => smart.lastGuardReport);
   const generateReasoningSteps = computed(() => smart.reasoningSteps);
   const generateMissingCapabilities = computed(() => smart.missingCapabilities);
   const generateSessionClosed = computed(() => smart.sessionStatus === "CLOSED");
@@ -779,6 +781,7 @@ export function createWorkflowPageModel() {
         feedback: generateDock.pendingFailureFeedback.value || undefined,
       });
       generateDock.pendingFailureFeedback.value = null;
+      generateDock.failureFeedbackBannerHidden.value = false;
       applyGeneratedDraftToEditor(result);
     } catch {
       // lastFailure + transcript projection; canvas stays on the previous draft.
@@ -832,8 +835,23 @@ export function createWorkflowPageModel() {
 
   function focusGenerateTextarea() {
     void nextTick(() => {
-      workflowEditorShellRef.value?.querySelector<HTMLTextAreaElement>("textarea.workflow-generate-prompt")?.focus();
+      const textarea = workflowEditorShellRef.value?.querySelector<HTMLTextAreaElement>(
+        "textarea.workflow-generate-prompt",
+      );
+      if (!textarea) return;
+      textarea.focus();
+      const end = textarea.value.length;
+      textarea.setSelectionRange(end, end);
     });
+  }
+
+  function hideFailureFeedbackBanner() {
+    generateDock.failureFeedbackBannerHidden.value = true;
+  }
+
+  function dismissPendingFailureFeedback() {
+    generateDock.pendingFailureFeedback.value = null;
+    generateDock.failureFeedbackBannerHidden.value = false;
   }
 
   function resetEditorHistory() {
@@ -1224,7 +1242,7 @@ export function createWorkflowPageModel() {
     }
   }
 
-  /** P4.3: CTA when compile failed or trial not successful — seed SmartDag revise (D14). */
+  /** CTA when compile failed or trial not successful — seed dock FailureFeedback (D14). */
   const canReviseFromFailure = computed(() => {
     const readiness = selectedWorkflowReadiness.value;
     if (!selectedWorkflow.value || !readiness) return false;
@@ -1240,10 +1258,7 @@ export function createWorkflowPageModel() {
     return "compile";
   }
 
-  /**
-   * Navigate to SmartDag generate session with seed workflow + failure feedback context.
-   * Backend turn + feedback only bumps draftVersion (never auto-publish, D5).
-   */
+  /** Stay in the editor: seed FailureFeedback for the next send (D14, never auto-publish). */
   function reviseDraftFromFailure() {
     const workflow = selectedWorkflow.value;
     if (!workflow) return;
@@ -1256,22 +1271,30 @@ export function createWorkflowPageModel() {
       message: issue.message,
       suggestedAction: "regenerate" as const,
     }));
-    const uiAgent = workflowStore.activeDraft?.graph?.ui?.agentId;
-    const agentId = typeof uiAgent === "string" ? uiAgent : "";
-    void router.push({
-      name: "smart-dag",
-      query: {
-        workspaceId: workflow.workspaceId,
-        workflowId: workflow.id,
-        reviseSource: source,
-        ...(agentId ? { agentId } : {}),
-        ...(compilation?.id ? { compilationId: compilation.id } : {}),
-        feedbackSummary:
-          issues[0]?.message ||
-          (source === "compile" ? tt("workflow.reviseCompileFailed") : tt("workflow.reviseTrialFailed")),
-        // Encode issues compactly for SmartDag seed (structural CTA).
-        feedbackIssues: JSON.stringify(issues.slice(0, 16)),
-      },
+    const rawSummary =
+      issues[0]?.message ||
+      (source === "compile" ? tt("workflow.reviseCompileFailed") : tt("workflow.reviseTrialFailed"));
+    const feedback: FailureFeedback = {
+      source,
+      workflowId: workflow.id,
+      compilationId: compilation?.id,
+      issues,
+      rawSummary,
+    };
+    generateDock.pendingFailureFeedback.value = feedback;
+    generateDock.failureFeedbackBannerHidden.value = false;
+    generateDock.prompt.value = tt("workflow.generateRevisePrefill", {
+      source:
+        source === "trial" ? tt("workflow.generateReviseSourceTrial") : tt("workflow.generateReviseSourceCompile"),
+      summary: rawSummary,
+    });
+    generateDock.autoOpenedReason.value = "revise-failure";
+    generateDock.generatePresence.value = isNarrowViewport() ? "sheet" : "open";
+    generateDock.selectGenerateTab();
+    void prepareGenerateDock().then(() => {
+      const agent = pickPreferredGenerateAgent();
+      if (agent) selectGenerateAgent(agent);
+      focusGenerateTextarea();
     });
   }
 
@@ -2682,6 +2705,11 @@ export function createWorkflowPageModel() {
     selectedGenerateAgentUsable,
     showGenerateDirtyChip,
     generateLastFailure,
+    generateLastGuardReport,
+    pendingFailureFeedback: generateDock.pendingFailureFeedback,
+    failureFeedbackBannerHidden: generateDock.failureFeedbackBannerHidden,
+    hideFailureFeedbackBanner,
+    dismissPendingFailureFeedback,
     generateReasoningSteps,
     generateMissingCapabilities,
     generateSessionClosed,

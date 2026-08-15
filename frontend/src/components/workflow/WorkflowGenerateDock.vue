@@ -6,13 +6,19 @@ import {
   WORKFLOW_GENERATE_PROMPT_MAX,
   failureCtas,
   generateFailureDisplayKey,
+  visibleReviseIssues,
   type GenerateAgentOption,
   type TranscriptRow,
   type WorkflowGenerateAgentsLoadState,
   type WorkflowGenerateFailureCtaKey,
 } from "../../composables/workflow-generate-dock";
 import type { SmartDagFailureState } from "../../stores/smartdag";
-import type { SmartDAGMissingCapability, SmartDAGReasoningStep } from "../../types/domain";
+import type {
+  FailureFeedback,
+  SmartDAGGuardReport,
+  SmartDAGMissingCapability,
+  SmartDAGReasoningStep,
+} from "../../types/domain";
 
 const props = withDefaults(
   defineProps<{
@@ -32,6 +38,9 @@ const props = withDefaults(
     agentPopoverOpen?: boolean;
     transcript?: TranscriptRow[];
     lastFailure?: SmartDagFailureState;
+    lastGuardReport?: SmartDAGGuardReport;
+    pendingFailureFeedback?: FailureFeedback | null;
+    failureFeedbackBannerHidden?: boolean;
     reasoningSteps?: SmartDAGReasoningStep[];
     missingCapabilities?: SmartDAGMissingCapability[];
     sessionClosed?: boolean;
@@ -57,6 +66,7 @@ const props = withDefaults(
     sessionClosed: false,
     restorePending: false,
     endSessionConfirmVisible: false,
+    failureFeedbackBannerHidden: false,
   },
 );
 
@@ -69,6 +79,8 @@ const emit = defineEmits<{
   (event: "failure-cta", key: WorkflowGenerateFailureCtaKey): void;
   (event: "confirm-end-session"): void;
   (event: "cancel-end-session"): void;
+  (event: "hide-failure-feedback-banner"): void;
+  (event: "dismiss-failure-feedback"): void;
 }>();
 
 const { t } = useI18n();
@@ -104,6 +116,22 @@ const lastAssistantId = computed(() => {
 const recoveryCtas = computed(() =>
   props.lastFailure && !props.generating
     ? failureCtas(props.lastFailure.code, props.lastFailure.sessionStatus || (props.sessionClosed ? "CLOSED" : "OPEN"))
+    : [],
+);
+
+const showReviseBanner = computed(() => Boolean(props.pendingFailureFeedback) && !props.failureFeedbackBannerHidden);
+
+const reviseBannerIssues = computed(() => visibleReviseIssues(props.pendingFailureFeedback?.issues || []));
+
+const reviseBannerSource = computed(() =>
+  props.pendingFailureFeedback?.source === "trial"
+    ? t("workflow.generateReviseBannerTrial")
+    : t("workflow.generateReviseBannerCompile"),
+);
+
+const guardViolations = computed(() =>
+  props.lastFailure?.code === "GUARD_REJECTED" && props.lastGuardReport && !props.lastGuardReport.ok
+    ? props.lastGuardReport.violations
     : [],
 );
 
@@ -164,6 +192,43 @@ function failureMessage(row: Extract<TranscriptRow, { kind: "failure" }>) {
       </button>
     </div>
 
+    <section v-if="showReviseBanner" class="workflow-generate-revise-banner" data-testid="generate-revise-banner">
+      <div class="workflow-generate-revise-banner-head">
+        <strong>{{ t("workflow.generateReviseBannerTitle") }}</strong>
+        <button
+          class="ghost-button"
+          type="button"
+          data-action="hide-failure-feedback-banner"
+          :aria-label="t('workflow.generateReviseBannerClose')"
+          @click="emit('hide-failure-feedback-banner')"
+        >
+          {{ t("workflow.generateReviseBannerClose") }}
+        </button>
+      </div>
+      <p>{{ reviseBannerSource }}</p>
+      <ul v-if="reviseBannerIssues.preview.length">
+        <li v-for="(issue, index) in reviseBannerIssues.preview" :key="`${issue.code}-${index}`">
+          {{ issue.message }}
+        </li>
+      </ul>
+      <details v-if="reviseBannerIssues.extra.length" class="workflow-generate-revise-more">
+        <summary>{{ t("workflow.generateReviseBannerMore", { n: reviseBannerIssues.extra.length }) }}</summary>
+        <ul>
+          <li v-for="(issue, index) in reviseBannerIssues.extra" :key="`${issue.code}-extra-${index}`">
+            {{ issue.message }}
+          </li>
+        </ul>
+      </details>
+      <button
+        class="ghost-button"
+        type="button"
+        data-action="dismiss-failure-feedback"
+        @click="emit('dismiss-failure-feedback')"
+      >
+        {{ t("workflow.generateReviseDismissFeedback") }}
+      </button>
+    </section>
+
     <div class="workflow-generate-transcript" aria-live="polite">
       <article v-for="row in props.transcript" :key="row.id" class="workflow-generate-bubble" :class="`is-${row.kind}`">
         <template v-if="row.kind === 'user'">
@@ -203,7 +268,10 @@ function failureMessage(row: Extract<TranscriptRow, { kind: "failure" }>) {
         data-testid="smart-dag-recovery-card"
       >
         <strong>{{ t("workflow.generateFailureTitle") }}</strong>
-        <p>
+        <p v-if="props.lastFailure.code === 'SMART_DAG_TURN_IN_PROGRESS'">
+          {{ t("workflow.generateInProgress") }}
+        </p>
+        <p v-else>
           {{
             failureMessage({
               kind: "failure",
@@ -213,6 +281,11 @@ function failureMessage(row: Extract<TranscriptRow, { kind: "failure" }>) {
             })
           }}
         </p>
+        <ul v-if="guardViolations.length" class="workflow-generate-guard-violations">
+          <li v-for="(violation, index) in guardViolations" :key="`${violation.code}-${index}`">
+            {{ violation.message }}
+          </li>
+        </ul>
         <div v-if="recoveryCtas.length" class="workflow-generate-recovery-actions">
           <button
             v-for="cta in recoveryCtas"
@@ -222,7 +295,7 @@ function failureMessage(row: Extract<TranscriptRow, { kind: "failure" }>) {
             :data-action="`generate-failure-${cta.key}`"
             @click="emit('failure-cta', cta.key)"
           >
-            {{ cta.key === "switch-agent" ? t("workflow.generateAgentMissing") : t(cta.labelKey) }}
+            {{ t(cta.labelKey) }}
           </button>
         </div>
         <details class="workflow-generate-tech">
@@ -243,6 +316,10 @@ function failureMessage(row: Extract<TranscriptRow, { kind: "failure" }>) {
             <div v-if="props.lastFailure.sessionId">
               <dt>sessionId</dt>
               <dd>{{ props.lastFailure.sessionId }}</dd>
+            </div>
+            <div v-if="props.lastFailure.sessionLockVersion">
+              <dt>sessionLockVersion</dt>
+              <dd>{{ props.lastFailure.sessionLockVersion }}</dd>
             </div>
           </dl>
         </details>

@@ -30,5 +30,7 @@ describe("i18n message parity", () => {
     expect(messages.en.workflow.generateFromIntent).toBe("Generate from a sentence");
     expect(messages.en.workflow.generateDockTitle).toBe("Generate");
     expect(messages.en.workflow.generateSubmit).toBe("Generate draft");
+    expect(messages.en.workflow.reviseDraftTitle).toMatch(/revise on this page/i);
+    expect(messages["zh-CN"].workflow.reviseDraftTitle).toContain("在本页修订");
   });
 });

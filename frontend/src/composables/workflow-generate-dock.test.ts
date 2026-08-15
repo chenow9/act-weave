@@ -9,6 +9,7 @@ import {
   pickPreferredGenerateAgent,
   projectTranscript,
   resolveNodeAiReason,
+  visibleReviseIssues,
 } from "./workflow-generate-dock";
 
 function agent(id: string, modelConfigId = "model-1"): Agent {
@@ -58,6 +59,8 @@ describe("workflow generate dock state", () => {
     dock.resetGenerateDock();
     expect(dock.prompt.value).toBe("");
     expect(dock.optimisticUserMessage.value).toBeNull();
+    expect(dock.pendingFailureFeedback.value).toBeNull();
+    expect(dock.failureFeedbackBannerHidden.value).toBe(false);
     expect(dock.selectedAgentId.value).toBe("");
   });
 
@@ -195,6 +198,22 @@ describe("projectTranscript", () => {
       { kind: "pending", id: "inflight" },
     ]);
   });
+
+  it("still projects a non-guard lastFailure when turns is empty", () => {
+    const rows = projectTranscript(
+      {
+        turns: [],
+        generating: false,
+        goal: "加审批",
+        lastFailure: { code: "AGENT_MODEL_REQUIRED", message: "先绑定模型", turnId: "" },
+      },
+      "加审批",
+    );
+    expect(rows).toEqual([
+      { kind: "user", id: "optimistic", text: "加审批" },
+      { kind: "failure", id: "last-failure", code: "AGENT_MODEL_REQUIRED", message: "先绑定模型" },
+    ]);
+  });
 });
 
 describe("generate dock helpers", () => {
@@ -228,6 +247,24 @@ describe("generate dock helpers", () => {
 
   it("maps AGENT_MODEL_REQUIRED to bind-model instead of toast-only fixConfig", () => {
     expect(failureCtas("AGENT_MODEL_REQUIRED").map((cta) => cta.key)).toEqual(["bind-model", "switch-agent"]);
+    expect(failureCtas("AGENT_MODEL_REQUIRED").map((cta) => cta.labelKey)).toEqual([
+      "workflow.generateGoBindModel",
+      "workflow.generateSwitchAgent",
+    ]);
     expect(failureCtas("SMART_DAG_TURN_IN_PROGRESS")).toEqual([]);
+  });
+
+  it("maps GUARD_REJECTED to rewrite plus end-session while the session is OPEN", () => {
+    expect(failureCtas("GUARD_REJECTED", "OPEN").map((cta) => cta.key)).toEqual(["retry-rewrite", "end-session"]);
+    expect(failureCtas("GUARD_REJECTED", "CLOSED").map((cta) => cta.key)).toEqual(["retry-rewrite"]);
+    expect(failureCtas("NETWORK_ERROR", "OPEN").map((cta) => cta.key)).toEqual(["retry-rewrite", "end-session"]);
+  });
+
+  it("lists at most three revise issues and folds the rest", () => {
+    const issues = ["a", "b", "c", "d", "e"].map((message) => ({ message }));
+    expect(visibleReviseIssues(issues)).toEqual({
+      preview: [{ message: "a" }, { message: "b" }, { message: "c" }],
+      extra: [{ message: "d" }, { message: "e" }],
+    });
   });
 });

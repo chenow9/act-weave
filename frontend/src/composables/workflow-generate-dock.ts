@@ -145,10 +145,11 @@ export function resolveNodeAiReason(
 }
 
 export function failureCtas(code: string, sessionStatus?: string): GenerateFailureCta[] {
+  // CTA source is the S7 code table, not store.recoveryActions.
   if (code === "AGENT_MODEL_REQUIRED") {
     return [
       { key: "bind-model", labelKey: "workflow.generateGoBindModel", kind: "primary" },
-      { key: "switch-agent", labelKey: "workflow.generateAgentMissing", kind: "secondary" },
+      { key: "switch-agent", labelKey: "workflow.generateSwitchAgent", kind: "secondary" },
     ];
   }
   if (code === "SESSION_CLOSED") {
@@ -164,6 +165,10 @@ export function failureCtas(code: string, sessionStatus?: string): GenerateFailu
     ctas.push({ key: "end-session", labelKey: "workflow.generateEndSession", kind: "secondary" });
   }
   return ctas;
+}
+
+export function visibleReviseIssues<T>(issues: T[], limit = 3): { preview: T[]; extra: T[] } {
+  return { preview: issues.slice(0, limit), extra: issues.slice(limit) };
 }
 
 export function generateFailureDisplayKey(code: string): string {
@@ -202,6 +207,7 @@ export function createWorkflowGenerateDockState() {
   const selectedAgentId = ref("");
   const agentsLoadState = ref<WorkflowGenerateAgentsLoadState>("idle");
   const pendingFailureFeedback = ref<FailureFeedback | null>(null);
+  const failureFeedbackBannerHidden = ref(false);
   const optimisticUserMessage = ref<string | null>(null);
   const autoOpenedReason = ref<WorkflowGenerateAutoOpenedReason>(null);
   const agentPopoverOpen = ref(false);
@@ -257,6 +263,7 @@ export function createWorkflowGenerateDockState() {
     selectedAgentId.value = "";
     agentsLoadState.value = "idle";
     pendingFailureFeedback.value = null;
+    failureFeedbackBannerHidden.value = false;
     optimisticUserMessage.value = null;
     autoOpenedReason.value = null;
     agentPopoverOpen.value = false;
@@ -273,6 +280,7 @@ export function createWorkflowGenerateDockState() {
     selectedAgentId,
     agentsLoadState,
     pendingFailureFeedback,
+    failureFeedbackBannerHidden,
     optimisticUserMessage,
     autoOpenedReason,
     agentPopoverOpen,

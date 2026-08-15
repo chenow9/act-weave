@@ -1456,6 +1456,63 @@
   gap: 10px;
 }
 
+.workflow-generate-revise-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  color: #0f172a;
+  background: rgba(13, 148, 136, 0.08);
+  border: 1px solid rgba(13, 148, 136, 0.22);
+  border-radius: 14px;
+}
+
+.workflow-generate-revise-banner-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.workflow-generate-revise-banner p,
+.workflow-generate-revise-banner ul {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.workflow-generate-revise-banner ul {
+  padding-left: 18px;
+}
+
+.workflow-generate-revise-more {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.workflow-generate-guard-violations {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.workflow-generate-tech dl {
+  margin: 6px 0 0;
+}
+
+.workflow-generate-tech dt {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.workflow-generate-tech dd {
+  margin: 0 0 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  word-break: break-all;
+}
+
 .workflow-generate-transcript {
   min-height: 0;
   flex: 1 1 auto;

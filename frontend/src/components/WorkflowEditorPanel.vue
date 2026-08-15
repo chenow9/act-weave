@@ -55,6 +55,11 @@ const {
   selectedGenerateAgentUsable,
   showGenerateDirtyChip,
   generateLastFailure,
+  generateLastGuardReport,
+  pendingFailureFeedback,
+  failureFeedbackBannerHidden,
+  hideFailureFeedbackBanner,
+  dismissPendingFailureFeedback,
   generateReasoningSteps,
   generateMissingCapabilities,
   generateSessionClosed,
@@ -399,6 +404,9 @@ void WorkflowTrialRunDialog;
               :agent-popover-open="agentPopoverOpen"
               :transcript="generateTranscript"
               :last-failure="generateLastFailure"
+              :last-guard-report="generateLastGuardReport"
+              :pending-failure-feedback="pendingFailureFeedback"
+              :failure-feedback-banner-hidden="failureFeedbackBannerHidden"
               :reasoning-steps="generateReasoningSteps"
               :missing-capabilities="generateMissingCapabilities"
               :session-closed="generateSessionClosed"
@@ -412,6 +420,8 @@ void WorkflowTrialRunDialog;
               @failure-cta="handleGenerateFailureCta"
               @confirm-end-session="confirmEndGenerateSession"
               @cancel-end-session="cancelEndGenerateSession"
+              @hide-failure-feedback-banner="hideFailureFeedbackBanner"
+              @dismiss-failure-feedback="dismissPendingFailureFeedback"
             />
             <WorkflowNodePalette
               v-else
