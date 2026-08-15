@@ -1,11 +1,36 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { AxiosError } from "axios";
 import { createPinia, setActivePinia } from "pinia";
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import WorkflowGraphCanvas from "../components/workflow/WorkflowGraphCanvas.vue";
 import { apiClient } from "../services/api";
+import { postLlmJobSse } from "../services/llm-job-sse";
+import { useAuthStore } from "../stores/auth";
+import { useSmartDagStore } from "../stores/smartdag";
+import { useWorkflowStore } from "../stores/workflow";
 import { useWorkspaceStore } from "../stores/workspaces";
 import WorkflowView from "./WorkflowView.vue";
+
+const { routerReplace, routerPush, routeQuery } = vi.hoisted(() => ({
+  routerReplace: vi.fn(),
+  routerPush: vi.fn(),
+  routeQuery: {} as Record<string, unknown>,
+}));
+
+vi.mock("vue-router", () => ({
+  useRouter: () => ({
+    replace: routerReplace,
+    push: routerPush,
+  }),
+  useRoute: () => ({
+    name: "workflow",
+    query: routeQuery,
+  }),
+}));
 
 vi.mock("../services/api", () => ({
   apiClient: {
@@ -18,6 +43,14 @@ vi.mock("../services/api", () => ({
   toAPIError: (error: { message?: string; response?: { status?: number } }) => ({
     message: error.message || "request failed",
     status: error.response?.status,
+  }),
+}));
+
+vi.mock("../services/llm-job-sse", () => ({
+  postLlmJobSse: vi.fn(async (options: { path: string; body: unknown }) => {
+    const { apiClient } = await import("../services/api");
+    const res = await apiClient.post(options.path, options.body);
+    return (res as { data: unknown }).data;
   }),
 }));
 
@@ -254,6 +287,11 @@ describe("workflow view P1.4", () => {
     document.body.innerHTML = "";
     setActivePinia(createPinia());
     vi.resetAllMocks();
+    Object.keys(routeQuery).forEach((key) => delete routeQuery[key]);
+    routerReplace.mockImplementation(async (location: { query?: Record<string, unknown> }) => {
+      Object.keys(routeQuery).forEach((key) => delete routeQuery[key]);
+      Object.assign(routeQuery, location.query || {});
+    });
     useWorkspaceStore().items = [
       {
         id: "order",
@@ -270,6 +308,24 @@ describe("workflow view P1.4", () => {
         agentCount: 0,
       },
     ];
+    vi.mocked(postLlmJobSse).mockImplementation(async (options: { path: string; body: unknown }) => {
+      const res = await apiClient.post(options.path, options.body);
+      return (res as { data: unknown }).data;
+    });
+    vi.mocked(apiClient.get).mockImplementation(async (url: string) => {
+      const path = String(url);
+      if (path.endsWith("/agents")) return { data: { items: [] } };
+      if (path.includes("/model-configs")) return { data: { items: [] } };
+      if (path.includes("/workflow-generate-sessions/")) {
+        return {
+          data: {
+            session: { sessionId: "", agentId: "", modelConfigId: "", status: "CLOSED" },
+            turns: [],
+          },
+        };
+      }
+      throw new Error(`unexpected get ${path}`);
+    });
     vi.stubGlobal(
       "ResizeObserver",
       class {
@@ -571,12 +627,13 @@ describe("workflow view P1.4", () => {
     expect(topbar.get(".workflow-editor-primary-actions").text()).toContain("保存画布");
     expect(topbar.get(".workflow-editor-primary-actions").text()).toContain("发布上线");
     expect(topbar.get(".workflow-editor-header-row").text()).not.toContain("保存画布");
+    expect(topbar.get(".workflow-editor-action-row").text()).toContain("智能生成");
     expect(topbar.get(".workflow-editor-action-row").text()).toContain("基础信息");
     expect(topbar.get(".workflow-editor-action-row").text()).toContain("复制节点");
     expect(topbar.get(".workflow-editor-action-row").text()).toContain("检查问题");
     expect(topbar.get(".workflow-editor-action-row").text()).not.toContain("保存画布");
-    expect(topbar.findAll(".workflow-editor-secondary-actions .workflow-editor-action-group")).toHaveLength(3);
-    expect(topbar.findAll(".workflow-editor-secondary-actions .workflow-editor-action-divider")).toHaveLength(2);
+    expect(topbar.findAll(".workflow-editor-secondary-actions .workflow-editor-action-group")).toHaveLength(4);
+    expect(topbar.findAll(".workflow-editor-secondary-actions .workflow-editor-action-divider")).toHaveLength(3);
     expect(topbar.find(".workflow-editor-dirty-pill").exists()).toBe(false);
     expect(topbar.find(".workflow-readiness-panel.compact").exists()).toBe(false);
     expect(topbar.text()).not.toContain("Run a trial against the latest compiled draft.");
@@ -686,5 +743,1373 @@ describe("workflow view P1.4", () => {
     );
     expect(wrapper.text()).toContain("已停用");
     expect(wrapper.text()).toContain("新的 published execution 将被阻止");
+  });
+
+  it("opens an existing workflow editor on the nodes tab with generate chrome available", async () => {
+    mockWorkflowAssets([workflowSummaryFixture()])
+      .mockResolvedValueOnce({ data: draftFixture(), headers: { etag: '"draft-2-2"' } })
+      .mockResolvedValueOnce({ data: readinessFixture() });
+
+    const wrapper = mountWorkflowView();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    await wrapper.get('button[aria-label="更多编排操作"]').trigger("click");
+    document.body.querySelector<HTMLButtonElement>('button[data-action-key="edit"]')!.click();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    const tablist = wrapper.get('[role="tablist"][aria-label="生成与节点库"]');
+    const tabs = tablist.findAll('[role="tab"]');
+    expect(tabs).toHaveLength(2);
+    expect(tabs[0].text()).toBe("智能生成");
+    expect(tabs[0].attributes("aria-selected")).toBe("false");
+    expect(tabs[1].text()).toBe("节点");
+    expect(tabs[1].attributes("aria-selected")).toBe("true");
+    expect(tabs[1].attributes("disabled")).toBeUndefined();
+    expect(wrapper.find(".workflow-node-palette").exists()).toBe(true);
+    expect(wrapper.find(".workflow-generate-dock").exists()).toBe(false);
+    expect(wrapper.getComponent(WorkflowGraphCanvas).props("empty")).toBe(false);
+
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(".workflow-generate-dock").exists()).toBe(true);
+    expect(wrapper.find(".workflow-node-palette").exists()).toBe(false);
+    expect(wrapper.findAll('[role="tablist"] [role="tab"]')[0].attributes("aria-selected")).toBe("true");
+  });
+
+  it("disables the nodes tab when there is no persistable draft", async () => {
+    mockWorkflowAssets([workflowSummaryFixture()])
+      .mockResolvedValueOnce({ data: draftFixture(), headers: { etag: '"draft-2-2"' } })
+      .mockResolvedValueOnce({ data: readinessFixture() });
+
+    const wrapper = mountWorkflowView();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    await wrapper.get('button[aria-label="更多编排操作"]').trigger("click");
+    document.body.querySelector<HTMLButtonElement>('button[data-action-key="edit"]')!.click();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    useWorkflowStore().activeDraft = undefined;
+    await wrapper.vm.$nextTick();
+
+    const nodesTab = wrapper.findAll('[role="tablist"] [role="tab"]')[1];
+    expect(nodesTab.attributes("disabled")).toBeDefined();
+    expect(nodesTab.attributes("title")).toBe("生成草稿后才能加节点");
+    expect(wrapper.getComponent(WorkflowGraphCanvas).props("empty")).toBe(false);
+  });
+
+  it("keeps the generate prompt when switching away from the generate tab", async () => {
+    mockWorkflowAssets([workflowSummaryFixture()])
+      .mockResolvedValueOnce({ data: draftFixture(), headers: { etag: '"draft-2-2"' } })
+      .mockResolvedValueOnce({ data: readinessFixture() });
+
+    const wrapper = mountWorkflowView();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    await wrapper.get('button[aria-label="更多编排操作"]').trigger("click");
+    document.body.querySelector<HTMLButtonElement>('button[data-action-key="edit"]')!.click();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await wrapper.vm.$nextTick();
+    await wrapper.get("textarea").setValue("供应商准入，先查资质");
+    await wrapper.vm.$nextTick();
+
+    await wrapper.findAll('[role="tablist"] [role="tab"]')[1].trigger("click");
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(".workflow-generate-dock").exists()).toBe(false);
+
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await wrapper.vm.$nextTick();
+    expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toBe("供应商准入，先查资质");
+  });
+
+  it("lifts the left column above the narrow generate sheet backdrop", () => {
+    const css = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "workflow-page.css"), "utf8");
+    const match = css.match(/\.workflow-workbench\.is-generate-sheet\s+\.workflow-workbench-left\s*\{([^}]+)\}/);
+    expect(match, "expected a sheet-state rule for .workflow-workbench-left").toBeTruthy();
+    expect(match![1]).toMatch(/z-index:\s*4/);
+    expect(match![1]).toMatch(/isolation:\s*auto/);
+  });
+
+  it("returns focus to the topbar generate button after closing the generate sheet", async () => {
+    const previousMatchMedia = window.matchMedia;
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: String(query).includes("1180"),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+      onchange: null,
+    }));
+
+    mockWorkflowAssets([workflowSummaryFixture()])
+      .mockResolvedValueOnce({ data: draftFixture(), headers: { etag: '"draft-2-2"' } })
+      .mockResolvedValueOnce({ data: readinessFixture() });
+
+    const wrapper = mountWorkflowView({ attachTo: document.body });
+    try {
+      await flushPromises();
+      await wrapper.vm.$nextTick();
+
+      await wrapper.get('button[aria-label="更多编排操作"]').trigger("click");
+      document.body.querySelector<HTMLButtonElement>('button[data-action-key="edit"]')!.click();
+      await flushPromises();
+      await wrapper.vm.$nextTick();
+
+      await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+      await wrapper.vm.$nextTick();
+      expect(wrapper.find(".workflow-generate-sheet-backdrop").exists()).toBe(true);
+
+      await wrapper.get('[data-action="close-generate-sheet"]').trigger("click");
+      await flushPromises();
+      await wrapper.vm.$nextTick();
+
+      expect(document.activeElement).toBe(wrapper.get('[data-action="open-generate-dock"]').element);
+    } finally {
+      wrapper.unmount();
+      window.matchMedia = previousMatchMedia;
+    }
+  });
+
+  it("opens intent generate without putting the selected row's leftover draft", async () => {
+    mockWorkflowAssets([workflowSummaryFixture()]);
+    const wrapper = mountWorkflowView();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    const workflows = useWorkflowStore();
+    const leftover = draftFixture();
+    workflows.selectedWorkflowId = leftover.workflowId;
+    workflows.activeDraft = leftover;
+    const smart = useSmartDagStore();
+    smart.sessionId = "session-a";
+    smart.sessionStatus = "OPEN";
+    smart.sessionWorkflowId = leftover.workflowId;
+    smart.workspaceId = "order";
+    smart.agentId = "agent-1";
+    smart.goal = "修订选中行";
+    smart.turns = [
+      {
+        turnId: "turn-a",
+        turnIndex: 1,
+        userMessage: "修订选中行",
+        generationId: "gen-a",
+        guardOk: true,
+        status: "SUCCEEDED",
+      },
+    ];
+
+    await wrapper.get('[data-action="open-intent-generate"]').trigger("click");
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    expect(apiClient.put).not.toHaveBeenCalled();
+    expect(workflows.selectedWorkflowId).toBe("");
+    expect(workflows.activeDraft).toBeUndefined();
+    expect(smart.sessionId).toBe("");
+    expect(smart.sessionStatus).toBe("");
+    expect(smart.sessionWorkflowId).toBe("");
+    expect(smart.turns).toEqual([]);
+    expect(wrapper.find(".workflow-generate-dock").exists()).toBe(true);
+    expect(wrapper.findAll('[role="tablist"] [role="tab"]')[0].attributes("aria-selected")).toBe("true");
+    expect(wrapper.getComponent(WorkflowGraphCanvas).props("graph").nodes).toEqual([]);
+    expect(wrapper.get(".workflow-editor-shell").attributes("data-editor-dirty-state")).toBe("saved");
+  });
+
+  it("opens the generate dock from generate=1 with an empty graph", async () => {
+    routeQuery.workspaceId = "order";
+    routeQuery.generate = "1";
+    mockWorkflowAssets([workflowSummaryFixture()]);
+
+    const wrapper = mountWorkflowView();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find(".workflow-generate-dock").exists()).toBe(true);
+    expect(wrapper.findAll('[role="tablist"] [role="tab"]')[0].attributes("aria-selected")).toBe("true");
+    expect(wrapper.getComponent(WorkflowGraphCanvas).props("graph").nodes).toEqual([]);
+    expect(wrapper.getComponent(WorkflowGraphCanvas).props("empty")).toBe(true);
+    expect(useWorkflowStore().selectedWorkflowId).toBe("");
+    expect(routeQuery.generate).toBe("1");
+    expect(routeQuery.workspaceId).toBe("order");
+  });
+
+  it("opens the matching workflow then the generate dock from edit+generate=1", async () => {
+    routeQuery.edit = "wf-order-cancel-draft";
+    routeQuery.generate = "1";
+    mockEditorGets();
+
+    const wrapper = mountWorkflowView();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find(".workflow-generate-dock").exists()).toBe(true);
+    expect(wrapper.findAll('[role="tablist"] [role="tab"]')[0].attributes("aria-selected")).toBe("true");
+    expect(useWorkflowStore().selectedWorkflowId).toBe("wf-order-cancel-draft");
+    expect(wrapper.getComponent(WorkflowGraphCanvas).props("empty")).toBe(false);
+    expect(wrapper.getComponent(WorkflowGraphCanvas).props("graph").nodes.length).toBeGreaterThan(0);
+    expect(routeQuery.generate).toBe("1");
+    expect(routeQuery.edit).toBe("wf-order-cancel-draft");
+  });
+
+  it("seeds FailureFeedback from revise query keys and strips the long query", async () => {
+    routeQuery.edit = "wf-order-cancel-draft";
+    routeQuery.generate = "1";
+    routeQuery.reviseSource = "compile";
+    routeQuery.feedbackSummary = "结束节点未连接";
+    routeQuery.feedbackIssues = JSON.stringify([
+      { code: "EndDisconnected", message: "结束节点未连接" },
+      { code: "ToolBindingMissing", message: "未绑定工具" },
+    ]);
+    routeQuery.compilationId = "comp-1";
+    routeQuery.agentId = "agent-draft";
+    mockEditorGets({ agents: [agentDto("agent-first", "第一个"), agentDto("agent-draft", "草稿 Agent")] });
+
+    const wrapper = mountWorkflowView();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find(".workflow-generate-dock").exists()).toBe(true);
+    expect(wrapper.get('[data-testid="generate-revise-banner"]').text()).toContain("按检查结果修订");
+    expect(wrapper.get('[data-testid="generate-revise-banner"]').text()).toContain("结束节点未连接");
+    expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toContain("结束节点未连接");
+    expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toMatch(/编译|compile/);
+    expect(useWorkflowStore().selectedWorkflowId).toBe("wf-order-cancel-draft");
+    expect(routeQuery.edit).toBe("wf-order-cancel-draft");
+    expect(routeQuery.generate).toBeUndefined();
+    expect(routeQuery.reviseSource).toBeUndefined();
+    expect(routeQuery.feedbackSummary).toBeUndefined();
+    expect(routeQuery.feedbackIssues).toBeUndefined();
+    expect(routeQuery.compilationId).toBeUndefined();
+    expect(routeQuery.agentId).toBeUndefined();
+  });
+
+  it("strips generate from the query when closing an unsent intent-generate dock", async () => {
+    routeQuery.workspaceId = "order";
+    routeQuery.generate = "1";
+    mockWorkflowAssets([workflowSummaryFixture()]);
+
+    const wrapper = mountWorkflowView();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(".workflow-generate-dock").exists()).toBe(true);
+
+    await wrapper.get('button[aria-label="退出编辑"]').trigger("click");
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find(".workflow-generate-dock").exists()).toBe(false);
+    expect(wrapper.find(".workflow-editor-overlay").exists()).toBe(false);
+    expect(routeQuery.generate).toBeUndefined();
+    expect(routeQuery.workspaceId).toBe("order");
+    expect(routerReplace).toHaveBeenCalledWith({ name: "workflow", query: { workspaceId: "order" } });
+  });
+
+  it("does not watch canvasEpoch to replace the editor graph", () => {
+    const source = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), "../composables/workflow-page-model.ts"),
+      "utf8",
+    );
+    expect(source).not.toMatch(/canvasEpoch/);
+    expect(source).toMatch(/pendingEditorAction.value = "generate"/);
+    expect(source).toMatch(/workflow.generateBusy/);
+  });
+
+  function agentDto(id: string, name: string, modelConfigId = "model-1") {
+    return {
+      id,
+      name,
+      roleDescription: "",
+      modelConfigId,
+      isDefault: false,
+      status: "ACTIVE" as const,
+      toolsCount: 0,
+      workflowsCount: 0,
+      createdBy: "user-1",
+      updatedBy: "user-1",
+      createdAt: "2026-07-01T00:00:00Z",
+      updatedAt: "2026-07-01T00:00:00Z",
+      lockVersion: 1,
+    };
+  }
+
+  function generatedGraph() {
+    return {
+      schemaVersion: "workflow.graph.v1",
+      nodes: [
+        {
+          id: "start",
+          type: "Start" as const,
+          label: "Start",
+          position: { x: 0, y: 0 },
+          ports: [{ key: "output", label: "Output", direction: "output" as const }],
+          data: {},
+          ui: { generated: true, reason: "统一入口" },
+        },
+        {
+          id: "approval-1",
+          type: "Approval" as const,
+          label: "人工审批",
+          position: { x: 220, y: 0 },
+          ports: [
+            { key: "input", label: "Input", direction: "input" as const },
+            { key: "output", label: "Output", direction: "output" as const },
+          ],
+          data: { reason: "审批原因字段" },
+          ui: { generated: true, reason: "金额大于阈值需要人审" },
+        },
+        {
+          id: "end",
+          type: "End" as const,
+          label: "End",
+          position: { x: 440, y: 0 },
+          ports: [{ key: "input", label: "Input", direction: "input" as const }],
+          data: {},
+          ui: { generated: true },
+        },
+      ],
+      edges: [],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      ui: { generatedBy: "smart-dag.v2", agentId: "agent-draft", sessionId: "session-keep" },
+    };
+  }
+
+  function turnPayload(workflowId: string) {
+    const graph = generatedGraph();
+    return {
+      sessionId: "session-new",
+      turnId: "turn-1",
+      generationId: "gen-1",
+      workflow: {
+        id: workflowId,
+        currentDraftId: `draft-${workflowId}`,
+        name: "AI · 供应商准入",
+        slug: "ai-vendor",
+        description: "",
+        status: "ACTIVE",
+        createdBy: "user-1",
+        updatedBy: "user-1",
+        createdAt: "2026-07-15T00:00:00Z",
+        updatedAt: "2026-07-15T00:00:00Z",
+        lockVersion: 2,
+        nodeCount: 3,
+        edgeCount: 0,
+      },
+      draft: {
+        id: `draft-${workflowId}`,
+        draftVersion: 3,
+        schemaVersion: "workflow.graph.v1",
+        graph,
+        graphHash: "hash-gen",
+        updatedBy: "user-1",
+        updatedAt: "2026-07-15T00:00:00Z",
+        lockVersion: 3,
+      },
+      assistantMessage: "已根据意图更新流程草稿。",
+      reasoningSteps: [{ id: "guard", label: "校验图", status: "COMPLETED", detail: "ok" }],
+      missingCapabilities: [],
+      nodeExplanations: [{ nodeId: "approval-1", title: "人工审批", reason: "金额大于阈值需要人审" }],
+      availableToolIds: [],
+      selectedToolIds: [],
+      confidence: 90,
+      guardReport: { ok: true, violations: [] },
+      draftVersion: 3,
+      generatedBy: "smart-dag.v2",
+    };
+  }
+
+  function mockEditorGets(
+    options: {
+      draft?: ReturnType<typeof draftFixture>;
+      agents?: ReturnType<typeof agentDto>[];
+      session?: Record<string, unknown>;
+      turns?: Array<Record<string, unknown>>;
+      readiness?: ReturnType<typeof readinessFixture>;
+    } = {},
+  ) {
+    const draft = options.draft || draftFixture();
+    const agents = options.agents || [agentDto("agent-guide", "导购助手")];
+    const readiness = options.readiness || readinessFixture();
+    vi.mocked(apiClient.get).mockImplementation(async (url: string) => {
+      const path = String(url);
+      if (path.endsWith("/workflows")) {
+        return { data: { items: [{ ...workflowSummaryFixture(), readiness }] } };
+      }
+      if (path.endsWith("/readiness")) return { data: readiness };
+      if (path.endsWith("/draft")) return { data: draft, headers: { etag: '"draft-2-2"' } };
+      if (path.endsWith("/agents")) return { data: { items: agents } };
+      if (path.includes("/model-configs")) return { data: { items: [] } };
+      if (path.includes("/workflow-generate-sessions/")) {
+        return {
+          data: {
+            session: options.session || {
+              sessionId: "session-keep",
+              agentId: "agent-draft",
+              modelConfigId: "model-1",
+              status: "OPEN",
+              workflowId: draft.workflowId,
+            },
+            turns: options.turns || [],
+          },
+        };
+      }
+      throw new Error(`unexpected get ${path}`);
+    });
+  }
+
+  async function openEditor(wrapper: ReturnType<typeof mountWorkflowView>) {
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    await wrapper.get('button[aria-label="更多编排操作"]').trigger("click");
+    document.body.querySelector<HTMLButtonElement>('button[data-action-key="edit"]')!.click();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+  }
+
+  it("creates a new session bound to B after leftover unbound OPEN from E1", async () => {
+    mockEditorGets();
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+
+    const smart = useSmartDagStore();
+    smart.setContext("order", "agent-guide", "model-1");
+    smart.sessionId = "session-e1";
+    smart.sessionStatus = "OPEN";
+    smart.sessionWorkflowId = "";
+
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await flushPromises();
+    await wrapper.get("textarea").setValue("给订单取消加审批");
+    await wrapper.get('[data-action="submit-generate"]').trigger("click");
+    await flushPromises();
+
+    const createCall = vi
+      .mocked(apiClient.post)
+      .mock.calls.find((call) => String(call[0]).endsWith("/workflow-generate-sessions"));
+    expect(createCall?.[1]).toEqual({ agentId: "agent-guide", workflowId: "wf-order-cancel-draft" });
+  });
+
+  it("persists a dirty graph before sendTurn and applies the returned draft", async () => {
+    mockEditorGets();
+    const turn = turnPayload("wf-order-cancel-draft");
+    vi.mocked(apiClient.put).mockResolvedValue({
+      data: { ...draftFixture(), draftVersion: 3, lockVersion: 3 },
+      headers: { etag: '"draft-3-3"' },
+    });
+    vi.mocked(apiClient.post).mockImplementation(async (url: string) => {
+      if (String(url).endsWith("/workflow-generate-sessions")) {
+        return {
+          data: {
+            sessionId: "session-new",
+            agentId: "agent-guide",
+            modelConfigId: "model-1",
+            status: "OPEN",
+            workflowId: "wf-order-cancel-draft",
+          },
+        };
+      }
+      if (String(url).includes("/turns")) return { data: turn };
+      throw new Error(String(url));
+    });
+
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+    await wrapper.get('input[name="node-label"]').setValue("改名后的开始");
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await flushPromises();
+    await wrapper.get("textarea").setValue("加一个人工审批");
+    await wrapper.get('[data-action="submit-generate"]').trigger("click");
+    await flushPromises();
+
+    const putOrder = vi.mocked(apiClient.put).mock.invocationCallOrder[0];
+    const turnOrder = vi
+      .mocked(apiClient.post)
+      .mock.calls.map((call, index) => ({
+        url: String(call[0]),
+        order: vi.mocked(apiClient.post).mock.invocationCallOrder[index],
+      }))
+      .find((call) => call.url.includes("/turns"))?.order;
+    expect(apiClient.put).toHaveBeenCalled();
+    expect(turnOrder).toBeGreaterThan(putOrder);
+    expect(
+      wrapper
+        .getComponent(WorkflowGraphCanvas)
+        .props("graph")
+        .nodes.map((node) => node.id),
+    ).toEqual(["start", "approval-1", "end"]);
+    expect(wrapper.text()).toContain("已生成第 3 版草稿");
+    expect(wrapper.findAll('[role="tablist"] [role="tab"]')[1].attributes("disabled")).toBeUndefined();
+  });
+
+  it("does not send a turn when persist hits a draft conflict", async () => {
+    mockEditorGets();
+    vi.mocked(apiClient.put).mockRejectedValue({ response: { status: 409 } });
+
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+    await wrapper.get('input[name="node-label"]').setValue("冲突改名");
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await flushPromises();
+    await wrapper.get("textarea").setValue("再试一次");
+    await wrapper.get('[data-action="submit-generate"]').trigger("click");
+    await flushPromises();
+
+    expect(vi.mocked(apiClient.post).mock.calls.some((call) => String(call[0]).includes("/turns"))).toBe(false);
+    expect(wrapper.get(".action-toast").text()).toContain("已被其他会话更新");
+  });
+
+  it("does not persist or send when the selected draft is missing or mismatched", async () => {
+    mockEditorGets();
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await flushPromises();
+
+    useWorkflowStore().activeDraft = { ...draftFixture(), workflowId: "workflow-other" };
+    await wrapper.get("textarea").setValue("修订别人的稿");
+    await wrapper.get('[data-action="submit-generate"]').trigger("click");
+    await flushPromises();
+
+    expect(apiClient.put).not.toHaveBeenCalled();
+    expect(vi.mocked(apiClient.post).mock.calls.some((call) => String(call[0]).includes("/turns"))).toBe(false);
+    expect(wrapper.get(".action-toast").text()).toMatch(/草稿加载失败|draftLoadFailedRetry/);
+  });
+
+  it("hydrates the draft ui.agentId instead of items[0] without resetSessionOnly", async () => {
+    const draft = draftFixture();
+    draft.graph.ui = { generatedBy: "smart-dag.v2", agentId: "agent-draft", sessionId: "session-keep" };
+    mockEditorGets({
+      draft,
+      agents: [agentDto("agent-first", "第一个"), agentDto("agent-draft", "草稿 Agent")],
+      session: {
+        sessionId: "session-keep",
+        agentId: "agent-draft",
+        modelConfigId: "model-1",
+        status: "OPEN",
+        workflowId: draft.workflowId,
+      },
+      turns: [
+        {
+          turnId: "turn-keep",
+          turnIndex: 1,
+          userMessage: "先生成",
+          assistantMessage: "已根据意图更新流程草稿。",
+          generationId: "gen-keep",
+          guardOk: true,
+          status: "SUCCEEDED",
+          draftVersion: 2,
+        },
+      ],
+    });
+
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+    const smart = useSmartDagStore();
+    const resetSpy = vi.spyOn(smart, "resetSessionOnly");
+
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await flushPromises();
+
+    expect(resetSpy).not.toHaveBeenCalled();
+    expect(smart.agentId).toBe("agent-draft");
+    expect(smart.modelConfigId).toBe("model-1");
+    expect(smart.turns.map((turn) => turn.turnId)).toEqual(["turn-keep"]);
+    expect(wrapper.get('[data-action="generate-agent-chip"]').text()).toContain("草稿 Agent");
+  });
+
+  it("does not wipe restored turns when draft ui.agentId differs from the session agent", async () => {
+    const draft = draftFixture();
+    draft.graph.ui = { generatedBy: "smart-dag.v2", agentId: "agent-draft", sessionId: "session-keep" };
+    mockEditorGets({
+      draft,
+      agents: [
+        agentDto("agent-first", "第一个"),
+        agentDto("agent-draft", "草稿 Agent"),
+        agentDto("agent-session", "会话 Agent"),
+      ],
+      session: {
+        sessionId: "session-keep",
+        agentId: "agent-session",
+        modelConfigId: "model-1",
+        status: "OPEN",
+        workflowId: draft.workflowId,
+      },
+      turns: [
+        {
+          turnId: "turn-keep",
+          turnIndex: 1,
+          userMessage: "先生成",
+          assistantMessage: "已根据意图更新流程草稿。",
+          generationId: "gen-keep",
+          guardOk: true,
+          status: "SUCCEEDED",
+          draftVersion: 2,
+        },
+      ],
+    });
+
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+    const smart = useSmartDagStore();
+    const resetSpy = vi.spyOn(smart, "resetSessionOnly");
+
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await flushPromises();
+
+    expect(resetSpy).not.toHaveBeenCalled();
+    expect(smart.agentId).toBe("agent-session");
+    expect(smart.turns.map((turn) => turn.turnId)).toEqual(["turn-keep"]);
+    expect(wrapper.get('[data-action="generate-agent-chip"]').text()).toContain("会话 Agent");
+  });
+
+  it("uses the popover Agent after a confirmed switch and does not revert to draft.ui.agentId on send", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const draft = draftFixture();
+    draft.graph.ui = { generatedBy: "smart-dag.v2", agentId: "agent-draft", sessionId: "session-keep" };
+    mockEditorGets({
+      draft,
+      agents: [agentDto("agent-draft", "草稿 Agent"), agentDto("agent-b", "Agent B")],
+      session: {
+        sessionId: "session-keep",
+        agentId: "agent-draft",
+        modelConfigId: "model-1",
+        status: "OPEN",
+        workflowId: draft.workflowId,
+      },
+      turns: [
+        {
+          turnId: "turn-keep",
+          turnIndex: 1,
+          userMessage: "先生成",
+          generationId: "gen-keep",
+          guardOk: true,
+          status: "SUCCEEDED",
+        },
+      ],
+    });
+    vi.mocked(apiClient.post).mockImplementation(async (url: string) => {
+      if (String(url).endsWith("/workflow-generate-sessions")) {
+        return {
+          data: {
+            sessionId: "session-b",
+            agentId: "agent-b",
+            modelConfigId: "model-1",
+            status: "OPEN",
+            workflowId: "wf-order-cancel-draft",
+          },
+        };
+      }
+      if (String(url).includes("/turns")) return { data: turnPayload("wf-order-cancel-draft") };
+      if (String(url).includes(":close")) return { data: { sessionId: "session-keep", status: "CLOSED" } };
+      throw new Error(String(url));
+    });
+
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+    const smart = useSmartDagStore();
+    const resetSpy = vi.spyOn(smart, "resetSessionOnly");
+
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await flushPromises();
+    await wrapper.get('[data-action="generate-agent-chip"]').trigger("click");
+    await wrapper.get('[data-agent-id="agent-b"]').trigger("click");
+    await wrapper.vm.$nextTick();
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(resetSpy).toHaveBeenCalled();
+    expect(smart.agentId).toBe("agent-b");
+    expect(smart.sessionId).toBe("");
+    expect(smart.turns).toEqual([]);
+
+    await wrapper.get("textarea").setValue("用 B 再生成");
+    await wrapper.get('[data-action="submit-generate"]').trigger("click");
+    await flushPromises();
+
+    const createCall = vi
+      .mocked(apiClient.post)
+      .mock.calls.find((call) => String(call[0]).endsWith("/workflow-generate-sessions"));
+    expect(createCall?.[1]).toEqual({ agentId: "agent-b", workflowId: "wf-order-cancel-draft" });
+    confirmSpy.mockRestore();
+  });
+
+  it("asks for inline confirm before ending the generate session", async () => {
+    mockEditorGets();
+    vi.mocked(apiClient.post).mockResolvedValue({ data: { sessionId: "session-keep", status: "CLOSED" } });
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await flushPromises();
+
+    const smart = useSmartDagStore();
+    smart.sessionId = "session-keep";
+    smart.sessionStatus = "OPEN";
+    smart.lastFailure = {
+      stage: "UNKNOWN",
+      code: "NETWORK_ERROR",
+      retryable: true,
+      message: "流结束",
+      requestId: "req-1",
+      traceId: "tr-1",
+      sessionId: "session-keep",
+      sessionStatus: "OPEN",
+    };
+    await wrapper.vm.$nextTick();
+
+    await wrapper.get('[data-action="generate-failure-end-session"]').trigger("click");
+    expect(wrapper.get('[data-testid="generate-end-session-confirm"]').exists()).toBe(true);
+
+    await wrapper.get('[data-action="confirm-end-generate"]').trigger("click");
+    await flushPromises();
+    expect(smart.sessionId).toBe("");
+    expect(smart.lastFailure).toBeUndefined();
+    expect(wrapper.find('[data-testid="generate-end-session-confirm"]').exists()).toBe(false);
+  });
+
+  it("ignores a stale loadSession GET after the user ends the generate session", async () => {
+    const draft = draftFixture();
+    draft.graph.ui = { generatedBy: "smart-dag.v2", agentId: "agent-draft", sessionId: "session-keep" };
+    const pendingSession = deferred<{ data: Record<string, unknown> }>();
+    mockEditorGets({ draft, agents: [agentDto("agent-draft", "草稿 Agent")] });
+    vi.mocked(apiClient.get).mockImplementation(async (url: string) => {
+      const path = String(url);
+      if (path.endsWith("/workflows")) {
+        return { data: { items: [{ ...workflowSummaryFixture(), readiness: readinessFixture() }] } };
+      }
+      if (path.endsWith("/readiness")) return { data: readinessFixture() };
+      if (path.endsWith("/draft")) return { data: draft, headers: { etag: '"draft-2-2"' } };
+      if (path.endsWith("/agents")) return { data: { items: [agentDto("agent-draft", "草稿 Agent")] } };
+      if (path.includes("/model-configs")) return { data: { items: [] } };
+      if (path.includes("/workflow-generate-sessions/")) return pendingSession.promise;
+      throw new Error(`unexpected get ${path}`);
+    });
+    vi.mocked(apiClient.post).mockResolvedValue({ data: { sessionId: "session-keep", status: "CLOSED" } });
+
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+    const smart = useSmartDagStore();
+    smart.lastFailure = {
+      stage: "UNKNOWN",
+      code: "NETWORK_ERROR",
+      retryable: true,
+      message: "流结束",
+      requestId: "req-1",
+      traceId: "tr-1",
+      sessionId: "session-keep",
+      sessionStatus: "OPEN",
+    };
+
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await wrapper.vm.$nextTick();
+    await wrapper.get('[data-action="generate-failure-end-session"]').trigger("click");
+    await wrapper.get('[data-action="confirm-end-generate"]').trigger("click");
+    await flushPromises();
+    expect(smart.sessionId).toBe("");
+
+    pendingSession.resolve({
+      data: {
+        session: {
+          sessionId: "session-keep",
+          agentId: "agent-draft",
+          modelConfigId: "model-1",
+          status: "OPEN",
+          workflowId: draft.workflowId,
+        },
+        turns: [
+          {
+            turnId: "turn-keep",
+            turnIndex: 1,
+            userMessage: "先生成",
+            generationId: "gen-keep",
+            guardOk: true,
+            status: "SUCCEEDED",
+          },
+        ],
+      },
+    });
+    await flushPromises();
+    expect(smart.sessionId).toBe("");
+    expect(smart.turns).toEqual([]);
+  });
+
+  it("writes modelConfigId via setContext before ensureSession when sending with the default chip", async () => {
+    mockEditorGets();
+    const ensureOrder: string[] = [];
+    vi.mocked(apiClient.post).mockImplementation(async (url: string) => {
+      if (String(url).endsWith("/workflow-generate-sessions")) {
+        ensureOrder.push(useSmartDagStore().modelConfigId);
+        return {
+          data: {
+            sessionId: "session-new",
+            agentId: "agent-guide",
+            modelConfigId: "model-1",
+            status: "OPEN",
+            workflowId: "wf-order-cancel-draft",
+          },
+        };
+      }
+      if (String(url).includes("/turns")) return { data: turnPayload("wf-order-cancel-draft") };
+      throw new Error(String(url));
+    });
+
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await flushPromises();
+    expect(useSmartDagStore().modelConfigId).toBe("model-1");
+    await wrapper.get("textarea").setValue("供应商准入");
+    await wrapper.get('[data-action="submit-generate"]').trigger("click");
+    await flushPromises();
+    expect(ensureOrder).toEqual(["model-1"]);
+  });
+
+  it("locks the canvas and shows generateBusy while persist then send is in flight", async () => {
+    mockEditorGets();
+    const pending = deferred<{ data: unknown }>();
+    vi.mocked(apiClient.put).mockReturnValue(pending.promise as never);
+
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+    await wrapper.get('input[name="node-label"]').setValue("保存中改名");
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await flushPromises();
+    await wrapper.get("textarea").setValue("先保存再生成");
+    await wrapper.get('[data-action="submit-generate"]').trigger("click");
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.get('[data-action="submit-generate"]').text()).toBe("先保存再生成…");
+    expect(wrapper.get('button[aria-label="退出编辑"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.getComponent(WorkflowGraphCanvas).props("generating")).toBe(true);
+    expect(wrapper.getComponent(WorkflowGraphCanvas).props("lockInteraction")).toBe(true);
+    pending.resolve({
+      data: { ...draftFixture(), draftVersion: 3, lockVersion: 3 },
+    });
+    await flushPromises();
+  });
+
+  function compileFailedReadiness() {
+    return readinessFixture({
+      stage: "CompileFailed",
+      compilationValid: false,
+      compilationCurrent: true,
+      canCompile: true,
+      canTrial: false,
+      canPublish: false,
+    });
+  }
+
+  function failedTrialReadiness() {
+    return readinessFixture({
+      stage: "TrialRequired",
+      compilationValid: true,
+      compilationCurrent: true,
+      trialCurrent: true,
+      trialSuccessful: false,
+      canPublish: false,
+    });
+  }
+
+  function compileFailureIssues() {
+    return [
+      { code: "DISCONNECTED_END", message: "结束节点未连接", severity: "error", sourceStage: "graph" },
+      { code: "MISSING_TOOL", message: "工具未绑定", severity: "error", sourceStage: "semantic" },
+      { code: "EMPTY_APPROVAL", message: "审批人未配置", severity: "error", sourceStage: "semantic" },
+      { code: "NAME_LONG", message: "名称过长", severity: "warning", sourceStage: "graph" },
+    ];
+  }
+
+  async function openEditorWithFailure(
+    options: {
+      readiness: ReturnType<typeof readinessFixture>;
+      issues?: ReturnType<typeof compileFailureIssues>;
+      draft?: ReturnType<typeof draftFixture>;
+      agents?: ReturnType<typeof agentDto>[];
+      attachTo?: HTMLElement;
+    } = { readiness: compileFailedReadiness() },
+  ) {
+    mockEditorGets({
+      draft: options.draft,
+      agents: options.agents,
+      readiness: options.readiness,
+    });
+    const wrapper = mountWorkflowView(options.attachTo ? { attachTo: options.attachTo } : {});
+    await openEditor(wrapper);
+    useWorkflowStore().activeCompilation = compilationFixture({
+      status: "Invalid",
+      issues: options.issues || compileFailureIssues(),
+    });
+    await wrapper.vm.$nextTick();
+    return wrapper;
+  }
+
+  it("keeps canReviseFromFailure on compile fail and failed trial", async () => {
+    const compileWrapper = await openEditorWithFailure({ readiness: compileFailedReadiness() });
+    expect(compileWrapper.find('[data-action="revise-draft-from-failure"]').exists()).toBe(true);
+    expect(compileWrapper.find('[data-action="revise-from-compile-failure"]').exists()).toBe(true);
+    compileWrapper.unmount();
+
+    const trialWrapper = await openEditorWithFailure({ readiness: failedTrialReadiness(), issues: [] });
+    expect(trialWrapper.find('[data-action="revise-draft-from-failure"]').exists()).toBe(true);
+    trialWrapper.unmount();
+  });
+
+  it("opens the generate dock with prefill instead of pushing smart-dag", async () => {
+    const draft = draftFixture();
+    draft.graph.ui = { generatedBy: "smart-dag.v2", agentId: "agent-draft" };
+    const wrapper = await openEditorWithFailure({
+      readiness: compileFailedReadiness(),
+      draft,
+      agents: [agentDto("agent-first", "第一个"), agentDto("agent-draft", "草稿 Agent")],
+      attachTo: document.body,
+    });
+    try {
+      await wrapper.get('[data-action="revise-draft-from-failure"]').trigger("click");
+      await flushPromises();
+      await wrapper.vm.$nextTick();
+
+      expect(routerPush).not.toHaveBeenCalled();
+      expect(wrapper.find(".workflow-editor-overlay").exists()).toBe(true);
+      expect(wrapper.find(".workflow-generate-dock").exists()).toBe(true);
+      expect(wrapper.findAll('[role="tablist"] [role="tab"]')[0].attributes("aria-selected")).toBe("true");
+      expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toContain("结束节点未连接");
+      expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toMatch(/编译|compile/);
+      expect(wrapper.get('[data-testid="generate-revise-banner"]').text()).toContain("按检查结果修订");
+      expect(wrapper.get('[data-testid="generate-revise-banner"]').text()).toContain("结束节点未连接");
+      expect(wrapper.get('[data-testid="generate-revise-banner"]').text()).toContain("另外 1 条");
+      expect(wrapper.get('[data-action="generate-agent-chip"]').text()).toContain("草稿 Agent");
+      expect(vi.mocked(apiClient.post).mock.calls.some((call) => String(call[0]).includes("/turns"))).toBe(false);
+      expect(document.activeElement).toBe(wrapper.get("textarea").element);
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
+  it("sends pending failure feedback once and clears it after success", async () => {
+    const turn = turnPayload("wf-order-cancel-draft");
+    const turnBodies: unknown[] = [];
+    mockEditorGets({ readiness: compileFailedReadiness() });
+    vi.mocked(apiClient.post).mockImplementation(async (url: string, body?: unknown) => {
+      if (String(url).endsWith("/workflow-generate-sessions")) {
+        return {
+          data: {
+            sessionId: "session-new",
+            agentId: "agent-guide",
+            modelConfigId: "model-1",
+            status: "OPEN",
+            workflowId: "wf-order-cancel-draft",
+          },
+        };
+      }
+      if (String(url).includes("/turns")) {
+        turnBodies.push(body);
+        return { data: turn };
+      }
+      throw new Error(String(url));
+    });
+
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+    useWorkflowStore().activeCompilation = compilationFixture({
+      status: "Invalid",
+      issues: compileFailureIssues(),
+    });
+    await wrapper.vm.$nextTick();
+    await wrapper.get('[data-action="revise-draft-from-failure"]').trigger("click");
+    await flushPromises();
+
+    await wrapper.get('[data-action="submit-generate"]').trigger("click");
+    await flushPromises();
+
+    expect(turnBodies).toHaveLength(1);
+    expect(turnBodies[0]).toMatchObject({
+      message: expect.stringContaining("结束节点未连接"),
+      feedback: {
+        source: "compile",
+        workflowId: "wf-order-cancel-draft",
+        compilationId: "comp-1",
+      },
+    });
+    expect(wrapper.find('[data-testid="generate-revise-banner"]').exists()).toBe(false);
+
+    await wrapper.get("textarea").setValue("再改一版");
+    await wrapper.get('[data-action="submit-generate"]').trigger("click");
+    await flushPromises();
+    expect(turnBodies).toHaveLength(2);
+    expect(turnBodies[1]).toEqual({ message: "再改一版" });
+  });
+
+  it("dismisses failure feedback without sending a turn", async () => {
+    mockEditorGets({ readiness: compileFailedReadiness() });
+    vi.mocked(apiClient.post).mockImplementation(async (url: string, body?: unknown) => {
+      if (String(url).endsWith("/workflow-generate-sessions")) {
+        return {
+          data: {
+            sessionId: "session-new",
+            agentId: "agent-guide",
+            modelConfigId: "model-1",
+            status: "OPEN",
+            workflowId: "wf-order-cancel-draft",
+          },
+        };
+      }
+      if (String(url).includes("/turns")) return { data: turnPayload("wf-order-cancel-draft") };
+      throw new Error(`${String(url)} ${JSON.stringify(body)}`);
+    });
+
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+    useWorkflowStore().activeCompilation = compilationFixture({
+      status: "Invalid",
+      issues: compileFailureIssues(),
+    });
+    await wrapper.vm.$nextTick();
+    await wrapper.get('[data-action="revise-draft-from-failure"]').trigger("click");
+    await flushPromises();
+
+    await wrapper.get('[data-action="dismiss-failure-feedback"]').trigger("click");
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('[data-testid="generate-revise-banner"]').exists()).toBe(false);
+    expect(vi.mocked(apiClient.post).mock.calls.some((call) => String(call[0]).includes("/turns"))).toBe(false);
+
+    await wrapper.get("textarea").setValue("不用那些问题");
+    await wrapper.get('[data-action="submit-generate"]').trigger("click");
+    await flushPromises();
+    const turnCall = vi.mocked(apiClient.post).mock.calls.find((call) => String(call[0]).includes("/turns"));
+    expect(turnCall?.[1]).toEqual({ message: "不用那些问题" });
+  });
+
+  it("keeps pending failure feedback after hiding the banner", async () => {
+    const turnBodies: unknown[] = [];
+    mockEditorGets({ readiness: compileFailedReadiness() });
+    vi.mocked(apiClient.post).mockImplementation(async (url: string, body?: unknown) => {
+      if (String(url).endsWith("/workflow-generate-sessions")) {
+        return {
+          data: {
+            sessionId: "session-new",
+            agentId: "agent-guide",
+            modelConfigId: "model-1",
+            status: "OPEN",
+            workflowId: "wf-order-cancel-draft",
+          },
+        };
+      }
+      if (String(url).includes("/turns")) {
+        turnBodies.push(body);
+        return { data: turnPayload("wf-order-cancel-draft") };
+      }
+      throw new Error(String(url));
+    });
+
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+    useWorkflowStore().activeCompilation = compilationFixture({
+      status: "Invalid",
+      issues: compileFailureIssues(),
+    });
+    await wrapper.vm.$nextTick();
+    await wrapper.get('[data-action="revise-draft-from-failure"]').trigger("click");
+    await flushPromises();
+
+    await wrapper.get('[data-action="hide-failure-feedback-banner"]').trigger("click");
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('[data-testid="generate-revise-banner"]').exists()).toBe(false);
+    expect(vi.mocked(apiClient.post).mock.calls.some((call) => String(call[0]).includes("/turns"))).toBe(false);
+
+    await wrapper.get('[data-action="submit-generate"]').trigger("click");
+    await flushPromises();
+    expect(turnBodies[0]).toMatchObject({
+      feedback: { source: "compile", workflowId: "wf-order-cancel-draft" },
+    });
+  });
+
+  it("maps recovery card CTAs by failure code instead of recoveryActions", async () => {
+    mockEditorGets();
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await flushPromises();
+
+    const smart = useSmartDagStore();
+    smart.lastFailure = {
+      stage: "UNKNOWN",
+      code: "AGENT_MODEL_REQUIRED",
+      retryable: false,
+      message: "先绑定模型",
+      requestId: "req-model",
+      traceId: "tr-model",
+      sessionId: "session-keep",
+      sessionStatus: "OPEN",
+      sessionLockVersion: 4,
+    };
+    await wrapper.vm.$nextTick();
+
+    const modelCard = wrapper.get('[data-testid="smart-dag-recovery-card"]');
+    const visibleRecoveryText = [
+      modelCard.get("strong").text(),
+      ...modelCard.findAll(":scope > p").map((node) => node.text()),
+      ...modelCard.findAll(".workflow-generate-recovery-actions").map((node) => node.text()),
+    ].join(" ");
+    expect(visibleRecoveryText).not.toContain("req-model");
+    expect(visibleRecoveryText).not.toContain("tr-model");
+    expect(modelCard.find('[data-action="generate-failure-bind-model"]').exists()).toBe(true);
+    expect(modelCard.find('[data-action="generate-failure-switch-agent"]').exists()).toBe(true);
+    expect(modelCard.find('[data-action="generate-failure-retry-rewrite"]').exists()).toBe(false);
+    expect(modelCard.get(".workflow-generate-tech").text()).toContain("req-model");
+    expect(modelCard.get(".workflow-generate-tech").text()).toContain("tr-model");
+    expect(modelCard.get(".workflow-generate-tech").text()).toContain("sessionLockVersion");
+
+    await wrapper.get('[data-action="generate-failure-switch-agent"]').trigger("click");
+    expect(wrapper.find(".workflow-generate-agent-popover").exists()).toBe(true);
+
+    smart.lastFailure = {
+      stage: "GUARD",
+      code: "GUARD_REJECTED",
+      retryable: false,
+      message: "GUARD_REJECTED",
+      requestId: "req-guard",
+      traceId: "tr-guard",
+      sessionId: "session-keep",
+      sessionStatus: "OPEN",
+    };
+    smart.lastGuardReport = {
+      ok: false,
+      violations: [{ code: "HALLUCINATED_TOOL_ID", message: "工具 ID 不存在" }],
+    };
+    await wrapper.vm.$nextTick();
+
+    const guardCard = wrapper.get('[data-testid="smart-dag-recovery-card"]');
+    expect(guardCard.find('[data-action="generate-failure-retry-rewrite"]').exists()).toBe(true);
+    expect(guardCard.find('[data-action="generate-failure-end-session"]').exists()).toBe(true);
+    expect(guardCard.get("strong").text()).not.toContain("GUARD_REJECTED");
+    expect(guardCard.findAll(".workflow-generate-guard-violations li").map((node) => node.text())).toEqual([
+      "工具 ID 不存在",
+    ]);
+    expect(guardCard.get(".workflow-generate-tech").text()).toContain("req-guard");
+    expect(
+      guardCard
+        .findAll("p")
+        .map((node) => node.text())
+        .join(" "),
+    ).not.toContain("req-guard");
+
+    const dockSource = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), "../components/workflow/WorkflowGenerateDock.vue"),
+      "utf8",
+    );
+    expect(dockSource).not.toMatch(/recoveryActions/);
+    const pageSource = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), "../composables/workflow-page-model.ts"),
+      "utf8",
+    );
+    expect(pageSource).not.toMatch(/name:\s*"smart-dag"/);
+    expect(pageSource).toMatch(/workflowActionNote.value = tt\("workflow.publishedOnline"/);
+    expect(pageSource).toMatch(/await bindPublishedWorkflowToSessionAgent\(published.workflow/);
+    expect(pageSource).toMatch(/workflowActionNote.value = tt\("workflow.forcePublished"/);
+  });
+
+  function publishReadyReadiness() {
+    return readinessFixture({
+      stage: "PublishReady",
+      canPublish: true,
+      trialCurrent: true,
+      trialSuccessful: true,
+      compilationValid: true,
+      compilationId: "comp-1",
+      blockers: [],
+    });
+  }
+
+  function publishRevision() {
+    return {
+      id: "rev-pub-1",
+      revisionNo: 1,
+      sourceCompilationId: "comp-1",
+      draftSnapshot: draftFixture().graph,
+      specSnapshot: { workflowId: "wf-order-cancel-draft", nodes: [] },
+      planSnapshot: { workflowId: "wf-order-cancel-draft", nodes: [] },
+      planHash: "sha256:plan-1",
+      status: "PUBLISHED",
+      publishNote: "verified",
+      createdBy: "user-1",
+      createdAt: "2026-07-02T00:00:00Z",
+    };
+  }
+
+  function mockPublishGets(
+    options: {
+      draft?: ReturnType<typeof draftFixture>;
+      agents?: ReturnType<typeof agentDto>[];
+      draftError?: Error;
+    } = {},
+  ) {
+    const draft = options.draft || draftFixture();
+    const agents = options.agents || [agentDto("agent-draft", "草稿 Agent")];
+    const readiness = publishReadyReadiness();
+    vi.mocked(apiClient.get).mockImplementation(async (url: string) => {
+      const path = String(url);
+      if (path.endsWith("/workflows")) {
+        return { data: { items: [{ ...workflowSummaryFixture(), readiness }] } };
+      }
+      if (path.endsWith("/readiness")) return { data: readiness };
+      if (path.endsWith("/revisions")) return { data: { items: [] } };
+      if (path.endsWith("/draft")) {
+        if (options.draftError) throw options.draftError;
+        return { data: draft, headers: { etag: '"draft-2-2"' } };
+      }
+      if (path.endsWith("/agents")) return { data: { items: agents } };
+      if (path.includes("/model-configs")) return { data: { items: [] } };
+      if (path.includes("/tools")) return { data: { items: [] } };
+      if (path.includes("/executions")) return { data: { items: [] } };
+      if (path.includes("/workflow-generate-sessions/")) {
+        return { data: { session: { sessionId: "", agentId: "", status: "CLOSED" }, turns: [] } };
+      }
+      if (/\/workflows\/[^/]+$/.test(path)) {
+        return { data: { ...workflowFixture(), status: "ACTIVE", activeRevisionId: "rev-pub-1" } };
+      }
+      throw new Error(`unexpected get ${path}`);
+    });
+    vi.mocked(apiClient.post).mockImplementation(async (url: string) => {
+      const path = String(url);
+      if (path.includes(":publish") || path.includes(":force-publish")) {
+        return { data: { revision: publishRevision(), releaseId: "release-1", releaseNo: 1, trialId: "trial-1" } };
+      }
+      throw new Error(`unexpected post ${path}`);
+    });
+    vi.mocked(apiClient.put).mockImplementation(async (url: string) => {
+      const path = String(url);
+      if (path.includes("/capabilities/")) {
+        return {
+          data: {
+            capabilityId: "wf-order-cancel-draft",
+            versionPolicy: "FOLLOW_ACTIVE",
+            enabled: true,
+            configOverrides: {},
+            lockVersion: 1,
+          },
+        };
+      }
+      throw new Error(`unexpected put ${path}`);
+    });
+  }
+
+  async function openDetail(wrapper: ReturnType<typeof mountWorkflowView>) {
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+    await wrapper.get('button[aria-label="更多编排操作"]').trigger("click");
+    document.body.querySelector<HTMLButtonElement>('button[data-action-key="detail"]')!.click();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+  }
+
+  it("binds a generated draft from list/detail publish using GET draft ui.agentId after refresh", async () => {
+    const draft = draftFixture();
+    draft.graph.ui = { generatedBy: "smart-dag.v2", agentId: "agent-draft" };
+    mockPublishGets({ draft });
+
+    const wrapper = mountWorkflowView();
+    await openDetail(wrapper);
+    expect(useWorkflowStore().activeDraft).toBeUndefined();
+    expect(useSmartDagStore().agentId).toBe("");
+
+    const publishButton = wrapper
+      .get(".workflow-detail-actions")
+      .findAll("button")
+      .find((button) => button.text() === "发布上线");
+    expect(publishButton).toBeDefined();
+    await publishButton!.trigger("click");
+    await flushPromises();
+
+    expect(apiClient.get).toHaveBeenCalledWith("/workspaces/order/workflows/wf-order-cancel-draft/draft");
+    expect(apiClient.put).toHaveBeenCalledWith(
+      "/workspaces/order/agents/agent-draft/capabilities/wf-order-cancel-draft",
+      expect.objectContaining({ versionPolicy: "FOLLOW_ACTIVE", enabled: true }),
+    );
+    expect(wrapper.get(".action-toast").text()).toContain("已发布上线");
+    expect(wrapper.get(".action-toast").text()).not.toContain("未能自动绑");
+    expect(wrapper.find(".workflow-editor-overlay").exists()).toBe(false);
+  });
+
+  it("keeps the published note and appends generateBindFailed when GET draft fails", async () => {
+    const draft = draftFixture();
+    draft.graph.ui = { generatedBy: "smart-dag.v2", agentId: "agent-draft" };
+    mockPublishGets({ draft, draftError: new Error("draft unavailable") });
+
+    const wrapper = mountWorkflowView();
+    await openDetail(wrapper);
+    const publishButton = wrapper
+      .get(".workflow-detail-actions")
+      .findAll("button")
+      .find((button) => button.text() === "发布上线");
+    await publishButton!.trigger("click");
+    await flushPromises();
+
+    const note = wrapper.get(".action-toast").text();
+    expect(note).toContain("已发布上线");
+    expect(note).toContain("未能自动绑到生成用的 Agent");
+    expect(note).not.toContain("发布失败");
+    expect(apiClient.put).not.toHaveBeenCalled();
+  });
+
+  it("force-publishes through the same bind helper", async () => {
+    useAuthStore().user = {
+      id: "",
+      username: "admin",
+      displayName: "Admin",
+      status: "ACTIVE",
+      platformRole: "PLATFORM_ADMIN",
+      locale: "zh-CN",
+      timezone: "UTC",
+      createdAt: "2026-07-01T00:00:00Z",
+      updatedAt: "2026-07-01T00:00:00Z",
+      lockVersion: 1,
+      role: "Platform Admin",
+    };
+    const draft = draftFixture();
+    draft.graph.ui = { generatedBy: "smart-dag.v2", agentId: "agent-draft" };
+    mockPublishGets({ draft });
+
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+
+    await wrapper.get('[data-action="force-publish-editor-workflow"]').trigger("click");
+    await wrapper.get('input[name="force-publish-reason"]').setValue("local-dev skip trial");
+    await wrapper.get('[data-action="confirm-force-publish"]').trigger("click");
+    await flushPromises();
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      "/workspaces/order/workflows/wf-order-cancel-draft/compilations/comp-1:force-publish",
+      expect.objectContaining({ reason: "local-dev skip trial" }),
+    );
+    expect(apiClient.put).toHaveBeenCalledWith(
+      "/workspaces/order/agents/agent-draft/capabilities/wf-order-cancel-draft",
+      expect.objectContaining({ versionPolicy: "FOLLOW_ACTIVE" }),
+    );
+    const note = wrapper.get(".action-toast").text();
+    expect(note).toContain("已强制发布");
+    expect(note).not.toContain("未能自动绑");
+  });
+
+  it("publishes a hand-authored draft without bindCapability", async () => {
+    mockPublishGets({ draft: draftFixture() });
+
+    const wrapper = mountWorkflowView();
+    await openDetail(wrapper);
+    const publishButton = wrapper
+      .get(".workflow-detail-actions")
+      .findAll("button")
+      .find((button) => button.text() === "发布上线");
+    await publishButton!.trigger("click");
+    await flushPromises();
+
+    expect(apiClient.put).not.toHaveBeenCalled();
+    expect(wrapper.get(".action-toast").text()).toContain("已发布上线");
+    expect(wrapper.get(".action-toast").text()).not.toContain("未能自动绑");
   });
 });

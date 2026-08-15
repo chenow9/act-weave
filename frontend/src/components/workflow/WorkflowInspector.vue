@@ -18,6 +18,8 @@ const props = defineProps<{
   tools?: Tool[];
   variableRefs: string[];
   toolCatalogError?: string;
+  aiReason?: string;
+  locked?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -39,12 +41,13 @@ function nodeDataValue(key: string) {
       <p>{{ props.node ? t("workflow.inspectorHintSelected") : t("workflow.inspectorHintEmpty") }}</p>
     </div>
 
-    <div v-if="props.node" class="workflow-inspector-form">
+    <fieldset v-if="props.node" class="workflow-inspector-form" :disabled="props.locked">
       <label class="drawer-field">
         <span>{{ t("workflow.nodeName") }}</span>
         <input
           name="node-label"
           :value="props.node.label"
+          :disabled="props.locked"
           @input="emit('update-node-label', ($event.target as HTMLInputElement).value)"
         />
       </label>
@@ -62,6 +65,11 @@ function nodeDataValue(key: string) {
           })
         }}</span>
       </div>
+
+      <section v-if="props.aiReason" class="workflow-inspector-ai-reason" data-testid="workflow-generate-ai-reason">
+        <strong>{{ t("workflow.generateAiReason") }}</strong>
+        <p>{{ props.aiReason }}</p>
+      </section>
 
       <section class="workflow-inspector-vars">
         <div class="workflow-section-caption">
@@ -105,6 +113,7 @@ function nodeDataValue(key: string) {
             name="node-condition-expression"
             rows="4"
             :value="nodeDataValue('expression')"
+            :disabled="props.locked"
             :placeholder="t('workflow.conditionPh')"
             @input="
               emit('update-node-data', { key: 'expression', value: ($event.target as HTMLTextAreaElement).value })
@@ -118,6 +127,7 @@ function nodeDataValue(key: string) {
             name="node-transform-template"
             rows="4"
             :value="nodeDataValue('template')"
+            :disabled="props.locked"
             :placeholder="t('workflow.transformPh')"
             @input="emit('update-node-data', { key: 'template', value: ($event.target as HTMLTextAreaElement).value })"
           />
@@ -129,6 +139,7 @@ function nodeDataValue(key: string) {
             name="node-approval-reason"
             rows="4"
             :value="nodeDataValue('reason')"
+            :disabled="props.locked"
             :placeholder="t('workflow.approvalPh')"
             @input="emit('update-node-data', { key: 'reason', value: ($event.target as HTMLTextAreaElement).value })"
           />
@@ -164,7 +175,7 @@ function nodeDataValue(key: string) {
           <span v-for="variable in props.variableRefs" :key="variable" class="workflow-token">{{ variable }}</span>
         </div>
       </section>
-    </div>
+    </fieldset>
 
     <div v-else class="workflow-inspector-empty">
       <i class="fa-solid fa-arrow-pointer" />

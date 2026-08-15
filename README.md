@@ -51,7 +51,7 @@ A typical loop is:
 1. Create a Workspace and register model APIs, Providers, and Service Connections.
 2. Import Tools from OpenAPI or create them by hand; define I/O contracts, runtime policy, and a Connection; test and publish them.
 3. Create an Agent with a model, prompt, and published Tool or Workflow bindings. Optionally configure in-workspace delegation or A2A exposure/remotes.
-4. Design, validate, trial-run, and publish deterministic Workflows. Smart DAG can generate a graph draft; it does not bypass publishing.
+4. Design, validate, trial-run, and publish deterministic Workflows. Generate conversation lives inside the Workflow editor and can produce a graph draft; it does not auto-publish.
 5. Trial an Agent in the console, or let an external application create Conversations and Runs through AAP and consume SSE events.
 6. Review a Trace in the audit center. What is visible depends on role, retention, and debug configuration.
 

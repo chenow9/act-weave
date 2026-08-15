@@ -1,9 +1,39 @@
-import { createRouter, createWebHistory } from "vue-router";
+import { createRouter, createWebHistory, type LocationQuery } from "vue-router";
 
 import AppShell from "../components/AppShell.vue";
 import { useAuthStore } from "../stores/auth";
 import LoginView from "../views/LoginView.vue";
 import ChangePasswordView from "../views/ChangePasswordView.vue";
+
+const SMART_DAG_PASSTHROUGH_QUERY_KEYS = [
+  "workspaceId",
+  "agentId",
+  "reviseSource",
+  "feedbackSummary",
+  "feedbackIssues",
+  "compilationId",
+] as const;
+
+function firstQueryValue(value: LocationQuery[string]): string {
+  const first = Array.isArray(value) ? value[0] : value;
+  return typeof first === "string" ? first.trim() : "";
+}
+
+/** Map legacy /smart-dag query keys onto the editor generate-dock contract. */
+export function mapSmartDagQuery(query: LocationQuery): LocationQuery {
+  const next: LocationQuery = { generate: "1" };
+  const workflowId = firstQueryValue(query.workflowId);
+  if (workflowId) {
+    next.edit = workflowId;
+  }
+  for (const key of SMART_DAG_PASSTHROUGH_QUERY_KEYS) {
+    const value = firstQueryValue(query[key]);
+    if (value) {
+      next[key] = value;
+    }
+  }
+  return next;
+}
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -35,7 +65,12 @@ export const router = createRouter({
         { path: "model-apis", name: "model-apis", component: () => import("../views/ModelAPIConfigsView.vue") },
         { path: "tools", name: "tools", component: () => import("../views/ToolsView.vue") },
         { path: "workflow", name: "workflow", component: () => import("../views/WorkflowView.vue") },
-        { path: "smart-dag", name: "smart-dag", component: () => import("../views/SmartDagView.vue") },
+        // Keep the named alias for one Console release so old /smart-dag links open the editor dock.
+        {
+          path: "smart-dag",
+          name: "smart-dag",
+          redirect: (to) => ({ name: "workflow", query: mapSmartDagQuery(to.query) }),
+        },
         { path: "chat", name: "chat", component: () => import("../views/ChatExecutionView.vue") },
         {
           path: "logs",

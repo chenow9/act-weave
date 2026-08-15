@@ -4,6 +4,8 @@ import { createPinia, setActivePinia } from "pinia";
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createEmptyWorkflowGraphDraft } from "../../composables/workflow-generate-dock";
+import WorkflowGenerateDock from "./WorkflowGenerateDock.vue";
 import WorkflowGraphCanvas from "./WorkflowGraphCanvas.vue";
 import WorkflowExecutionTracePanel from "./WorkflowExecutionTracePanel.vue";
 import WorkflowInspector from "./WorkflowInspector.vue";
@@ -696,6 +698,95 @@ describe("workflow graph canvas", () => {
       position: { x: 320, y: 180 },
     });
   });
+
+  it("shows empty-canvas copy when empty is true and the graph has no nodes", () => {
+    const wrapper = mount(WorkflowGraphCanvas, {
+      props: {
+        graph: createEmptyWorkflowGraphDraft(),
+        selectedNodeId: "",
+        empty: true,
+      },
+      global: {
+        stubs: {
+          VueFlow: VueFlowStub,
+          Handle: HandleStub,
+        },
+      },
+    });
+
+    expect(wrapper.find(".workflow-graph-empty").exists()).toBe(true);
+    expect(wrapper.text()).toContain("描述流程后，草稿会出现在这里");
+    expect(wrapper.find('[data-node-id="start"]').exists()).toBe(false);
+  });
+
+  it("hides empty-canvas copy when empty is false even if the graph has no nodes", () => {
+    const wrapper = mount(WorkflowGraphCanvas, {
+      props: {
+        graph: createEmptyWorkflowGraphDraft(),
+        selectedNodeId: "",
+        empty: false,
+      },
+      global: {
+        stubs: {
+          VueFlow: VueFlowStub,
+          Handle: HandleStub,
+        },
+      },
+    });
+
+    expect(wrapper.find(".workflow-graph-empty").exists()).toBe(false);
+  });
+
+  it("locks drag and connect while lockInteraction is true", async () => {
+    const wrapper = mount(WorkflowGraphCanvas, {
+      props: {
+        graph: draftFixture().graph,
+        selectedNodeId: "start",
+        lockInteraction: true,
+      },
+      global: {
+        stubs: {
+          VueFlow: VueFlowStub,
+          Handle: HandleStub,
+        },
+      },
+    });
+
+    await wrapper.get('[data-action="drag-stop"]').trigger("click");
+    await wrapper.get('[data-action="connect-valid"]').trigger("click");
+    await wrapper.get('[data-node-id="start"]').trigger("contextmenu", { clientX: 140, clientY: 160 });
+
+    expect(wrapper.emitted("update-node-position")).toBeUndefined();
+    expect(wrapper.emitted("connect-nodes")).toBeUndefined();
+    expect(wrapper.emitted("open-node-context-menu")).toBeUndefined();
+  });
+
+  it("flashes a highlight when applyHighlightEpoch increments", async () => {
+    vi.useFakeTimers();
+    const wrapper = mount(WorkflowGraphCanvas, {
+      props: {
+        graph: draftFixture().graph,
+        selectedNodeId: "start",
+        applyHighlightEpoch: 0,
+      },
+      global: {
+        stubs: {
+          VueFlow: VueFlowStub,
+          Handle: HandleStub,
+        },
+      },
+    });
+
+    expect(wrapper.get(".workflow-graph-canvas").classes()).not.toContain("is-apply-highlight");
+    await wrapper.setProps({ applyHighlightEpoch: 1 });
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get(".workflow-graph-canvas").classes()).toContain("is-apply-highlight");
+
+    vi.advanceTimersByTime(180);
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get(".workflow-graph-canvas").classes()).not.toContain("is-apply-highlight");
+    vi.useRealTimers();
+  });
 });
 
 describe("workflow inspector typed editors", () => {
@@ -717,6 +808,60 @@ describe("workflow inspector typed editors", () => {
     await wrapper.findAll(".workflow-node-library-item")[2].trigger("click");
 
     expect(wrapper.emitted("add-node")?.[0]?.[0]).toBe("Condition");
+  });
+
+  it("does not emit add-node when the palette is disabled", async () => {
+    const wrapper = mount(WorkflowNodePalette, {
+      props: {
+        variableRefs: ["{{input.orderId}}"],
+        disabled: true,
+      },
+      global: {
+        plugins: testI18nPlugins(),
+      },
+    });
+
+    await wrapper.findAll(".workflow-node-library-item")[2].trigger("click");
+
+    expect(wrapper.emitted("add-node")).toBeUndefined();
+    expect(wrapper.findAll(".workflow-node-library-item")[2].attributes("disabled")).toBeDefined();
+  });
+
+  it("disables generate submit without workspace context or a prompt", async () => {
+    const wrapper = mount(WorkflowGenerateDock, {
+      props: {
+        hasWorkspaceContext: false,
+        prompt: "供应商准入",
+      },
+      global: {
+        plugins: testI18nPlugins(),
+      },
+    });
+
+    expect(wrapper.get('[data-action="submit-generate"]').attributes("disabled")).toBeDefined();
+  });
+
+  it("fills the generate dock textarea from example chips without submitting", async () => {
+    const wrapper = mount(WorkflowGenerateDock, {
+      props: {
+        hasWorkspaceContext: true,
+        prompt: "",
+      },
+      global: {
+        plugins: testI18nPlugins(),
+      },
+    });
+
+    const submit = wrapper.get('[data-action="submit-generate"]');
+    expect(submit.attributes("disabled")).toBeDefined();
+    expect(wrapper.text()).toContain("试试");
+
+    await wrapper.findAll(".workflow-generate-example")[0].trigger("click");
+    const nextPrompt = wrapper.emitted("update:prompt")?.[0]?.[0];
+    expect(nextPrompt).toContain("供应商准入");
+    await wrapper.setProps({ prompt: nextPrompt });
+    expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toContain("供应商准入");
+    expect(wrapper.get('[data-action="submit-generate"]').attributes("disabled")).toBeUndefined();
   });
 
   it("builds start input schema fields without requiring raw JSON and surfaces raw JSON parse errors", async () => {
@@ -771,6 +916,64 @@ describe("workflow inspector typed editors", () => {
     await wrapper.get('textarea[name="workflow-schema-raw-json"]').setValue("{bad-json");
 
     expect(wrapper.text()).toContain("JSON 格式不正确");
+  });
+
+  it("shows generateAiReason independently from Approval data.reason", () => {
+    const wrapper = mount(WorkflowInspector, {
+      props: {
+        node: {
+          id: "approval-1",
+          type: "Approval",
+          label: "审批",
+          position: { x: 200, y: 180 },
+          ports: [],
+          data: { reason: "审批原因字段" },
+          ui: {},
+        },
+        variableRefs: [],
+        aiReason: "金额大于阈值需要人审",
+      },
+      global: {
+        plugins: testI18nPlugins(),
+        stubs: {
+          AppSelect: AppSelectStub,
+        },
+      },
+    });
+
+    expect(wrapper.get('[data-testid="workflow-generate-ai-reason"]').text()).toContain("AI 为什么加了这一步");
+    expect(wrapper.get('[data-testid="workflow-generate-ai-reason"]').text()).toContain("金额大于阈值需要人审");
+    expect((wrapper.get('textarea[name="node-approval-reason"]').element as HTMLTextAreaElement).value).toBe(
+      "审批原因字段",
+    );
+  });
+
+  it("disables inspector controls including approval reason when locked", () => {
+    const wrapper = mount(WorkflowInspector, {
+      props: {
+        node: {
+          id: "approval-1",
+          type: "Approval",
+          label: "审批",
+          position: { x: 200, y: 180 },
+          ports: [],
+          data: { reason: "审批原因字段" },
+          ui: {},
+        },
+        variableRefs: [],
+        locked: true,
+      },
+      global: {
+        plugins: testI18nPlugins(),
+        stubs: {
+          AppSelect: AppSelectStub,
+        },
+      },
+    });
+
+    expect(wrapper.get(".workflow-inspector-form").attributes("disabled")).toBeDefined();
+    expect(wrapper.get('input[name="node-label"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get('textarea[name="node-approval-reason"]').attributes("disabled")).toBeDefined();
   });
 
   it("uses the variable picker for end output references instead of free-typing paths", async () => {

@@ -83,6 +83,22 @@ export async function installWorkflowApiMocks(page: Page) {
   return state;
 }
 
+export function seedGeneratedWorkflow(
+  state: ReturnType<typeof createWorkflowFixtureState>,
+  options: { workflowId: string; name: string; graph: WorkflowGraphDraft },
+) {
+  if (state.workflows.has(options.workflowId)) {
+    return state.workflows.get(options.workflowId)!;
+  }
+  const record = createWorkflow(
+    { name: options.name, slug: "ai-workflow-e2e", graph: options.graph },
+    options.workflowId,
+    state,
+  );
+  state.workflows.set(options.workflowId, record);
+  return record;
+}
+
 export async function installStableUi(page: Page) {
   await page.addStyleTag({
     content: `
@@ -680,8 +696,12 @@ function createPublishedTool(): Tool {
   };
 }
 
-function createWorkflow(payload: Partial<Workflow>, workflowId: string, state: WorkflowFixtureState): WorkflowRecord {
-  const graph = createDefaultWorkflowGraphDraft();
+function createWorkflow(
+  payload: Partial<Workflow> & { graph?: WorkflowGraphDraft },
+  workflowId: string,
+  state: WorkflowFixtureState,
+): WorkflowRecord {
+  const graph = payload.graph ? cloneGraph(payload.graph) : createDefaultWorkflowGraphDraft();
   const draftVersion = nextDraftVersion(state);
   const updatedAt = nextTimestamp(state);
   const draft: WorkflowDraftRecord = {

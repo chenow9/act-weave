@@ -51,7 +51,7 @@ flowchart LR
 1. 创建 Workspace，并注册模型 API、Provider 与 Service Connection。
 2. 通过 OpenAPI 导入或手工创建 Tool，定义输入/输出契约、运行策略与连接；测试通过后发布。
 3. 创建 Agent，绑定模型、提示词和已发布的 Tool 或 Workflow；需要时配置同 Workspace 的 Agent 委派或 A2A 暴露/远端。
-4. 设计、校验、试跑并发布确定性的 Workflow；Smart DAG 可生成图草案，但不是绕过发布流程的自动上线功能。
+4. 设计、校验、试跑并发布确定性的 Workflow；生成对话位于 Workflow 编辑器内，可生成图草案，但不会自动发布。
 5. 在控制台中试跑，或由外部应用通过 AAP 创建 Conversation 与 Run，并用 SSE 消费运行事件。
 6. 在审计中心按 Trace 回看执行。可见内容依角色、数据保留和调试配置而定。
 

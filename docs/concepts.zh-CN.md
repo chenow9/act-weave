@@ -36,7 +36,7 @@
 
 **Workflow** 是确定性的多步骤图。当前实现覆盖图草稿、编译、试跑、修订与发布。Agent 可以绑定 Tool/Workflow；Workflow 也会通过 Tool Runtime 调用已配置的业务能力。
 
-Smart DAG 是 Console 中的图草案生成能力。它可帮助生成 Workflow 草案，但文档不把它描述为自动发布或无审批上线。
+生成对话位于 Workflow 编辑器内，可帮助生成图草案。它不再是独立的 Console 页面，文档也不把它描述为自动发布或无审批上线。
 
 ## 管理面与运行面
 

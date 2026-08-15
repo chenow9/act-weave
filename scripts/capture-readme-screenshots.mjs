@@ -95,7 +95,7 @@ const pages = [
     : [
         {
           name: "07-smart-dag",
-          path: "/smart-dag",
+          path: "/workflow?generate=1",
           needAuth: true,
           wait: 1400,
         },
@@ -349,6 +349,14 @@ try {
       await close.click().catch(() => null);
       await page.waitForTimeout(200);
     }
+    if (item.path.includes("generate=1")) {
+      await page
+        .locator(".workflow-generate-dock")
+        .first()
+        .waitFor({ state: "visible", timeout: 10_000 })
+        .catch(() => null);
+    }
+
     // Trace detail benefits from fullPage so nested Agent/Tool steps are visible.
     await shot(page, item.name, { fullPage: item.path === "/logs" });
   }

@@ -34,7 +34,7 @@ A Provider represents an upstream service; a Connection holds its live endpoint,
 | --- |
 | ![Model API](./images/readme/en/10-model-apis.png) |
 
-Model API provides a model connection for Agents. Smart DAG generates a Workflow graph draft from natural language; the draft must still be reviewed, trialed, and published. It is not automatic deployment. The current Smart DAG screen is not included in this English screenshot set because some generated graph text has not yet completed localization.
+Model API provides a model connection for Agents. Generate conversation lives inside the Workflow editor; it is not a standalone Console page. The draft must still be reviewed, trialed, and published. It is not automatic deployment. The generate-dock screenshot is not included in this English set because some generated graph text has not yet completed localization.
 
 The project home shows [Tool governance](../README.md#product-preview), [Agent configuration](../README.md#product-preview), and [Workflow](../README.md#product-preview) as one executable-capability chain.
 
@@ -74,4 +74,4 @@ ACTWEAVE_UI_URL=http://127.0.0.1:5174 \
 node scripts/capture-readme-screenshots.mjs
 ```
 
-The English capture deliberately excludes the sign-in and Smart DAG screenshots until their visible strings are fully localized.
+The English capture deliberately excludes the sign-in and Workflow generate-dock screenshots until their visible strings are fully localized.

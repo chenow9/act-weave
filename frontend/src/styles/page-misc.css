@@ -1682,7 +1682,7 @@
 }
 
 @media (max-width: 1180px) {
-  .workflow-node-palette {
+  .workflow-workbench-left {
     height: 340px;
     max-height: 340px;
   }

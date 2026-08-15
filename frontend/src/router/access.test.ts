@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { navItems } from "../config/navigation";
 import { useAuthStore } from "../stores/auth";
 import type { User } from "../types/domain";
-import { router } from "./index";
+import { mapSmartDagQuery, router } from "./index";
 
 describe("platform administrator route and navigation", () => {
   beforeEach(async () => {
@@ -64,6 +64,56 @@ describe("platform administrator route and navigation", () => {
 
     await router.push("/change-password");
     expect(router.currentRoute.value.name).toBe("overview");
+  });
+
+  it("keeps smart-dag as a named redirect into the workflow generate dock", async () => {
+    const auth = useAuthStore();
+    auth.initialized = true;
+    auth.token = "user-token";
+    auth.user = userFixture("USER");
+
+    await router.push({
+      name: "smart-dag",
+      query: {
+        workspaceId: "ws-ops",
+        workflowId: "wf-9",
+        agentId: "ag-2",
+        reviseSource: "compile",
+        feedbackSummary: "end missing",
+        feedbackIssues: "EndDisconnected",
+        compilationId: "comp-1",
+      },
+    });
+
+    expect(router.getRoutes().some((route) => route.name === "smart-dag")).toBe(true);
+    expect(router.currentRoute.value.name).toBe("workflow");
+    expect(router.currentRoute.value.query).toEqual({
+      generate: "1",
+      edit: "wf-9",
+      workspaceId: "ws-ops",
+      agentId: "ag-2",
+      reviseSource: "compile",
+      feedbackSummary: "end missing",
+      feedbackIssues: "EndDisconnected",
+      compilationId: "comp-1",
+    });
+  });
+
+  it("maps legacy smart-dag query keys onto generate-dock query", () => {
+    expect(
+      mapSmartDagQuery({
+        workspaceId: "ws-ops",
+        workflowId: ["wf-9"],
+        agentId: "ag-2",
+        extra: "drop-me",
+      }),
+    ).toEqual({
+      generate: "1",
+      edit: "wf-9",
+      workspaceId: "ws-ops",
+      agentId: "ag-2",
+    });
+    expect(mapSmartDagQuery({})).toEqual({ generate: "1" });
   });
 
   it("sends unauthenticated visitors from /change-password to login", async () => {

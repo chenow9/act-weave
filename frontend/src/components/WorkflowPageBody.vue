@@ -79,6 +79,7 @@ const {
   closeWorkflowMetadata,
   openWorkflowEditor,
   openCreateWorkflow,
+  openIntentGenerateEditor,
   openEditWorkflow,
   saveWorkflowMetadata,
   workflowMenuActions,
@@ -114,6 +115,17 @@ void WorkspaceContextState;
       icon="fa-solid fa-diagram-project"
     >
       <template #actions>
+        <button
+          class="ghost-button workflow-generate-from-intent-button"
+          type="button"
+          data-action="open-intent-generate"
+          :disabled="!hasWorkspaceContext"
+          :title="hasWorkspaceContext ? t('workflow.generateFromIntent') : t('workspaces.emptyHint')"
+          @click="openIntentGenerateEditor"
+        >
+          <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true" />
+          <span>{{ t("workflow.generateFromIntent") }}</span>
+        </button>
         <button
           class="primary-button workflow-create-button"
           type="button"
@@ -216,9 +228,19 @@ void WorkspaceContextState;
             >
               {{ t("workflow.clearFilters") }}
             </button>
-            <button v-else class="primary-button" type="button" @click="openCreateWorkflow">
-              {{ t("workflow.newWorkflow") }}
-            </button>
+            <div v-else class="registry-empty-actions">
+              <button
+                class="ghost-button"
+                type="button"
+                data-action="open-intent-generate"
+                @click="openIntentGenerateEditor"
+              >
+                {{ t("workflow.generateFromIntent") }}
+              </button>
+              <button class="primary-button" type="button" @click="openCreateWorkflow">
+                {{ t("workflow.newWorkflow") }}
+              </button>
+            </div>
           </div>
         </template>
       </ManagementList>

@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 const { t } = useI18n();
 // @ts-nocheck — inject surface under page split (ZKL-64 item 13)
 /** Workflow editor panel (ZKL-64 item 13). */
 import WorkflowEdgeInspector from "./workflow/WorkflowEdgeInspector.vue";
 import WorkflowExecutionTracePanel from "./workflow/WorkflowExecutionTracePanel.vue";
+import WorkflowGenerateDock from "./workflow/WorkflowGenerateDock.vue";
 import WorkflowGraphCanvas from "./workflow/WorkflowGraphCanvas.vue";
 import WorkflowInspector from "./workflow/WorkflowInspector.vue";
 import WorkflowIssuesPanel from "./workflow/WorkflowIssuesPanel.vue";
@@ -12,6 +14,7 @@ import WorkflowNodePalette from "./workflow/WorkflowNodePalette.vue";
 import WorkflowReadinessPanel from "./workflow/WorkflowReadinessPanel.vue";
 import WorkflowForcePublishDialog from "./workflow/WorkflowForcePublishDialog.vue";
 import WorkflowTrialRunDialog from "./workflow/WorkflowTrialRunDialog.vue";
+import { useWorkflowGenerateNarrow } from "../composables/workflow-generate-dock";
 import { useWorkflowPageContext } from "../composables/useWorkflowPageContext";
 
 const scp = useWorkflowPageContext();
@@ -32,6 +35,44 @@ const {
   workflowEditorShellRef,
   workflowEditorHelpText,
   selectedWorkflow,
+  hasWorkspaceContext,
+  hasPersistableDraft,
+  leftTab,
+  generatePresence,
+  generateLock,
+  generateSending,
+  generateRestorePending,
+  generateSheetOpen,
+  applyHighlightEpoch,
+  prompt,
+  selectedAgentId,
+  agentsLoadState,
+  agentPopoverOpen,
+  endSessionConfirmVisible,
+  generateTranscript,
+  generateAgentOptions,
+  selectedGenerateAgent,
+  selectedGenerateAgentUsable,
+  showGenerateDirtyChip,
+  generateLastFailure,
+  generateLastGuardReport,
+  pendingFailureFeedback,
+  failureFeedbackBannerHidden,
+  hideFailureFeedbackBanner,
+  dismissPendingFailureFeedback,
+  generateReasoningSteps,
+  generateMissingCapabilities,
+  generateSessionClosed,
+  selectedNodeAiReason,
+  selectGenerateTab,
+  selectNodesTab,
+  toggleGenerateFromTopbar,
+  closeGenerateSheet,
+  selectGenerateAgentById,
+  sendGenerateTurn,
+  handleGenerateFailureCta,
+  confirmEndGenerateSession,
+  cancelEndGenerateSession,
   workflowEditorBusy,
   selectedWorkflowCanPublish,
   workflowEditorReadinessSteps,
@@ -83,9 +124,30 @@ const {
   selectedWorkflowCanForcePublish,
   workflowEditorForcePublishTitle,
 } = scp;
+const isNarrowWorkbench = useWorkflowGenerateNarrow();
+const isGenerateSheet = computed(
+  () => leftTab.value === "generate" && generateSheetOpen.value && isNarrowWorkbench.value,
+);
+const canvasEmpty = computed(() => editorGraph.value.nodes.length === 0);
+
+function handleGenerateSheetKeydown(event: KeyboardEvent) {
+  if (event.key !== "Escape" || !isGenerateSheet.value || generateLock.value) {
+    return;
+  }
+  event.preventDefault();
+  closeGenerateSheet();
+}
+
+onMounted(() => {
+  window.addEventListener("keydown", handleGenerateSheetKeydown);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", handleGenerateSheetKeydown);
+});
 void WorkflowEdgeInspector;
 void WorkflowExecutionTracePanel;
 void WorkflowForcePublishDialog;
+void WorkflowGenerateDock;
 void WorkflowGraphCanvas;
 void WorkflowInspector;
 void WorkflowIssuesPanel;
@@ -157,6 +219,18 @@ void WorkflowTrialRunDialog;
           </div>
           <div class="workflow-editor-action-row">
             <div class="workflow-editor-secondary-actions workflow-editor-actions">
+              <div class="workflow-editor-action-group" role="group" :aria-label="t('workflow.generateDockTitle')">
+                <button
+                  data-action="open-generate-dock"
+                  class="ghost-button"
+                  type="button"
+                  :aria-pressed="leftTab === 'generate'"
+                  @click="toggleGenerateFromTopbar"
+                >
+                  {{ t("workflow.generateOpenDock") }}
+                </button>
+              </div>
+              <span class="workflow-editor-action-divider" aria-hidden="true" />
               <div class="workflow-editor-action-group" role="group" :aria-label="t('workflow.auxActions')">
                 <button
                   class="ghost-button"
@@ -279,17 +353,100 @@ void WorkflowTrialRunDialog;
           </div>
         </header>
 
-        <div class="workflow-workbench workflow-workbench-full-bleed" @click="closeContextMenu">
-          <WorkflowNodePalette
-            class="workflow-workbench-column"
-            :variable-refs="editorVariableRefs"
-            @add-node="addNodeToDraft"
+        <div
+          class="workflow-workbench workflow-workbench-full-bleed"
+          :class="{ 'is-generate-sheet': isGenerateSheet }"
+          @click="closeContextMenu"
+        >
+          <div
+            class="workflow-workbench-column workflow-workbench-left"
+            :data-left-tab="leftTab"
+            :data-generate-presence="generatePresence"
+          >
+            <div class="workflow-left-tabs" role="tablist" :aria-label="t('workflow.generateLeftTabsAria')">
+              <button
+                type="button"
+                role="tab"
+                class="ghost-button"
+                :aria-selected="leftTab === 'generate'"
+                @click="selectGenerateTab"
+              >
+                {{ t("workflow.generateDockTitle") }}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                class="ghost-button"
+                :aria-selected="leftTab === 'nodes'"
+                :disabled="!hasPersistableDraft"
+                :title="hasPersistableDraft ? undefined : t('workflow.generateNodesDisabledHint')"
+                @click="selectNodesTab"
+              >
+                {{ t("workflow.generateDockNodesTab") }}
+              </button>
+            </div>
+            <WorkflowGenerateDock
+              v-if="leftTab === 'generate'"
+              class="workflow-left-card"
+              :has-workspace-context="hasWorkspaceContext"
+              :prompt="prompt"
+              :sheet="isGenerateSheet"
+              :generating="generateSending"
+              :generate-busy="pendingEditorAction === 'generate'"
+              :has-persistable-draft="hasPersistableDraft"
+              :is-dirty="editorDirtyState === 'dirty'"
+              :show-dirty-chip="showGenerateDirtyChip"
+              :agents-load-state="agentsLoadState"
+              :selected-agent-id="selectedAgentId"
+              :selected-agent-name="selectedGenerateAgent?.name || ''"
+              :selected-agent-usable="selectedGenerateAgentUsable"
+              :agents="generateAgentOptions"
+              :agent-popover-open="agentPopoverOpen"
+              :transcript="generateTranscript"
+              :last-failure="generateLastFailure"
+              :last-guard-report="generateLastGuardReport"
+              :pending-failure-feedback="pendingFailureFeedback"
+              :failure-feedback-banner-hidden="failureFeedbackBannerHidden"
+              :reasoning-steps="generateReasoningSteps"
+              :missing-capabilities="generateMissingCapabilities"
+              :session-closed="generateSessionClosed"
+              :restore-pending="generateRestorePending"
+              :end-session-confirm-visible="endSessionConfirmVisible"
+              @update:prompt="prompt = $event"
+              @close-sheet="closeGenerateSheet"
+              @submit="sendGenerateTurn"
+              @select-agent="selectGenerateAgentById($event, true)"
+              @toggle-agent-popover="agentPopoverOpen = !agentPopoverOpen"
+              @failure-cta="handleGenerateFailureCta"
+              @confirm-end-session="confirmEndGenerateSession"
+              @cancel-end-session="cancelEndGenerateSession"
+              @hide-failure-feedback-banner="hideFailureFeedbackBanner"
+              @dismiss-failure-feedback="dismissPendingFailureFeedback"
+            />
+            <WorkflowNodePalette
+              v-else
+              class="workflow-left-card"
+              :variable-refs="editorVariableRefs"
+              :disabled="!hasPersistableDraft || generateLock"
+              @add-node="addNodeToDraft"
+            />
+          </div>
+          <button
+            v-if="isGenerateSheet"
+            class="workflow-generate-sheet-backdrop"
+            type="button"
+            :aria-label="t('workflow.generateSheetDone')"
+            @click="closeGenerateSheet"
           />
           <WorkflowGraphCanvas
             class="workflow-workbench-main"
             :graph="editorGraph"
             :selected-node-id="selectedNodeId"
             :selected-edge-id="selectedEdgeId"
+            :empty="canvasEmpty"
+            :generating="generateLock"
+            :lock-interaction="generateLock"
+            :apply-highlight-epoch="applyHighlightEpoch"
             @select-node="setSelectedNode"
             @select-edge="setSelectedEdge"
             @open-node-context-menu="openNodeContextMenu"
@@ -309,6 +466,8 @@ void WorkflowTrialRunDialog;
               :tool-options="availableToolOptions"
               :variable-refs="selectedNodeVariableRefs"
               :tool-catalog-error="workflowToolCatalogError"
+              :ai-reason="selectedNodeAiReason"
+              :locked="generateLock"
               @update-node-label="updateSelectedNodeLabel"
               @update-node-data="updateSelectedNodeData"
             />
@@ -324,6 +483,8 @@ void WorkflowTrialRunDialog;
               :tool-options="availableToolOptions"
               :variable-refs="selectedNodeVariableRefs"
               :tool-catalog-error="workflowToolCatalogError"
+              :ai-reason="selectedNodeAiReason"
+              :locked="generateLock"
               @update-node-label="updateSelectedNodeLabel"
               @update-node-data="updateSelectedNodeData"
             />
