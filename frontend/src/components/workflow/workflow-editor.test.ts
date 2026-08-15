@@ -948,6 +948,34 @@ describe("workflow inspector typed editors", () => {
     );
   });
 
+  it("disables inspector controls including approval reason when locked", () => {
+    const wrapper = mount(WorkflowInspector, {
+      props: {
+        node: {
+          id: "approval-1",
+          type: "Approval",
+          label: "审批",
+          position: { x: 200, y: 180 },
+          ports: [],
+          data: { reason: "审批原因字段" },
+          ui: {},
+        },
+        variableRefs: [],
+        locked: true,
+      },
+      global: {
+        plugins: testI18nPlugins(),
+        stubs: {
+          AppSelect: AppSelectStub,
+        },
+      },
+    });
+
+    expect(wrapper.get(".workflow-inspector-form").attributes("disabled")).toBeDefined();
+    expect(wrapper.get('input[name="node-label"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get('textarea[name="node-approval-reason"]').attributes("disabled")).toBeDefined();
+  });
+
   it("uses the variable picker for end output references instead of free-typing paths", async () => {
     const wrapper = mount(WorkflowInspector, {
       props: {

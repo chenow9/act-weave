@@ -35,6 +35,8 @@ const props = withDefaults(
     reasoningSteps?: SmartDAGReasoningStep[];
     missingCapabilities?: SmartDAGMissingCapability[];
     sessionClosed?: boolean;
+    restorePending?: boolean;
+    endSessionConfirmVisible?: boolean;
   }>(),
   {
     sheet: false,
@@ -53,6 +55,8 @@ const props = withDefaults(
     reasoningSteps: () => [],
     missingCapabilities: () => [],
     sessionClosed: false,
+    restorePending: false,
+    endSessionConfirmVisible: false,
   },
 );
 
@@ -63,6 +67,8 @@ const emit = defineEmits<{
   (event: "select-agent", agentId: string): void;
   (event: "toggle-agent-popover"): void;
   (event: "failure-cta", key: WorkflowGenerateFailureCtaKey): void;
+  (event: "confirm-end-session"): void;
+  (event: "cancel-end-session"): void;
 }>();
 
 const { t } = useI18n();
@@ -77,7 +83,7 @@ const promptTooLong = computed(() => [...props.prompt].length > WORKFLOW_GENERAT
 
 const canSubmit = computed(() => {
   if (!props.hasWorkspaceContext || props.generating || props.generateBusy || props.sessionClosed) return false;
-  if (props.agentsLoadState === "loading") return false;
+  if (props.restorePending || props.agentsLoadState === "loading") return false;
   if (!props.selectedAgentUsable) return false;
   const nextPrompt = props.prompt.trim();
   return Boolean(nextPrompt) && !promptTooLong.value;
@@ -241,6 +247,33 @@ function failureMessage(row: Extract<TranscriptRow, { kind: "failure" }>) {
           </dl>
         </details>
       </section>
+    </div>
+
+    <div
+      v-if="props.endSessionConfirmVisible"
+      class="workflow-generate-end-confirm"
+      role="alertdialog"
+      data-testid="generate-end-session-confirm"
+    >
+      <p>{{ t("workflow.generateEndConfirm") }}</p>
+      <div class="workflow-generate-recovery-actions">
+        <button
+          class="primary-button"
+          type="button"
+          data-action="confirm-end-generate"
+          @click="emit('confirm-end-session')"
+        >
+          {{ t("workflow.generateEndConfirmYes") }}
+        </button>
+        <button
+          class="ghost-button"
+          type="button"
+          data-action="cancel-end-generate"
+          @click="emit('cancel-end-session')"
+        >
+          {{ t("workflow.generateEndConfirmNo") }}
+        </button>
+      </div>
     </div>
 
     <textarea

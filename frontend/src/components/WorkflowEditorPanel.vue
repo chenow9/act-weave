@@ -41,12 +41,14 @@ const {
   generatePresence,
   generateLock,
   generateSending,
+  generateRestorePending,
   generateSheetOpen,
   applyHighlightEpoch,
   prompt,
   selectedAgentId,
   agentsLoadState,
   agentPopoverOpen,
+  endSessionConfirmVisible,
   generateTranscript,
   generateAgentOptions,
   selectedGenerateAgent,
@@ -64,6 +66,8 @@ const {
   selectGenerateAgentById,
   sendGenerateTurn,
   handleGenerateFailureCta,
+  confirmEndGenerateSession,
+  cancelEndGenerateSession,
   workflowEditorBusy,
   selectedWorkflowCanPublish,
   workflowEditorReadinessSteps,
@@ -398,12 +402,16 @@ void WorkflowTrialRunDialog;
               :reasoning-steps="generateReasoningSteps"
               :missing-capabilities="generateMissingCapabilities"
               :session-closed="generateSessionClosed"
+              :restore-pending="generateRestorePending"
+              :end-session-confirm-visible="endSessionConfirmVisible"
               @update:prompt="prompt = $event"
               @close-sheet="closeGenerateSheet"
               @submit="sendGenerateTurn"
               @select-agent="selectGenerateAgentById($event, true)"
               @toggle-agent-popover="agentPopoverOpen = !agentPopoverOpen"
               @failure-cta="handleGenerateFailureCta"
+              @confirm-end-session="confirmEndGenerateSession"
+              @cancel-end-session="cancelEndGenerateSession"
             />
             <WorkflowNodePalette
               v-else

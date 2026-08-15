@@ -553,6 +553,13 @@ export function createWorkflowPageModel() {
     return typeof sessionId === "string" ? sessionId.trim() : "";
   }
 
+  function usableGenerateAgent(id?: string) {
+    const trimmed = (id || "").trim();
+    if (!trimmed) return undefined;
+    const agent = agentStore.items.find((item) => item.id === trimmed);
+    return agent && agentHasUsableModel(agent, modelConfigStore.items) ? agent : undefined;
+  }
+
   function pickPreferredGenerateAgent() {
     return pickPreferredGenerateAgentFromCatalog({
       agents: agentStore.items,
@@ -571,15 +578,18 @@ export function createWorkflowPageModel() {
     const workspaceId = generateWorkspaceId();
     const nextModel = (agent.modelConfigId || "").trim();
     const agentChanged = smart.agentId !== agent.id;
-    // Only a user pick in the popover may wipe the live session.
     if (agentChanged && options.userInitiated) {
       if (!confirmSwitchAgent()) return;
       smart.resetSessionOnly();
+      generateDock.selectedAgentId.value = agent.id;
+      smart.setContext(workspaceId, agent.id, nextModel);
+      generateDock.agentPopoverOpen.value = false;
+      return;
     }
     generateDock.selectedAgentId.value = agent.id;
-    smart.setContext(workspaceId, agent.id, nextModel);
-    if (options.userInitiated) {
-      generateDock.agentPopoverOpen.value = false;
+    // setContext clears turns when the agent id changes. Auto/sync may only fill modelConfigId.
+    if (!agentChanged || !smart.sessionId) {
+      smart.setContext(workspaceId, agent.id, nextModel);
     }
   }
 
@@ -590,18 +600,42 @@ export function createWorkflowPageModel() {
   }
 
   function syncGenerateContext(): boolean {
-    const agent = pickPreferredGenerateAgent();
-    if (!agent || !agentHasUsableModel(agent, modelConfigStore.items)) return false;
+    // Send uses the chip / live session agent. Never re-pick draft.ui.agentId over a user switch.
+    const agent = usableGenerateAgent(generateDock.selectedAgentId.value) || usableGenerateAgent(smart.agentId);
+    if (!agent) return false;
+    if (smart.sessionId && smart.agentId && agent.id !== smart.agentId) {
+      const sessionAgent = usableGenerateAgent(smart.agentId);
+      if (!sessionAgent) return false;
+      generateDock.selectedAgentId.value = sessionAgent.id;
+      smart.setContext(generateWorkspaceId(), sessionAgent.id, sessionAgent.modelConfigId || "");
+      return Boolean(smart.modelConfigId);
+    }
     selectGenerateAgent(agent);
     return Boolean(smart.modelConfigId);
   }
 
   function hydrateGenerateAgentChip() {
+    const selected = usableGenerateAgent(generateDock.selectedAgentId.value);
+    if (selected) {
+      selectGenerateAgent(selected);
+      return;
+    }
+    if (smart.sessionId) {
+      const sessionAgent = usableGenerateAgent(smart.agentId);
+      if (sessionAgent) {
+        selectGenerateAgent(sessionAgent);
+        return;
+      }
+    }
     const agent = pickPreferredGenerateAgent();
     if (agent) selectGenerateAgent(agent);
   }
 
-  async function restoreGenerateSessionIfNeeded() {
+  let generatePrepareEpoch = 0;
+  let generatePrepareInFlight: Promise<void> | undefined;
+  const generateRestorePending = ref(false);
+
+  async function restoreGenerateSessionIfNeeded(epoch: number) {
     const targetId = selectedWorkflow.value?.id || "";
     const graphSessionId = graphGenerateSessionId();
     if (smart.sessionId) {
@@ -614,12 +648,17 @@ export function createWorkflowPageModel() {
       }
     }
     if (!graphSessionId) return;
+    // User already switched Agent (session dropped). Do not revive the prior session.
+    if (!smart.sessionId && generateDock.selectedAgentId.value) return;
     const workspaceId = generateWorkspaceId();
     if (!workspaceId) return;
     try {
       await smart.loadSession(workspaceId, graphSessionId, { adoptGraph: false });
     } catch {
       // CLOSED / GET failure: stay on a new attempt (S10). Do not adopt the graph.
+    }
+    if (epoch !== generatePrepareEpoch || pendingEditorAction.value === "generate") {
+      return;
     }
   }
 
@@ -652,9 +691,26 @@ export function createWorkflowPageModel() {
     }
   }
 
-  async function prepareGenerateDock() {
-    await restoreGenerateSessionIfNeeded();
-    await loadGenerateAgentsIfNeeded();
+  function prepareGenerateDock() {
+    if (pendingEditorAction.value === "generate" || smart.generating) {
+      return generatePrepareInFlight || Promise.resolve();
+    }
+    if (generatePrepareInFlight) return generatePrepareInFlight;
+    const epoch = ++generatePrepareEpoch;
+    generateRestorePending.value = true;
+    generatePrepareInFlight = (async () => {
+      try {
+        await restoreGenerateSessionIfNeeded(epoch);
+        if (epoch !== generatePrepareEpoch || pendingEditorAction.value === "generate") return;
+        await loadGenerateAgentsIfNeeded();
+      } finally {
+        if (epoch === generatePrepareEpoch) {
+          generateRestorePending.value = false;
+        }
+        generatePrepareInFlight = undefined;
+      }
+    })();
+    return generatePrepareInFlight;
   }
 
   function applyGeneratedDraftToEditor(result: SmartDAGTurnResult) {
@@ -672,10 +728,15 @@ export function createWorkflowPageModel() {
 
   async function sendGenerateTurn() {
     if (smart.generating || pendingEditorAction.value) return;
+    if (generatePrepareInFlight) {
+      await generatePrepareInFlight;
+    }
+    if (smart.generating || pendingEditorAction.value) return;
     const message = generateDock.prompt.value.trim();
     if (!message || [...message].length > WORKFLOW_GENERATE_PROMPT_MAX) return;
 
-    // Chip default must write modelConfigId before persist / ensureSession.
+    // Chip / live session must write modelConfigId before persist / ensureSession.
+    // Do not re-pick draft.ui.agentId — that would revert a confirmed Agent switch.
     if (!syncGenerateContext()) {
       workflowActionNote.value = tt("workflow.generateModelRequired");
       return;
@@ -691,6 +752,7 @@ export function createWorkflowPageModel() {
     }
 
     pendingEditorAction.value = "generate";
+    generatePrepareEpoch += 1;
     generateDock.generateLock.value = true;
     try {
       if (targetId && isEditorDraftDirty()) {
@@ -744,7 +806,26 @@ export function createWorkflowPageModel() {
     }
     if (key === "retry-rewrite") {
       focusGenerateTextarea();
+      return;
     }
+    if (key === "end-session") {
+      generateDock.endSessionConfirmVisible.value = true;
+    }
+  }
+
+  function cancelEndGenerateSession() {
+    generateDock.endSessionConfirmVisible.value = false;
+  }
+
+  async function confirmEndGenerateSession() {
+    generateDock.endSessionConfirmVisible.value = false;
+    try {
+      await smart.closeSession();
+    } catch {
+      // Local session still ends so the dock can start a new attempt.
+    }
+    smart.resetSessionOnly();
+    generateDock.optimisticUserMessage.value = null;
   }
 
   function focusGenerateTextarea() {
@@ -2584,6 +2665,7 @@ export function createWorkflowPageModel() {
     generatePresence: generateDock.generatePresence,
     generateLock,
     generateSending,
+    generateRestorePending,
     generateSheetOpen: generateDock.generateSheetOpen,
     applyHighlightEpoch: generateDock.applyHighlightEpoch,
     prompt: generateDock.prompt,
@@ -2591,6 +2673,7 @@ export function createWorkflowPageModel() {
     agentsLoadState: generateDock.agentsLoadState,
     optimisticUserMessage: generateDock.optimisticUserMessage,
     agentPopoverOpen: generateDock.agentPopoverOpen,
+    endSessionConfirmVisible: generateDock.endSessionConfirmVisible,
     generateTranscript,
     generateAgentOptions,
     selectedGenerateAgent,
@@ -2613,6 +2696,8 @@ export function createWorkflowPageModel() {
     applyGeneratedDraftToEditor,
     sendGenerateTurn,
     handleGenerateFailureCta,
+    confirmEndGenerateSession,
+    cancelEndGenerateSession,
     workflowEditorBusy,
     selectedWorkflowCanPublish,
     canForcePublishWorkflow,

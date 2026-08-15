@@ -1209,7 +1209,24 @@ describe("workflow view P1.4", () => {
     await flushPromises();
 
     expect(vi.mocked(apiClient.post).mock.calls.some((call) => String(call[0]).includes("/turns"))).toBe(false);
-    expect(wrapper.text()).toMatch(/冲突|保存/);
+    expect(wrapper.get(".action-toast").text()).toContain("已被其他会话更新");
+  });
+
+  it("does not persist or send when the selected draft is missing or mismatched", async () => {
+    mockEditorGets();
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await flushPromises();
+
+    useWorkflowStore().activeDraft = { ...draftFixture(), workflowId: "workflow-other" };
+    await wrapper.get("textarea").setValue("修订别人的稿");
+    await wrapper.get('[data-action="submit-generate"]').trigger("click");
+    await flushPromises();
+
+    expect(apiClient.put).not.toHaveBeenCalled();
+    expect(vi.mocked(apiClient.post).mock.calls.some((call) => String(call[0]).includes("/turns"))).toBe(false);
+    expect(wrapper.get(".action-toast").text()).toMatch(/草稿加载失败|draftLoadFailedRetry/);
   });
 
   it("hydrates the draft ui.agentId instead of items[0] without resetSessionOnly", async () => {
@@ -1252,6 +1269,154 @@ describe("workflow view P1.4", () => {
     expect(smart.modelConfigId).toBe("model-1");
     expect(smart.turns.map((turn) => turn.turnId)).toEqual(["turn-keep"]);
     expect(wrapper.get('[data-action="generate-agent-chip"]').text()).toContain("草稿 Agent");
+  });
+
+  it("does not wipe restored turns when draft ui.agentId differs from the session agent", async () => {
+    const draft = draftFixture();
+    draft.graph.ui = { generatedBy: "smart-dag.v2", agentId: "agent-draft", sessionId: "session-keep" };
+    mockEditorGets({
+      draft,
+      agents: [
+        agentDto("agent-first", "第一个"),
+        agentDto("agent-draft", "草稿 Agent"),
+        agentDto("agent-session", "会话 Agent"),
+      ],
+      session: {
+        sessionId: "session-keep",
+        agentId: "agent-session",
+        modelConfigId: "model-1",
+        status: "OPEN",
+        workflowId: draft.workflowId,
+      },
+      turns: [
+        {
+          turnId: "turn-keep",
+          turnIndex: 1,
+          userMessage: "先生成",
+          assistantMessage: "已根据意图更新流程草稿。",
+          generationId: "gen-keep",
+          guardOk: true,
+          status: "SUCCEEDED",
+          draftVersion: 2,
+        },
+      ],
+    });
+
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+    const smart = useSmartDagStore();
+    const resetSpy = vi.spyOn(smart, "resetSessionOnly");
+
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await flushPromises();
+
+    expect(resetSpy).not.toHaveBeenCalled();
+    expect(smart.agentId).toBe("agent-session");
+    expect(smart.turns.map((turn) => turn.turnId)).toEqual(["turn-keep"]);
+    expect(wrapper.get('[data-action="generate-agent-chip"]').text()).toContain("会话 Agent");
+  });
+
+  it("uses the popover Agent after a confirmed switch and does not revert to draft.ui.agentId on send", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const draft = draftFixture();
+    draft.graph.ui = { generatedBy: "smart-dag.v2", agentId: "agent-draft", sessionId: "session-keep" };
+    mockEditorGets({
+      draft,
+      agents: [agentDto("agent-draft", "草稿 Agent"), agentDto("agent-b", "Agent B")],
+      session: {
+        sessionId: "session-keep",
+        agentId: "agent-draft",
+        modelConfigId: "model-1",
+        status: "OPEN",
+        workflowId: draft.workflowId,
+      },
+      turns: [
+        {
+          turnId: "turn-keep",
+          turnIndex: 1,
+          userMessage: "先生成",
+          generationId: "gen-keep",
+          guardOk: true,
+          status: "SUCCEEDED",
+        },
+      ],
+    });
+    vi.mocked(apiClient.post).mockImplementation(async (url: string) => {
+      if (String(url).endsWith("/workflow-generate-sessions")) {
+        return {
+          data: {
+            sessionId: "session-b",
+            agentId: "agent-b",
+            modelConfigId: "model-1",
+            status: "OPEN",
+            workflowId: "wf-order-cancel-draft",
+          },
+        };
+      }
+      if (String(url).includes("/turns")) return { data: turnPayload("wf-order-cancel-draft") };
+      if (String(url).includes(":close")) return { data: { sessionId: "session-keep", status: "CLOSED" } };
+      throw new Error(String(url));
+    });
+
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+    const smart = useSmartDagStore();
+    const resetSpy = vi.spyOn(smart, "resetSessionOnly");
+
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await flushPromises();
+    await wrapper.get('[data-action="generate-agent-chip"]').trigger("click");
+    await wrapper.get('[data-agent-id="agent-b"]').trigger("click");
+    await wrapper.vm.$nextTick();
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(resetSpy).toHaveBeenCalled();
+    expect(smart.agentId).toBe("agent-b");
+    expect(smart.sessionId).toBe("");
+    expect(smart.turns).toEqual([]);
+
+    await wrapper.get("textarea").setValue("用 B 再生成");
+    await wrapper.get('[data-action="submit-generate"]').trigger("click");
+    await flushPromises();
+
+    const createCall = vi
+      .mocked(apiClient.post)
+      .mock.calls.find((call) => String(call[0]).endsWith("/workflow-generate-sessions"));
+    expect(createCall?.[1]).toEqual({ agentId: "agent-b", workflowId: "wf-order-cancel-draft" });
+    confirmSpy.mockRestore();
+  });
+
+  it("asks for inline confirm before ending the generate session", async () => {
+    mockEditorGets();
+    vi.mocked(apiClient.post).mockResolvedValue({ data: { sessionId: "session-keep", status: "CLOSED" } });
+    const wrapper = mountWorkflowView();
+    await openEditor(wrapper);
+    await wrapper.get('[data-action="open-generate-dock"]').trigger("click");
+    await flushPromises();
+
+    const smart = useSmartDagStore();
+    smart.sessionId = "session-keep";
+    smart.sessionStatus = "OPEN";
+    smart.lastFailure = {
+      stage: "UNKNOWN",
+      code: "NETWORK_ERROR",
+      retryable: true,
+      message: "流结束",
+      requestId: "req-1",
+      traceId: "tr-1",
+      sessionId: "session-keep",
+      sessionStatus: "OPEN",
+    };
+    await wrapper.vm.$nextTick();
+
+    await wrapper.get('[data-action="generate-failure-end-session"]').trigger("click");
+    expect(wrapper.get('[data-testid="generate-end-session-confirm"]').exists()).toBe(true);
+
+    await wrapper.get('[data-action="confirm-end-generate"]').trigger("click");
+    await flushPromises();
+    expect(smart.sessionId).toBe("");
+    expect(smart.lastFailure).toBeUndefined();
+    expect(wrapper.find('[data-testid="generate-end-session-confirm"]').exists()).toBe(false);
   });
 
   it("writes modelConfigId via setContext before ensureSession when sending with the default chip", async () => {
