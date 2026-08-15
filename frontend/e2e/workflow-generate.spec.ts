@@ -56,9 +56,6 @@ test.describe("workflow generate dock e2e", () => {
     await loginAndOpenWorkflow(page);
     await installStableUi(page);
 
-    // Leave /workflow first so the editor remounts after the redirect (query seed runs on mount).
-    await page.locator('a[href="/overview"]').first().click();
-    await expect(page).toHaveURL(/\/overview$/);
     await page.locator(".fluid-trigger").click();
     const smartDagLink = page.locator('.fluid-content a[href="/smart-dag"]').first();
     await expect(smartDagLink).toBeVisible();

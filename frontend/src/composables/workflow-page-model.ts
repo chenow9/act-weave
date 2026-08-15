@@ -39,6 +39,7 @@ import type {
   Agent,
   Execution,
   FailureFeedback,
+  FailureFeedbackIssue,
   Tool,
   Workflow,
   WorkflowCompilation,
@@ -471,6 +472,16 @@ export function createWorkflowPageModel() {
       // The shared Workspace state provides recovery actions when bootstrap fails.
     }
   });
+
+  // Close strips generate, so a transition to "1" is a new deep link / smart-dag alias click.
+  watch(
+    () => queryString(route.query.generate),
+    (generate) => {
+      if (generate === "1") {
+        void applyWorkflowEntryQuery({ force: true });
+      }
+    },
+  );
 
   async function loadWorkflowPageAssets() {
     await workflowStore.loadWorkflowAssets();
@@ -975,22 +986,116 @@ export function createWorkflowPageModel() {
     }
   }
 
-  async function applyWorkflowEntryQuery() {
-    // Apply once on enter. Watching query would fight close, which strips generate.
-    if (workflowQueryApplied) return;
+  async function applyWorkflowEntryQuery(options: { force?: boolean } = {}) {
+    if (workflowQueryApplied && !options.force) return;
     workflowQueryApplied = true;
     const query = currentWorkflowQuery();
     const editId = queryString(query.edit);
+    const wantsGenerate = queryString(query.generate) === "1";
+    const wantsRevise = Boolean(queryString(query.reviseSource));
     if (editId) {
       const generatedWorkflow = workflowStore.workflows.find((workflow) => workflow.id === editId);
       if (generatedWorkflow) {
-        await openWorkflowEditor(generatedWorkflow);
+        const alreadyOpen =
+          workflowEditorVisible.value &&
+          workflowStore.selectedWorkflowId === editId &&
+          editorDraftLoadState.value === "loaded";
+        if (!alreadyOpen) {
+          await openWorkflowEditor(generatedWorkflow);
+        }
+        if (wantsRevise) {
+          seedReviseFeedbackFromQuery(query);
+          await openGenerateDockFromQuery("revise-failure");
+          stripGenerateQuery();
+        } else if (wantsGenerate) {
+          await openGenerateDockFromQuery("deeplink");
+        }
       }
       return;
     }
-    if (queryString(query.generate) === "1") {
+    if (wantsGenerate) {
+      if (isIntentGenerateEditorOpen()) return;
       await openIntentGenerateEditor();
     }
+  }
+
+  function isIntentGenerateEditorOpen() {
+    return (
+      workflowEditorVisible.value && generateDock.leftTab.value === "generate" && !workflowStore.selectedWorkflowId
+    );
+  }
+
+  function normalizeReviseSource(value: string): FailureFeedback["source"] {
+    if (value === "trial" || value === "production" || value === "agent_run" || value === "guard") {
+      return value;
+    }
+    return "compile";
+  }
+
+  function parseFeedbackIssues(value: unknown): FailureFeedbackIssue[] {
+    const text = queryString(value);
+    if (!text) return [];
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed.flatMap((item) => {
+          if (!item || typeof item !== "object") return [];
+          const row = item as Record<string, unknown>;
+          return [
+            {
+              code: typeof row.code === "string" && row.code ? row.code : "UNKNOWN",
+              nodeId: typeof row.nodeId === "string" ? row.nodeId : undefined,
+              message: typeof row.message === "string" ? row.message : "",
+              suggestedAction: "regenerate" as const,
+            },
+          ];
+        });
+      }
+    } catch {
+      // Old /smart-dag links may send a bare code or summary instead of JSON.
+    }
+    return [{ code: "UNKNOWN", message: text, suggestedAction: "regenerate" }];
+  }
+
+  function seedReviseFeedbackFromQuery(query: Record<string, unknown>) {
+    const reviseSource = queryString(query.reviseSource);
+    const workflowId = queryString(query.edit) || selectedWorkflow.value?.id || "";
+    if (!reviseSource || !workflowId) return;
+    const source = normalizeReviseSource(reviseSource);
+    const issues = parseFeedbackIssues(query.feedbackIssues);
+    const rawSummary =
+      queryString(query.feedbackSummary) ||
+      issues[0]?.message ||
+      (source === "compile" ? tt("workflow.reviseCompileFailed") : tt("workflow.reviseTrialFailed"));
+    generateDock.pendingFailureFeedback.value = {
+      source,
+      workflowId,
+      compilationId: queryString(query.compilationId) || undefined,
+      issues,
+      rawSummary,
+    };
+    generateDock.failureFeedbackBannerHidden.value = false;
+    generateDock.prompt.value = tt("workflow.generateRevisePrefill", {
+      source:
+        source === "trial" ? tt("workflow.generateReviseSourceTrial") : tt("workflow.generateReviseSourceCompile"),
+      summary: rawSummary,
+    });
+  }
+
+  async function openGenerateDockFromQuery(reason: "deeplink" | "revise-failure") {
+    generateDock.autoOpenedReason.value = reason;
+    generateDock.generatePresence.value = isNarrowViewport() ? "sheet" : "open";
+    generateDock.selectGenerateTab();
+    await prepareGenerateDock();
+    const agentId = queryString(currentWorkflowQuery().agentId);
+    if (agentId) {
+      selectGenerateAgentById(agentId);
+    } else {
+      const agent = pickPreferredGenerateAgent();
+      if (agent) selectGenerateAgent(agent);
+    }
+    await nextTick();
+    focusGenerateTextarea();
   }
 
   function workflowQueryWithoutGenerateKeys(options: { generate?: string } = {}) {

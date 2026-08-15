@@ -942,6 +942,56 @@ describe("workflow view P1.4", () => {
     expect(routeQuery.workspaceId).toBe("order");
   });
 
+  it("opens the matching workflow then the generate dock from edit+generate=1", async () => {
+    routeQuery.edit = "wf-order-cancel-draft";
+    routeQuery.generate = "1";
+    mockEditorGets();
+
+    const wrapper = mountWorkflowView();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find(".workflow-generate-dock").exists()).toBe(true);
+    expect(wrapper.findAll('[role="tablist"] [role="tab"]')[0].attributes("aria-selected")).toBe("true");
+    expect(useWorkflowStore().selectedWorkflowId).toBe("wf-order-cancel-draft");
+    expect(wrapper.getComponent(WorkflowGraphCanvas).props("empty")).toBe(false);
+    expect(wrapper.getComponent(WorkflowGraphCanvas).props("graph").nodes.length).toBeGreaterThan(0);
+    expect(routeQuery.generate).toBe("1");
+    expect(routeQuery.edit).toBe("wf-order-cancel-draft");
+  });
+
+  it("seeds FailureFeedback from revise query keys and strips the long query", async () => {
+    routeQuery.edit = "wf-order-cancel-draft";
+    routeQuery.generate = "1";
+    routeQuery.reviseSource = "compile";
+    routeQuery.feedbackSummary = "结束节点未连接";
+    routeQuery.feedbackIssues = JSON.stringify([
+      { code: "EndDisconnected", message: "结束节点未连接" },
+      { code: "ToolBindingMissing", message: "未绑定工具" },
+    ]);
+    routeQuery.compilationId = "comp-1";
+    routeQuery.agentId = "agent-draft";
+    mockEditorGets({ agents: [agentDto("agent-first", "第一个"), agentDto("agent-draft", "草稿 Agent")] });
+
+    const wrapper = mountWorkflowView();
+    await flushPromises();
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find(".workflow-generate-dock").exists()).toBe(true);
+    expect(wrapper.get('[data-testid="generate-revise-banner"]').text()).toContain("按检查结果修订");
+    expect(wrapper.get('[data-testid="generate-revise-banner"]').text()).toContain("结束节点未连接");
+    expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toContain("结束节点未连接");
+    expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toMatch(/编译|compile/);
+    expect(useWorkflowStore().selectedWorkflowId).toBe("wf-order-cancel-draft");
+    expect(routeQuery.edit).toBe("wf-order-cancel-draft");
+    expect(routeQuery.generate).toBeUndefined();
+    expect(routeQuery.reviseSource).toBeUndefined();
+    expect(routeQuery.feedbackSummary).toBeUndefined();
+    expect(routeQuery.feedbackIssues).toBeUndefined();
+    expect(routeQuery.compilationId).toBeUndefined();
+    expect(routeQuery.agentId).toBeUndefined();
+  });
+
   it("strips generate from the query when closing an unsent intent-generate dock", async () => {
     routeQuery.workspaceId = "order";
     routeQuery.generate = "1";
@@ -1892,11 +1942,13 @@ describe("workflow view P1.4", () => {
     };
   }
 
-  function mockPublishGets(options: {
-    draft?: ReturnType<typeof draftFixture>;
-    agents?: ReturnType<typeof agentDto>[];
-    draftError?: Error;
-  } = {}) {
+  function mockPublishGets(
+    options: {
+      draft?: ReturnType<typeof draftFixture>;
+      agents?: ReturnType<typeof agentDto>[];
+      draftError?: Error;
+    } = {},
+  ) {
     const draft = options.draft || draftFixture();
     const agents = options.agents || [agentDto("agent-draft", "草稿 Agent")];
     const readiness = publishReadyReadiness();

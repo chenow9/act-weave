@@ -113,7 +113,7 @@ async function main() {
     // ========== DEF-02 / AC-07 Smart DAG recovery card ==========
     // Intercept session create (pass-through) and turns (force retryable failure)
     let sessionCreated = false;
-    await page.route("**/workflow-generate-sessions**", async (route) => {
+    await page.route((url) => url.pathname.includes("/workflow-generate-sessions"), async (route) => {
       const req = route.request();
       const url = req.url();
       const method = req.method();
