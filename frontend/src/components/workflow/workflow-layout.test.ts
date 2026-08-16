@@ -97,7 +97,7 @@ describe("autoLayoutWorkflowGraph", () => {
 
     // Reject sits on a parallel track BELOW the success rail.
     expect(p.reject.y).toBeGreaterThan(p.reserve.y);
-    expect(Math.abs(p.reject.y - p.reserve.y)).toBeGreaterThanOrEqual(160);
+    expect(Math.abs(p.reject.y - p.reserve.y)).toBeGreaterThanOrEqual(200);
 
     // Column pitch is stable; fork/stage columns may be slightly wider (≤ 40).
     const chainX = [p.cond.x, p.reserve.x, p.qc.x, p.approval.x, p.approve.x, p.end.x];

@@ -11,15 +11,15 @@ const LAYOUT_START_X = 48;
 const LAYOUT_CENTER_Y = 260;
 /**
  * Column pitch = left-edge distance between successive layers.
- * MUST exceed the visual card width (~180) so right-port of node N is left of
+ * MUST exceed the visual card width (244) so right-port of node N is left of
  * left-port of node N+1; otherwise every sequential edge is mis-drawn as a loop.
  */
-const COLUMN_GAP_TIGHT = 240; // 180 card + 60 clear gap
+const COLUMN_GAP_TIGHT = 376; // 244 card + 132 clear — room for a branch pill + stubs
 /** Wider pitch after a fork / stage boundary. */
-const COLUMN_GAP_STAGE = 280;
-const ROW_GAP = 176;
-const NODE_MIN_HEIGHT = 92;
-const BOX_GAP_Y = 28;
+const COLUMN_GAP_STAGE = 416;
+const ROW_GAP = 224;
+const NODE_MIN_HEIGHT = 72;
+const BOX_GAP_Y = 96;
 const OVERLAP_THRESHOLD = 80;
 
 export function autoLayoutWorkflowGraph(graph: WorkflowGraphDraft): WorkflowGraphDraft {

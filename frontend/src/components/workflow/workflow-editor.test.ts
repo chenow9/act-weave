@@ -737,6 +737,94 @@ describe("workflow graph canvas", () => {
     expect(wrapper.find(".workflow-graph-empty").exists()).toBe(false);
   });
 
+  it("renders Dify-like node chrome with icons, localized types, and no raw ids", async () => {
+    const wrapper = mount(WorkflowGraphCanvas, {
+      props: {
+        graph: {
+          ...draftFixture().graph,
+          nodes: [
+            {
+              id: "start",
+              type: "Start",
+              label: "Start",
+              position: { x: 48, y: 180 },
+              ports: [{ key: "output", label: "Output", direction: "output" }],
+              data: {},
+              ui: {},
+            },
+            {
+              id: "get_customer",
+              type: "Tool",
+              label: "Tool",
+              position: { x: 360, y: 180 },
+              ports: [
+                { key: "input", label: "Input", direction: "input" },
+                { key: "output", label: "Output", direction: "output" },
+              ],
+              data: {},
+              ui: {},
+            },
+            {
+              id: "check_qualification",
+              type: "Condition",
+              label: "Condition",
+              position: { x: 672, y: 180 },
+              ports: [
+                { key: "input", label: "Input", direction: "input" },
+                { key: "output", label: "Output", direction: "output" },
+              ],
+              data: {},
+              ui: {},
+            },
+          ],
+          edges: [
+            {
+              id: "e1",
+              sourceNodeId: "start",
+              sourcePort: "output",
+              targetNodeId: "get_customer",
+              targetPort: "input",
+              data: {},
+              ui: {},
+            },
+            {
+              id: "e2",
+              sourceNodeId: "get_customer",
+              sourcePort: "output",
+              targetNodeId: "check_qualification",
+              targetPort: "input",
+              data: { branch: "qualified" },
+              ui: {},
+            },
+          ],
+        },
+        selectedNodeId: "get_customer",
+        nodeExplanations: [{ nodeId: "check_qualification", title: "资质校验", reason: "判断是否准入" }],
+      },
+      global: {
+        stubs: {
+          VueFlow: VueFlowStub,
+          Handle: HandleStub,
+        },
+      },
+    });
+
+    const start = wrapper.get('[data-node-id="start"]');
+    expect(start.attributes("data-node-type")).toBe("Start");
+    expect(start.text()).toContain("开始");
+    expect(start.text()).not.toContain("start");
+    expect(start.find(".workflow-flow-node-icon").exists()).toBe(true);
+
+    const tool = wrapper.get('[data-node-id="get_customer"]');
+    expect(tool.classes()).toContain("selected");
+    expect(tool.text()).toContain("Get Customer");
+    expect(tool.text()).toContain("工具调用");
+    expect(tool.text()).not.toContain("get_customer");
+
+    expect(wrapper.get('[data-node-id="check_qualification"]').text()).toContain("资质校验");
+    expect(wrapper.get('[data-edge-id="e2"]').text()).toBe("条件成立");
+  });
+
   it("locks drag and connect while lockInteraction is true", async () => {
     const wrapper = mount(WorkflowGraphCanvas, {
       props: {
@@ -862,6 +950,31 @@ describe("workflow inspector typed editors", () => {
     await wrapper.setProps({ prompt: nextPrompt });
     expect((wrapper.get("textarea").element as HTMLTextAreaElement).value).toContain("供应商准入");
     expect(wrapper.get('[data-action="submit-generate"]').attributes("disabled")).toBeUndefined();
+  });
+
+  it("sends generate on Enter and keeps a newline on Shift+Enter", async () => {
+    const wrapper = mount(WorkflowGenerateDock, {
+      props: {
+        hasWorkspaceContext: true,
+        selectedAgentUsable: true,
+        prompt: "供应商准入",
+        nodeExplanations: [{ nodeId: "tool-1", title: "查资质", reason: "匹配工具" }],
+        transcript: [{ kind: "assistant", id: "a1", text: "已生成", draftVersion: 1 }],
+      },
+      global: {
+        plugins: testI18nPlugins(),
+      },
+    });
+
+    await wrapper.get("textarea").trigger("keydown", { key: "Enter", shiftKey: true });
+    expect(wrapper.emitted("submit")).toBeUndefined();
+
+    await wrapper.get("textarea").trigger("keydown", { key: "Enter" });
+    expect(wrapper.emitted("submit")).toHaveLength(1);
+
+    await wrapper.get('[data-node-pill="tool-1"]').trigger("click");
+    expect(wrapper.emitted("focus-node")?.[0]).toEqual(["tool-1"]);
+    expect(wrapper.text()).toContain("第 1 版");
   });
 
   it("builds start input schema fields without requiring raw JSON and surfaces raw JSON parse errors", async () => {
@@ -1532,7 +1645,7 @@ describe("workflow graph editor", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    expect(wrapper.get('[data-node-id="start"]').text()).toContain("Start");
+    expect(wrapper.get('[data-node-id="start"]').text()).toContain("开始");
     expect(wrapper.get(".workflow-editor-shell").attributes("data-editor-dirty-state")).toBe("saved");
 
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Z", ctrlKey: true, shiftKey: true }));

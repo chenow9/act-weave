@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 
 import type { WorkflowGraphNodeType } from "../../types/domain";
+import { workflowNodeLibrary } from "./workflow-node-visual";
 
 const props = defineProps<{
   variableRefs: string[];
@@ -23,62 +24,15 @@ function addNode(nodeType: WorkflowGraphNodeType) {
   emit("add-node", nodeType);
 }
 
-const nodeLibrary = computed(() => [
-  {
-    type: "Start" as const,
-    icon: "fa-solid fa-play",
-    title: t("workflow.nodeStart"),
-    description: t("workflow.nodeStartDesc"),
-  },
-  {
-    type: "Tool" as const,
-    icon: "fa-solid fa-plug",
-    title: t("workflow.nodeTool"),
-    description: t("workflow.nodeToolDesc"),
-  },
-  {
-    type: "Condition" as const,
-    icon: "fa-solid fa-code-branch",
-    title: t("workflow.nodeCondition"),
-    description: t("workflow.nodeConditionDesc"),
-  },
-  {
-    type: "SubWorkflow" as const,
-    icon: "fa-solid fa-diagram-project",
-    title: t("workflow.nodeSubWorkflow"),
-    description: t("workflow.nodeSubWorkflowDesc"),
-  },
-  {
-    type: "Transform" as const,
-    icon: "fa-solid fa-shuffle",
-    title: t("workflow.nodeTransform"),
-    description: t("workflow.nodeTransformDesc"),
-  },
-  {
-    type: "Parallel" as const,
-    icon: "fa-solid fa-grip-lines-vertical",
-    title: t("workflow.nodeParallel"),
-    description: t("workflow.nodeParallelDesc"),
-  },
-  {
-    type: "ForEach" as const,
-    icon: "fa-solid fa-repeat",
-    title: t("workflow.nodeForEach"),
-    description: t("workflow.nodeForEachDesc"),
-  },
-  {
-    type: "Approval" as const,
-    icon: "fa-solid fa-clipboard-check",
-    title: t("workflow.nodeApproval"),
-    description: t("workflow.nodeApprovalDesc"),
-  },
-  {
-    type: "End" as const,
-    icon: "fa-solid fa-flag-checkered",
-    title: t("workflow.nodeEnd"),
-    description: t("workflow.nodeEndDesc"),
-  },
-]);
+const nodeLibrary = computed(() =>
+  workflowNodeLibrary().map((item) => ({
+    type: item.type,
+    icon: item.icon,
+    accent: item.accent,
+    title: t(item.labelKey),
+    description: t(item.descKey),
+  })),
+);
 </script>
 
 <template>
@@ -98,7 +52,7 @@ const nodeLibrary = computed(() => [
         :disabled="props.disabled"
         @click="addNode(node.type)"
       >
-        <i :class="node.icon" />
+        <i :class="node.icon" :style="{ color: node.accent, background: `${node.accent}1f` }" />
         <span>
           <strong>{{ node.title }}</strong>
           <small>{{ node.description }}</small>

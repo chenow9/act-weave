@@ -27,6 +27,7 @@ import {
   type WorkflowHistoryState,
 } from "../components/workflow/workflow-history";
 import { autoLayoutWorkflowGraph, layoutWorkflowGraphIfNeeded } from "../components/workflow/workflow-layout";
+import { polishWorkflowGraphLabels } from "../components/workflow/workflow-node-visual";
 import { toAPIError } from "../services/api";
 import { useAgentStore } from "../stores/agents";
 import { useAuthStore } from "../stores/auth";
@@ -205,7 +206,6 @@ export function createWorkflowPageModel() {
       key: "nodes",
       label: tt("workflow.colNodes"),
       width: 160,
-      align: "right",
       hidable: true,
       sortable: true,
       sortKey: "nodeCount",
@@ -215,7 +215,6 @@ export function createWorkflowPageModel() {
       key: "successRate",
       label: tt("workflow.colSuccess"),
       width: 160,
-      align: "right",
       hidable: true,
       getValue: workflowSuccessRateLabel,
     },
@@ -356,6 +355,7 @@ export function createWorkflowPageModel() {
   const generateLastFailure = computed(() => smart.lastFailure);
   const generateLastGuardReport = computed(() => smart.lastGuardReport);
   const generateReasoningSteps = computed(() => smart.reasoningSteps);
+  const generateNodeExplanations = computed(() => smart.nodeExplanations);
   const generateMissingCapabilities = computed(() => smart.missingCapabilities);
   const generateSessionClosed = computed(() => smart.sessionStatus === "CLOSED");
   const selectedGraphEdge = computed(() => editorGraph.value.edges.find((edge) => edge.id === selectedEdgeId.value));
@@ -731,7 +731,16 @@ export function createWorkflowPageModel() {
     const draft = result.draft;
     if (!draft?.graph) return;
     workflowStore.selectedWorkflowId = result.workflow.id;
-    editorGraph.value = layoutWorkflowGraphIfNeeded(cloneGraph(draft.graph));
+    const nextGraph = autoLayoutWorkflowGraph(
+      polishWorkflowGraphLabels(cloneGraph(draft.graph), result.nodeExplanations || [], nodeTypeLabel),
+    );
+    editorGraph.value = nextGraph;
+    if (workflowStore.activeDraft && workflowStore.activeDraft.workflowId === result.workflow.id) {
+      workflowStore.activeDraft = {
+        ...workflowStore.activeDraft,
+        graph: cloneGraph(nextGraph),
+      };
+    }
     resetEditorHistory();
     syncSelection();
     generateDock.applyHighlightEpoch.value += 1;
@@ -2828,6 +2837,7 @@ export function createWorkflowPageModel() {
     hideFailureFeedbackBanner,
     dismissPendingFailureFeedback,
     generateReasoningSteps,
+    generateNodeExplanations,
     generateMissingCapabilities,
     generateSessionClosed,
     selectedNodeAiReason,

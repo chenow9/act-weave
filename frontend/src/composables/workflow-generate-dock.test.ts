@@ -4,8 +4,10 @@ import type { Agent, ModelApiConfig, SmartGenerateTurn } from "../types/domain";
 import {
   alreadyProjectedLastFailure,
   agentHasUsableModel,
+  assistantNodePills,
   createWorkflowGenerateDockState,
   failureCtas,
+  latestTranscriptDraftVersion,
   pickPreferredGenerateAgent,
   projectTranscript,
   resolveNodeAiReason,
@@ -258,6 +260,30 @@ describe("generate dock helpers", () => {
     expect(failureCtas("GUARD_REJECTED", "OPEN").map((cta) => cta.key)).toEqual(["retry-rewrite", "end-session"]);
     expect(failureCtas("GUARD_REJECTED", "CLOSED").map((cta) => cta.key)).toEqual(["retry-rewrite"]);
     expect(failureCtas("NETWORK_ERROR", "OPEN").map((cta) => cta.key)).toEqual(["retry-rewrite", "end-session"]);
+  });
+
+  it("dedupes last-turn node pills and reads the latest draft version", () => {
+    expect(
+      assistantNodePills([
+        { nodeId: "approval-1", title: "人工审批", reason: "金额门槛" },
+        { nodeId: "approval-1", title: "人工审批", reason: "重复" },
+        { nodeId: "tool-1", title: "查资质", reason: "工具" },
+        { nodeId: "get_customer", title: "Tool", reason: "占位" },
+        { nodeId: "  ", title: "空", reason: "" },
+      ]),
+    ).toEqual([
+      { nodeId: "approval-1", label: "人工审批" },
+      { nodeId: "tool-1", label: "查资质" },
+      { nodeId: "get_customer", label: "Get Customer" },
+    ]);
+    expect(
+      latestTranscriptDraftVersion([
+        { kind: "user", id: "u1", text: "生成" },
+        { kind: "assistant", id: "a1", text: "ok", draftVersion: 1 },
+        { kind: "user", id: "u2", text: "改" },
+        { kind: "assistant", id: "a2", text: "ok", draftVersion: 2 },
+      ]),
+    ).toBe(2);
   });
 
   it("lists at most three revise issues and folds the rest", () => {

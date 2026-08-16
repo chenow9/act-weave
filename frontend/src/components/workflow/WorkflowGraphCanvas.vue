@@ -17,10 +17,18 @@ import {
 } from "@vue-flow/core";
 
 import { WORKFLOW_GENERATE_HIGHLIGHT_MS } from "../../composables/workflow-generate-dock";
-import type { WorkflowGraphDraft } from "../../types/domain";
+import type { SmartDAGNodeExplanation, WorkflowGraphDraft } from "../../types/domain";
 import { primaryPortKey } from "../../utils/workflow-graph";
-import { getWorkflowBranchOptions } from "./WorkflowEdgeInspector.vue";
-import { LONG_EDGE_MIN_DX, SAME_LANE_EPS, buildFlowchartEdgePath } from "./workflow-edge-path";
+import { LONG_EDGE_MIN_DX, SAME_LANE_EPS, buildFlowchartEdgePath, insetFlowchartPorts } from "./workflow-edge-path";
+import {
+  WORKFLOW_NODE_CARD_HEIGHT,
+  WORKFLOW_NODE_CARD_WIDTH,
+  displayBranchLabel,
+  displayNodeTitle,
+  workflowEdgeColor,
+  workflowEdgeTone,
+  workflowNodeVisual,
+} from "./workflow-node-visual";
 
 const { t } = useI18n();
 
@@ -32,6 +40,7 @@ const props = defineProps<{
   generating?: boolean;
   lockInteraction?: boolean;
   applyHighlightEpoch?: number;
+  nodeExplanations?: SmartDAGNodeExplanation[];
 }>();
 
 const emit = defineEmits<{
@@ -47,7 +56,7 @@ const emit = defineEmits<{
   ): void;
 }>();
 
-const { fitView, zoomIn, zoomOut } = useVueFlow();
+const { fitView, zoomIn, zoomOut, viewport, getViewport } = useVueFlow();
 const hasUserAdjustedViewport = ref(false);
 const isProgrammaticViewportMove = ref(false);
 const currentZoom = ref(props.graph.viewport?.zoom || 1);
@@ -73,6 +82,16 @@ onBeforeUnmount(() => {
   window.clearTimeout(highlightTimer);
 });
 
+watch(
+  () => viewport.zoom,
+  (zoom) => {
+    if (typeof zoom === "number" && zoom > 0) {
+      currentZoom.value = zoom;
+    }
+  },
+  { immediate: true },
+);
+
 onMounted(() => {
   void nextTick(() => fitCanvasView("auto"));
 });
@@ -86,21 +105,53 @@ watch(
   },
 );
 
+const explanationTitleById = computed(() => {
+  const titles = new Map<string, string>();
+  for (const item of props.nodeExplanations || []) {
+    const nodeId = item.nodeId?.trim();
+    const title = item.title?.trim();
+    if (nodeId && title && !titles.has(nodeId)) {
+      titles.set(nodeId, title);
+    }
+  }
+  return titles;
+});
+
 const flowNodes = computed(() =>
-  props.graph.nodes.map((node) => ({
-    id: node.id,
-    type: "workflow",
-    position: node.position,
-    draggable: !props.lockInteraction,
-    selectable: true,
-    data: {
+  props.graph.nodes.map((node) => {
+    const visual = workflowNodeVisual(node.type);
+    const typeLabel = t(visual.labelKey);
+    const title = displayNodeTitle({
+      id: node.id,
+      type: node.type,
       label: node.label,
-      nodeType: node.type,
-      // One handle per side only — branches share the same exit point.
-      ports: visiblePortsForNode(node),
-      selected: props.selectedNodeId === node.id,
-    },
-  })),
+      typeLabel,
+      explanationTitle: explanationTitleById.value.get(node.id),
+    });
+    return {
+      id: node.id,
+      type: "workflow",
+      position: node.position,
+      draggable: !props.lockInteraction,
+      selectable: true,
+      width: WORKFLOW_NODE_CARD_WIDTH,
+      height: WORKFLOW_NODE_CARD_HEIGHT,
+      style: { width: `${WORKFLOW_NODE_CARD_WIDTH}px`, height: `${WORKFLOW_NODE_CARD_HEIGHT}px` },
+      data: {
+        label: node.label,
+        title,
+        nodeType: node.type,
+        typeLabel,
+        icon: visual.icon,
+        accent: visual.accent,
+        kind: visual.kind,
+        showTypeLabel: title !== typeLabel,
+        // One handle per side only — branches share the same exit point.
+        ports: visiblePortsForNode(node),
+        selected: props.selectedNodeId === node.id,
+      },
+    };
+  }),
 );
 
 const miniMapNodes = computed(() => {
@@ -109,13 +160,14 @@ const miniMapNodes = computed(() => {
   const ys = props.graph.nodes.map((node) => node.position.y);
   const minX = Math.min(...xs);
   const minY = Math.min(...ys);
-  const width = Math.max(1, Math.max(...xs) - minX + 180);
-  const height = Math.max(1, Math.max(...ys) - minY + 72);
+  const width = Math.max(1, Math.max(...xs) - minX + WORKFLOW_NODE_CARD_WIDTH);
+  const height = Math.max(1, Math.max(...ys) - minY + WORKFLOW_NODE_CARD_HEIGHT);
   return props.graph.nodes.map((node) => ({
     id: node.id,
     left: `${((node.position.x - minX) / width) * 88 + 4}%`,
     top: `${((node.position.y - minY) / height) * 78 + 8}%`,
     selected: node.id === props.selectedNodeId,
+    color: workflowNodeVisual(node.type).accent,
   }));
 });
 
@@ -164,8 +216,7 @@ const flowEdges = computed(() => {
         const ny = node.position?.y ?? 0;
         return Math.abs(ny - sy) <= SAME_LANE_EPS && nx > lo && nx < hi;
       });
-      const longSpan = Math.abs(tx - sx) >= LONG_EDGE_MIN_DX;
-      if (hopsOverNodes || longSpan) {
+      if (hopsOverNodes || Math.abs(tx - sx) >= LONG_EDGE_MIN_DX * 2) {
         // rejected → prefer below; default / others → above first, then alternate.
         const branch = typeof edge.data?.branch === "string" ? edge.data.branch.toLowerCase() : "";
         if (branch.includes("reject") || branch === "false" || branch === "default") {
@@ -187,6 +238,9 @@ const flowEdges = computed(() => {
     // All outgoing / incoming edges share one geometric handle (branch is on edge data).
     const sourceHandle = primaryPortKey(sourceNode?.ports, "output");
     const targetHandle = primaryPortKey(targetNode?.ports, "input");
+    const selected = props.selectedEdgeId === edge.id;
+    const tone = workflowEdgeTone(edge.data?.branch);
+    const color = workflowEdgeColor(tone, selected);
 
     return {
       id: edge.id,
@@ -196,19 +250,25 @@ const flowEdges = computed(() => {
       sourceHandle,
       targetHandle,
       label: branchLabel(edge.data?.branch),
-      class: props.selectedEdgeId === edge.id ? "selected" : undefined,
+      class: [selected ? "selected" : "", tone !== "default" ? `is-${tone}` : ""].filter(Boolean).join(" ") || undefined,
       data: {
         sameLane,
         detourSign,
         mergeSlot,
+        tone,
+        preferEarlyBend: tone === "danger" || tone === "muted",
       },
       style: {
-        stroke: props.selectedEdgeId === edge.id ? "#0f766e" : "#64748b",
-        strokeWidth: props.selectedEdgeId === edge.id ? 2.5 : 2,
+        stroke: color,
+        strokeWidth: selected ? 2.25 : 1.75,
       },
       markerEnd: {
         type: MarkerType.ArrowClosed,
-        color: props.selectedEdgeId === edge.id ? "#0f766e" : "#64748b",
+        color,
+        width: 20,
+        height: 20,
+        markerUnits: "userSpaceOnUse",
+        strokeWidth: 1,
       },
       animated: false,
       zIndex: 0,
@@ -223,6 +283,7 @@ function edgePathCache(edgeProps: EdgeProps) {
   const sameLane = Boolean(edgeProps.data?.sameLane);
   const detourSign = Number(edgeProps.data?.detourSign || 0);
   const mergeSlot = Number(edgeProps.data?.mergeSlot || 0);
+  const preferEarlyBend = Boolean(edgeProps.data?.preferEarlyBend);
   const key = [
     edgeProps.sourceX,
     edgeProps.sourceY,
@@ -231,6 +292,7 @@ function edgePathCache(edgeProps: EdgeProps) {
     sameLane ? 1 : 0,
     detourSign,
     mergeSlot,
+    preferEarlyBend ? 1 : 0,
   ].join("|");
 
   const cached = edgePathMemo.get(edgeProps);
@@ -238,14 +300,21 @@ function edgePathCache(edgeProps: EdgeProps) {
     return cached;
   }
 
-  const built = buildFlowchartEdgePath({
+  const ports = insetFlowchartPorts({
     sourceX: edgeProps.sourceX,
     sourceY: edgeProps.sourceY,
     targetX: edgeProps.targetX,
     targetY: edgeProps.targetY,
+  });
+  const built = buildFlowchartEdgePath({
+    sourceX: ports.sourceX,
+    sourceY: ports.sourceY,
+    targetX: ports.targetX,
+    targetY: ports.targetY,
     sameLane,
     detourSign: detourSign || undefined,
     mergeSlot,
+    preferEarlyBend,
   });
 
   const result = { ...built, key };
@@ -254,10 +323,7 @@ function edgePathCache(edgeProps: EdgeProps) {
 }
 
 function branchLabel(branch: unknown) {
-  if (typeof branch !== "string" || !branch) {
-    return undefined;
-  }
-  return getWorkflowBranchOptions().find((option) => option.value === branch)?.label || branch;
+  return displayBranchLabel(branch, (key) => t(key));
 }
 
 function handleNodeDragStop(event: NodeDragEvent) {
@@ -384,14 +450,22 @@ function handleEdgeContextMenu(payload: unknown) {
   });
 }
 
+function syncCurrentZoom() {
+  const fromHelper = typeof getViewport === "function" ? getViewport().zoom : undefined;
+  const zoom = fromHelper || viewport.zoom;
+  if (typeof zoom === "number" && zoom > 0) {
+    currentZoom.value = zoom;
+  }
+}
+
 function zoomInCanvas() {
   hasUserAdjustedViewport.value = true;
-  void zoomIn();
+  void Promise.resolve(zoomIn()).finally(syncCurrentZoom);
 }
 
 function zoomOutCanvas() {
   hasUserAdjustedViewport.value = true;
-  void zoomOut();
+  void Promise.resolve(zoomOut()).finally(syncCurrentZoom);
 }
 
 function fitCanvasView(source: "auto" | "user" = "user") {
@@ -401,12 +475,15 @@ function fitCanvasView(source: "auto" | "user" = "user") {
     isProgrammaticViewportMove.value = true;
   }
 
-  void Promise.resolve(fitView({ padding: 0.2 })).finally(() => {
-    if (source === "auto") {
-      window.setTimeout(() => {
-        isProgrammaticViewportMove.value = false;
-      }, 0);
-    }
+  void nextTick(() => {
+    void Promise.resolve(fitView({ padding: 0.2, minZoom: 0.2, maxZoom: 1.75 })).finally(() => {
+      syncCurrentZoom();
+      if (source === "auto") {
+        window.setTimeout(() => {
+          isProgrammaticViewportMove.value = false;
+        }, 0);
+      }
+    });
   });
 }
 </script>
@@ -432,6 +509,8 @@ function fitCanvasView(source: "auto" | "user" = "user") {
       :edges="flowEdges"
       :default-viewport="props.graph.viewport"
       :fit-view-on-init="true"
+      :min-zoom="0.2"
+      :max-zoom="1.75"
       :nodes-connectable="!props.lockInteraction"
       :nodes-draggable="!props.lockInteraction"
       :elements-selectable="true"
@@ -441,6 +520,7 @@ function fitCanvasView(source: "auto" | "user" = "user") {
       class="workflow-flow"
       @node-drag-stop="handleNodeDragStop"
       @move-start="handleViewportMoveStart"
+      @viewport-change="handleViewportChangeEnd"
       @viewport-change-end="handleViewportChangeEnd"
       @connect="handleConnect"
       @edge-click="handleEdgeClick"
@@ -457,7 +537,10 @@ function fitCanvasView(source: "auto" | "user" = "user") {
         <EdgeLabelRenderer v-if="edgeProps.label">
           <div
             class="workflow-flow-edge-label nodrag nopan"
-            :class="{ selected: props.selectedEdgeId === edgeProps.id }"
+            :class="[
+              props.selectedEdgeId === edgeProps.id ? 'selected' : '',
+              edgeProps.data?.tone && edgeProps.data.tone !== 'default' ? `is-${edgeProps.data.tone}` : '',
+            ]"
             :style="{
               transform: `translate(-50%, -50%) translate(${edgePathCache(edgeProps).labelX}px, ${edgePathCache(edgeProps).labelY}px)`,
             }"
@@ -469,9 +552,11 @@ function fitCanvasView(source: "auto" | "user" = "user") {
       <template #node-workflow="nodeProps">
         <button
           class="workflow-flow-node"
-          :class="{ selected: props.selectedNodeId === nodeProps.id }"
+          :class="[`is-${nodeProps.data.kind || 'action'}`, { selected: props.selectedNodeId === nodeProps.id }]"
           :data-node-id="nodeProps.id"
+          :data-node-type="nodeProps.data.nodeType"
           type="button"
+          :style="{ '--node-accent': nodeProps.data.accent }"
           @click.stop="emit('select-node', nodeProps.id)"
           @contextmenu.prevent.stop="handleNodeContextMenu(nodeProps.id, $event)"
         >
@@ -483,7 +568,7 @@ function fitCanvasView(source: "auto" | "user" = "user") {
             :position="port.direction === 'input' ? Position.Left : Position.Right"
             :aria-label="
               t('workflow.portAria', {
-                label: nodeProps.data.label,
+                label: nodeProps.data.title || nodeProps.data.label,
                 direction: port.direction === 'input' ? t('workflow.portInput') : t('workflow.portOutput'),
               })
             "
@@ -491,43 +576,51 @@ function fitCanvasView(source: "auto" | "user" = "user") {
             class="workflow-flow-handle"
             :class="port.direction"
           />
-          <span class="workflow-flow-node-type">{{ nodeProps.data.nodeType }}</span>
-          <strong>{{ nodeProps.data.label }}</strong>
-          <small>{{ nodeProps.id }}</small>
+          <span class="workflow-flow-node-icon" aria-hidden="true">
+            <i :class="nodeProps.data.icon" />
+          </span>
+          <span class="workflow-flow-node-body">
+            <strong>{{ nodeProps.data.title || nodeProps.data.label }}</strong>
+            <small v-if="nodeProps.data.showTypeLabel" class="workflow-flow-node-type">{{
+              nodeProps.data.typeLabel
+            }}</small>
+          </span>
         </button>
       </template>
-      <div class="workflow-flow-controls" role="group" :aria-label="t('workflow.canvasZoomAria')">
-        <span class="workflow-flow-scale">{{ Math.round(currentZoom * 100) }}%</span>
-        <button type="button" :aria-label="t('workflow.zoomIn')" @click.stop="zoomInCanvas">
-          <i class="fa-solid fa-plus" aria-hidden="true" />
-        </button>
-        <button type="button" :aria-label="t('workflow.zoomOut')" @click.stop="zoomOutCanvas">
-          <i class="fa-solid fa-minus" aria-hidden="true" />
-        </button>
+      <div class="workflow-flow-chrome">
         <button
-          class="workflow-fit-all-button"
+          class="workflow-flow-minimap"
           type="button"
-          :aria-label="t('workflow.fitAllNodes')"
+          :aria-label="t('workflow.minimapFitAria')"
           @click.stop="fitCanvasView()"
         >
-          <i class="fa-solid fa-compress" aria-hidden="true" />
-          <span>{{ t("workflow.fitAllNodes") }}</span>
+          <span
+            v-for="node in miniMapNodes"
+            :key="node.id"
+            :class="{ selected: node.selected }"
+            :style="{ left: node.left, top: node.top, background: node.color }"
+          />
         </button>
-        <span class="workflow-flow-node-count">{{ t("workflow.nodeCount", { n: props.graph.nodes.length }) }}</span>
+        <div class="workflow-flow-controls" role="group" :aria-label="t('workflow.canvasZoomAria')">
+          <span class="workflow-flow-scale">{{ Math.round(currentZoom * 100) }}%</span>
+          <button type="button" :aria-label="t('workflow.zoomIn')" @click.stop="zoomInCanvas">
+            <i class="fa-solid fa-plus" aria-hidden="true" />
+          </button>
+          <button type="button" :aria-label="t('workflow.zoomOut')" @click.stop="zoomOutCanvas">
+            <i class="fa-solid fa-minus" aria-hidden="true" />
+          </button>
+          <button
+            class="workflow-fit-all-button"
+            type="button"
+            :aria-label="t('workflow.fitAllNodes')"
+            @click.stop="fitCanvasView()"
+          >
+            <i class="fa-solid fa-compress" aria-hidden="true" />
+            <span>{{ t("workflow.fitAllNodes") }}</span>
+          </button>
+          <span class="workflow-flow-node-count">{{ t("workflow.nodeCount", { n: props.graph.nodes.length }) }}</span>
+        </div>
       </div>
-      <button
-        class="workflow-flow-minimap"
-        type="button"
-        :aria-label="t('workflow.minimapFitAria')"
-        @click.stop="fitCanvasView()"
-      >
-        <span
-          v-for="node in miniMapNodes"
-          :key="node.id"
-          :class="{ selected: node.selected }"
-          :style="{ left: node.left, top: node.top }"
-        />
-      </button>
     </VueFlow>
   </section>
 </template>

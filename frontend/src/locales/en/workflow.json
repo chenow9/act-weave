@@ -99,6 +99,7 @@
   "nodeEnd": "End",
   "nodeTool": "Tool",
   "nodeHttp": "HTTP",
+  "nodeHttpDesc": "Call an external HTTP API",
   "nodeSubWorkflow": "Sub-workflow",
   "nodeTransform": "Transform",
   "nodeApproval": "Approval",
@@ -455,6 +456,7 @@
   "generateResumeClosed": "This generation chat has ended. The draft remains; you can keep editing, checking, and publishing.",
   "generateReopen": "Start another generation",
   "generateFailureTitle": "This version did not pass checks. The canvas is still the previous draft.",
+  "generateInternalError": "No new draft was generated. Edit the request and try again.",
   "generateGuardRejected": "This version failed graph checks. The canvas still shows the previous draft.",
   "generateDirtyChip": "Unsaved manual edits",
   "generateSavingThenSend": "Saving, then generating…",
@@ -491,5 +493,11 @@
   "generateNeedWorkspaceAgent": "Choose a workspace and an Agent first.",
   "generateYou": "You",
   "generateAssistant": "Assistant",
-  "generateErrorCode": "Error code"
+  "generateErrorCode": "Error code",
+  "generateVersionChip": "v{n}",
+  "generateEmptyChat": "Describe the workflow in one sentence. The draft will appear on the canvas.",
+  "generateComposerShortcut": "Enter to send, Shift+Enter for a new line",
+  "generateChangedNodes": "Steps changed this turn",
+  "generateNoAgentsShort": "No Agent yet",
+  "generateModelRequiredShort": "Bind a model first"
 }

@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import {
   WORKFLOW_GENERATE_PROMPT_MAX,
+  assistantNodePills,
   failureCtas,
   generateFailureDisplayKey,
+  latestTranscriptDraftVersion,
   visibleReviseIssues,
   type GenerateAgentOption,
   type TranscriptRow,
@@ -17,6 +19,7 @@ import type {
   FailureFeedback,
   SmartDAGGuardReport,
   SmartDAGMissingCapability,
+  SmartDAGNodeExplanation,
   SmartDAGReasoningStep,
 } from "../../types/domain";
 
@@ -42,6 +45,7 @@ const props = withDefaults(
     pendingFailureFeedback?: FailureFeedback | null;
     failureFeedbackBannerHidden?: boolean;
     reasoningSteps?: SmartDAGReasoningStep[];
+    nodeExplanations?: SmartDAGNodeExplanation[];
     missingCapabilities?: SmartDAGMissingCapability[];
     sessionClosed?: boolean;
     restorePending?: boolean;
@@ -62,6 +66,7 @@ const props = withDefaults(
     agentPopoverOpen: false,
     transcript: () => [],
     reasoningSteps: () => [],
+    nodeExplanations: () => [],
     missingCapabilities: () => [],
     sessionClosed: false,
     restorePending: false,
@@ -81,9 +86,13 @@ const emit = defineEmits<{
   (event: "cancel-end-session"): void;
   (event: "hide-failure-feedback-banner"): void;
   (event: "dismiss-failure-feedback"): void;
+  (event: "focus-node", nodeId: string): void;
 }>();
 
 const { t } = useI18n();
+
+const transcriptRef = ref<HTMLElement | null>(null);
+const promptRef = ref<HTMLTextAreaElement | null>(null);
 
 const examples = computed(() => [
   t("workflow.generateExample1"),
@@ -92,6 +101,7 @@ const examples = computed(() => [
 ]);
 
 const promptTooLong = computed(() => [...props.prompt].length > WORKFLOW_GENERATE_PROMPT_MAX);
+const promptNearLimit = computed(() => [...props.prompt].length >= WORKFLOW_GENERATE_PROMPT_MAX - 200);
 
 const canSubmit = computed(() => {
   if (!props.hasWorkspaceContext || props.generating || props.generateBusy || props.sessionClosed) return false;
@@ -112,6 +122,10 @@ const lastAssistantId = computed(() => {
   const assistants = props.transcript.filter((row) => row.kind === "assistant");
   return assistants.at(-1)?.id || "";
 });
+
+const draftVersion = computed(() => latestTranscriptDraftVersion(props.transcript));
+
+const nodePills = computed(() => assistantNodePills(props.nodeExplanations));
 
 const recoveryCtas = computed(() =>
   props.lastFailure && !props.generating
@@ -143,6 +157,27 @@ const chipLabel = computed(() => {
   return t("workflow.generateAgentMissing");
 });
 
+const chipShortLabel = computed(() => {
+  if (props.agentsLoadState === "loading") return t("workflow.generateLoadingAgents");
+  if (!props.agents.length) return t("workflow.generateNoAgentsShort");
+  if (!props.selectedAgentUsable) return t("workflow.generateModelRequiredShort");
+  if (props.selectedAgentName) return props.selectedAgentName;
+  return t("workflow.generateAgentMissing");
+});
+
+const showEmptyHint = computed(() => !props.transcript.length && !props.sessionClosed);
+
+const showEndSession = computed(
+  () => !props.sessionClosed && props.transcript.some((row) => row.kind === "user" || row.kind === "assistant"),
+);
+
+const visibleTranscript = computed(() => {
+  if (!props.lastFailure || props.generating) return props.transcript;
+  const lastFailureRow = [...props.transcript].reverse().find((row) => row.kind === "failure");
+  if (!lastFailureRow) return props.transcript;
+  return props.transcript.filter((row) => row.id !== lastFailureRow.id);
+});
+
 function applyExample(example: string) {
   emit("update:prompt", example);
 }
@@ -151,7 +186,13 @@ function onPromptInput(event: Event) {
   const target = event.target;
   if (target instanceof HTMLTextAreaElement) {
     emit("update:prompt", target.value);
+    resizePrompt(target);
   }
+}
+
+function resizePrompt(el: HTMLTextAreaElement) {
+  el.style.height = "auto";
+  el.style.height = `${Math.min(Math.max(el.scrollHeight, 40), 120)}px`;
 }
 
 function submitGenerate() {
@@ -160,36 +201,85 @@ function submitGenerate() {
 }
 
 function onPromptKeydown(event: KeyboardEvent) {
-  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-    event.preventDefault();
-    submitGenerate();
-  }
+  if (event.key !== "Enter") return;
+  if (event.isComposing || event.keyCode === 229) return;
+  if (event.shiftKey) return;
+  event.preventDefault();
+  submitGenerate();
 }
 
 function failureMessage(row: Extract<TranscriptRow, { kind: "failure" }>) {
   const key = generateFailureDisplayKey(row.code);
-  return row.code === "AGENT_MODEL_REQUIRED" || row.code === "GUARD_REJECTED" || !row.message ? t(key) : row.message;
+  if (
+    row.code === "AGENT_MODEL_REQUIRED" ||
+    row.code === "GUARD_REJECTED" ||
+    row.code === "INTERNAL_ERROR" ||
+    row.code === "LLM_JOB_FAILED" ||
+    row.code === "NETWORK_ERROR" ||
+    !row.message ||
+    /request could not be completed/i.test(row.message)
+  ) {
+    return t(key);
+  }
+  return row.message;
 }
+
+function scrollTranscriptToEnd() {
+  const el = transcriptRef.value;
+  if (!el) return;
+  el.scrollTop = el.scrollHeight;
+}
+
+watch(
+  () => [props.transcript.length, props.generating, props.lastFailure?.code, props.endSessionConfirmVisible],
+  () => {
+    void nextTick(scrollTranscriptToEnd);
+  },
+);
+
+watch(
+  () => props.prompt,
+  () => {
+    if (promptRef.value) resizePrompt(promptRef.value);
+  },
+);
 </script>
 
 <template>
   <section class="workflow-generate-dock" :aria-busy="props.generating || props.generateBusy ? 'true' : 'false'">
     <div class="workflow-generate-dock-head">
-      <div class="workflow-panel-heading">
-        <span>{{ t("workflow.generateDockTitle") }}</span>
-        <h3>{{ t("workflow.generateDockTitle") }}</h3>
-        <p>{{ t("workflow.generateDockHint") }}</p>
+      <div class="workflow-generate-dock-title">
+        <h3>
+          {{ t("workflow.generateDockTitle") }}
+          <span v-if="draftVersion" class="workflow-generate-version">{{
+            t("workflow.generateVersionChip", { n: draftVersion })
+          }}</span>
+        </h3>
+        <p v-if="showEmptyHint">{{ t("workflow.generateDockHint") }}</p>
       </div>
-      <button
-        v-if="props.sheet"
-        class="ghost-button workflow-generate-sheet-done"
-        type="button"
-        data-action="close-generate-sheet"
-        :disabled="props.generating || props.generateBusy"
-        @click="emit('close-sheet')"
-      >
-        {{ t("workflow.generateSheetDone") }}
-      </button>
+      <div class="workflow-generate-dock-head-actions">
+        <button
+          v-if="showEndSession"
+          class="ghost-button workflow-generate-end-session"
+          type="button"
+          data-action="end-generate-session"
+          :disabled="props.generating || props.generateBusy"
+          :aria-label="t('workflow.generateEndSession')"
+          @click="emit('failure-cta', 'end-session')"
+        >
+          {{ t("workflow.generateEndConfirmYes") }}
+        </button>
+        <button
+          v-if="props.sheet"
+          class="ghost-button workflow-generate-sheet-done"
+          type="button"
+          data-action="close-generate-sheet"
+          :disabled="props.generating || props.generateBusy"
+          @click="emit('close-sheet')"
+        >
+          {{ t("workflow.generateSheetDone") }}
+        </button>
+      </div>
     </div>
 
     <section v-if="showReviseBanner" class="workflow-generate-revise-banner" data-testid="generate-revise-banner">
@@ -229,8 +319,31 @@ function failureMessage(row: Extract<TranscriptRow, { kind: "failure" }>) {
       </button>
     </section>
 
-    <div class="workflow-generate-transcript" aria-live="polite">
-      <article v-for="row in props.transcript" :key="row.id" class="workflow-generate-bubble" :class="`is-${row.kind}`">
+    <div ref="transcriptRef" class="workflow-generate-transcript" aria-live="polite">
+      <div v-if="!props.transcript.length" class="workflow-generate-empty">
+        <p>{{ t("workflow.generateEmptyChat") }}</p>
+        <div class="workflow-generate-examples">
+          <span>{{ t("workflow.generateTryExamples") }}</span>
+          <div class="workflow-generate-example-list">
+            <button
+              v-for="example in examples"
+              :key="example"
+              class="workflow-generate-example"
+              type="button"
+              @click="applyExample(example)"
+            >
+              {{ example }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <article
+        v-for="row in visibleTranscript"
+        :key="row.id"
+        class="workflow-generate-bubble"
+        :class="`is-${row.kind}`"
+      >
         <template v-if="row.kind === 'user'">
           <span class="workflow-generate-bubble-role">{{ t("workflow.generateYou") }}</span>
           <p>{{ row.text }}</p>
@@ -239,6 +352,19 @@ function failureMessage(row: Extract<TranscriptRow, { kind: "failure" }>) {
           <span class="workflow-generate-bubble-role">{{ t("workflow.generateAssistant") }}</span>
           <p>{{ row.text }}</p>
           <small v-if="row.draftVersion">{{ t("workflow.generateDraftReady", { n: row.draftVersion }) }}</small>
+          <div v-if="row.id === lastAssistantId && nodePills.length" class="workflow-generate-node-pills">
+            <span class="workflow-generate-node-pills-label">{{ t("workflow.generateChangedNodes") }}</span>
+            <button
+              v-for="pill in nodePills"
+              :key="pill.nodeId"
+              class="workflow-generate-node-pill"
+              type="button"
+              :data-node-pill="pill.nodeId"
+              @click="emit('focus-node', pill.nodeId)"
+            >
+              {{ pill.label }}
+            </button>
+          </div>
           <details v-if="row.id === lastAssistantId && props.reasoningSteps.length" class="workflow-generate-reasoning">
             <summary>{{ t("workflow.generateReasoningToggle") }}</summary>
             <ol>
@@ -254,7 +380,11 @@ function failureMessage(row: Extract<TranscriptRow, { kind: "failure" }>) {
           </div>
         </template>
         <template v-else-if="row.kind === 'pending'">
-          <p>{{ t("workflow.generateInProgress") }}</p>
+          <span class="workflow-generate-bubble-role">{{ t("workflow.generateAssistant") }}</span>
+          <p class="workflow-generate-pending-text">
+            <span class="workflow-generate-pending-dots" aria-hidden="true"><i /><i /><i /></span>
+            {{ t("workflow.generateInProgress") }}
+          </p>
         </template>
         <template v-else>
           <p>{{ failureMessage(row) }}</p>
@@ -353,78 +483,89 @@ function failureMessage(row: Extract<TranscriptRow, { kind: "failure" }>) {
       </div>
     </div>
 
-    <textarea
-      class="workflow-generate-prompt"
-      rows="7"
-      :value="props.prompt"
-      :maxlength="WORKFLOW_GENERATE_PROMPT_MAX"
-      :aria-label="t('workflow.generateDockTitle')"
-      :aria-invalid="promptTooLong ? 'true' : 'false'"
-      :placeholder="
-        props.hasPersistableDraft ? t('workflow.generatePlaceholderRevise') : t('workflow.generatePlaceholder')
-      "
-      :disabled="props.generating || props.generateBusy || props.sessionClosed"
-      @input="onPromptInput"
-      @keydown="onPromptKeydown"
-    />
-
-    <div v-if="!props.transcript.length" class="workflow-generate-examples">
-      <span>{{ t("workflow.generateTryExamples") }}</span>
-      <div class="workflow-generate-example-list">
-        <button
-          v-for="example in examples"
-          :key="example"
-          class="workflow-generate-example"
-          type="button"
-          @click="applyExample(example)"
-        >
-          {{ example }}
-        </button>
-      </div>
-    </div>
-
-    <div class="workflow-generate-char-count">
-      {{ t("workflow.generateCharCount", { n: props.prompt.length }) }}
-    </div>
-
-    <footer class="workflow-generate-footer">
-      <div class="workflow-generate-agent">
-        <button
-          class="intent-chip workflow-generate-agent-chip"
-          type="button"
-          data-action="generate-agent-chip"
-          :class="{ warning: !props.selectedAgentUsable || !props.agents.length }"
-          :disabled="props.generating || props.generateBusy || props.agentsLoadState === 'loading'"
-          @click="emit('toggle-agent-popover')"
-        >
-          {{ chipLabel }}
-        </button>
-        <div v-if="props.agentPopoverOpen" class="workflow-generate-agent-popover" role="listbox">
-          <p v-if="!props.agents.length">{{ t("workflow.generateNoAgents") }}</p>
-          <button
-            v-for="agent in props.agents"
-            :key="agent.id"
-            type="button"
-            role="option"
-            :aria-selected="agent.id === props.selectedAgentId ? 'true' : 'false'"
-            :data-agent-id="agent.id"
-            :disabled="!agent.usable"
-            @click="emit('select-agent', agent.id)"
-          >
-            {{ agent.name }}
-          </button>
-        </div>
-      </div>
-      <span v-if="props.showDirtyChip" class="intent-chip">{{ t("workflow.generateDirtyChip") }}</span>
+    <div v-if="props.sessionClosed" class="workflow-generate-closed">
+      <p>{{ t("workflow.generateResumeClosed") }}</p>
       <button
         class="primary-button"
         type="button"
-        data-action="submit-generate"
-        :disabled="!canSubmit"
-        @click="submitGenerate"
+        data-action="generate-failure-new-attempt"
+        @click="emit('failure-cta', 'new-attempt')"
       >
-        {{ submitLabel }}
+        {{ t("workflow.generateReopen") }}
       </button>
+    </div>
+
+    <footer v-else class="workflow-generate-composer">
+      <textarea
+        ref="promptRef"
+        class="workflow-generate-prompt"
+        rows="1"
+        :value="props.prompt"
+        :maxlength="WORKFLOW_GENERATE_PROMPT_MAX"
+        :aria-label="t('workflow.generateDockTitle')"
+        :aria-invalid="promptTooLong ? 'true' : 'false'"
+        :aria-describedby="
+          promptNearLimit ? 'workflow-generate-char-count workflow-generate-shortcut' : 'workflow-generate-shortcut'
+        "
+        :placeholder="
+          props.hasPersistableDraft ? t('workflow.generatePlaceholderRevise') : t('workflow.generatePlaceholder')
+        "
+        :disabled="props.generating || props.generateBusy"
+        @input="onPromptInput"
+        @keydown="onPromptKeydown"
+      />
+      <span id="workflow-generate-shortcut" class="workflow-generate-sr-only">{{
+        t("workflow.generateComposerShortcut")
+      }}</span>
+      <div class="workflow-generate-composer-bar">
+        <div class="workflow-generate-agent">
+          <button
+            class="intent-chip workflow-generate-agent-chip"
+            type="button"
+            data-action="generate-agent-chip"
+            :class="{ warning: !props.selectedAgentUsable || !props.agents.length }"
+            :disabled="props.generating || props.generateBusy || props.agentsLoadState === 'loading'"
+            :aria-label="chipLabel"
+            :title="chipLabel"
+            @click="emit('toggle-agent-popover')"
+          >
+            {{ chipShortLabel }}
+          </button>
+          <div v-if="props.agentPopoverOpen" class="workflow-generate-agent-popover" role="listbox">
+            <p v-if="!props.agents.length">{{ t("workflow.generateNoAgents") }}</p>
+            <button
+              v-for="agent in props.agents"
+              :key="agent.id"
+              type="button"
+              role="option"
+              :aria-selected="agent.id === props.selectedAgentId ? 'true' : 'false'"
+              :data-agent-id="agent.id"
+              :disabled="!agent.usable"
+              @click="emit('select-agent', agent.id)"
+            >
+              {{ agent.name }}
+            </button>
+          </div>
+        </div>
+        <span v-if="props.showDirtyChip" class="intent-chip">{{ t("workflow.generateDirtyChip") }}</span>
+        <span
+          v-if="promptNearLimit || promptTooLong"
+          id="workflow-generate-char-count"
+          class="workflow-generate-char-count"
+        >
+          {{ t("workflow.generateCharCount", { n: [...props.prompt].length }) }}
+        </span>
+        <button
+          class="primary-button workflow-generate-send"
+          type="button"
+          data-action="submit-generate"
+          :disabled="!canSubmit"
+          :aria-label="submitLabel"
+          @click="submitGenerate"
+        >
+          {{ submitLabel }}
+        </button>
+      </div>
     </footer>
   </section>
 </template>

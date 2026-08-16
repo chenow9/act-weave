@@ -8,17 +8,25 @@
  * 4. Multiple edges into one target stagger their final vertical segment
  */
 
-const EXIT_OFFSET = 20;
-const ENTER_OFFSET = 20;
-const CORNER_RADIUS = 10;
+const EXIT_OFFSET = 24;
+const ENTER_OFFSET = 24;
+const CORNER_RADIUS = 16;
 const EARLY_BEND_DX = 220;
 
 /** Vertical gap for same-lane skip detours (must clear a full node row). */
-export const SAME_ROW_DETOUR = 130;
-/** Horizontal span treated as multi-hop when combined with intermediates. */
-export const LONG_EDGE_MIN_DX = 300;
+export const SAME_ROW_DETOUR = 160;
+/** Horizontal span treated as a multi-hop skip (must exceed one layout column). */
+export const LONG_EDGE_MIN_DX = 520;
 /** Node-position Y delta under which two nodes share a horizontal lane. */
 export const SAME_LANE_EPS = 48;
+/** Visible handle radius (10px border-box circle). */
+export const HANDLE_RADIUS = 5;
+/** Air gap between the arrow tip and the handle rim. */
+export const ARROW_CLEARANCE = 2;
+/** Keep the label off the source handle / corner. */
+const LABEL_CLEAR_FROM_SOURCE = 28;
+/** Keep this much of the last segment after the label so a stub shows before the arrow. */
+const LABEL_CLEAR_FROM_TARGET = 44;
 
 export type FlowchartEdgePathInput = {
   sourceX: number;
@@ -35,6 +43,8 @@ export type FlowchartEdgePathInput = {
   detourAmount?: number;
   /** 0..n — stagger final approach when several edges share a target. */
   mergeSlot?: number;
+  /** Drop/rise near the source so failure / default rails miss the next spine card. */
+  preferEarlyBend?: boolean;
 };
 
 export type FlowchartEdgePath = {
@@ -42,6 +52,31 @@ export type FlowchartEdgePath = {
   labelX: number;
   labelY: number;
 };
+
+/**
+ * Vue Flow reports handle *centres*. Pull the stroke off those centres so the
+ * line leaves the source rim and the arrow tip kisses the target rim
+ * instead of covering the port.
+ */
+export function insetFlowchartPorts(input: {
+  sourceX: number;
+  sourceY: number;
+  targetX: number;
+  targetY: number;
+}): { sourceX: number; sourceY: number; targetX: number; targetY: number } {
+  const span = Math.abs(input.targetX - input.sourceX);
+  const budget = HANDLE_RADIUS * 2 + ARROW_CLEARANCE + 8;
+  if (span <= budget) {
+    return input;
+  }
+  const dirX = input.targetX >= input.sourceX ? 1 : -1;
+  return {
+    sourceX: input.sourceX + dirX * HANDLE_RADIUS,
+    sourceY: input.sourceY,
+    targetX: input.targetX - dirX * (HANDLE_RADIUS + ARROW_CLEARANCE),
+    targetY: input.targetY,
+  };
+}
 
 /**
  * U-turn that approaches the target on a vertical segment (same targetX).
@@ -113,8 +148,8 @@ export function buildFlowchartEdgePath(input: FlowchartEdgePathInput): Flowchart
   // mergeSlot pushes the vertical drop leftward so concurrent joins fan in cleanly.
   const xEnter = tx - dirX * (ENTER_OFFSET + mergeSlot * 22);
 
-  if (absDx <= EARLY_BEND_DX) {
-    // Short fork (e.g. Condition → 驳回): rise/drop near the source, then into target.
+  if (absDx <= EARLY_BEND_DX || input.preferEarlyBend) {
+    // Short / side-branch fork: rise/drop near the source, then into target.
     return pathFromPoints([
       { x: sx, y: sy },
       { x: xLeave, y: sy },
@@ -146,10 +181,11 @@ function pathFromPoints(raw: Array<{ x: number; y: number }>): FlowchartEdgePath
   if (points.length === 2) {
     const a = points[0];
     const b = points[1];
+    const label = labelOnSegment(a, b, true);
     return {
       path: `M ${fmt(a.x)} ${fmt(a.y)} L ${fmt(b.x)} ${fmt(b.y)}`,
-      labelX: (a.x + b.x) / 2,
-      labelY: (a.y + b.y) / 2,
+      labelX: label.x,
+      labelY: label.y,
     };
   }
 
@@ -198,21 +234,40 @@ function dedupePoints(points: Array<{ x: number; y: number }>): Array<{ x: numbe
   return out;
 }
 
+function labelOnSegment(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  isLast: boolean,
+): { x: number; y: number } {
+  const len = Math.hypot(b.x - a.x, b.y - a.y);
+  let t = 0.5;
+  if (len > 8) {
+    const tMin = LABEL_CLEAR_FROM_SOURCE / len;
+    const tMax = 1 - (isLast ? LABEL_CLEAR_FROM_TARGET : LABEL_CLEAR_FROM_SOURCE) / len;
+    if (tMin <= tMax) {
+      t = Math.min(tMax, Math.max(tMin, 0.5));
+    }
+    // Segment too short for both paddings: stay centered so we do not
+    // slide the pill onto the source node or the corner.
+  }
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
 function labelAnchor(points: Array<{ x: number; y: number }>): { x: number; y: number } {
-  let bestLen = -1;
-  let best = { x: points[0].x, y: points[0].y };
+  let bestScore = -1;
+  let bestIndex = 0;
   for (let i = 0; i < points.length - 1; i += 1) {
     const a = points[i];
     const b = points[i + 1];
     const horizontal = Math.abs(a.y - b.y) < 0.5;
     const len = Math.hypot(b.x - a.x, b.y - a.y);
     const score = horizontal ? len + 1000 : len;
-    if (score > bestLen) {
-      bestLen = score;
-      best = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = i;
     }
   }
-  return best;
+  return labelOnSegment(points[bestIndex], points[bestIndex + 1], bestIndex === points.length - 2);
 }
 
 function fmt(n: number): string {

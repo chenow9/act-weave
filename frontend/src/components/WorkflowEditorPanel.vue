@@ -61,6 +61,7 @@ const {
   hideFailureFeedbackBanner,
   dismissPendingFailureFeedback,
   generateReasoningSteps,
+  generateNodeExplanations,
   generateMissingCapabilities,
   generateSessionClosed,
   selectedNodeAiReason,
@@ -408,6 +409,7 @@ void WorkflowTrialRunDialog;
               :pending-failure-feedback="pendingFailureFeedback"
               :failure-feedback-banner-hidden="failureFeedbackBannerHidden"
               :reasoning-steps="generateReasoningSteps"
+              :node-explanations="generateNodeExplanations"
               :missing-capabilities="generateMissingCapabilities"
               :session-closed="generateSessionClosed"
               :restore-pending="generateRestorePending"
@@ -422,6 +424,7 @@ void WorkflowTrialRunDialog;
               @cancel-end-session="cancelEndGenerateSession"
               @hide-failure-feedback-banner="hideFailureFeedbackBanner"
               @dismiss-failure-feedback="dismissPendingFailureFeedback"
+              @focus-node="setSelectedNode"
             />
             <WorkflowNodePalette
               v-else
@@ -447,6 +450,7 @@ void WorkflowTrialRunDialog;
             :generating="generateLock"
             :lock-interaction="generateLock"
             :apply-highlight-epoch="applyHighlightEpoch"
+            :node-explanations="generateNodeExplanations"
             @select-node="setSelectedNode"
             @select-edge="setSelectedEdge"
             @open-node-context-menu="openNodeContextMenu"

@@ -10,6 +10,7 @@ import type {
   WorkflowGraphDraft,
   WorkflowGraphNode,
 } from "../types/domain";
+import { displayNodeTitle } from "../components/workflow/workflow-node-visual";
 
 export type WorkflowGenerateLeftTab = "generate" | "nodes";
 export type WorkflowGeneratePresence = "open" | "sheet";
@@ -175,7 +176,44 @@ export function generateFailureDisplayKey(code: string): string {
   if (code === "AGENT_MODEL_REQUIRED") return "workflow.generateModelRequired";
   if (code === "GUARD_REJECTED") return "workflow.generateGuardRejected";
   if (code === "SMART_DAG_TURN_IN_PROGRESS") return "workflow.generateInProgress";
+  if (code === "INTERNAL_ERROR" || code === "LLM_JOB_FAILED" || code === "NETWORK_ERROR") {
+    return "workflow.generateInternalError";
+  }
   return "workflow.generateFailureTitle";
+}
+
+export type GenerateNodePill = {
+  nodeId: string;
+  label: string;
+};
+
+/** Last-turn node pills for the assistant bubble. Dedupe by nodeId. */
+export function assistantNodePills(explanations: SmartDAGNodeExplanation[] = []): GenerateNodePill[] {
+  const pills: GenerateNodePill[] = [];
+  const seen = new Set<string>();
+  for (const item of explanations) {
+    const nodeId = item.nodeId.trim();
+    if (!nodeId || seen.has(nodeId)) continue;
+    seen.add(nodeId);
+    const label = displayNodeTitle({
+      id: nodeId,
+      type: "",
+      label: item.title.trim(),
+      typeLabel: item.title.trim() || nodeId,
+    });
+    pills.push({ nodeId, label });
+  }
+  return pills;
+}
+
+export function latestTranscriptDraftVersion(rows: TranscriptRow[]): number | undefined {
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const row = rows[index];
+    if (row.kind === "assistant" && typeof row.draftVersion === "number") {
+      return row.draftVersion;
+    }
+  }
+  return undefined;
 }
 
 export function useWorkflowGenerateNarrow(): Ref<boolean> {

@@ -99,6 +99,7 @@
   "nodeEnd": "结束",
   "nodeTool": "工具调用",
   "nodeHttp": "HTTP 请求",
+  "nodeHttpDesc": "调用外部 HTTP 接口",
   "nodeSubWorkflow": "子流程",
   "nodeTransform": "参数整理",
   "nodeApproval": "人工确认",
@@ -455,6 +456,7 @@
   "generateResumeClosed": "这次生成对话已结束。草稿还在，可以继续手改、检查和发布。",
   "generateReopen": "再开一轮生成",
   "generateFailureTitle": "这一版没通过检查，画布仍是上一版",
+  "generateInternalError": "这次没有生成出新草稿，请改写后再试。",
   "generateGuardRejected": "这一版没通过图校验，画布仍是上一版。",
   "generateDirtyChip": "含未保存的手改",
   "generateSavingThenSend": "先保存再生成…",
@@ -491,5 +493,11 @@
   "generateNeedWorkspaceAgent": "请先选择业务空间和 Agent。",
   "generateYou": "你",
   "generateAssistant": "助手",
-  "generateErrorCode": "错误码"
+  "generateErrorCode": "错误码",
+  "generateVersionChip": "第 {n} 版",
+  "generateEmptyChat": "用一句话描述流程，草稿会出现在右边画布。",
+  "generateComposerShortcut": "Enter 发送，Shift+Enter 换行",
+  "generateChangedNodes": "本轮改了这些步骤",
+  "generateNoAgentsShort": "还没有 Agent",
+  "generateModelRequiredShort": "先绑定模型"
 }
