@@ -14,7 +14,7 @@ const scp = useAgentsPageContext();
 /* prettier-ignore */
 const {
   studioMode, draftAgent, savingAgent, agentStudioPanelRef, agentNameInputRef, promptDetailDialogRef, agentStudioInlineWarning, pendingPromptSaveReview, weavePreviewAgent, acceptingPromptRevision, workspaceOptions, modelConfigOptions, selectedDraftModelCannotCallTools, studioTitle, agentNameError, agentWorkspaceError,
-  agentModelError, agentRoleError, agentPromptError, promptLineCount, promptPreviewText, canSaveAgent, originalPrompt, promptSaveDiff, pendingPromptText, weavePreviewDiff, agentSaveButtonLabel, canEnhanceDraftPrompt, formatSignedDelta, isEnhancing, toggleDraftStatus, isAgentStudioDirty, agentUnsavedChangeCount,
+  agentModelError, agentRoleError, agentPromptError, canSaveAgent, originalPrompt, promptSaveDiff, pendingPromptText, weavePreviewDiff, agentSaveButtonLabel, canEnhanceDraftPrompt, formatSignedDelta, isEnhancing, toggleDraftStatus, isAgentStudioDirty, agentUnsavedChangeCount,
   agentContextMode, agentContextMaxInputTokens, agentContextMaxRecentTurns,
   agentContextSummaryMaxTokens, agentContextSummaryMinEvictedTurns, agentContextSummaryMaxPasses,
   agentContextIncludeCompactionSummary, agentContextEnableA2UI, agentContextAdvancedOpen, toggleAgentContextAdvanced,
@@ -422,27 +422,6 @@ void AgentDelegationPanel;
               </button>
             </header>
             <div
-              class="agent-prompt-overview"
-              :aria-label="
-                studioMode === 'create' ? t('agents.promptPreviewAriaCreate') : t('agents.promptPreviewAriaEdit')
-              "
-            >
-              <div>
-                <strong>{{ t("agents.firstParagraphPreview") }}</strong>
-                <p class="agent-prompt-preview-text">{{ promptPreviewText }}</p>
-              </div>
-              <dl>
-                <div>
-                  <dt>{{ t("agents.lineCount") }}</dt>
-                  <dd>{{ promptLineCount }}</dd>
-                </div>
-                <div>
-                  <dt>{{ t("agents.charCount") }}</dt>
-                  <dd>{{ draftAgent.systemPrompt?.length || 0 }}</dd>
-                </div>
-              </dl>
-            </div>
-            <div
               class="agent-prompt-editor-box"
               :class="{ 'is-weaving': isEnhancing(draftAgent.id || 'create-draft') }"
             >
@@ -495,7 +474,7 @@ void AgentDelegationPanel;
             <i class="fa-solid fa-shield-halved" aria-hidden="true" />
             <span>
               <strong>{{ t("agents.promptSaveReviewTitle") }}</strong>
-              <small>AGENT: {{ pendingPromptSaveReview.id }}</small>
+              <small>{{ pendingPromptSaveReview.name }}</small>
             </span>
           </div>
           <button
@@ -568,7 +547,7 @@ void AgentDelegationPanel;
             <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true" />
             <span>
               <strong>{{ t("agents.weavePreviewTitle") }}</strong>
-              <small>AGENT: {{ draftAgent.id }}</small>
+              <small>{{ draftAgent.name }}</small>
             </span>
           </div>
           <button

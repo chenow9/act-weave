@@ -512,13 +512,13 @@ export function createToolsPageModel() {
     const workspaceId = workspaces.activeWorkspaceId || workspaces.items[0]?.id || "default";
     return {
       id: "",
-      name: tt("tools.sampleToolName"),
+      name: "",
       workspaceId,
       connectionId: connectionsStore.serviceConnections[0]?.id || "",
       method: "POST",
-      path: "/api/shipments/{shipmentId}/intercept",
+      path: "",
       contentType: "application/json",
-      description: tt("tools.sampleToolDescription"),
+      description: "",
       status: "Draft",
       requestContract: [],
       responseContract: [],

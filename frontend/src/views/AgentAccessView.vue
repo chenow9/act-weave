@@ -525,7 +525,7 @@ function authMethodShort(method: string) {
       :title="t('agentAccess.title')"
       :description="t('agentAccess.description')"
       icon="fa-solid fa-shield-halved"
-      :eyebrow="t('agentAccess.eyebrow')"
+      :eyebrow="t('nav.section.connect')"
     >
       <template #actions>
         <button class="ghost-button" type="button" :disabled="access.loading" @click="loadPage">
@@ -1757,13 +1757,16 @@ function authMethodShort(method: string) {
 }
 
 .danger-button.solid {
-  border-color: #e11d48;
-  background: #e11d48;
+  border-color: var(--aw-red, #cc3f57);
+  background: var(--aw-red, #cc3f57);
   color: #fff;
 }
 
 .danger-button:disabled {
-  opacity: 0.45;
+  color: var(--aw-subtle, #96a19d);
+  background: var(--aw-soft-2, #f1f5f3);
+  border-color: var(--aw-line, #e6ebe8);
+  opacity: 1;
   cursor: not-allowed;
 }
 

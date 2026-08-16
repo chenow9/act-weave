@@ -240,10 +240,10 @@ onBeforeUnmount(() => {
 function newModelConfig(): ModelApiConfig {
   return {
     id: "",
-    name: t("modelApis.defaultDraftName"),
+    name: "",
     provider: OPENAI_COMPATIBLE_PROVIDER,
-    apiBase: "https://llm-gateway.actweave.local/v1",
-    modelName: "claude-sonnet-4",
+    apiBase: "",
+    modelName: "",
     credentialConfigured: false,
     credentialSecretId: "",
     options: {},
@@ -866,7 +866,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
       :title="t('modelApis.title')"
       :description="t('modelApis.description')"
       icon="fa-solid fa-microchip"
-      :eyebrow="t('modelApis.eyebrow')"
+      :eyebrow="t('nav.section.connect')"
     >
       <template #actions>
         <button
@@ -927,7 +927,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 <strong class="aw-table-title" data-testid="model-config-name" :data-model-name="item.name">{{
                   item.name
                 }}</strong>
-                <span class="aw-table-subtitle">{{ item.createdBy || t("modelApis.createdByWorkspace") }}</span>
+                <span class="aw-table-subtitle">{{ item.modelName }}</span>
               </div>
             </div>
           </template>
@@ -997,7 +997,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                   <div class="model-config-icon"><i class="fa-solid fa-microchip" /></div>
                   <div>
                     <strong>{{ item.name }}</strong>
-                    <span>{{ item.createdBy || t("modelApis.createdByWorkspace") }}</span>
+                    <span>{{ item.modelName }}</span>
                   </div>
                 </div>
                 <button
@@ -1181,7 +1181,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
             </label>
             <label class="model-modal-field locked">
               <span class="model-modal-field-label">
-                Provider
+                {{ t("modelApis.fieldProvider") }}
                 <i
                   class="fa-solid fa-lock model-field-lock"
                   :title="t('modelApis.providerLockedTitle')"
@@ -1192,7 +1192,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
             </label>
             <label class="model-modal-field">
               <span class="model-modal-field-label"
-                >{{ modelModalMode === "create" ? "API Key" : "Credential Secret ID" }}
+                >{{ modelModalMode === "create" ? t("modelApis.fieldApiKey") : t("modelApis.fieldCredentialRef") }}
                 <span v-if="modelModalMode === 'create'" class="model-field-required" aria-hidden="true">*</span></span
               >
               <input
@@ -1319,18 +1319,6 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 </button>
               </template>
             </section>
-            <label class="model-modal-field locked">
-              <span class="model-modal-field-label">
-                Created By
-                <i
-                  class="fa-solid fa-lock model-field-lock"
-                  :title="t('modelApis.createdByLockedTitle')"
-                  :aria-label="t('modelApis.createdByLockedTitle')"
-                />
-              </span>
-              <input :value="activeModelDraft.createdBy || t('modelApis.createdByPending')" disabled readonly />
-            </label>
-
             <section class="model-modal-fieldset model-runtime-section" :class="{ open: modelRuntimeSectionOpen }">
               <button
                 type="button"
@@ -1527,7 +1515,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
           :aria-label="t('modelApis.discardAria')"
         >
           <header>
-            <span>Unsaved Changes</span>
+            <span>{{ t("common.dialogUnsaved") }}</span>
             <h3>{{ t("modelApis.discardTitle") }}</h3>
             <p>{{ t("modelApis.discardBody") }}</p>
           </header>
@@ -1553,7 +1541,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
           :aria-label="t('modelApis.deleteAria')"
         >
           <header>
-            <span>Danger Zone</span>
+            <span>{{ t("common.dialogDanger") }}</span>
             <h3>{{ t("modelApis.deleteTitle") }}</h3>
             <p>{{ t("modelApis.deleteBody", { name: pendingModelDeletion.name }) }}</p>
           </header>

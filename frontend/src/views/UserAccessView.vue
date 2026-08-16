@@ -461,7 +461,7 @@ function formatDate(value?: string) {
       :title="t('users.title')"
       :description="t('users.description')"
       icon="fa-solid fa-users"
-      :eyebrow="t('users.eyebrow')"
+      :eyebrow="t('nav.section.govern')"
     >
       <template #actions>
         <button class="primary-button" type="button" @click="openCreate">
@@ -802,7 +802,7 @@ function formatDate(value?: string) {
       >
         <header>
           <div>
-            <span>WORKSPACE MEMBERSHIP</span>
+            <span>{{ t("users.membershipEyebrow") }}</span>
             <h3>{{ t("users.workspacesTitle", { username: workspaceUser.username }) }}</h3>
           </div>
           <button class="icon-action-button" type="button" :aria-label="t('users.close')" @click="workspaceUser = null">

@@ -1856,8 +1856,38 @@
 }
 
 .primary-button:hover:not(:disabled) {
-  border-color: #0b895f;
-  background: #0b895f;
+  border-color: var(--aw-green-ink);
+  background: var(--aw-green-ink);
+}
+
+.primary-button.danger {
+  border-color: var(--aw-red);
+  background: var(--aw-red);
+  box-shadow: 0 6px 14px rgba(204, 63, 87, 0.16);
+}
+
+.primary-button.danger:hover:not(:disabled) {
+  border-color: var(--aw-red-ink);
+  background: var(--aw-red-ink);
+}
+
+.primary-button:disabled,
+.primary-button.danger:disabled {
+  color: var(--aw-subtle);
+  background: var(--aw-soft-2);
+  border-color: var(--aw-line);
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.ghost-button:disabled,
+.secondary-button:disabled {
+  color: var(--aw-subtle);
+  background: var(--aw-soft);
+  border-color: var(--aw-line);
+  cursor: not-allowed;
+  opacity: 1;
 }
 
 .app-shell .management-page-header .primary-button {
@@ -1868,8 +1898,8 @@
 }
 
 .app-shell .management-page-header .primary-button:hover:not(:disabled) {
-  border-color: #0b895f;
-  background: #0b895f;
+  border-color: var(--aw-green-ink);
+  background: var(--aw-green-ink);
   color: #fff;
 }
 

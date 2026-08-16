@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import AppSelect from "../components/AppSelect.vue";
+import ManagementDialog from "../components/ManagementDialog.vue";
 import ManagementList, { type ManagementListColumn } from "../components/ManagementList.vue";
 import ManagementPageHeader from "../components/ManagementPageHeader.vue";
 import ManagementRowActions, { type ManagementRowAction } from "../components/ManagementRowActions.vue";
@@ -1236,7 +1237,7 @@ function errorMessage(error: unknown, fallback: string) {
       :title="t('providers.title')"
       :description="t('providers.subtitle')"
       icon="fa-solid fa-cloud-arrow-down"
-      eyebrow="Integration Registry"
+      :eyebrow="t('nav.section.connect')"
     >
       <template #actions>
         <div class="providers-header-actions">
@@ -1544,7 +1545,7 @@ function errorMessage(error: unknown, fallback: string) {
           <div>
             <span class="provider-editor-icon"><i class="fa-solid fa-cloud" /></span
             ><span
-              ><small>Provider Registry</small>
+              ><small>{{ t("providers.editorEyebrow") }}</small>
               <h2 id="provider-editor-title">
                 {{ editorMode === "create" ? t("providers.editorCreateTitle") : t("providers.editorEditTitle") }}
               </h2></span
@@ -1830,38 +1831,50 @@ function errorMessage(error: unknown, fallback: string) {
       </section>
     </div>
 
-    <div v-if="pendingDeleteProvider" class="provider-modal-backdrop" @click.self="closeDeleteDialog">
-      <section class="provider-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="provider-delete-title">
-        <span class="provider-delete-icon"><i class="fa-solid fa-trash-can" /></span>
-        <h2 id="provider-delete-title">{{ t("providers.deleteTitle") }}</h2>
-        <p>
-          <i18n-t keypath="providers.deleteBody" tag="span">
-            <template #name>
-              <strong>{{ pendingDeleteProvider.name }}</strong>
-            </template>
-          </i18n-t>
-        </p>
-        <label
-          ><span>{{ t("providers.deleteConfirmLabel") }}</span
-          ><input v-model="deleteConfirmText" data-testid="provider-delete-confirm-input" autocomplete="off"
-        /></label>
-        <p v-if="deleteError" class="provider-form-error" role="alert">{{ deleteError }}</p>
-        <footer>
-          <button type="button" :disabled="deleting" @click="closeDeleteDialog">{{ t("providers.cancel") }}</button
-          ><button
-            data-testid="provider-delete-confirm"
-            class="danger"
-            type="button"
-            :disabled="deleting || !deleteConfirmMatches"
-            @click="confirmDeleteProvider"
-          >
-            <i :class="deleting ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-trash-can'" />{{
-              t("providers.confirmDelete")
-            }}
-          </button>
-        </footer>
-      </section>
-    </div>
+    <ManagementDialog
+      :open="Boolean(pendingDeleteProvider)"
+      :title="t('providers.deleteTitle')"
+      :eyebrow="t('common.dialogDanger')"
+      icon="fa-solid fa-trash-can"
+      tone="danger"
+      size="sm"
+      :aria-label="t('providers.deleteTitle')"
+      :close-disabled="deleting"
+      @close="closeDeleteDialog"
+    >
+      <p v-if="pendingDeleteProvider">
+        <i18n-t keypath="providers.deleteBody" tag="span">
+          <template #name>
+            <strong>{{ pendingDeleteProvider.name }}</strong>
+          </template>
+        </i18n-t>
+      </p>
+      <label class="modal-field">
+        <span>{{ t("providers.deleteConfirmLabel") }}</span>
+        <input
+          v-model="deleteConfirmText"
+          data-testid="provider-delete-confirm-input"
+          data-modal-initial-focus
+          autocomplete="off"
+        />
+      </label>
+      <p v-if="deleteError" class="provider-form-error" role="alert">{{ deleteError }}</p>
+      <template #footer>
+        <button class="ghost-button" type="button" :disabled="deleting" @click="closeDeleteDialog">
+          {{ t("providers.cancel") }}
+        </button>
+        <button
+          data-testid="provider-delete-confirm"
+          class="primary-button danger"
+          type="button"
+          :disabled="deleting || !deleteConfirmMatches"
+          @click="confirmDeleteProvider"
+        >
+          <i :class="deleting ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-trash-can'" />
+          {{ t("providers.confirmDelete") }}
+        </button>
+      </template>
+    </ManagementDialog>
 
     <div v-if="actionNote" class="provider-action-toast" :class="actionTone" role="status" aria-live="polite">
       <i

@@ -216,7 +216,7 @@ export function createServiceConnectionsPageModel() {
     {
       key: "status",
       label: tt("connections.colConfigStatus"),
-      width: 120,
+      width: 136,
       align: "center",
       headerAlign: "center",
       hidable: true,
@@ -976,6 +976,22 @@ export function createServiceConnectionsPageModel() {
     const timestamp = Date.parse(connection.lastVerifiedAt);
     if (!Number.isFinite(timestamp)) return connection.lastVerifiedAt;
     return new Date(timestamp).toLocaleString(getI18nLocale());
+  }
+
+  function statusSecondaryText(connection: ServiceConnection) {
+    if (connection.lastErrorCode) return connection.lastErrorCode;
+    if (testedConnectionIds.value.includes(connection.id) || connection.lastVerifiedAt) {
+      return lastVerified(connection);
+    }
+    return "";
+  }
+
+  function statusSecondaryTitle(connection: ServiceConnection) {
+    if (connection.lastErrorCode) return connectionAttentionReason(connection);
+    if (testedConnectionIds.value.includes(connection.id) || connection.lastVerifiedAt) {
+      return lastVerifiedTitle(connection);
+    }
+    return "";
   }
 
   function connectionAddress(connection: ServiceConnection) {
@@ -2142,6 +2158,8 @@ export function createServiceConnectionsPageModel() {
     statusDotClass,
     lastVerified,
     lastVerifiedTitle,
+    statusSecondaryText,
+    statusSecondaryTitle,
     connectionAddress,
     connectionAddressPrimary,
     verificationMethodLabel,

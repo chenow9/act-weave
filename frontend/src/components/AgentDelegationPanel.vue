@@ -1417,15 +1417,15 @@ onMounted(() => {
 }
 
 .adp-form-actions .primary-button {
-  background: #0f172a;
-  border-color: #0f172a;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+  background: var(--aw-green, #0f9f6e);
+  border-color: var(--aw-green, #0f9f6e);
+  box-shadow: 0 6px 14px rgba(15, 159, 110, 0.14);
 }
 
 .adp-form-actions .primary-button:hover,
 .adp-form-actions .primary-button:focus {
-  background: #1e293b;
-  border-color: #1e293b;
+  background: var(--aw-green-ink, #087653);
+  border-color: var(--aw-green-ink, #087653);
 }
 
 .adp-card-actions .ghost-button {

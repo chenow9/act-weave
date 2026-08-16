@@ -1136,18 +1136,25 @@
 .workflow-editor-actions .primary-button {
   padding: 0 16px;
   color: #fff;
-  background: #050505;
-  border-color: #050505;
+  background: var(--aw-green, #0f9f6e);
+  border-color: var(--aw-green, #0f9f6e);
   box-shadow: none;
   transform: none;
 }
 
 .workflow-editor-actions .primary-button:hover:not(:disabled),
 .workflow-editor-actions .primary-button:focus-visible:not(:disabled) {
-  background: #050505;
-  border-color: #050505;
+  background: var(--aw-green-ink, #087653);
+  border-color: var(--aw-green-ink, #087653);
   box-shadow: none;
   transform: none;
+}
+
+.workflow-editor-actions .primary-button:disabled {
+  color: var(--aw-subtle, #96a19d);
+  background: var(--aw-soft-2, #f1f5f3);
+  border-color: var(--aw-line, #e6ebe8);
+  cursor: not-allowed;
 }
 
 .workflow-editor-publish-button {
@@ -1156,8 +1163,8 @@
   justify-content: center;
   padding: 0 16px;
   color: #fff;
-  background: #050505;
-  border: 1px solid #050505;
+  background: var(--aw-green, #0f9f6e);
+  border: 1px solid var(--aw-green, #0f9f6e);
   transition:
     background 0.16s ease,
     border-color 0.16s ease,
@@ -1166,14 +1173,14 @@
 
 .workflow-editor-publish-button:hover:not(:disabled),
 .workflow-editor-publish-button:focus-visible:not(:disabled) {
-  background: #050505;
-  border-color: #050505;
+  background: var(--aw-green-ink, #087653);
+  border-color: var(--aw-green-ink, #087653);
 }
 
 .workflow-editor-publish-button:disabled {
-  color: #b9b9b9;
-  background: #f1f1f1;
-  border-color: #f1f1f1;
+  color: var(--aw-subtle, #96a19d);
+  background: var(--aw-soft-2, #f1f5f3);
+  border-color: var(--aw-line, #e6ebe8);
   cursor: not-allowed;
 }
 

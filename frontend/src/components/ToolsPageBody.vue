@@ -109,6 +109,7 @@ void getToolTypeLabel;
       class="span-12"
       :title="t('tools.title')"
       :description="t('tools.subtitle')"
+      :eyebrow="t('nav.section.build')"
       icon="fa-solid fa-screwdriver-wrench"
     >
       <template #actions>

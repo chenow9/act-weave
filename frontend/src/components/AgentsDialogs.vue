@@ -4,6 +4,8 @@
 
 import { ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+
+import ManagementDialog from "./ManagementDialog.vue";
 import { useAgentsPageContext } from "../composables/useAgentsPageContext";
 
 const { t } = useI18n();
@@ -27,6 +29,14 @@ watch(promptDetailVisible, (visible) => {
   }
   copyFeedback.value = "";
 });
+
+function handleAgentDeleteChromeClose(source: "header" | "backdrop" | "escape" = "header") {
+  if (source === "escape") {
+    requestCloseAgentDeleteConfirm("keyboard");
+    return;
+  }
+  closeAgentDeleteConfirm();
+}
 
 async function copyPromptRaw() {
   const text = currentPromptBody.value || "";
@@ -69,7 +79,7 @@ async function copyPromptRaw() {
             <i class="fa-solid fa-rectangle-list" aria-hidden="true" />
             <span>
               <strong>{{ t("agents.systemPrompt") }}</strong>
-              <small>{{ promptDetailAgent?.name }} · {{ promptDetailAgent?.id }}</small>
+              <small>{{ promptDetailAgent?.name }}</small>
             </span>
           </div>
           <button
@@ -123,7 +133,6 @@ async function copyPromptRaw() {
           <div v-else class="agent-prompt-state">{{ t("agents.noPromptDisplayable") }}</div>
         </div>
         <footer class="agent-prompt-detail-footer">
-          <span>{{ t("agents.lockVersionLabel", { n: promptDetailAgent?.lockVersion || 0 }) }}</span>
           <button class="primary-button" type="button" @click="closePromptDetail">{{ t("common.close") }}</button>
         </footer>
       </section>
@@ -149,7 +158,7 @@ async function copyPromptRaw() {
             <i class="fa-solid fa-link" aria-hidden="true" />
             <span
               ><strong>{{ t("agents.capabilities") }}</strong
-              ><small>AGENT: {{ capabilityAgent.id }}</small></span
+              ><small>{{ capabilityAgent.name }}</small></span
             >
           </div>
           <button
@@ -223,9 +232,7 @@ async function copyPromptRaw() {
                 class="primary-button"
                 type="button"
                 data-action="batch-bind-selected-capabilities"
-                :disabled="
-                  capabilityActionsBusy || capabilitySelectedCount === 0 || capabilityModelCannotCallTools
-                "
+                :disabled="capabilityActionsBusy || capabilitySelectedCount === 0 || capabilityModelCannotCallTools"
                 :title="capabilityModelCannotCallTools ? t('agents.batchBindDisabledNoTools') : undefined"
                 @click="batchBindCapabilities({ mode: 'selected' })"
               >
@@ -237,14 +244,10 @@ async function copyPromptRaw() {
                 type="button"
                 data-action="batch-bind-all-unbound"
                 :disabled="
-                  capabilityActionsBusy ||
-                  capabilityBindableUnboundCount === 0 ||
-                  capabilityModelCannotCallTools
+                  capabilityActionsBusy || capabilityBindableUnboundCount === 0 || capabilityModelCannotCallTools
                 "
                 :title="
-                  capabilityModelCannotCallTools
-                    ? t('agents.batchBindDisabledNoTools')
-                    : t('agents.batchBindAllTitle')
+                  capabilityModelCannotCallTools ? t('agents.batchBindDisabledNoTools') : t('agents.batchBindAllTitle')
                 "
                 @click="batchBindCapabilities({ mode: 'all-unbound' })"
               >
@@ -342,9 +345,7 @@ async function copyPromptRaw() {
                 type="button"
                 data-action="bind-capability"
                 :disabled="capabilityActionsBusy || capabilityModelCannotCallTools"
-                :title="
-                  capabilityModelCannotCallTools ? t('agents.capabilityBindDisabledNoTools') : undefined
-                "
+                :title="capabilityModelCannotCallTools ? t('agents.capabilityBindDisabledNoTools') : undefined"
                 @click="saveCapabilityBinding(capability)"
               >
                 <i v-if="capabilitySavingId === capability.id" class="fa-solid fa-spinner fa-spin" />{{
@@ -363,85 +364,68 @@ async function copyPromptRaw() {
     </div>
   </Transition>
 
-  <Transition name="modal-fade">
-    <div
-      v-if="agentDeleteTarget"
-      class="modal-backdrop agent-delete-backdrop"
-      @click.self="requestCloseAgentDeleteConfirm('backdrop')"
-      @keydown="trapAgentModalFocus"
-    >
-      <section
-        ref="agentDeleteDialogRef"
-        class="modal-card agent-delete-dialog"
-        role="dialog"
-        aria-modal="true"
-        :aria-label="t('agents.deleteConfirmAria')"
-      >
-        <header class="agent-prompt-detail-head">
-          <div>
-            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true" />
-            <span>
-              <strong>{{ t("agents.deleteAgent") }}</strong>
-              <small>AGENT: {{ agentDeleteTarget.id }}</small>
-            </span>
-          </div>
-          <button
-            class="icon-action-button"
-            type="button"
-            :title="t('common.close')"
-            :aria-label="t('agents.closeDeleteConfirm')"
-            @click="closeAgentDeleteConfirm"
-          >
-            <i class="fa-solid fa-xmark" aria-hidden="true" />
-          </button>
-        </header>
-        <div class="agent-delete-body">
-          <strong>{{ agentDeleteTarget.name }}</strong>
-          <p>{{ t("agents.deleteAgentBody") }}</p>
-          <div class="agent-delete-impact">
-            <span
-              ><b>{{ agentDeleteTarget.isDefault ? t("agents.yes") : t("agents.no") }}</b>
-              {{ t("agents.defaultAgentLabel") }}</span
-            >
-            <span
-              ><b>{{ agentDeleteTarget.toolsCount }}</b> Tool</span
-            >
-            <span
-              ><b>{{ agentDeleteTarget.workflowsCount }}</b> Workflow</span
-            >
-          </div>
-        </div>
-        <label class="modal-field agent-delete-confirm-input">
-          <span>{{ t("agents.typeNameToConfirm", { name: agentDeleteTarget.name }) }}</span>
-          <input
-            ref="agentDeleteInputRef"
-            v-model.trim="agentDeleteConfirmName"
-            autocomplete="off"
-            :aria-invalid="agentDeleteConfirmName.length > 0 && !canConfirmAgentDelete"
-            aria-describedby="agent-delete-name-helper agent-delete-name-error"
-          />
-          <small id="agent-delete-name-helper">{{ t("agents.deleteNameHelper") }}</small>
-          <small v-if="agentDeleteNameError" id="agent-delete-name-error" class="field-error">{{
-            agentDeleteNameError
-          }}</small>
-        </label>
-        <footer class="agent-prompt-detail-footer">
-          <button class="ghost-button" type="button" :disabled="agentDeleting" @click="closeAgentDeleteConfirm">
-            {{ t("common.cancel") }}
-          </button>
-          <button
-            class="primary-button danger"
-            type="button"
-            :disabled="agentDeleting || !canConfirmAgentDelete"
-            @click="confirmDeleteAgent"
-          >
-            <i :class="['fa-solid', agentDeleting ? 'fa-spinner fa-spin' : 'fa-trash']" aria-hidden="true" />
-            <span>{{ agentDeleting ? t("agents.deleting") : t("agents.deleteAgent") }}</span>
-          </button>
-        </footer>
-      </section>
+  <ManagementDialog
+    :open="Boolean(agentDeleteTarget)"
+    :title="t('agents.deleteAgent')"
+    :eyebrow="t('common.dialogDanger')"
+    icon="fa-solid fa-triangle-exclamation"
+    tone="danger"
+    size="sm"
+    :aria-label="t('agents.deleteConfirmAria')"
+    :close-aria-label="t('agents.closeDeleteConfirm')"
+    :close-disabled="agentDeleting"
+    :close-on-backdrop="false"
+    backdrop-class="agent-delete-backdrop"
+    card-class="agent-delete-dialog"
+    @close="handleAgentDeleteChromeClose"
+    @backdrop="requestCloseAgentDeleteConfirm('backdrop')"
+  >
+    <div v-if="agentDeleteTarget" class="agent-delete-body">
+      <strong>{{ agentDeleteTarget.name }}</strong>
+      <p>{{ t("agents.deleteAgentBody") }}</p>
+      <div class="agent-delete-impact">
+        <span
+          ><b>{{ agentDeleteTarget.isDefault ? t("agents.yes") : t("agents.no") }}</b>
+          {{ t("agents.defaultAgentLabel") }}</span
+        >
+        <span
+          ><b>{{ agentDeleteTarget.toolsCount }}</b> {{ t("agents.tools") }}</span
+        >
+        <span
+          ><b>{{ agentDeleteTarget.workflowsCount }}</b> {{ t("agents.workflows") }}</span
+        >
+      </div>
     </div>
-  </Transition>
+    <label v-if="agentDeleteTarget" class="modal-field agent-delete-confirm-input">
+      <span>{{ t("agents.typeNameToConfirm", { name: agentDeleteTarget.name }) }}</span>
+      <input
+        ref="agentDeleteInputRef"
+        v-model.trim="agentDeleteConfirmName"
+        data-modal-initial-focus
+        autocomplete="off"
+        :aria-invalid="agentDeleteConfirmName.length > 0 && !canConfirmAgentDelete"
+        aria-describedby="agent-delete-name-helper agent-delete-name-error"
+      />
+      <small id="agent-delete-name-helper">{{ t("agents.deleteNameHelper") }}</small>
+      <small v-if="agentDeleteNameError" id="agent-delete-name-error" class="field-error">{{
+        agentDeleteNameError
+      }}</small>
+    </label>
+    <template #footer>
+      <button class="ghost-button" type="button" :disabled="agentDeleting" @click="closeAgentDeleteConfirm">
+        {{ t("common.cancel") }}
+      </button>
+      <button
+        class="primary-button danger"
+        type="button"
+        :disabled="agentDeleting || !canConfirmAgentDelete"
+        @click="confirmDeleteAgent"
+      >
+        <i :class="['fa-solid', agentDeleting ? 'fa-spinner fa-spin' : 'fa-trash']" aria-hidden="true" />
+        <span>{{ agentDeleting ? t("agents.deleting") : t("agents.deleteAgent") }}</span>
+      </button>
+    </template>
+  </ManagementDialog>
 
   <div
     v-if="agentActionNote"

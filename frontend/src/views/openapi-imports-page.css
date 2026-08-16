@@ -936,19 +936,22 @@
 
 .openapi-modal-actions button:last-child,
 .openapi-detail-actions button:last-child {
-  background: #020617;
+  background: var(--aw-green, #0f9f6e);
   color: #fff;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.1);
+  box-shadow: 0 6px 14px rgba(15, 159, 110, 0.14);
 }
 
 .openapi-modal-actions button.danger {
-  background: #be123c;
+  background: var(--aw-red, #cc3f57);
   color: #fff;
 }
 
 .openapi-modal-actions button:disabled {
+  color: var(--aw-subtle, #96a19d);
+  background: var(--aw-soft-2, #f1f5f3);
+  box-shadow: none;
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 1;
 }
 
 .openapi-detail-hero {

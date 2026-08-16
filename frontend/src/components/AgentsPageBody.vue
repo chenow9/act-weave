@@ -41,6 +41,7 @@ void WorkspaceContextState;
       class="span-12"
       :title="t('agents.title')"
       :description="t('agents.subtitle')"
+      :eyebrow="t('nav.section.build')"
       icon="fa-solid fa-user-gear"
     >
       <template #actions>

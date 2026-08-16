@@ -1517,37 +1517,37 @@ a[href]:focus-visible {
 
 .primary-button {
   color: #fff;
-  background: #0f172a;
-  border: 1px solid #0f172a;
-  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.14);
+  background: var(--aw-green, #0f9f6e);
+  border: 1px solid var(--aw-green, #0f9f6e);
+  box-shadow: 0 6px 14px rgba(15, 159, 110, 0.14);
 }
 
 .primary-button.danger {
-  background: #991b1b;
-  border-color: #991b1b;
-  box-shadow: 0 16px 34px rgba(153, 27, 27, 0.16);
+  background: var(--aw-red, #cc3f57);
+  border-color: var(--aw-red, #cc3f57);
+  box-shadow: 0 6px 14px rgba(204, 63, 87, 0.16);
 }
 
-.primary-button:hover,
-.primary-button:focus {
-  background: #1e293b;
-  border-color: #1e293b;
-  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.18);
+.primary-button:hover:not(:disabled),
+.primary-button:focus:not(:disabled) {
+  background: var(--aw-green-ink, #087653);
+  border-color: var(--aw-green-ink, #087653);
+  box-shadow: 0 8px 16px rgba(15, 159, 110, 0.18);
 }
 
-.primary-button.danger:hover,
-.primary-button.danger:focus {
-  background: #7f1d1d;
-  border-color: #7f1d1d;
-  box-shadow: 0 18px 36px rgba(153, 27, 27, 0.2);
+.primary-button.danger:hover:not(:disabled),
+.primary-button.danger:focus:not(:disabled) {
+  background: var(--aw-red-ink, #b3354c);
+  border-color: var(--aw-red-ink, #b3354c);
+  box-shadow: 0 8px 16px rgba(204, 63, 87, 0.2);
 }
 
 .primary-button i {
-  color: #34d399;
+  color: inherit;
 }
 
 .primary-button.danger i {
-  color: #fecaca;
+  color: inherit;
 }
 
 .ghost-button {
@@ -1914,9 +1914,21 @@ a[href]:focus-visible {
 }
 
 .primary-button:disabled,
-.ghost-button:disabled {
+.primary-button.danger:disabled {
+  color: var(--aw-subtle, #96a19d);
+  background: var(--aw-soft-2, #f1f5f3);
+  border-color: var(--aw-line, #e6ebe8);
+  box-shadow: none;
   cursor: not-allowed;
-  opacity: 0.48;
+  opacity: 1;
+}
+
+.ghost-button:disabled {
+  color: var(--aw-subtle, #96a19d);
+  background: var(--aw-soft, #f7f9f8);
+  border-color: var(--aw-line, #e6ebe8);
+  cursor: not-allowed;
+  opacity: 1;
 }
 
 .page-step-button,
@@ -2838,6 +2850,7 @@ a[href]:focus-visible {
   --aw-amber: #a86510;
   --aw-amber-soft: #fff7e7;
   --aw-red: #cc3f57;
+  --aw-red-ink: #b3354c;
   --aw-red-soft: #fff0f2;
   --aw-violet: #6c5dd3;
   --aw-violet-soft: #f2f0ff;

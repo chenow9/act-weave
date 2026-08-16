@@ -79,6 +79,7 @@
   "saveFailed": "Failed to save Provider. Check the endpoint and auth contract.",
   "providerDeleted": "{name} Provider deleted.",
   "deleteFailed": "Delete failed. Check related Connections and Tools first.",
+  "editorEyebrow": "Service access",
   "editorCreateTitle": "New service Provider",
   "editorEditTitle": "Edit service Provider",
   "closeEditorAria": "Close Provider editor",

@@ -93,6 +93,7 @@
   "resetBody": "Submitting revokes all login sessions for this user and requires a password change on next sign-in.",
   "workspacesModalAria": "User Workspaces",
   "workspacesTitle": "{username}’s Workspaces",
+  "membershipEyebrow": "Workspace membership",
   "memberDisabled": "Member disabled",
   "workspaceActive": "Workspace active",
   "workspaceDisabled": "Workspace disabled",

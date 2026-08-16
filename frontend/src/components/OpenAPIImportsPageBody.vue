@@ -33,7 +33,7 @@ void WorkspaceContextState;
       :title="t('openapi.title')"
       :description="t('openapi.description')"
       icon="fa-solid fa-file-import"
-      :eyebrow="t('openapi.eyebrow')"
+      :eyebrow="t('nav.section.connect')"
     >
       <template #actions>
         <button class="ghost-button" type="button" @click="router.push('/connections')">

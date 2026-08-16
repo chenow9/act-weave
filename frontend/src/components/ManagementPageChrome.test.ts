@@ -11,12 +11,13 @@ describe("management page chrome", () => {
         title: "工具管理",
         description: "管理工具契约、服务绑定、版本测试与发布状态。",
         icon: "fa-solid fa-screwdriver-wrench",
+        eyebrow: "构建",
       },
       slots: { actions: '<button type="button">创建工具</button>' },
     });
 
     expect(wrapper.get("h1").text()).toBe("工具管理");
-    expect(wrapper.get(".management-page-eyebrow").text()).toBe("ACTWEAVE CONTROL PLANE");
+    expect(wrapper.get(".management-page-eyebrow").text()).toBe("构建");
     expect(wrapper.get(".management-page-icon i").classes()).toContain("fa-screwdriver-wrench");
     expect(wrapper.get(".management-page-actions").text()).toBe("创建工具");
   });

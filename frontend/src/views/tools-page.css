@@ -856,8 +856,8 @@
 }
 
 .tool-grid .page-number-button.active {
-  border-color: #020617;
-  background: #020617;
+  border-color: var(--aw-green, #0f9f6e);
+  background: var(--aw-green, #0f9f6e);
   color: #fff;
 }
 
@@ -2518,8 +2518,8 @@
 }
 
 .tool-hybrid-progress button.active b {
-  border-color: #0f172a;
-  background: #0f172a;
+  border-color: var(--aw-green, #0f9f6e);
+  background: var(--aw-green, #0f9f6e);
   color: #fff;
 }
 
@@ -2835,10 +2835,10 @@
 }
 
 .tool-hybrid-footer > button.primary {
-  border-color: #020617;
-  background: #020617;
+  border-color: var(--aw-green, #0f9f6e);
+  background: var(--aw-green, #0f9f6e);
   color: #fff;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
+  box-shadow: 0 6px 14px rgba(15, 159, 110, 0.14);
 }
 
 .tool-hybrid-footer > button:hover:not(:disabled) {
@@ -2847,8 +2847,8 @@
 }
 
 .tool-hybrid-footer > button.primary:hover:not(:disabled) {
-  border-color: #0f172a;
-  background: #0f172a;
+  border-color: var(--aw-green-ink, #087653);
+  background: var(--aw-green-ink, #087653);
 }
 
 .tool-hybrid-footer > button:active:not(:disabled) {
@@ -2856,7 +2856,11 @@
 }
 
 .tool-hybrid-footer > button:disabled {
-  opacity: 0.45;
+  color: var(--aw-subtle, #96a19d);
+  background: var(--aw-soft-2, #f1f5f3);
+  border-color: var(--aw-line, #e6ebe8);
+  box-shadow: none;
+  opacity: 1;
   cursor: not-allowed;
 }
 

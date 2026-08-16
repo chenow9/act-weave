@@ -7,7 +7,7 @@ withDefaults(
     eyebrow?: string;
   }>(),
   {
-    eyebrow: "ACTWEAVE CONTROL PLANE",
+    eyebrow: "",
   },
 );
 </script>
@@ -17,7 +17,7 @@ withDefaults(
     <div class="management-page-title">
       <span class="management-page-icon" aria-hidden="true"><i :class="icon" /></span>
       <div>
-        <span class="management-page-eyebrow">{{ eyebrow }}</span>
+        <span v-if="eyebrow" class="management-page-eyebrow">{{ eyebrow }}</span>
         <h1>{{ title }}</h1>
         <p>{{ description }}</p>
       </div>
@@ -67,8 +67,7 @@ withDefaults(
   color: var(--aw-subtle, #96a19d);
   font-size: 9px;
   font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .management-page-header h1 {

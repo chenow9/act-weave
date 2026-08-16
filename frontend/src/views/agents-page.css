@@ -39,17 +39,19 @@
   padding: 0 16px;
   gap: 8px;
   color: #fff;
-  background: #020617;
+  background: var(--aw-green, #0f9f6e);
+  border-color: var(--aw-green, #0f9f6e);
   border-radius: 8px;
   font-size: 12px;
   font-weight: 600;
   text-transform: none;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 6px 14px rgba(15, 159, 110, 0.14);
 }
 
 .agent-create-button:hover {
-  background: #1e293b;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+  background: var(--aw-green-ink, #087653);
+  border-color: var(--aw-green-ink, #087653);
+  box-shadow: 0 8px 16px rgba(15, 159, 110, 0.18);
 }
 
 .agent-create-button:active {
@@ -57,7 +59,7 @@
 }
 
 .agent-create-button i {
-  color: #34d399;
+  color: inherit;
 }
 
 .agent-create-button span {
@@ -543,8 +545,8 @@
 
 .table-pagination .page-number-button.active {
   color: #fff;
-  background: #020617;
-  border-color: #020617;
+  background: var(--aw-green, #0f9f6e);
+  border-color: var(--aw-green, #0f9f6e);
   font-weight: 700;
 }
 
@@ -709,11 +711,9 @@
 .agent-studio-eyebrow {
   margin: 0;
   color: #64748b;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   line-height: 1.2;
 }
 
@@ -842,11 +842,9 @@
   align-items: center;
   gap: 6px;
   color: #64748b;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
 .required-mark {
@@ -875,11 +873,9 @@
 
 .agent-studio-fields .modal-field > span {
   color: #64748b;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
 .agent-studio-fields .modal-field input {
@@ -938,11 +934,9 @@
 
 .agent-context-policy .modal-field > span {
   color: #64748b;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
 .agent-context-policy .modal-field input {
@@ -957,9 +951,16 @@
   font-size: 12px;
 }
 
-.agent-context-policy :deep(.agent-studio-select) {
+.agent-context-policy :deep(.agent-studio-select),
+.agent-studio-fields :deep(.agent-studio-select) {
   display: block;
   width: 100%;
+}
+
+.agent-context-policy :deep(.el-select__selected-item),
+.agent-studio-fields :deep(.el-select__selected-item) {
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .agent-context-policy :deep(.agent-studio-select .el-select__wrapper) {

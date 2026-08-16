@@ -120,5 +120,7 @@ export function useModalFocus(options: ModalFocusOptions) {
   onBeforeUnmount(() => {
     removeFromStack();
     removeListener();
+    restoreTarget?.focus();
+    restoreTarget = null;
   });
 }

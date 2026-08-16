@@ -1,7 +1,7 @@
 {
   "title": "空间总览",
   "subtitle": "汇总全部可访问业务空间的运行指标：成功率、会话量、工具/工作流执行与资源健康度。",
-  "eyebrow": "Workspace Overview",
+  "eyebrow": "空间",
   "dateFilterAria": "统计时间筛选",
   "startDate": "开始日期",
   "endDate": "结束日期",

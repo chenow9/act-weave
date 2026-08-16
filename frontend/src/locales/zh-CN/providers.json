@@ -79,6 +79,7 @@
   "saveFailed": "保存 Provider 失败，请检查端点和认证契约。",
   "providerDeleted": "{name} Provider 已删除。",
   "deleteFailed": "删除失败；请先检查关联的 Connection 和 Tool。",
+  "editorEyebrow": "服务接入",
   "editorCreateTitle": "新建服务 Provider",
   "editorEditTitle": "编辑服务 Provider",
   "closeEditorAria": "关闭 Provider 编辑器",

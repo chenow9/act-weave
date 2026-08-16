@@ -73,6 +73,9 @@ describe("model config v1 behavior", () => {
     const wrapper = mountView();
     await flushPromises();
     await wrapper.get(".primary-button").trigger("click");
+    await wrapper.get('[data-testid="model-field-name"]').setValue("生产网关");
+    await wrapper.get('[data-testid="model-field-api-base"]').setValue("https://llm.example.test/v1");
+    await wrapper.get('[data-testid="model-field-model-name"]').setValue("demo-model");
     await wrapper.get('input[placeholder="粘贴 API Key"]').setValue("api-key-value");
     await wrapper.get('[data-action="save-model-config"]').trigger("click");
     await flushPromises();
@@ -204,6 +207,9 @@ describe("model config v1 behavior", () => {
       .find((input) => (input.element as HTMLInputElement).value === "OpenAI Compatible");
     expect(providerInput).toBeDefined();
 
+    await wrapper.get('[data-testid="model-field-name"]').setValue("生产网关");
+    await wrapper.get('[data-testid="model-field-api-base"]').setValue("https://llm.example.test/v1");
+    await wrapper.get('[data-testid="model-field-model-name"]').setValue("demo-model");
     await wrapper.get('input[placeholder="粘贴 API Key"]').setValue("api-key-value");
     await wrapper.get('[data-action="save-model-config"]').trigger("click");
     await flushPromises();

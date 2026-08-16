@@ -126,7 +126,7 @@ export function createAgentsPageModel() {
   });
   const workspaceOptions = computed(() =>
     workspaces.items.map((workspace) => ({
-      label: `${workspace.name} (${workspace.displayName})`,
+      label: workspace.displayName ? `${workspace.displayName} (${workspace.name})` : workspace.name,
       value: workspace.id,
     })),
   );
@@ -324,10 +324,10 @@ export function createAgentsPageModel() {
     return {
       id: "",
       workspaceId,
-      name: tt("agents.defaultRunName"),
-      roleDescription: tt("agents.defaultRoleDescription"),
+      name: "",
+      roleDescription: "",
       modelConfigId: workspace?.defaultModelConfigId || modelConfigs.items[0]?.id || "",
-      systemPrompt: tt("agents.defaultSystemPrompt"),
+      systemPrompt: "",
       isDefault: false,
       status: "ACTIVE",
       contextPolicy: {
@@ -772,7 +772,12 @@ export function createAgentsPageModel() {
   }
 
   function activeAgentModal() {
-    return agentDeleteDialogRef.value || promptDetailDialogRef.value || agentStudioPanelRef.value;
+    return (
+      agentDeleteInputRef.value?.closest<HTMLElement>("[role='dialog']") ||
+      agentDeleteDialogRef.value ||
+      promptDetailDialogRef.value ||
+      agentStudioPanelRef.value
+    );
   }
 
   function trapAgentModalFocus(event: KeyboardEvent) {
@@ -1104,8 +1109,6 @@ export function createAgentsPageModel() {
     agentDeleteTarget.value = agent;
     agentDeleteConfirmName.value = "";
     clearAgentToast();
-    window.removeEventListener("keydown", handleAgentDeleteDialogKeydown);
-    window.addEventListener("keydown", handleAgentDeleteDialogKeydown);
     void nextTick(() => focusDialog(agentDeleteDialogRef.value, agentDeleteInputRef.value));
   }
 

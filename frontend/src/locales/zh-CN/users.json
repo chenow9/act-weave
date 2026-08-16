@@ -93,6 +93,7 @@
   "resetBody": "提交后会撤销该用户全部登录会话，并要求下次登录修改密码。",
   "workspacesModalAria": "用户业务空间",
   "workspacesTitle": "{username} 的业务空间",
+  "membershipEyebrow": "空间成员",
   "memberDisabled": "成员已停用",
   "workspaceActive": "空间正常",
   "workspaceDisabled": "空间停用",

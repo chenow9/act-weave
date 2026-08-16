@@ -3035,16 +3035,13 @@
 }
 
 .workspace-modal-segment button.tone-production.selected,
-.workspace-modal-segment button.tone-active.selected {
-  background: #059669;
-}
-
+.workspace-modal-segment button.tone-active.selected,
 .workspace-modal-segment button.tone-sandbox.selected {
-  background: #4f46e5;
+  background: var(--aw-green, #0f9f6e);
 }
 
 .workspace-modal-segment button.tone-disabled.selected {
-  background: #dc2626;
+  background: var(--aw-red, #cc3f57);
 }
 
 .workspace-status-helper {
@@ -3412,10 +3409,10 @@
 }
 
 .workspace-confirm-body {
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
-  gap: 12px;
-  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
   background: #fff;
 }
 

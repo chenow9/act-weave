@@ -601,7 +601,7 @@ async function runAction(action: () => Promise<void>, fallback: string) {
       :title="t('logs.title')"
       :description="t('logs.description')"
       icon="fa-solid fa-clock-rotate-left"
-      eyebrow="ACTWEAVE CONTROL PLANE"
+      :eyebrow="t('nav.section.govern')"
     >
       <template #actions>
         <div class="agent-audit-mask" :class="{ off: !agentAudit.isMasked }">

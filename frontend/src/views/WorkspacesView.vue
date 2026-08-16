@@ -5,6 +5,7 @@ import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 
 import AppSelect from "../components/AppSelect.vue";
+import ManagementDialog from "../components/ManagementDialog.vue";
 import ManagementList, { type ManagementListColumn } from "../components/ManagementList.vue";
 import ManagementPageHeader from "../components/ManagementPageHeader.vue";
 import ManagementRowActions, { type ManagementRowAction } from "../components/ManagementRowActions.vue";
@@ -46,9 +47,6 @@ const workspaceStatusTarget = ref<Workspace | null>(null);
 const workspaceDetailFilteredOut = ref(false);
 const workspaceFormTouched = ref(false);
 const workspaceActionTone = ref<"success" | "error">("success");
-const workspaceModalRef = ref<HTMLElement | null>(null);
-const workspaceStatusModalRef = ref<HTMLElement | null>(null);
-const workspaceDeleteModalRef = ref<HTMLElement | null>(null);
 const workspaceNameInputRef = ref<HTMLInputElement | null>(null);
 const workspaceDeleteInputRef = ref<HTMLInputElement | null>(null);
 const workspaceDetailPageRef = ref<HTMLElement | null>(null);
@@ -552,7 +550,6 @@ function openCreateWorkspace() {
   clearWorkspaceToast();
   workspaceModalMode.value = "create";
   showWorkspaceModal.value = true;
-  void focusWorkspaceModal();
 }
 
 function openEditWorkspace(workspace: Workspace) {
@@ -562,7 +559,6 @@ function openEditWorkspace(workspace: Workspace) {
   clearWorkspaceToast();
   workspaceModalMode.value = "edit";
   showWorkspaceModal.value = true;
-  void focusWorkspaceModal();
 }
 
 function closeWorkspaceModal() {
@@ -570,51 +566,11 @@ function closeWorkspaceModal() {
   restoreLastFocus();
 }
 
-async function focusWorkspaceModal() {
-  await nextTick();
-  const target =
-    workspaceModalMode.value === "create"
-      ? workspaceNameInputRef.value
-      : workspaceModalRef.value?.querySelector<HTMLInputElement>("input:not([disabled])");
-  target?.focus();
-}
-
-async function focusDialog(dialog: HTMLElement | null, preferredTarget?: HTMLElement | null) {
-  await nextTick();
-  const target =
-    preferredTarget ||
-    dialog?.querySelector<HTMLElement>(
-      'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    );
-  target?.focus();
-}
-
 function restoreLastFocus() {
   void nextTick(() => {
     lastFocusBeforeModal.value?.focus();
     lastFocusBeforeModal.value = null;
   });
-}
-
-function trapModalFocus(event: KeyboardEvent) {
-  if (event.key !== "Tab") return;
-  const modal = workspaceModalRef.value || workspaceStatusModalRef.value || workspaceDeleteModalRef.value;
-  if (!modal) return;
-  const focusable = Array.from(
-    modal.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    ),
-  ).filter((element) => !element.hasAttribute("disabled") && element.offsetParent !== null);
-  if (!focusable.length) return;
-  const first = focusable[0];
-  const last = focusable[focusable.length - 1];
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault();
-    last.focus();
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault();
-    first.focus();
-  }
 }
 
 function showWorkspaceToast(message: string, tone: "success" | "error" = "success") {
@@ -684,9 +640,12 @@ function workspaceMenuActions(workspace: Workspace): ManagementRowAction[] {
   return actions;
 }
 
-/** Detail header keeps only lifecycle/danger overflow (page-header actions stay outside scope). */
+/** Detail header keeps copy/lifecycle/danger overflow (page-header actions stay outside scope). */
 function workspaceDetailMenuActions(workspace: Workspace): ManagementRowAction[] {
-  return workspaceMenuActions(workspace).filter((action) => action.key === "toggle" || action.key === "delete");
+  return [
+    { key: "copy-id", label: t("workspaces.copyId"), icon: "fa-regular fa-copy" },
+    ...workspaceMenuActions(workspace).filter((action) => action.key === "toggle" || action.key === "delete"),
+  ];
 }
 
 function workspaceMembers(workspaceId: string) {
@@ -715,13 +674,13 @@ function handleWorkspaceRowAction(action: string, workspace: Workspace) {
   else if (action === "edit") openEditWorkspace(workspace);
   else if (action === "toggle") void toggleWorkspace(workspace);
   else if (action === "delete") deleteWorkspace(workspace);
+  else if (action === "copy-id") void copyWorkspaceId(workspace);
 }
 
 async function toggleWorkspace(workspace: Workspace) {
   lastFocusBeforeModal.value = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   workspaceStatusTarget.value = workspace;
   clearWorkspaceToast();
-  void nextTick(() => focusDialog(workspaceStatusModalRef.value));
 }
 
 function closeWorkspaceStatusConfirm() {
@@ -755,7 +714,6 @@ function deleteWorkspace(workspace: Workspace) {
   workspaceDeleteTarget.value = workspace;
   workspaceDeleteConfirmName.value = "";
   clearWorkspaceToast();
-  void nextTick(() => focusDialog(workspaceDeleteModalRef.value, workspaceDeleteInputRef.value));
 }
 
 function closeWorkspaceDeleteConfirm() {
@@ -820,8 +778,7 @@ function formatWorkspaceUpdatedAt(workspace: Workspace) {
   return t("workspaces.daysAgo", { n: Math.floor(elapsedHours / 24) });
 }
 
-async function copyWorkspaceId() {
-  const workspace = detailWorkspace.value;
+async function copyWorkspaceId(workspace = detailWorkspace.value) {
   if (!workspace) return;
   try {
     await navigator.clipboard?.writeText(workspace.id);
@@ -871,6 +828,7 @@ function reconcileWorkspaceListContext() {
       class="span-12"
       :title="t('workspaces.title')"
       :description="t('workspaces.subtitle')"
+      :eyebrow="t('nav.section.space')"
       icon="fa-solid fa-layer-group"
     >
       <template #actions>
@@ -1116,7 +1074,7 @@ function reconcileWorkspaceListContext() {
             <div class="workspace-detail-heading">
               <span class="workspace-detail-heading-icon"><i class="fa-solid fa-cube" aria-hidden="true" /></span>
               <div>
-                <span>Workspace Detail</span>
+                <span>{{ t("workspaces.detailEyebrow") }}</span>
                 <h2 id="workspace-detail-title">{{ detailWorkspace.displayName || detailWorkspace.name }}</h2>
                 <div class="workspace-detail-heading-meta">
                   <p>{{ detailWorkspace.name }}</p>
@@ -1132,10 +1090,6 @@ function reconcileWorkspaceListContext() {
             </div>
           </div>
           <div class="workspace-detail-page-actions">
-            <button type="button" class="ghost-button" @click="copyWorkspaceId">
-              <i class="fa-regular fa-copy" aria-hidden="true" />
-              {{ t("workspaces.copyPhysicalId") }}
-            </button>
             <button
               v-if="workspaces.can(detailWorkspace.id, 'EDIT')"
               type="button"
@@ -1230,8 +1184,8 @@ function reconcileWorkspaceListContext() {
                 </header>
                 <dl class="workspace-detail-metadata">
                   <div>
-                    <dt>{{ t("workspaces.physicalIdLabel") }}</dt>
-                    <dd :title="detailWorkspace.id">{{ detailWorkspace.id }}</dd>
+                    <dt>{{ t("workspaces.nameEn") }}</dt>
+                    <dd :title="detailWorkspace.name">{{ detailWorkspace.name }}</dd>
                   </div>
                   <div>
                     <dt>{{ t("workspaces.envMode") }}</dt>
@@ -1415,288 +1369,211 @@ function reconcileWorkspaceListContext() {
         </div>
       </section>
     </template>
-    <Transition name="modal-fade">
-      <div
-        v-if="showWorkspaceModal"
-        class="modal-backdrop"
-        data-testid="workspace-modal-backdrop"
-        @keydown.esc.stop.prevent="closeWorkspaceModal"
-        @keydown="trapModalFocus"
-      >
-        <section
-          ref="workspaceModalRef"
-          class="modal-card workspace-modal-card"
-          role="dialog"
-          aria-modal="true"
-          :aria-label="workspaceModalTitle"
-          @keydown.esc.stop.prevent="closeWorkspaceModal"
-        >
-          <header class="modal-card-head">
-            <div>
-              <span>Workspace Setup</span>
-              <h3>{{ workspaceModalTitle }}</h3>
-            </div>
-            <button
-              class="icon-action-button"
-              type="button"
-              :title="t('workspaces.close')"
-              :aria-label="t('workspaces.closeFormAria')"
-              @click="closeWorkspaceModal"
-            >
-              <i class="fa-solid fa-xmark" aria-hidden="true" />
-            </button>
-          </header>
-
-          <div class="modal-form">
-            <label class="modal-field">
-              <span>{{ t("workspaces.nameEn") }} <em :aria-label="t('workspaces.required')">*</em></span>
-              <input
-                v-model.trim="draftWorkspace.name"
-                ref="workspaceNameInputRef"
-                :placeholder="t('workspaces.nameExamplePh')"
-                :disabled="workspaceModalMode === 'edit'"
-                :aria-invalid="workspaceNameInvalid"
-                aria-describedby="workspace-name-helper"
-                required
-                @blur="workspaceFormTouched = true"
-              />
-              <small id="workspace-name-helper">{{ t("workspaces.nameHelp") }}</small>
-              <small v-if="workspaceNameInvalid" class="field-error">{{ workspaceNameError }}</small>
-            </label>
-            <label class="modal-field">
-              <span>{{ t("workspaces.displayName") }} <em :aria-label="t('workspaces.required')">*</em></span>
-              <input
-                v-model.trim="draftWorkspace.displayName"
-                :placeholder="t('workspaces.displayNamePlaceholder')"
-                :aria-invalid="workspaceDisplayNameInvalid"
-                required
-                @blur="workspaceFormTouched = true"
-              />
-              <small v-if="workspaceDisplayNameInvalid" class="field-error">{{ workspaceDisplayNameError }}</small>
-            </label>
-            <div class="modal-field">
-              <span>{{ t("workspaces.envMode") }}</span>
-              <div class="workspace-modal-segment" role="radiogroup" :aria-label="t('workspaces.envModeAria')">
-                <button
-                  v-for="option in modeOptions"
-                  :key="option.value"
-                  type="button"
-                  role="radio"
-                  :aria-checked="draftWorkspace.mode === option.value"
-                  :class="[
-                    'workspace-segment-option',
-                    `tone-${option.value.toLowerCase()}`,
-                    { selected: draftWorkspace.mode === option.value },
-                  ]"
-                  @click="draftWorkspace.mode = option.value"
-                >
-                  <i v-if="draftWorkspace.mode === option.value" class="fa-solid fa-circle-check" aria-hidden="true" />
-                  {{
-                    option.value === "SANDBOX" ? t("workspaces.modeSandboxLabel") : t("workspaces.modeProductionLabel")
-                  }}
-                </button>
-              </div>
-            </div>
-            <div v-if="workspaceFormTouched && workspaceFormErrors.length" class="workspace-form-errors" role="alert">
-              <span v-for="error in workspaceFormErrors" :key="error">{{ error }}</span>
-            </div>
-            <p v-if="workspaceFormMissingHint" class="form-helper workspace-form-missing">
-              {{ workspaceFormMissingHint }}
-            </p>
-            <p class="form-helper">
-              {{ workspaceModalMode === "create" ? t("workspaces.createHint") : t("workspaces.saveAffectsConfig") }}
-            </p>
-          </div>
-
-          <div class="workspace-modal-actions">
-            <button class="ghost-button" type="button" :disabled="workspaceSaving" @click="closeWorkspaceModal">
-              {{ t("workspaces.cancelBack") }}
-            </button>
-            <button
-              class="primary-button"
-              type="button"
-              :disabled="workspaceSaving || !canSaveWorkspaceDraft"
-              @click="saveDraftWorkspace"
-            >
-              {{
-                workspaceSaving
-                  ? workspaceModalMode === "create"
-                    ? t("workspaces.creating")
-                    : t("workspaces.saving")
-                  : workspaceModalMode === "create"
-                    ? t("workspaces.submitCreate")
-                    : t("workspaces.syncAttrs")
-              }}
-            </button>
-          </div>
-        </section>
+    <ManagementDialog
+      :open="showWorkspaceModal"
+      :title="workspaceModalTitle"
+      :eyebrow="workspaceModalMode === 'create' ? t('common.dialogCreate') : t('common.dialogEdit')"
+      icon="fa-solid fa-layer-group"
+      :close-aria-label="t('workspaces.closeFormAria')"
+      :close-disabled="workspaceSaving"
+      :close-on-backdrop="false"
+      testid="workspace-modal-backdrop"
+      card-class="workspace-modal-card"
+      footer-class="workspace-modal-actions"
+      @close="closeWorkspaceModal"
+    >
+      <label class="modal-field">
+        <span>{{ t("workspaces.nameEn") }} <em :aria-label="t('workspaces.required')">*</em></span>
+        <input
+          v-model.trim="draftWorkspace.name"
+          ref="workspaceNameInputRef"
+          :data-modal-initial-focus="workspaceModalMode === 'create' ? true : undefined"
+          :placeholder="t('workspaces.nameExamplePh')"
+          :disabled="workspaceModalMode === 'edit'"
+          :aria-invalid="workspaceNameInvalid"
+          aria-describedby="workspace-name-helper"
+          required
+          @blur="workspaceFormTouched = true"
+        />
+        <small id="workspace-name-helper">{{ t("workspaces.nameHelp") }}</small>
+        <small v-if="workspaceNameInvalid" class="field-error">{{ workspaceNameError }}</small>
+      </label>
+      <label class="modal-field">
+        <span>{{ t("workspaces.displayName") }} <em :aria-label="t('workspaces.required')">*</em></span>
+        <input
+          v-model.trim="draftWorkspace.displayName"
+          :data-modal-initial-focus="workspaceModalMode === 'edit' ? true : undefined"
+          :placeholder="t('workspaces.displayNamePlaceholder')"
+          :aria-invalid="workspaceDisplayNameInvalid"
+          required
+          @blur="workspaceFormTouched = true"
+        />
+        <small v-if="workspaceDisplayNameInvalid" class="field-error">{{ workspaceDisplayNameError }}</small>
+      </label>
+      <div class="modal-field">
+        <span>{{ t("workspaces.envMode") }}</span>
+        <div class="workspace-modal-segment" role="radiogroup" :aria-label="t('workspaces.envModeAria')">
+          <button
+            v-for="option in modeOptions"
+            :key="option.value"
+            type="button"
+            role="radio"
+            :aria-checked="draftWorkspace.mode === option.value"
+            :class="[
+              'workspace-segment-option',
+              `tone-${option.value.toLowerCase()}`,
+              { selected: draftWorkspace.mode === option.value },
+            ]"
+            @click="draftWorkspace.mode = option.value"
+          >
+            <i v-if="draftWorkspace.mode === option.value" class="fa-solid fa-circle-check" aria-hidden="true" />
+            {{ option.value === "SANDBOX" ? t("workspaces.modeSandboxLabel") : t("workspaces.modeProductionLabel") }}
+          </button>
+        </div>
       </div>
-    </Transition>
-
-    <Transition name="modal-fade">
-      <div
-        v-if="workspaceStatusTarget"
-        class="modal-backdrop workspace-confirm-backdrop"
-        @click.self="closeWorkspaceStatusConfirm"
-        @keydown.esc.stop.prevent="closeWorkspaceStatusConfirm"
-        @keydown="trapModalFocus"
-      >
-        <section
-          ref="workspaceStatusModalRef"
-          class="modal-card workspace-confirm-card"
-          role="dialog"
-          aria-modal="true"
-          :aria-label="t('workspaces.statusConfirmAria')"
-          @keydown.esc.stop.prevent="closeWorkspaceStatusConfirm"
-        >
-          <header class="modal-card-head">
-            <div>
-              <span>Lifecycle Guard</span>
-              <h3>
-                {{
-                  pendingWorkspaceStatusAction === "disable"
-                    ? t("workspaces.disableTitle")
-                    : t("workspaces.enableTitle")
-                }}
-              </h3>
-            </div>
-            <button
-              class="icon-action-button"
-              type="button"
-              :title="t('workspaces.close')"
-              :aria-label="t('workspaces.closeStatusConfirm')"
-              @click="closeWorkspaceStatusConfirm"
-            >
-              <i class="fa-solid fa-xmark" aria-hidden="true" />
-            </button>
-          </header>
-
-          <div class="workspace-confirm-body">
-            <i
-              :class="
-                pendingWorkspaceStatusAction === 'disable' ? 'fa-solid fa-circle-pause' : 'fa-solid fa-circle-play'
-              "
-              aria-hidden="true"
-            />
-            <div>
-              <strong>{{ workspaceStatusTarget.name }}</strong>
-              <p v-if="pendingWorkspaceStatusAction === 'disable'">
-                {{ t("workspaces.disableBodyLong") }}
-              </p>
-              <p v-else>{{ t("workspaces.enableBodyLong") }}</p>
-              <ul class="workspace-lifecycle-effects">
-                <li>{{ t("workspaces.statusBullet1") }}</li>
-                <li>{{ t("workspaces.statusBullet2") }}</li>
-                <li>{{ t("workspaces.statusBullet3") }}</li>
-              </ul>
-            </div>
-          </div>
-
-          <div class="workspace-modal-actions">
-            <button
-              class="ghost-button"
-              type="button"
-              :disabled="workspaceStatusSaving"
-              @click="closeWorkspaceStatusConfirm"
-            >
-              {{ t("workspaces.cancel") }}
-            </button>
-            <button
-              class="primary-button"
-              type="button"
-              :class="{ danger: pendingWorkspaceStatusAction === 'disable' }"
-              :disabled="workspaceStatusSaving"
-              @click="confirmWorkspaceStatusChange"
-            >
-              {{
-                workspaceStatusSaving
-                  ? t("workspaces.processing")
-                  : pendingWorkspaceStatusAction === "disable"
-                    ? t("workspaces.confirmDisable")
-                    : t("workspaces.confirmEnable")
-              }}
-            </button>
-          </div>
-        </section>
+      <div v-if="workspaceFormTouched && workspaceFormErrors.length" class="workspace-form-errors" role="alert">
+        <span v-for="error in workspaceFormErrors" :key="error">{{ error }}</span>
       </div>
-    </Transition>
-
-    <Transition name="modal-fade">
-      <div
-        v-if="workspaceDeleteTarget"
-        class="modal-backdrop workspace-confirm-backdrop"
-        @click.self="closeWorkspaceDeleteConfirm"
-        @keydown.esc.stop.prevent="closeWorkspaceDeleteConfirm"
-        @keydown="trapModalFocus"
-      >
-        <section
-          ref="workspaceDeleteModalRef"
-          class="modal-card workspace-confirm-card"
-          role="dialog"
-          aria-modal="true"
-          :aria-label="t('workspaces.deleteConfirmAria')"
-          @keydown.esc.stop.prevent="closeWorkspaceDeleteConfirm"
+      <p v-if="workspaceFormMissingHint" class="form-helper workspace-form-missing">
+        {{ workspaceFormMissingHint }}
+      </p>
+      <p class="form-helper">
+        {{ workspaceModalMode === "create" ? t("workspaces.createHint") : t("workspaces.saveAffectsConfig") }}
+      </p>
+      <template #footer>
+        <button class="ghost-button" type="button" :disabled="workspaceSaving" @click="closeWorkspaceModal">
+          {{ t("workspaces.cancel") }}
+        </button>
+        <button
+          class="primary-button"
+          type="button"
+          :disabled="workspaceSaving || !canSaveWorkspaceDraft"
+          @click="saveDraftWorkspace"
         >
-          <header class="modal-card-head">
-            <div>
-              <span>Danger Zone</span>
-              <h3>{{ t("workspaces.deleteTitle") }}</h3>
-            </div>
-            <button
-              class="icon-action-button"
-              type="button"
-              :title="t('workspaces.close')"
-              :aria-label="t('workspaces.closeDeleteConfirm')"
-              @click="closeWorkspaceDeleteConfirm"
-            >
-              <i class="fa-solid fa-xmark" aria-hidden="true" />
-            </button>
-          </header>
+          {{
+            workspaceSaving
+              ? workspaceModalMode === "create"
+                ? t("workspaces.creating")
+                : t("workspaces.saving")
+              : workspaceModalMode === "create"
+                ? t("workspaces.submitCreate")
+                : t("workspaces.saveChanges")
+          }}
+        </button>
+      </template>
+    </ManagementDialog>
 
-          <div class="workspace-confirm-body">
-            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true" />
-            <div>
-              <strong>{{ workspaceDeleteTarget.name }}</strong>
-              <p>{{ t("workspaces.deleteBodyLong") }}</p>
-            </div>
-          </div>
-          <label class="modal-field workspace-confirm-input">
-            <span>{{ t("workspaces.typeNameConfirm", { name: workspaceDeleteTarget.name }) }}</span>
-            <input
-              ref="workspaceDeleteInputRef"
-              v-model.trim="workspaceDeleteConfirmName"
-              autocomplete="off"
-              :aria-invalid="workspaceDeleteConfirmName.length > 0 && !canConfirmWorkspaceDelete"
-              aria-describedby="workspace-delete-name-helper workspace-delete-name-error"
-            />
-            <small id="workspace-delete-name-helper">{{ t("workspaces.exactNameMatch") }}</small>
-            <small v-if="workspaceDeleteNameError" id="workspace-delete-name-error" class="field-error">{{
-              workspaceDeleteNameError
-            }}</small>
-          </label>
-
-          <div class="workspace-modal-actions">
-            <button
-              class="ghost-button"
-              type="button"
-              :disabled="workspaceDeleteSaving"
-              @click="closeWorkspaceDeleteConfirm"
-            >
-              {{ t("workspaces.cancel") }}
-            </button>
-            <button
-              class="primary-button danger"
-              type="button"
-              :disabled="workspaceDeleteSaving || !canConfirmWorkspaceDelete"
-              @click="confirmDeleteWorkspace"
-            >
-              <i class="fa-solid fa-trash" aria-hidden="true" />
-              {{ workspaceDeleteSaving ? t("workspaces.deleting") : t("workspaces.deleteSpace") }}
-            </button>
-          </div>
-        </section>
+    <ManagementDialog
+      :open="Boolean(workspaceStatusTarget)"
+      :title="pendingWorkspaceStatusAction === 'disable' ? t('workspaces.disableTitle') : t('workspaces.enableTitle')"
+      :eyebrow="t('common.dialogStatus')"
+      :icon="pendingWorkspaceStatusAction === 'disable' ? 'fa-solid fa-circle-pause' : 'fa-solid fa-circle-play'"
+      :tone="pendingWorkspaceStatusAction === 'disable' ? 'danger' : 'default'"
+      size="sm"
+      :aria-label="t('workspaces.statusConfirmAria')"
+      :close-aria-label="t('workspaces.closeStatusConfirm')"
+      :close-disabled="workspaceStatusSaving"
+      card-class="workspace-confirm-card"
+      footer-class="workspace-modal-actions"
+      @close="closeWorkspaceStatusConfirm"
+    >
+      <div v-if="workspaceStatusTarget" class="workspace-confirm-body">
+        <div>
+          <strong>{{ workspaceStatusTarget.name }}</strong>
+          <p v-if="pendingWorkspaceStatusAction === 'disable'">
+            {{ t("workspaces.disableBodyLong") }}
+          </p>
+          <p v-else>{{ t("workspaces.enableBodyLong") }}</p>
+          <ul class="workspace-lifecycle-effects">
+            <li>{{ t("workspaces.statusBullet1") }}</li>
+            <li>{{ t("workspaces.statusBullet2") }}</li>
+            <li>{{ t("workspaces.statusBullet3") }}</li>
+          </ul>
+        </div>
       </div>
-    </Transition>
+      <template #footer>
+        <button
+          class="ghost-button"
+          type="button"
+          data-modal-initial-focus
+          :disabled="workspaceStatusSaving"
+          @click="closeWorkspaceStatusConfirm"
+        >
+          {{ t("workspaces.cancel") }}
+        </button>
+        <button
+          class="primary-button"
+          type="button"
+          :class="{ danger: pendingWorkspaceStatusAction === 'disable' }"
+          :disabled="workspaceStatusSaving"
+          @click="confirmWorkspaceStatusChange"
+        >
+          {{
+            workspaceStatusSaving
+              ? t("workspaces.processing")
+              : pendingWorkspaceStatusAction === "disable"
+                ? t("workspaces.confirmDisable")
+                : t("workspaces.confirmEnable")
+          }}
+        </button>
+      </template>
+    </ManagementDialog>
+
+    <ManagementDialog
+      :open="Boolean(workspaceDeleteTarget)"
+      :title="t('workspaces.deleteTitle')"
+      :eyebrow="t('common.dialogDanger')"
+      icon="fa-solid fa-triangle-exclamation"
+      tone="danger"
+      size="sm"
+      :aria-label="t('workspaces.deleteConfirmAria')"
+      :close-aria-label="t('workspaces.closeDeleteConfirm')"
+      :close-disabled="workspaceDeleteSaving"
+      card-class="workspace-confirm-card"
+      footer-class="workspace-modal-actions"
+      @close="closeWorkspaceDeleteConfirm"
+    >
+      <div v-if="workspaceDeleteTarget" class="workspace-confirm-body">
+        <div>
+          <strong>{{ workspaceDeleteTarget.name }}</strong>
+          <p>{{ t("workspaces.deleteBodyLong") }}</p>
+        </div>
+      </div>
+      <label v-if="workspaceDeleteTarget" class="modal-field workspace-confirm-input">
+        <span>{{ t("workspaces.typeNameConfirm", { name: workspaceDeleteTarget.name }) }}</span>
+        <input
+          ref="workspaceDeleteInputRef"
+          v-model.trim="workspaceDeleteConfirmName"
+          data-modal-initial-focus
+          autocomplete="off"
+          :aria-invalid="workspaceDeleteConfirmName.length > 0 && !canConfirmWorkspaceDelete"
+          aria-describedby="workspace-delete-name-helper workspace-delete-name-error"
+        />
+        <small id="workspace-delete-name-helper">{{ t("workspaces.exactNameMatch") }}</small>
+        <small v-if="workspaceDeleteNameError" id="workspace-delete-name-error" class="field-error">{{
+          workspaceDeleteNameError
+        }}</small>
+      </label>
+      <template #footer>
+        <button
+          class="ghost-button"
+          type="button"
+          :disabled="workspaceDeleteSaving"
+          @click="closeWorkspaceDeleteConfirm"
+        >
+          {{ t("workspaces.cancel") }}
+        </button>
+        <button
+          class="primary-button danger"
+          type="button"
+          :disabled="workspaceDeleteSaving || !canConfirmWorkspaceDelete"
+          @click="confirmDeleteWorkspace"
+        >
+          <i class="fa-solid fa-trash" aria-hidden="true" />
+          {{ workspaceDeleteSaving ? t("workspaces.deleting") : t("workspaces.deleteSpace") }}
+        </button>
+      </template>
+    </ManagementDialog>
 
     <div
       v-if="workspaceActionNote && !showWorkspaceModal"

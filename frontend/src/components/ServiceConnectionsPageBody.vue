@@ -6,6 +6,7 @@ import { useI18n } from "vue-i18n";
 import AppSelect from "./AppSelect.vue";
 import ConnectionDetailPanel from "./ConnectionDetailPanel.vue";
 import ConnectionFormPanel from "./ConnectionFormPanel.vue";
+import ManagementDialog from "./ManagementDialog.vue";
 import ManagementList from "./ManagementList.vue";
 import ManagementPageHeader from "./ManagementPageHeader.vue";
 import ManagementRowActions from "./ManagementRowActions.vue";
@@ -79,13 +80,12 @@ const {
   dismissActionNote,
   copyConnectionText,
   isConnectionVerifying,
-  verifyConnection,
   statusLabel,
   connectionAttentionReason,
   statusPillClass,
   statusDotClass,
-  lastVerified,
-  lastVerifiedTitle,
+  statusSecondaryText,
+  statusSecondaryTitle,
   connectionAddress,
   connectionAddressPrimary,
   verificationMethodLabel,
@@ -124,7 +124,7 @@ void WorkspaceContextState;
         :title="t('connections.title')"
         :description="t('connections.description')"
         icon="fa-solid fa-plug-circle-bolt"
-        :eyebrow="t('connections.eyebrow')"
+        :eyebrow="t('nav.section.connect')"
       >
         <template #actions>
           <div class="connection-header-actions">
@@ -339,23 +339,12 @@ void WorkspaceContextState;
                 <span class="connection-status-dot" :class="statusDotClass(connection)" />
                 {{ statusLabel(connection) }}
               </span>
-              <span class="aw-table-meta" :title="lastVerifiedTitle(connection)">{{ lastVerified(connection) }}</span>
               <span
-                v-if="statusLabel(connection) !== t('connections.statusAvailable')"
-                class="connection-attention-reason"
-                :title="connectionAttentionReason(connection)"
-                >{{ connectionAttentionReason(connection) }}</span
+                v-if="statusSecondaryText(connection)"
+                class="aw-table-meta"
+                :title="statusSecondaryTitle(connection)"
+                >{{ statusSecondaryText(connection) }}</span
               >
-              <button
-                v-if="connection.status !== 'DISABLED' && statusLabel(connection) !== t('connections.statusAvailable')"
-                class="connection-inline-verify"
-                type="button"
-                :disabled="isConnectionVerifying(connection.id)"
-                @click.stop="verifyConnection(connection)"
-              >
-                <i class="fa-solid fa-vial" aria-hidden="true" />
-                {{ isConnectionVerifying(connection.id) ? t("connections.verifying") : t("connections.verifyNow") }}
-              </button>
             </div>
           </template>
 
@@ -500,73 +489,61 @@ void WorkspaceContextState;
 
     <ConnectionFormPanel />
 
-    <section
-      v-if="discardDialogVisible"
-      class="connection-discard-modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="connection-discard-title"
+    <ManagementDialog
+      :open="discardDialogVisible"
+      :title="t('connections.discardTitle')"
+      :eyebrow="t('common.dialogUnsaved')"
+      :description="t('connections.discardBody')"
+      icon="fa-solid fa-file-circle-exclamation"
+      size="sm"
+      :aria-label="t('connections.discardTitle')"
+      @close="keepEditingConnectionForm"
     >
-      <div class="connection-delete-backdrop" @click.stop="keepEditingConnectionForm" />
-      <div class="connection-delete-dialog connection-discard-dialog" @click.stop>
-        <header>
-          <span class="connection-eyebrow">Unsaved Changes</span>
-          <h2 id="connection-discard-title">{{ t("connections.discardTitle") }}</h2>
-          <p>{{ t("connections.discardBody") }}</p>
-        </header>
-        <footer>
-          <button class="connection-secondary-button" type="button" @click.stop="keepEditingConnectionForm">
-            {{ t("connections.keepEditing") }}
-          </button>
-          <button class="connection-danger-button" type="button" @click.stop="discardConnectionFormChanges">
-            <i class="fa-solid fa-trash" />
-            {{ t("connections.discardConfirm") }}
-          </button>
-        </footer>
-      </div>
-    </section>
+      <template #footer>
+        <button class="ghost-button" type="button" data-modal-initial-focus @click="keepEditingConnectionForm">
+          {{ t("connections.keepEditing") }}
+        </button>
+        <button class="primary-button danger" type="button" @click="discardConnectionFormChanges">
+          <i class="fa-solid fa-trash" />
+          {{ t("connections.discardConfirm") }}
+        </button>
+      </template>
+    </ManagementDialog>
 
-    <section
-      v-if="pendingDeleteConnection"
-      class="connection-delete-modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="connection-delete-title"
+    <ManagementDialog
+      :open="Boolean(pendingDeleteConnection)"
+      :title="t('connections.deleteTitle')"
+      :eyebrow="t('common.dialogDanger')"
+      :description="t('connections.deleteBody')"
+      icon="fa-solid fa-triangle-exclamation"
+      tone="danger"
+      size="sm"
+      :aria-label="t('connections.deleteTitle')"
+      :close-disabled="deletingConnection"
+      :close-on-backdrop="false"
+      @close="closeDeleteDialog"
     >
-      <div class="connection-delete-backdrop" @click.stop="requestCloseDeleteDialog('backdrop')" />
-      <div class="connection-delete-dialog" @click.stop>
-        <header>
-          <span class="connection-eyebrow">Danger Zone</span>
-          <h2 id="connection-delete-title">{{ t("connections.deleteTitle") }}</h2>
-          <p>{{ t("connections.deleteBody") }}</p>
-        </header>
-        <label class="connection-field connection-delete-confirm-input">
-          <span>{{ t("connections.deleteConfirmLabel") }}</span>
-          <input v-model="deleteConfirmName" :placeholder="pendingDeleteConnection.name" />
-        </label>
-        <p v-if="deleteError" class="connection-delete-error">{{ deleteError }}</p>
-        <footer>
-          <button
-            class="connection-cancel-button"
-            type="button"
-            :disabled="deletingConnection"
-            @click.stop="closeDeleteDialog"
-          >
-            {{ t("connections.cancel") }}
-          </button>
-          <button
-            class="connection-danger-button"
-            type="button"
-            :disabled="deletingConnection"
-            :aria-busy="deletingConnection ? 'true' : 'false'"
-            @click.stop="confirmRemoveConnection"
-          >
-            <i :class="deletingConnection ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-trash'" />
-            {{ t("connections.deleteConnection") }}
-          </button>
-        </footer>
-      </div>
-    </section>
+      <label v-if="pendingDeleteConnection" class="modal-field">
+        <span>{{ t("connections.deleteConfirmLabel") }}</span>
+        <input v-model="deleteConfirmName" data-modal-initial-focus :placeholder="pendingDeleteConnection.name" />
+      </label>
+      <p v-if="deleteError" class="connection-delete-error">{{ deleteError }}</p>
+      <template #footer>
+        <button class="ghost-button" type="button" :disabled="deletingConnection" @click="closeDeleteDialog">
+          {{ t("connections.cancel") }}
+        </button>
+        <button
+          class="primary-button danger"
+          type="button"
+          :disabled="deletingConnection"
+          :aria-busy="deletingConnection ? 'true' : 'false'"
+          @click="confirmRemoveConnection"
+        >
+          <i :class="deletingConnection ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-trash'" />
+          {{ t("connections.deleteConnection") }}
+        </button>
+      </template>
+    </ManagementDialog>
 
     <div v-if="actionNote" class="action-toast" :class="actionToastTone" role="status" aria-live="polite">
       <i :class="actionToastTone === 'success' ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-exclamation'" />

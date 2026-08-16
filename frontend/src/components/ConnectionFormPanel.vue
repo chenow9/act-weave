@@ -358,7 +358,7 @@ const {
                   {{ t("connections.passthroughHelp") }}
                 </p>
                 <label class="connection-field">
-                  <span>maxResidenceSeconds</span>
+                  <span>{{ t("connections.passthroughResidenceLabel") }}</span>
                   <input
                     v-model.number="passthroughMaxResidence"
                     type="number"

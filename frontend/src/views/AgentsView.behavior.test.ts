@@ -473,6 +473,12 @@ describe("agents view behavior", () => {
 
     const nameInput = wrapper.get<HTMLInputElement>(".agent-studio-panel input[aria-label='Agent 名称']");
     await nameInput.setValue("新的售后 Agent");
+    expect(wrapper.get(".agent-studio-actions .primary-button").attributes("disabled")).toBeDefined();
+
+    await wrapper
+      .get<HTMLInputElement>(".agent-studio-panel input[aria-label='场景决策职责']")
+      .setValue("处理售后升级");
+    await wrapper.get("textarea[aria-label='系统提示词']").setValue("负责处理售后问题。");
     expect(wrapper.get(".agent-studio-actions .primary-button").attributes("disabled")).toBeUndefined();
 
     await nameInput.setValue("");
@@ -636,9 +642,7 @@ describe("agents view behavior", () => {
     await flushPromises();
 
     await openAgentRowMenu(wrapper, 0);
-    const manageCapabilities = document.body.querySelector<HTMLButtonElement>(
-      'button[data-action-key="capabilities"]',
-    );
+    const manageCapabilities = document.body.querySelector<HTMLButtonElement>('button[data-action-key="capabilities"]');
     expect(manageCapabilities).toBeTruthy();
     manageCapabilities?.click();
     await flushPromises();

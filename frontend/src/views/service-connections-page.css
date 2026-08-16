@@ -67,9 +67,9 @@
 .connection-primary-button {
   min-height: 44px;
   padding: 10px 16px;
-  background: var(--aw-primary, #0d9488);
+  background: var(--aw-green, #0f9f6e);
   color: #fff;
-  box-shadow: 0 1px 2px rgba(13, 148, 136, 0.18);
+  box-shadow: 0 6px 14px rgba(15, 159, 110, 0.14);
   font-weight: 600;
 }
 
@@ -78,10 +78,8 @@
 }
 
 .connection-primary-button:hover {
-  background: #0f766e;
-  box-shadow:
-    0 4px 6px -1px rgba(13, 148, 136, 0.2),
-    0 2px 4px -2px rgba(13, 148, 136, 0.16);
+  background: var(--aw-green-ink, #087653);
+  box-shadow: 0 8px 16px rgba(15, 159, 110, 0.18);
 }
 
 .connection-primary-button:focus-visible,
@@ -133,18 +131,21 @@
 .connection-secondary-button:disabled,
 .connection-cancel-button:disabled,
 .connection-danger-button:disabled {
+  color: var(--aw-subtle, #96a19d);
+  background: var(--aw-soft-2, #f1f5f3);
+  box-shadow: none;
   cursor: not-allowed;
-  opacity: 0.62;
+  opacity: 1;
   transform: none;
 }
 
 .connection-danger-button {
-  background: #e11d48;
+  background: var(--aw-red, #cc3f57);
   color: #fff;
 }
 
 .connection-danger-button:hover:not(:disabled) {
-  background: #be123c;
+  background: var(--aw-red-ink, #b3354c);
 }
 
 .connection-reference-banner {
@@ -445,7 +446,7 @@
   margin-top: 16px;
   border: 0;
   border-radius: 8px;
-  background: var(--aw-primary, #0d9488);
+  background: var(--aw-green, #0f9f6e);
   color: #fff;
   padding: 8px 16px;
   font-size: 12px;
@@ -453,7 +454,7 @@
 }
 
 .connection-load-error button:hover {
-  background: #0f766e;
+  background: var(--aw-green-ink, #087653);
 }
 
 .connection-name-cell {
@@ -654,11 +655,10 @@
   max-width: 100%;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  overflow: hidden;
+  justify-content: center;
+  gap: 4px;
 }
 
-.connection-status-stack > span:last-child,
 .connection-status-stack .aw-table-meta {
   max-width: 100%;
   overflow: hidden;
@@ -666,6 +666,7 @@
   font-size: var(--aw-table-meta-size, 0.75rem);
   font-weight: var(--aw-table-meta-weight, 400);
   line-height: 1.35;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -810,18 +811,18 @@
   margin-top: 16px;
   border: 0;
   border-radius: 8px;
-  background: var(--aw-primary, #0d9488);
+  background: var(--aw-green, #0f9f6e);
   color: #fff;
   min-height: 44px;
   padding: 8px 16px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 1px 2px rgba(13, 148, 136, 0.18);
+  box-shadow: 0 6px 14px rgba(15, 159, 110, 0.14);
 }
 
 .connection-empty-state button:hover {
-  background: #0f766e;
+  background: var(--aw-green-ink, #087653);
 }
 
 .connection-detail-topbar {

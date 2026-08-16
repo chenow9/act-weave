@@ -112,6 +112,7 @@ void WorkspaceContextState;
       class="workflow-orchestration-header"
       :title="t('workflow.title')"
       :description="t('workflow.subtitle')"
+      :eyebrow="t('nav.section.build')"
       icon="fa-solid fa-diagram-project"
     >
       <template #actions>

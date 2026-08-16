@@ -1,7 +1,7 @@
 {
   "title": "Overview",
   "subtitle": "Platform metrics across all accessible workspaces: success rates, sessions, tool/workflow runs, and resource health.",
-  "eyebrow": "Workspace Overview",
+  "eyebrow": "Space",
   "dateFilterAria": "Date range filter",
   "startDate": "Start date",
   "endDate": "End date",
