@@ -698,6 +698,8 @@ export interface ToolRequestParam {
   valueSource?: ToolParameterValueSource;
   defaultValue?: unknown;
   schema?: ToolSchemaNode;
+  /** Runtime input key when Path/Body share a wire name (e.g. body_id). */
+  inputKey?: string;
 }
 
 export interface ToolResponseField {

@@ -64,6 +64,9 @@ export const router = createRouter({
         },
         { path: "model-apis", name: "model-apis", component: () => import("../views/ModelAPIConfigsView.vue") },
         { path: "tools", name: "tools", component: () => import("../views/ToolsView.vue") },
+        { path: "tools/new", name: "tool-new", component: () => import("../views/ToolWorkspaceView.vue") },
+        { path: "tools/:toolId/edit", name: "tool-edit", component: () => import("../views/ToolWorkspaceView.vue") },
+        { path: "tools/:toolId", name: "tool-detail", component: () => import("../views/ToolWorkspaceView.vue") },
         { path: "workflow", name: "workflow", component: () => import("../views/WorkflowView.vue") },
         // Keep the named alias for one Console release so old /smart-dag links open the editor dock.
         {

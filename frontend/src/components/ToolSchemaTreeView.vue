@@ -19,20 +19,31 @@ interface SchemaTableRow extends ToolSchemaNode {
   __locationLabel: string;
 }
 
-const props = defineProps<{
-  nodes: ToolSchemaNode[];
-  title?: string;
-  summaryTitle?: string;
-  summaryDescription?: string;
-  emptyText?: string;
-  variant?: "default" | "spec";
-  defaultLocation?: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    nodes: ToolSchemaNode[];
+    title?: string;
+    summaryTitle?: string;
+    summaryDescription?: string;
+    emptyText?: string;
+    variant?: "default" | "spec";
+    defaultLocation?: string;
+    showLocation?: boolean;
+    expandAll?: boolean;
+    compact?: boolean;
+  }>(),
+  {
+    expandAll: true,
+    compact: false,
+  },
+);
 
 const tableRows = computed(() => props.nodes.map((node) => toTableRow(node)));
-const showLocationColumn = computed(
-  () => variantMode.value === "spec" || containsLocation(props.nodes) || Boolean(props.defaultLocation),
-);
+const showLocationColumn = computed(() => {
+  if (props.showLocation === false) return false;
+  if (props.showLocation === true) return true;
+  return variantMode.value === "spec" || containsLocation(props.nodes) || Boolean(props.defaultLocation);
+});
 const variantMode = computed(() => props.variant || "default");
 const summaryText = computed(() => {
   const total = countNodes(props.nodes);
@@ -190,7 +201,7 @@ function maxDepth(nodes: ToolSchemaNode[], depth = 1): number {
 </script>
 
 <template>
-  <div class="tool-schema-view" :class="{ 'tool-schema-view-spec': variantMode === 'spec' }">
+  <div class="tool-schema-view" :class="{ 'tool-schema-view-spec': variantMode === 'spec', compact }">
     <div v-if="title" class="tool-schema-view-head" :class="{ 'tool-schema-view-head-spec': variantMode === 'spec' }">
       <div class="tool-schema-view-head-main">
         <strong>{{ summaryTitle || title }}</strong>
@@ -206,11 +217,11 @@ function maxDepth(nodes: ToolSchemaNode[], depth = 1): number {
         data-vxe-ui-theme="light"
         border="none"
         round
-        :size="variantMode === 'spec' ? 'small' : 'medium'"
+        :size="variantMode === 'spec' || compact ? 'small' : 'medium'"
         :height="variantMode === 'spec' ? '100%' : undefined"
         :data="tableRowsWithDepth"
         :row-config="{ keyField: 'id', useKey: true, isHover: true }"
-        :tree-config="{ childrenField: 'children', expandAll: true, showLine: true }"
+        :tree-config="{ childrenField: 'children', expandAll, showLine: true }"
         show-overflow="title"
       >
         <vxe-column

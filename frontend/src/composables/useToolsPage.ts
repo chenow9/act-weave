@@ -3,6 +3,6 @@
  */
 import { createToolsPageModel } from "./tools-page-model";
 
-export function useToolsPage() {
-  return createToolsPageModel();
+export function useToolsPage(options: { surface?: "list" | "workspace" } = {}) {
+  return createToolsPageModel(options);
 }

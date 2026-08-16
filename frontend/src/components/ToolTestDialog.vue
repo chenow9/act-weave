@@ -277,37 +277,41 @@ function updateComplexInput(paramName: string, event: Event) {
 
           <div v-for="group in groupedParams" :key="group.location" class="tool-test-param-group">
             <h4>{{ group.location }}</h4>
-            <div v-for="param in group.params" :key="`${group.location}-${param.name}`" class="tool-test-param-row">
+            <div
+              v-for="param in group.params"
+              :key="`${group.location}-${param.inputKey || param.name}`"
+              class="tool-test-param-row"
+            >
               <label>{{ param.name }}</label>
               <label v-if="param.type === 'boolean'" class="tool-test-checkbox">
                 <input
                   type="checkbox"
-                  :checked="Boolean(inputDraft[param.name])"
-                  @change="updateBooleanInput(param.name, $event)"
+                  :checked="Boolean(inputDraft[param.inputKey || param.name])"
+                  @change="updateBooleanInput(param.inputKey || param.name, $event)"
                 />
-                <span>{{ Boolean(inputDraft[param.name]) ? "true" : "false" }}</span>
+                <span>{{ Boolean(inputDraft[param.inputKey || param.name]) ? "true" : "false" }}</span>
               </label>
               <input
                 v-else-if="param.type === 'integer' || param.type === 'number'"
                 class="tool-test-input"
                 type="number"
                 :step="param.type === 'integer' ? '1' : 'any'"
-                :value="Number(inputDraft[param.name] ?? 0)"
-                @input="updateNumberInput(param.name, $event)"
+                :value="Number(inputDraft[param.inputKey || param.name] ?? 0)"
+                @input="updateNumberInput(param.inputKey || param.name, $event)"
               />
               <input
                 v-else-if="param.type === 'string'"
                 class="tool-test-input"
                 type="text"
-                :value="String(inputDraft[param.name] ?? '')"
-                @input="updateStringInput(param.name, $event)"
+                :value="String(inputDraft[param.inputKey || param.name] ?? '')"
+                @input="updateStringInput(param.inputKey || param.name, $event)"
               />
               <textarea
                 v-else
                 class="tool-test-input tool-test-textarea"
                 rows="4"
-                :value="formatInputField(inputDraft[param.name])"
-                @input="updateComplexInput(param.name, $event)"
+                :value="formatInputField(inputDraft[param.inputKey || param.name])"
+                @input="updateComplexInput(param.inputKey || param.name, $event)"
               ></textarea>
             </div>
           </div>

@@ -12,12 +12,12 @@ export interface ManagementSummaryItem {
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
 
-defineProps<{ items: ManagementSummaryItem[] }>();
+withDefaults(defineProps<{ items: ManagementSummaryItem[]; compact?: boolean }>(), { compact: false });
 const { t } = useI18n();
 </script>
 
 <template>
-  <section class="management-summary-strip" :aria-label="t('common.pageSummaryAria')">
+  <section class="management-summary-strip" :class="{ compact }" :aria-label="t('common.pageSummaryAria')">
     <article
       v-for="item in items"
       :key="item.label"
@@ -95,6 +95,24 @@ const { t } = useI18n();
   color: #6b7280;
   font-size: 0.85rem;
   font-weight: 600;
+}
+
+.management-summary-strip.compact article {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  padding: 10px 16px;
+}
+
+.management-summary-strip.compact strong {
+  margin-top: 0;
+  font-size: 1.2rem;
+}
+
+.management-summary-strip.compact span {
+  font-size: 0.78rem;
 }
 
 @media (max-width: 980px) {

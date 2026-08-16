@@ -115,4 +115,30 @@ describe("tool test input defaults", () => {
       keyword: "",
     });
   });
+
+  it("keeps Path and Body id as separate fields without showing body_id", () => {
+    const tool = {
+      requestParams: [
+        { location: "Path", name: "id", type: "string", required: true, description: "场景ID" },
+        { location: "Body", name: "id", type: "string", required: true, description: "场景ID，新增时为空。" },
+      ],
+      actionConfig: {
+        method: "PUT",
+        path: "/scenes/{id}",
+        parameters: [
+          { in: "path", name: "id", input: "id", required: true },
+          { in: "body", name: "id", input: "body_id", required: true },
+        ],
+      },
+    } as Pick<Tool, "requestParams" | "actionConfig">;
+
+    const params = collectToolTestParams(tool);
+    expect(params.map((item) => `${item.location}:${item.name}`)).toEqual(["Path:id", "Body:id"]);
+    expect(params.some((item) => item.name === "body_id")).toBe(false);
+    expect(params.find((item) => item.location === "Body")?.inputKey).toBe("body_id");
+    expect(buildDefaultToolTestInput(tool)).toEqual({
+      id: "1",
+      body_id: "1",
+    });
+  });
 });

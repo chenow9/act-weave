@@ -493,6 +493,16 @@
 }
 
 .tool-entity-copy strong,
+.tool-name-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.tool-name-link:hover {
+  color: #047857;
+  text-decoration: underline;
+}
+
 .tool-entity-copy .aw-table-title {
   color: var(--aw-table-title-color, #111827);
   font-size: var(--aw-table-title-size, 0.9rem);
@@ -3243,6 +3253,11 @@
   padding-top: 10px;
   padding-bottom: 10px;
   vertical-align: middle;
+}
+
+.tool-schema-view.compact .tool-schema-vxe-table .vxe-body--column {
+  padding-top: 7px;
+  padding-bottom: 7px;
 }
 
 .tool-schema-view-name-block {

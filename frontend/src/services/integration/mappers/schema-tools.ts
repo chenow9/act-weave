@@ -40,22 +40,48 @@ export function normalizeParameterLocation(value: unknown) {
   );
 }
 
+export function extractPathPlaceholderNames(path: string): string[] {
+  const names: string[] = [];
+  const re = /\{([^{}]+)\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(path))) {
+    const name = match[1].trim();
+    if (name && !names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
+function requestParamKey(location: string | undefined, name: string) {
+  return `${(location || "Body").toLocaleLowerCase()}:${name}`;
+}
+
+function requestParamMatches(param: ToolRequestParam, location: string, aliases: string[]) {
+  if ((param.location || "Body") !== location) return false;
+  return aliases.some((alias) => alias && param.name === alias);
+}
+
 /** Recover request params from http.v1 actionConfig when inputSchema has no properties. */
 export function mergeRequestParamsFromActionConfig(
   schemaParams: ToolRequestParam[],
   actionConfig: Record<string, unknown>,
 ): ToolRequestParam[] {
-  const byName = new Map<string, ToolRequestParam>();
+  const byKey = new Map<string, ToolRequestParam>();
   for (const param of schemaParams) {
-    if (param?.name) byName.set(param.name, param);
+    if (!param?.name) continue;
+    const location = param.location || "Body";
+    byKey.set(requestParamKey(location, param.name), { ...param, location });
   }
   const parameters = Array.isArray(actionConfig.parameters) ? actionConfig.parameters : [];
   for (const raw of parameters) {
     if (!isRecord(raw)) continue;
-    const name = String(raw.input || raw.name || "").trim();
-    if (!name || byName.has(name)) continue;
+    const wireName = String(raw.name || "").trim();
+    const inputName = String(raw.input || raw.name || "").trim();
+    if (!inputName && !wireName) continue;
     const location = normalizeParameterLocation(raw.in) || "Query";
-    byName.set(name, {
+    const aliases = [inputName, wireName].filter(Boolean);
+    if ([...byKey.values()].some((param) => requestParamMatches(param, location, aliases))) continue;
+    const name = wireName || inputName;
+    byKey.set(requestParamKey(location, name), {
       location,
       name,
       type: "string",
@@ -64,12 +90,9 @@ export function mergeRequestParamsFromActionConfig(
     });
   }
   const path = typeof actionConfig.path === "string" ? actionConfig.path : "";
-  const re = /\{([^{}]+)\}/g;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(path))) {
-    const name = match[1].trim();
-    if (!name || byName.has(name)) continue;
-    byName.set(name, {
+  for (const name of extractPathPlaceholderNames(path)) {
+    if ([...byKey.values()].some((param) => requestParamMatches(param, "Path", [name]))) continue;
+    byKey.set(requestParamKey("Path", name), {
       location: "Path",
       name,
       type: "string",
@@ -77,7 +100,7 @@ export function mergeRequestParamsFromActionConfig(
       description: "",
     });
   }
-  return [...byName.values()];
+  return [...byKey.values()];
 }
 
 export function normalizeSchemaNode(node: unknown, fallback: Partial<ToolSchemaNode> = {}): ToolSchemaNode {
@@ -360,10 +383,24 @@ export function toolDraftPayload(tool: Tool) {
   };
 }
 
+export function uniqueSchemaPropertyKey(node: ToolSchemaNode, used: Set<string>) {
+  if (node.name && !used.has(node.name)) return node.name;
+  const location = (node.location || "body").toLocaleLowerCase();
+  const base = node.name ? `${location}_${node.name}` : location;
+  if (!used.has(base)) return base;
+  let index = 2;
+  while (used.has(`${base}_${index}`)) index += 1;
+  return `${base}_${index}`;
+}
+
 export function nodesToJSONSchema(nodes: ToolSchemaNode[]): Record<string, unknown> {
-  const properties = Object.fromEntries(
-    nodes.filter((node) => node.name).map((node) => [node.name, nodeToJSONSchema(node)]),
-  );
+  const used = new Set<string>();
+  const properties: Record<string, unknown> = {};
+  for (const node of nodes.filter((item) => item.name)) {
+    const key = uniqueSchemaPropertyKey(node, used);
+    used.add(key);
+    properties[key] = nodeToJSONSchema(node);
+  }
   const required = nodes.filter((node) => node.name && node.required).map((node) => node.name);
   return { type: "object", properties, ...(required.length ? { required } : {}) };
 }

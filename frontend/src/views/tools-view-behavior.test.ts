@@ -93,6 +93,7 @@ const agentState = {
 
 vi.mock("vue-router", () => ({
   useRouter: () => ({ push: routerPushMock }),
+  useRoute: () => ({ name: "tools", params: {} }),
 }));
 
 vi.mock("../stores/tools", () => ({
@@ -223,6 +224,10 @@ function mountToolsView() {
         },
         ToolSchemaTreeView: { template: "<div class='schema-view-stub' />" },
         ToolTestDialog: { template: "<div class='tool-test-dialog-stub' />" },
+        RouterLink: {
+          props: ["to"],
+          template: '<a class="aw-table-title tool-name-link" v-bind="$attrs"><slot /></a>',
+        },
       },
     },
   });
@@ -415,7 +420,7 @@ describe("tools view detail behavior", () => {
     await flushPromises();
 
     expect(wrapper.findAll("tbody tr").every((row) => !row.attributes("role"))).toBe(true);
-    expect(wrapper.get(".tool-entity-copy strong").attributes("title")).toBe("缺失连接 Tool");
+    expect(wrapper.get(".tool-entity-copy .aw-table-title").attributes("title")).toBe("缺失连接 Tool");
     expect(wrapper.get(".tool-entity-copy small").attributes("title")).toBe("查询订单");
     expect(wrapper.findAll('.data-table-checkbox[aria-label^="选择 "]')).toHaveLength(2);
     await wrapper.get('.data-table-checkbox[aria-label="选择 缺失连接 Tool"]').setValue(true);
@@ -462,105 +467,39 @@ describe("tools view detail behavior", () => {
     wrapper.unmount();
   });
 
-  it("does not show a different service connection when the tool connection is missing", async () => {
-    const wrapper = mountToolsView();
-    await flushPromises();
-
-    await triggerToolMenuAction(wrapper, "detail");
-    await wrapper.find("#tool-detail-tab-connection").trigger("click");
-
-    expect(wrapper.find("#tool-detail-panel-connection").text()).toContain("服务连接未找到");
-    expect(wrapper.find("#tool-detail-panel-connection").text()).not.toContain("昆仑平台");
-    expect(wrapper.find(".tool-detail-maintenance-action").exists()).toBe(true);
-    wrapper.unmount();
-  });
-
-  it("keeps every tab aria-controls target present while supporting keyboard tab changes", async () => {
-    const wrapper = mountToolsView();
-    await flushPromises();
-
-    await triggerToolMenuAction(wrapper, "detail");
-    const tabs = wrapper.findAll('[role="tab"]');
-    expect(tabs).toHaveLength(6);
-
-    for (const tab of tabs) {
-      const panelId = tab.attributes("aria-controls");
-      expect(panelId).toBeTruthy();
-      expect(wrapper.find(`#${panelId}`).exists()).toBe(true);
-    }
-
-    await wrapper.find("#tool-detail-tab-base").trigger("keydown", { key: "ArrowRight" });
-    expect(wrapper.find("#tool-detail-tab-connection").attributes("aria-selected")).toBe("true");
-
-    await wrapper.find("#tool-detail-tab-connection").trigger("keydown", { key: "End" });
-    expect(wrapper.find("#tool-detail-tab-test").attributes("aria-selected")).toBe("true");
-    wrapper.unmount();
-  });
-
-  it("preserves the active detail tab when opening tools consecutively", async () => {
+  it("opens tool detail and edit as dedicated routes instead of list modals", async () => {
     const wrapper = mountToolsView();
     await flushPromises();
 
     await triggerToolMenuAction(wrapper, "detail", 0);
-    await wrapper.find("#tool-detail-tab-test").trigger("click");
-    await wrapper.find('button[aria-label="关闭工具详情"]').trigger("click");
-    await triggerToolMenuAction(wrapper, "detail", 1);
-
-    expect(wrapper.find("#tool-detail-tab-test").attributes("aria-selected")).toBe("true");
-    wrapper.unmount();
-  });
-
-  it("opens the tool editor when 编辑工具 is chosen from the row menu", async () => {
-    const wrapper = mountToolsView();
-    await flushPromises();
+    expect(routerPushMock).toHaveBeenCalledWith({ name: "tool-detail", params: { toolId: "tool-missing-connection" } });
 
     await triggerToolMenuAction(wrapper, "edit", 1);
+    expect(routerPushMock).toHaveBeenCalledWith({ name: "tool-edit", params: { toolId: "tool-valid" } });
 
-    const editor = wrapper.find('.tool-editor-modal-card[role="dialog"]');
-    expect(editor.exists()).toBe(true);
-    expect(editor.attributes("aria-label") || editor.text()).toMatch(/编辑|有效连接 Tool/);
-    expect(wrapper.find(".tool-hybrid-topbar").exists()).toBe(true);
-    expect(wrapper.find(".tool-hybrid-step-panel").exists()).toBe(true);
+    expect(wrapper.find(".tool-detail-modal-card").exists()).toBe(false);
+    expect(wrapper.find(".tool-editor-modal-card").exists()).toBe(false);
     wrapper.unmount();
   });
 
-  it("still opens the editor when the tool payload is incomplete", async () => {
-    integrationState.tools = [
-      {
-        ...makeTool("tool-partial", "connection-1", "残缺 Tool"),
-        actionConfig: undefined as unknown as Tool["actionConfig"],
-        runtimePolicy: undefined as unknown as Tool["runtimePolicy"],
-        requestParams: undefined as unknown as Tool["requestParams"],
-        responseFields: undefined as unknown as Tool["responseFields"],
-        errorMappings: undefined as unknown as Tool["errorMappings"],
-      },
-    ];
-    integrationState.toolPageItems = [...integrationState.tools];
-    integrationState.toolPagination = { page: 1, pageSize: 10, total: 1, pageSizeOptions: [10, 20, 50] };
-
+  it("creates a tool from the dedicated /tools/new route", async () => {
     const wrapper = mountToolsView();
     await flushPromises();
 
-    await triggerToolMenuAction(wrapper, "edit", 0);
-
-    expect(wrapper.find('.tool-editor-modal-card[role="dialog"]').exists()).toBe(true);
-    expect(wrapper.text()).not.toContain("无法打开编辑");
+    await wrapper.get(".tool-header-primary").trigger("click");
+    expect(routerPushMock).toHaveBeenCalledWith({ name: "tool-new" });
     wrapper.unmount();
   });
 
-  it("styles detail tabs as an active segmented control, not bare native buttons", async () => {
+  it("hides type and protocol columns by default and shows method with path together", async () => {
     const wrapper = mountToolsView();
     await flushPromises();
 
-    await triggerToolMenuAction(wrapper, "detail", 0);
-    const tabs = wrapper.find(".tool-detail-tabs");
-    expect(tabs.exists()).toBe(true);
-    expect(tabs.findAll('[role="tab"]')).toHaveLength(6);
-    expect(wrapper.find("#tool-detail-tab-base").classes()).toContain("active");
-    expect(wrapper.find(".tool-detail-modal-body").exists()).toBe(true);
-    expect(wrapper.find('[data-status-layer="lifecycle"]').exists()).toBe(true);
-    expect(wrapper.find('[data-status-layer="test"]').exists()).toBe(true);
-    expect(wrapper.find('[data-status-layer="run"]').exists()).toBe(true);
+    expect(wrapper.find('th[data-column-key="endpoint"]').exists()).toBe(true);
+    expect(wrapper.find('th[data-column-key="type"]').exists()).toBe(false);
+    expect(wrapper.find('th[data-column-key="protocol"]').exists()).toBe(false);
+    expect(wrapper.find('th[data-column-key="version"]').exists()).toBe(false);
+    expect(wrapper.get(".tool-endpoint-cell").text()).toMatch(/GET\s*\/orders\/\{orderId\}/);
     wrapper.unmount();
   });
 });

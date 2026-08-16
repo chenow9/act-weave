@@ -91,6 +91,7 @@ export function buildBodyContractFromRequestParams(requestParams: ToolRequestPar
         type: normalizeNodeType(param.type, {}),
         description: param.description,
         required: param.required,
+        location: BODY_LOCATION,
         valueSource: param.valueSource,
         defaultValue: param.defaultValue,
         children: [],

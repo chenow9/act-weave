@@ -2,7 +2,8 @@
  * Tools page model (ZKL-64 item 12).
  */
 import { computed, nextTick, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
+import { extractPathPlaceholderNames } from "../services/integration/mappers/schema-tools";
 import type { ManagementListColumn } from "../components/ManagementList.vue";
 import type { ManagementRowAction } from "../components/ManagementRowActions.vue";
 import type { ManagementSummaryItem } from "../components/ManagementSummaryStrip.vue";
@@ -41,9 +42,10 @@ import type {
   ToolSchemaNode,
   ToolSchemaNodeType,
 } from "../types/domain";
-import { buildHTTPActionConfig, HTTP_ACTION_SCHEMA_VERSION } from "../utils/tool-http-action";
+import { buildHTTPActionConfig, HTTP_ACTION_SCHEMA_VERSION, joinHttpEndpoint } from "../utils/tool-http-action";
 
-export function createToolsPageModel() {
+export function createToolsPageModel(options: { surface?: "list" | "workspace" } = {}) {
+  const surface = options.surface || "list";
   type ToolStatus = Tool["status"];
   type ToolEditorMode = "create" | "edit";
   type ContractEditorTab = "Path" | "Query" | "Header" | "Body" | "Response" | "Errors";
@@ -93,6 +95,7 @@ export function createToolsPageModel() {
     () => auth.user?.platformRole === "PLATFORM_ADMIN" && canPublishWorkspace.value,
   );
   const router = useRouter();
+  const route = useRoute();
 
   const query = ref("");
   const selectedStatusFilter = ref<ToolStatusFilter>("all");
@@ -134,6 +137,8 @@ export function createToolsPageModel() {
   const batchPassthroughToken = ref("");
   const batchPassthroughExpiresAt = ref("");
   const batchTestProgress = ref({ current: 0, total: 0 });
+  const workspaceLoadError = ref("");
+  const workspaceLoading = ref(false);
 
   const selectedTools = computed(() => {
     const keys = new Set(selectedToolRowKeys.value.map(String));
@@ -304,11 +309,7 @@ export function createToolsPageModel() {
     () => toolsStore.tools.find((tool) => tool.id === detailToolId.value) || selectedTool.value,
   );
   const detailConnection = computed(() => (detailTool.value ? connectionForTool(detailTool.value) : undefined));
-  const draftConnection = computed(
-    () =>
-      connectionById(draftTool.value.connectionId, draftTool.value.workspaceId) ||
-      connectionsForWorkspace(draftTool.value.workspaceId)[0],
-  );
+  const draftConnection = computed(() => connectionById(draftTool.value.connectionId, draftTool.value.workspaceId));
   const detailRequestContract = computed(() =>
     buildBodyContractFromRequestParams(detailTool.value?.requestParams || []),
   );
@@ -326,17 +327,40 @@ export function createToolsPageModel() {
       getValue: (tool) => `${tool.name} ${tool.description}`,
     },
     {
+      key: "endpoint",
+      label: tt("tools.colEndpoint"),
+      width: 240,
+      getValue: (tool) => `${methodOf(tool)} ${pathOf(tool)}`,
+    },
+    {
       key: "type",
       label: tt("tools.colType"),
       width: 95,
       hidable: true,
+      defaultHidden: true,
       sortable: true,
       sortKey: "protocol",
       getValue: getToolTypeLabel,
     },
-    { key: "protocol", label: tt("tools.colProtocol"), width: 95, hidable: true, getValue: toolProtocolLabel },
-    { key: "method", label: "Method", width: 70, hidable: true, align: "center", sortable: true, getValue: methodOf },
-    { key: "path", label: "Path", width: 170, hidable: true, getValue: pathOf },
+    {
+      key: "protocol",
+      label: tt("tools.colProtocol"),
+      width: 95,
+      hidable: true,
+      defaultHidden: true,
+      getValue: toolProtocolLabel,
+    },
+    {
+      key: "method",
+      label: "Method",
+      width: 70,
+      hidable: true,
+      defaultHidden: true,
+      align: "center",
+      sortable: true,
+      getValue: methodOf,
+    },
+    { key: "path", label: "Path", width: 170, hidable: true, defaultHidden: true, getValue: pathOf },
     {
       key: "connection",
       label: tt("tools.colProvider"),
@@ -354,20 +378,31 @@ export function createToolsPageModel() {
       sortKey: "status",
       getValue: (tool) => toolUnifiedStatus(tool).label,
     },
-    { key: "version", label: tt("tools.colVersion"), width: 80, hidable: true, getValue: toolVersionLabel },
+    {
+      key: "version",
+      label: tt("tools.colVersion"),
+      width: 80,
+      hidable: true,
+      defaultHidden: true,
+      getValue: toolVersionLabel,
+    },
     {
       key: "updatedAt",
       label: tt("tools.colUpdated"),
       width: 125,
       hidable: true,
+      defaultHidden: true,
       sortable: true,
       sortKey: "updatedAt",
       getValue: formatToolTableUpdatedAt,
     },
     { key: "actions", label: tt("tools.colActions"), width: 68, align: "right", headerAlign: "center" },
   ]);
+  const isEditorSurface = computed(() =>
+    surface === "workspace" ? route.name === "tool-edit" || route.name === "tool-new" : toolEditorVisible.value,
+  );
   const hasUnsavedToolChanges = computed(
-    () => toolEditorVisible.value && draftSnapshot.value !== serializeDraftForSnapshot(),
+    () => isEditorSurface.value && Boolean(draftSnapshot.value) && draftSnapshot.value !== serializeDraftForSnapshot(),
   );
   const saveStateLabel = computed(() => {
     if (saveState.value === "saving") return tt("tools.saving");
@@ -455,17 +490,19 @@ export function createToolsPageModel() {
     ),
   );
 
-  useModalFocus({
-    visible: () => toolDetailVisible.value,
-    modalRef: toolDetailModalRef,
-    onClose: closeToolDetail,
-  });
+  if (surface === "list") {
+    useModalFocus({
+      visible: () => toolDetailVisible.value,
+      modalRef: toolDetailModalRef,
+      onClose: closeToolDetail,
+    });
 
-  useModalFocus({
-    visible: () => toolEditorVisible.value,
-    modalRef: toolEditorModalRef,
-    onClose: closeToolEditor,
-  });
+    useModalFocus({
+      visible: () => toolEditorVisible.value,
+      modalRef: toolEditorModalRef,
+      onClose: closeToolEditor,
+    });
+  }
 
   useModalFocus({
     visible: () => riskConfirmationVisible.value,
@@ -476,11 +513,26 @@ export function createToolsPageModel() {
   onMounted(async () => {
     try {
       if (!workspaces.items.length) await workspaces.load();
-      if (hasWorkspaceContext.value) await loadToolPageAssets();
+      if (surface === "list" && hasWorkspaceContext.value) await loadToolPageAssets();
     } catch {
       // The shared Workspace state provides recovery actions when bootstrap fails.
     }
   });
+
+  if (surface === "workspace") {
+    watch(
+      () => `${String(route.name || "")}:${String(route.params.toolId || "")}`,
+      async () => {
+        try {
+          if (!workspaces.items.length) await workspaces.load();
+          await initWorkspaceFromRoute();
+        } catch {
+          // Workspace route recovery stays on the page error banner.
+        }
+      },
+      { immediate: true },
+    );
+  }
 
   async function loadToolPageAssets() {
     await loadToolRegistry({ page: 1 });
@@ -501,11 +553,18 @@ export function createToolsPageModel() {
   watch(
     draftTool,
     () => {
-      if (toolEditorVisible.value && saveState.value !== "saving" && saveState.value !== "failed") {
+      if (isEditorSurface.value && saveState.value !== "saving" && saveState.value !== "failed") {
         saveState.value = hasUnsavedToolChanges.value ? "dirty" : saveState.value;
       }
     },
     { deep: true },
+  );
+
+  watch(
+    () => draftTool.value.path,
+    () => {
+      if (isEditorSurface.value) syncPathParamsFromEndpoint();
+    },
   );
 
   function defaultToolDraft(): ToolDraft {
@@ -763,15 +822,15 @@ export function createToolsPageModel() {
   }
 
   function endpointPreviewLabel() {
-    const domain = connectionDomainLabel(draftConnection.value);
-    const basePath = connectionBasePathLabel(draftConnection.value).replace(/\/$/, "");
-    const actionPath = (draftTool.value.path || "/").startsWith("/")
-      ? draftTool.value.path || "/"
-      : `/${draftTool.value.path}`;
-    if (!basePath || basePath === "/" || actionPath === basePath || actionPath.startsWith(`${basePath}/`)) {
-      return `${domain}${actionPath}`;
-    }
-    return `${domain}${basePath}${actionPath}`;
+    return joinHttpEndpoint(
+      connectionDomainLabel(draftConnection.value),
+      connectionBasePathLabel(draftConnection.value),
+      draftTool.value.path || "/",
+    );
+  }
+
+  function connectionEndpointLabel(connection = detailConnection.value, path = "") {
+    return joinHttpEndpoint(connectionDomainLabel(connection), connectionBasePathLabel(connection), path || "/");
   }
 
   function serviceConnectionStatusLabel(connection = detailConnection.value) {
@@ -784,7 +843,15 @@ export function createToolsPageModel() {
   }
 
   function environmentLabel(value: string) {
-    return value || "-";
+    const raw = (value || "").trim();
+    if (!raw) return tt("tools.envNotSelected");
+    if (["测试", "Sandbox", "Staging", "TEST", "STAGING", "DEVELOPMENT"].includes(raw)) {
+      return tt("tools.envTest");
+    }
+    if (["生产", "Production", "PRODUCTION", "PROD", "LIVE"].includes(raw)) {
+      return tt("tools.envProduction");
+    }
+    return raw;
   }
 
   function backoffPolicyMeta(policy: string) {
@@ -1101,7 +1168,7 @@ export function createToolsPageModel() {
 
   function handleToolRowAction(actionKey: string, tool: Tool) {
     if (actionKey === "detail") {
-      openToolDetail(tool);
+      void openToolDetail(tool);
       return;
     }
     if (actionKey === "test") {
@@ -1109,7 +1176,7 @@ export function createToolsPageModel() {
       return;
     }
     if (actionKey === "edit") {
-      openEditTool(tool);
+      void openEditTool(tool);
       return;
     }
     if (actionKey === "publish") {
@@ -1156,11 +1223,14 @@ export function createToolsPageModel() {
 
   async function openToolDetail(tool: Tool) {
     closeFloatingMenus();
+    if (surface === "list") {
+      await router.push({ name: "tool-detail", params: { toolId: tool.id } });
+      return;
+    }
     selectedToolId.value = tool.id;
     detailToolId.value = tool.id;
     toolDetailVisible.value = true;
     void resolveToolMaintainer(tool);
-    // List rows only carry headVersion summary; hydrate full versions for detail panel.
     if (!toolHasFullVersions(tool)) {
       try {
         await toolsStore.loadToolVersions(tool.id, tool.workspaceId);
@@ -1177,6 +1247,7 @@ export function createToolsPageModel() {
   function closeToolDetail() {
     toolDetailVisible.value = false;
     detailToolId.value = "";
+    if (surface === "workspace") void router.push({ name: "tools" });
   }
 
   async function openToolTestDialog(tool: Tool) {
@@ -1204,8 +1275,10 @@ export function createToolsPageModel() {
     if (selectedToolId.value === tool.id) {
       selectedToolId.value = toolsStore.tools[0]?.id || "";
     }
-    if (detailToolId.value === tool.id) {
-      closeToolDetail();
+    if (detailToolId.value === tool.id || (surface === "workspace" && route.params.toolId === tool.id)) {
+      toolDetailVisible.value = false;
+      detailToolId.value = "";
+      if (surface === "workspace") void router.push({ name: "tools" });
     }
     setActionFeedback(tt("tools.deletedFromRuntime", { name: tool.name }));
   }
@@ -1527,12 +1600,13 @@ export function createToolsPageModel() {
     }
   }
 
-  function openCreateTool() {
+  function startCreateDraft() {
     toolEditorMode.value = "create";
     editingToolId.value = "";
     draftStep.value = 1;
     actionNote.value = "";
     draftError.value = "";
+    workspaceLoadError.value = "";
     contractEditorTab.value = "Body";
     runtimeAdvancedOpen.value = false;
     draftTool.value = defaultToolDraft();
@@ -1540,6 +1614,14 @@ export function createToolsPageModel() {
     saveState.value = "idle";
     publishImpactConfirmed.value = false;
     toolEditorVisible.value = true;
+  }
+
+  function openCreateTool() {
+    if (surface === "list") {
+      void router.push({ name: "tool-new" });
+      return;
+    }
+    startCreateDraft();
   }
 
   function buildDraftFromTool(tool: Tool): ToolDraft {
@@ -1564,12 +1646,8 @@ export function createToolsPageModel() {
       contentType: String(actionConfig.contentType || "application/json"),
       description: tool.description || "",
       status: tool.status || "Draft",
-      requestContract: requestParams.length
-        ? requestParams.map((param) => requestParamToSchemaNode(param))
-        : [normalizeSchemaNode({ location: "Body", name: "", type: "string", required: true, description: "" })],
-      responseContract: responseFields.length
-        ? responseFields.map((field) => responseFieldToSchemaNode(field))
-        : [normalizeSchemaNode({ name: "", type: "string", required: true, description: "" })],
+      requestContract: requestParams.map((param) => requestParamToSchemaNode(param)),
+      responseContract: responseFields.map((field) => responseFieldToSchemaNode(field)),
       errorMappings: errorMappings.map((mapping) => ({ ...mapping })),
       timeoutSeconds: Math.max(1, Math.round(Number(runtimePolicy.timeoutMs) / 1000) || 8),
       retryCount: Number(runtimePolicy.retryCount) || 0,
@@ -1580,12 +1658,20 @@ export function createToolsPageModel() {
   }
 
   async function openEditTool(tool: Tool) {
+    if (surface === "list") {
+      await router.push({ name: "tool-edit", params: { toolId: tool.id } });
+      return;
+    }
+    await applyEditDraft(tool);
+  }
+
+  async function applyEditDraft(tool: Tool) {
     try {
       let editable = tool;
       if (!toolHasFullVersions(tool)) {
         editable = await toolsStore.loadToolVersions(tool.id, tool.workspaceId);
       }
-      if (editable.status === "Published") {
+      if (editable.status === "Published" && surface === "list") {
         setActionFeedback(tt("tools.editCreatesDraft"), "success");
       }
       toolEditorMode.value = "edit";
@@ -1593,11 +1679,13 @@ export function createToolsPageModel() {
       draftStep.value = 1;
       actionNote.value = editable.status === "Published" ? actionNote.value : "";
       draftError.value = "";
+      workspaceLoadError.value = "";
       contractEditorTab.value = "Body";
       runtimeAdvancedOpen.value = false;
       toolDetailVisible.value = false;
       testDialogVisible.value = false;
       draftTool.value = buildDraftFromTool(editable);
+      syncPathParamsFromEndpoint();
       draftSnapshot.value = JSON.stringify(draftTool.value);
       saveState.value = "idle";
       publishImpactConfirmed.value = false;
@@ -1606,18 +1694,81 @@ export function createToolsPageModel() {
       const message = error instanceof Error ? error.message : tt("tools.unknownError");
       setActionFeedback(tt("tools.cannotOpenEdit", { message }), "error");
       draftError.value = tt("tools.cannotOpenEdit", { message });
+      workspaceLoadError.value = tt("tools.cannotOpenEdit", { message });
       toolEditorVisible.value = false;
     }
   }
 
   function closeToolEditor() {
     if (hasUnsavedToolChanges.value && !window.confirm(tt("tools.unsavedLeaveConfirm"))) {
-      return;
+      return false;
     }
     toolEditorVisible.value = false;
     draftStep.value = 1;
+    const savedId = editingToolId.value;
     toolEditorMode.value = "create";
-    editingToolId.value = "";
+    if (surface === "workspace") {
+      if (savedId) void router.push({ name: "tool-detail", params: { toolId: savedId } });
+      else void router.push({ name: "tools" });
+    }
+    return true;
+  }
+
+  function leaveToolWorkspace() {
+    if (hasUnsavedToolChanges.value && !window.confirm(tt("tools.unsavedLeaveConfirm"))) {
+      return false;
+    }
+    return true;
+  }
+
+  function syncPathParamsFromEndpoint() {
+    const names = extractPathPlaceholderNames(draftTool.value.path || "");
+    const existingPath = draftTool.value.requestContract.filter((node) => node.location === "Path");
+    const other = draftTool.value.requestContract.filter((node) => node.location !== "Path");
+    const nextPath = names.map(
+      (name) =>
+        existingPath.find((node) => node.name === name) ||
+        normalizeSchemaNode({ location: "Path", name, type: "string", required: true, description: "" }),
+    );
+    draftTool.value.requestContract = [...nextPath, ...other];
+  }
+
+  async function initWorkspaceFromRoute() {
+    workspaceLoadError.value = "";
+    const routeName = String(route.name || "");
+    if (routeName === "tool-new") {
+      startCreateDraft();
+      return;
+    }
+    const toolId = String(route.params.toolId || "");
+    if (!toolId) {
+      workspaceLoadError.value = tt("tools.workspaceNotFound");
+      return;
+    }
+    workspaceLoading.value = true;
+    try {
+      if (!workspaces.items.length) await workspaces.load();
+      let tool =
+        toolsStore.tools.find((item) => item.id === toolId) ||
+        toolsStore.toolPageItems.find((item) => item.id === toolId);
+      if (!tool || !toolHasFullVersions(tool)) {
+        tool = await toolsStore.loadToolVersions(toolId);
+      }
+      await toolsStore.loadToolConnections([tool]);
+      void resolveToolMaintainer(tool);
+      if (routeName === "tool-edit") {
+        await applyEditDraft(tool);
+        return;
+      }
+      selectedToolId.value = tool.id;
+      detailToolId.value = tool.id;
+      toolDetailVisible.value = true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : tt("tools.unknownError");
+      workspaceLoadError.value = tt("tools.cannotOpenTool", { message });
+    } finally {
+      workspaceLoading.value = false;
+    }
   }
 
   function goToDraftStep(step: number) {
@@ -2069,6 +2220,7 @@ export function createToolsPageModel() {
     connectionDomainLabel,
     connectionBasePathLabel,
     endpointPreviewLabel,
+    connectionEndpointLabel,
     serviceConnectionStatusLabel,
     environmentLabel,
     backoffPolicyMeta,
@@ -2159,5 +2311,13 @@ export function createToolsPageModel() {
     goPreviousStep,
     goNextStep,
     publishDraftTool,
+    workspaceLoadError,
+    workspaceLoading,
+    isEditorSurface,
+    startCreateDraft,
+    applyEditDraft,
+    leaveToolWorkspace,
+    initWorkspaceFromRoute,
+    syncPathParamsFromEndpoint,
   };
 }

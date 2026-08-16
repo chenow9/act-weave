@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import AppSelect from "./AppSelect.vue";
-import { serializeContractNodesToJson } from "../utils/tool-schema-json";
+import { parseContractJson, serializeContractNodesToJson } from "../utils/tool-schema-json";
 import type { ToolSchemaNode, ToolSchemaNodeType } from "../types/domain";
 
 const { t } = useI18n();
@@ -31,12 +31,31 @@ const emit = defineEmits<{
 const editorMode = ref<"structured" | "json">("structured");
 const selectedNodeId = ref("");
 const expandedNodeIds = ref<Set<string>>(new Set());
+const jsonDraft = ref("");
+const jsonError = ref("");
 const fieldTypeOptions = ["string", "integer", "number", "boolean", "object", "array"].map((type) => ({
   label: type,
   value: type,
 }));
 
 const jsonPreview = computed(() => serializeContractNodesToJson(props.modelValue));
+
+watch(editorMode, (mode) => {
+  if (mode === "json") {
+    jsonDraft.value = jsonPreview.value;
+    jsonError.value = "";
+  }
+});
+
+function applyJsonDraft() {
+  const parsed = parseContractJson(jsonDraft.value);
+  if (!parsed.ok) {
+    jsonError.value = parsed.error.message;
+    return;
+  }
+  jsonError.value = "";
+  emitNodes(parsed.nodes);
+}
 const treeRows = computed(() => flattenVisibleNodes(props.modelValue));
 const selectedNode = computed(() => findNode(props.modelValue, selectedNodeId.value));
 
@@ -45,7 +64,7 @@ watch(
   (nodes) => {
     const allNodes = flattenAllNodes(nodes);
     if (!selectedNodeId.value || !allNodes.some((node) => node.id === selectedNodeId.value)) {
-      selectedNodeId.value = allNodes.find((node) => node.type === "object")?.id || allNodes[0]?.id || "";
+      selectedNodeId.value = nodes[0]?.id || allNodes[0]?.id || "";
     }
     const nextExpanded = new Set(expandedNodeIds.value);
     allNodes.filter((node) => node.type === "object").forEach((node) => nextExpanded.add(node.id));
@@ -364,8 +383,17 @@ function rowHasChildren(node: ToolSchemaNode) {
     </div>
 
     <div v-else class="tool-contract-json-preview" role="tabpanel" :aria-label="t('tools.jsonPreviewAria')">
-      <div class="tool-contract-json-caption">{{ t("tools.jsonPreviewCaption") }}</div>
-      <pre><code>{{ jsonPreview }}</code></pre>
+      <div class="tool-contract-json-caption">
+        <span>{{ t("tools.jsonEditCaption") }}</span>
+        <button type="button" @click="applyJsonDraft">{{ t("tools.applyJson") }}</button>
+      </div>
+      <textarea
+        v-model="jsonDraft"
+        class="tool-contract-json-editor"
+        spellcheck="false"
+        :aria-label="t('tools.jsonPreviewAria')"
+      />
+      <p v-if="jsonError" class="tool-contract-json-error" role="alert">{{ jsonError }}</p>
     </div>
   </section>
 </template>
@@ -656,22 +684,54 @@ function rowHasChildren(node: ToolSchemaNode) {
   border-radius: 8px;
 }
 .tool-contract-json-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 8px 14px;
   border-bottom: 1px solid var(--aw-border);
   background: #f8fafc;
   color: #94a3b8;
   font-size: 11px;
 }
-.tool-contract-json-preview pre {
+.tool-contract-json-caption button {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--aw-border);
+  border-radius: 6px;
+  background: #fff;
+  color: #0f766e;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.tool-contract-json-editor {
+  display: block;
+  width: 100%;
+  min-height: 280px;
   max-height: 420px;
   margin: 0;
   overflow: auto;
   padding: 16px 18px;
+  border: 0;
   background: #1e293b;
   color: #e2e8f0;
   font-family: "SF Mono", Consolas, Menlo, monospace;
   font-size: 12.5px;
   line-height: 1.7;
+  resize: vertical;
+}
+.tool-contract-json-editor:focus {
+  outline: 0;
+}
+.tool-contract-json-error {
+  margin: 0;
+  padding: 8px 14px;
+  border-top: 1px solid #fecdd3;
+  background: #fff1f2;
+  color: #e11d48;
+  font-size: 12px;
 }
 @media (max-width: 820px) {
   .tool-hybrid-structured-workspace {

@@ -101,11 +101,19 @@ function normalizeLocation(value: unknown): string {
  * Merge requestParams with actionConfig.parameters + path placeholders so test UI
  * still has fields when OpenAPI left inputSchema empty.
  */
+function paramIdentity(location: string, name: string) {
+  return `${location}:${name}`;
+}
+
+function runtimeInputKey(param: Pick<ToolRequestParam, "name" | "inputKey">) {
+  return param.inputKey || param.name;
+}
+
 export function collectToolTestParams(tool: Pick<Tool, "requestParams" | "actionConfig">): ToolRequestParam[] {
-  const byName = new Map<string, ToolRequestParam>();
+  const byKey = new Map<string, ToolRequestParam>();
   for (const param of tool.requestParams || []) {
     if (!param?.name) continue;
-    byName.set(param.name, param);
+    byKey.set(paramIdentity(param.location, param.name), { ...param });
   }
 
   const actionConfig = (tool.actionConfig || {}) as {
@@ -114,22 +122,34 @@ export function collectToolTestParams(tool: Pick<Tool, "requestParams" | "action
   };
   const parameters = Array.isArray(actionConfig.parameters) ? actionConfig.parameters : [];
   for (const item of parameters) {
-    const name = String(item.input || item.name || "").trim();
-    if (!name || byName.has(name)) continue;
+    const wireName = String(item.name || "").trim();
+    const input = String(item.input || item.name || "").trim();
+    if (!wireName && !input) continue;
     const location = normalizeLocation(item.in);
-    byName.set(name, {
+    const displayName = wireName || input;
+    const key = paramIdentity(location, displayName);
+    const existing = byKey.get(key);
+    if (existing) {
+      if (input && input !== existing.name) {
+        byKey.set(key, { ...existing, inputKey: input });
+      }
+      continue;
+    }
+    byKey.set(key, {
       location,
-      name,
+      name: displayName,
       type: "string",
       required: Boolean(item.required) || location === "Path",
       description: "",
+      ...(input && input !== displayName ? { inputKey: input } : {}),
     });
   }
 
   const path = String(actionConfig.path || "");
   for (const name of pathPlaceholders(path)) {
-    if (byName.has(name)) continue;
-    byName.set(name, {
+    const key = paramIdentity("Path", name);
+    if (byKey.has(key)) continue;
+    byKey.set(key, {
       location: "Path",
       name,
       type: "string",
@@ -141,11 +161,12 @@ export function collectToolTestParams(tool: Pick<Tool, "requestParams" | "action
   // If still no query params on a GET-like list path, inject common pagination helpers
   // so pagination-style list endpoints don't send bare {}.
   const method = String((tool.actionConfig as { method?: string })?.method || "GET").toUpperCase();
-  const hasQuery = [...byName.values()].some((p) => p.location === "Query");
+  const hasQuery = [...byKey.values()].some((p) => p.location === "Query");
   if (method === "GET" && !hasQuery && !pathPlaceholders(path).length) {
     for (const [name, value] of Object.entries({ pageNum: 1, pageSize: 10 })) {
-      if (byName.has(name)) continue;
-      byName.set(name, {
+      const key = paramIdentity("Query", name);
+      if (byKey.has(key)) continue;
+      byKey.set(key, {
         location: "Query",
         name,
         type: "integer",
@@ -157,7 +178,7 @@ export function collectToolTestParams(tool: Pick<Tool, "requestParams" | "action
     }
   }
 
-  return [...byName.values()];
+  return [...byKey.values()];
 }
 
 /**
@@ -169,7 +190,9 @@ export function buildDefaultToolTestInput(
 ): Record<string, unknown> {
   const params = Array.isArray(paramsOrTool) ? paramsOrTool : collectToolTestParams(paramsOrTool);
 
-  const entries = params.filter(shouldIncludeParam).map((param) => [param.name, fallbackValueForParam(param)] as const);
+  const entries = params
+    .filter(shouldIncludeParam)
+    .map((param) => [runtimeInputKey(param), fallbackValueForParam(param)] as const);
 
   // Never return completely empty for tools that have action path placeholders.
   if (!entries.length && !Array.isArray(paramsOrTool)) {

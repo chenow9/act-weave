@@ -6,8 +6,6 @@ import ManagementPageHeader from "./ManagementPageHeader.vue";
 import ManagementRowActions from "./ManagementRowActions.vue";
 import ManagementSegmentedFilter from "./ManagementSegmentedFilter.vue";
 import ManagementSummaryStrip from "./ManagementSummaryStrip.vue";
-import ToolDetailPanel from "./ToolDetailPanel.vue";
-import ToolEditorPanel from "./ToolEditorPanel.vue";
 import ToolTestDialog from "./ToolTestDialog.vue";
 import WorkspaceContextState from "./WorkspaceContextState.vue";
 import { useI18n } from "vue-i18n";
@@ -96,8 +94,6 @@ void ManagementPageHeader;
 void ManagementRowActions;
 void ManagementSegmentedFilter;
 void ManagementSummaryStrip;
-void ToolDetailPanel;
-void ToolEditorPanel;
 void ToolTestDialog;
 void WorkspaceContextState;
 void getToolTypeLabel;
@@ -130,14 +126,9 @@ void getToolTypeLabel;
       </template>
     </ManagementPageHeader>
 
-    <ManagementSummaryStrip class="span-12" :items="toolSummaryItems" />
+    <ManagementSummaryStrip class="span-12" compact :items="toolSummaryItems" />
 
     <section class="span-12 tool-runtime-card management-list-card">
-      <div v-if="hasWorkspaceContext && hasToolRecords" class="tool-section-bar">
-        <span><i class="fa-solid fa-circle-info" />{{ t("tools.sectionNote") }}</span>
-        <button type="button" @click="router.push('/openapi-imports')">{{ t("tools.viewOpenapi") }}</button>
-      </div>
-
       <ManagementList
         class="tool-management-list"
         :rows="hasWorkspaceContext ? toolsStore.toolPageItems : []"
@@ -145,7 +136,7 @@ void getToolTypeLabel;
         row-key="id"
         :sticky-left-keys="['tool']"
         :sticky-right-keys="['actions']"
-        storage-key="actweave:tools:columns"
+        storage-key="actweave:tools:columns:v2"
         :selectable="false"
         checkable
         :checked-row-keys="selectedToolRowKeys"
@@ -231,7 +222,12 @@ void getToolTypeLabel;
           <div class="tool-entity-cell">
             <span class="tool-entity-icon" aria-hidden="true"><i class="fa-solid fa-screwdriver-wrench" /></span>
             <span class="tool-entity-copy">
-              <strong class="aw-table-title" :title="tool.name">{{ tool.name }}</strong>
+              <router-link
+                class="aw-table-title tool-name-link"
+                :title="tool.name"
+                :to="{ name: 'tool-detail', params: { toolId: tool.id } }"
+                >{{ tool.name }}</router-link
+              >
               <small class="aw-table-subtitle" :title="tool.description">{{
                 tool.description || t("tools.noDescription")
               }}</small>
@@ -244,6 +240,14 @@ void getToolTypeLabel;
         <template #cell-protocol="{ row: tool }"
           ><span class="tool-protocol-cell aw-table-meta">{{ toolProtocolLabel(tool) }}</span></template
         >
+        <template #cell-endpoint="{ row: tool }">
+          <span class="tool-endpoint-cell">
+            <span class="tool-method-badge aw-table-pill" :class="methodClass(tool)">{{ methodOf(tool) }}</span>
+            <code class="tool-endpoint-summary aw-table-mono" :title="toolEndpointSummary(tool)">{{
+              pathOf(tool)
+            }}</code>
+          </span>
+        </template>
         <template #cell-method="{ row: tool }"
           ><span class="tool-method-badge aw-table-pill" :class="methodClass(tool)">{{
             methodOf(tool)
@@ -319,9 +323,6 @@ void getToolTypeLabel;
         </template>
       </ManagementList>
     </section>
-
-    <ToolDetailPanel />
-    <ToolEditorPanel />
 
     <div v-if="riskConfirmationVisible" class="modal-backdrop" @click.self="closeRiskConfirmation">
       <section
