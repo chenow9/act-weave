@@ -140,13 +140,13 @@ docker compose up --build
 - Backend health check: <http://127.0.0.1:8082/api/v1/health>
 - An empty data volume creates a local-development administrator only: `admin` / `actweave-admin-dev-change-me`.
 
-Change the password after the first sign-in. For production, replace repository development configuration, database/object-storage credentials, JWT/encryption keys, AAP signing keys, and bootstrap administrator credentials. See [deployment](./docs/deployment.md) for the complete requirements.
+Change the password after the first sign-in. For production, replace repository development configuration, database/object-storage credentials, JWT/encryption keys, AAP signing keys, and bootstrap administrator credentials. Pushing a `v*` tag publishes frontend and backend images to Alibaba Cloud ACR; registry addresses and pull commands are in [deployment](./docs/deployment.md#release-images-to-acr). See that page for the complete production requirements.
 
 ## Project status and current limitations
 
 | Category | Status |
 | --- | --- |
-| Implemented | Workspace/RBAC, Provider/Connection, OpenAPI import, Tool governance, Agents, Workflows, console trials, AAP, SSE, TypeScript SDK, audit, and A2A delegation/gateway paths. |
+| Implemented | Workspace/RBAC, Provider/Connection, OpenAPI import, Tool governance, Agents, Workflows, console trials, AAP, SSE, TypeScript SDK, audit, A2A delegation/gateway paths, and `v*` tag image publish to ACR. |
 | Feature-gated | AAP file upload is disabled by default; end-to-end multimodal input also needs `runtimeMultimodal`. LLM context compaction is disabled by default. |
 | Current limitations | The console is primarily desktop-oriented; some advanced Workflow node types are supported in the backend but not fully exposed by the editor; publish impact analysis does not automatically list every Agent/Workflow reference. |
 | Maturity | No version tags, public release notes, or production SLO/SLA were found. Suitability for a specific production environment must be decided by the deployer after threat modeling, capacity, backup, monitoring, and integration testing. |

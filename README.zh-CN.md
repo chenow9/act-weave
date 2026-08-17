@@ -140,13 +140,13 @@ docker compose up --build
 - 后端健康检查：<http://127.0.0.1:8082/api/v1/health>
 - 空数据卷会创建仅限本地开发的管理员：`admin` / `actweave-admin-dev-change-me`。
 
-首次登录后应修改密码。生产环境必须替换仓库中的开发配置、数据库与对象存储凭证、JWT/加密密钥、AAP 签名密钥和 bootstrap 管理员凭证；完整要求见[部署说明](./docs/deployment.zh-CN.md)。
+首次登录后应修改密码。生产环境必须替换仓库中的开发配置、数据库与对象存储凭证、JWT/加密密钥、AAP 签名密钥和 bootstrap 管理员凭证。推送 `v*` tag 会把前后端镜像发布到阿里云 ACR；仓库地址与拉取命令见[部署说明](./docs/deployment.zh-CN.md#发布镜像到-acr)。完整生产要求也在该页。
 
 ## 项目状态与当前限制
 
 | 分类 | 现状 |
 | --- | --- |
-| 已实现 | Workspace/RBAC、Provider/Connection、OpenAPI 导入、Tool 治理、Agent、Workflow、Console 试跑、AAP、SSE、TypeScript SDK、审计，以及 A2A 委派/网关路径。 |
+| 已实现 | Workspace/RBAC、Provider/Connection、OpenAPI 导入、Tool 治理、Agent、Workflow、Console 试跑、AAP、SSE、TypeScript SDK、审计、A2A 委派/网关路径，以及打 `v*` tag 发布镜像到 ACR。 |
 | 受开关限制 | AAP 文件上传默认关闭；端到端多模态输入还需单独开启 `runtimeMultimodal`。LLM 上下文压缩默认关闭。 |
 | 当前限制 | 控制台以桌面布局为主；部分高级 Workflow 节点后端支持但编辑器未完全暴露；发布影响分析不会自动列出所有 Agent/Workflow 引用。 |
 | 成熟度 | 未找到版本 tag、公开发布说明或生产 SLO/SLA。是否适合某个生产环境须由部署方基于威胁建模、容量、备份、监控和集成测试决定。 |

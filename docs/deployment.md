@@ -18,23 +18,66 @@ Use [getting started](./getting-started.md) for the command and development defa
 
 ## Release images to ACR
 
-`.github/workflows/release-images.yml` builds `actweave-backend` and `actweave-frontend` and pushes them to an Alibaba Cloud ACR Personal Edition namespace when a `v*` tag is pushed. It does not deploy the stack.
+`.github/workflows/release-images.yml` builds `actweave-backend` and `actweave-frontend` and pushes them to the Alibaba Cloud ACR Personal Edition namespace below when a `v*` tag is pushed. The workflow publishes images only; it does not deploy the stack, apply migrations, or replace development secrets.
 
-Before the first tag:
+This is an image-publish path, not a production-readiness claim.
 
-1. In the ACR Personal Edition instance, open **Access Credentials**, copy the login host (`crpi-….personal.cr.aliyuncs.com` or classic `registry.cn-<region>.aliyuncs.com`) and the username, and set a **fixed registry password**. Personal Edition does not issue temporary tokens.
-2. In the GitHub repository: **Settings → Secrets and variables → Actions**. Add variables `ACR_REGISTRY` (host only, no `https://`) and `ACR_NAMESPACE`, and secrets `ACR_USERNAME` and `ACR_PASSWORD`.
-3. Keep **auto-create repository** enabled, or create `actweave-backend` and `actweave-frontend` under the namespace. Default public visibility is a product choice, not a requirement of this workflow.
-4. Binding GitHub as an ACR **code source** is optional. This workflow builds on GitHub-hosted runners and `docker push`es; it does not use ACR’s source-code builder.
+### Current registry
+
+| Item | Value |
+| --- | --- |
+| Edition / region | ACR Personal Edition, China East 1 (Hangzhou) |
+| Public registry | `crpi-jmyvlpzp0j558pln.cn-hangzhou.personal.cr.aliyuncs.com` |
+| VPC registry | `crpi-jmyvlpzp0j558pln-vpc.cn-hangzhou.personal.cr.aliyuncs.com` (Aliyun VPC only; GitHub Actions uses the public host) |
+| Namespace | `chenow` |
+| Repositories | `actweave-backend`, `actweave-frontend` |
+| Login username | `dt_6684415903` (Aliyun account name shown on **Access Credentials**) |
+| Image tags | the git tag (for example `v0.1.0`) and `latest` on tag pushes |
+
+Published image references:
+
+```text
+crpi-jmyvlpzp0j558pln.cn-hangzhou.personal.cr.aliyuncs.com/chenow/actweave-backend:<tag>
+crpi-jmyvlpzp0j558pln.cn-hangzhou.personal.cr.aliyuncs.com/chenow/actweave-frontend:<tag>
+```
+
+An ACR repository named `at` bound to this GitHub repo as a **code source** is unused. The workflow does not use ACR’s source-code builder.
+
+### GitHub Actions configuration
+
+Repository **Settings → Secrets and variables → Actions**:
+
+| Kind | Name | Value |
+| --- | --- | --- |
+| Variable | `ACR_REGISTRY` | `crpi-jmyvlpzp0j558pln.cn-hangzhou.personal.cr.aliyuncs.com` |
+| Variable | `ACR_NAMESPACE` | `chenow` |
+| Secret | `ACR_USERNAME` | `dt_6684415903` |
+| Secret | `ACR_PASSWORD` | ACR **fixed registry password** from **Access Credentials**. Personal Edition does not issue temporary tokens. Never commit this value. |
+
+### Publish a version
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The run tags `$ACR_REGISTRY/$ACR_NAMESPACE/actweave-{backend,frontend}:v0.1.0` and `:latest`. Use **Actions → release-images → Run workflow** to push an arbitrary tag without creating a git tag.
+Watch **Actions → release-images**. Use **Run workflow** to push an arbitrary tag without creating a git tag.
 
 The frontend image must be built with repository-root context (`docker build -f frontend/Dockerfile .`) because it depends on `sdk/typescript`.
+
+### Pull the images
+
+The current repositories are public, so pull does not require login. Push and private-repo pull still need the fixed password.
+
+```bash
+docker login --username=dt_6684415903 \
+  crpi-jmyvlpzp0j558pln.cn-hangzhou.personal.cr.aliyuncs.com
+
+docker pull crpi-jmyvlpzp0j558pln.cn-hangzhou.personal.cr.aliyuncs.com/chenow/actweave-backend:v0.1.0
+docker pull crpi-jmyvlpzp0j558pln.cn-hangzhou.personal.cr.aliyuncs.com/chenow/actweave-frontend:v0.1.0
+```
+
+If the registry password is rotated in ACR, update GitHub secret `ACR_PASSWORD` to match.
 
 ## Values that must change before production
 

@@ -15,7 +15,7 @@ This documentation is organized as “understand the boundary first, then integr
 | Call an Agent from Web, App, or BFF | [AAP integration guide](./aap-integration-guide.md) · [AAP integration index](./integrations/aap.md) |
 | Read the machine contract or use the SDK | [AAP OpenAPI](./openapi/agent-access-v1.yaml) · [TypeScript SDK](../sdk/typescript/) |
 | Import an existing HTTP service as a Tool | [OpenAPI to Tool](./integrations/openapi.md) |
-| Deploy, maintain, or troubleshoot | [Deployment](./deployment.md) · [Runbooks](./runbooks/) |
+| Deploy, maintain, or troubleshoot | [Deployment](./deployment.md) (includes [ACR image publish](./deployment.md#release-images-to-acr)) · [Runbooks](./runbooks/) |
 | Change frontend, backend, or protocol | [Development](./development.md) · [Contribution guide](../CONTRIBUTING.md) |
 | Report a security issue | [Security](../SECURITY.md) |
 

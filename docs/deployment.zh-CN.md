@@ -18,23 +18,66 @@
 
 ## 发布镜像到 ACR
 
-`.github/workflows/release-images.yml` 在推送 `v*` tag 时构建 `actweave-backend` 与 `actweave-frontend`，并推送到阿里云 ACR 个人版命名空间。该工作流不负责部署。
+`.github/workflows/release-images.yml` 在推送 `v*` tag 时构建 `actweave-backend` 与 `actweave-frontend`，并推送到下面的阿里云 ACR 个人版命名空间。该工作流只发布镜像，不部署整栈、不跑迁移、也不替换开发密钥。
 
-首次打 tag 前：
+这是镜像发布路径，不构成生产就绪声明。
 
-1. 在个人版实例的 **访问凭证** 中复制登录地址（`crpi-….personal.cr.aliyuncs.com` 或经典版 `registry.cn-<地域>.aliyuncs.com`）和用户名，并设置 **固定密码**。个人版不支持临时 Token。
-2. 在 GitHub 仓库 **Settings → Secrets and variables → Actions** 中配置变量 `ACR_REGISTRY`（只填主机名，不要带 `https://`）、`ACR_NAMESPACE`，以及密钥 `ACR_USERNAME`、`ACR_PASSWORD`。
-3. 保持 **自动创建仓库** 开启，或预先创建 `actweave-backend` 与 `actweave-frontend`。默认公开是产品选择，不是该工作流的要求。
-4. 把 GitHub 绑到 ACR **代码源** 是可选的。本工作流在 GitHub-hosted runner 上构建后 `docker push`，不走 ACR 源码构建。
+### 当前仓库
+
+| 项 | 值 |
+| --- | --- |
+| 版本 / 地域 | ACR 个人版，华东1（杭州） |
+| 公网地址 | `crpi-jmyvlpzp0j558pln.cn-hangzhou.personal.cr.aliyuncs.com` |
+| 专有网络地址 | `crpi-jmyvlpzp0j558pln-vpc.cn-hangzhou.personal.cr.aliyuncs.com`（仅阿里云 VPC；GitHub Actions 使用公网地址） |
+| 命名空间 | `chenow` |
+| 镜像仓库 | `actweave-backend`、`actweave-frontend` |
+| 登录用户名 | `dt_6684415903`（**访问凭证**页显示的阿里云账号名） |
+| 镜像 tag | git tag（例如 `v0.1.0`）；打 tag 时额外推送 `latest` |
+
+镜像引用：
+
+```text
+crpi-jmyvlpzp0j558pln.cn-hangzhou.personal.cr.aliyuncs.com/chenow/actweave-backend:<tag>
+crpi-jmyvlpzp0j558pln.cn-hangzhou.personal.cr.aliyuncs.com/chenow/actweave-frontend:<tag>
+```
+
+ACR 里若存在绑了本 GitHub 仓库作为 **代码源** 的 `at` 仓库，本工作流不会使用它，也不走 ACR 源码构建。
+
+### GitHub Actions 配置
+
+仓库 **Settings → Secrets and variables → Actions**：
+
+| 类型 | 名称 | 值 |
+| --- | --- | --- |
+| Variable | `ACR_REGISTRY` | `crpi-jmyvlpzp0j558pln.cn-hangzhou.personal.cr.aliyuncs.com` |
+| Variable | `ACR_NAMESPACE` | `chenow` |
+| Secret | `ACR_USERNAME` | `dt_6684415903` |
+| Secret | `ACR_PASSWORD` | ACR **访问凭证** 中的 **固定密码**。个人版不支持临时 Token。不要写入仓库。 |
+
+### 发布一个版本
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-产物为 `$ACR_REGISTRY/$ACR_NAMESPACE/actweave-{backend,frontend}:v0.1.0` 以及 `:latest`。也可在 **Actions → release-images → Run workflow** 手动指定 tag。
+在 **Actions → release-images** 查看运行结果。也可 **Run workflow** 手动指定 tag，而不创建 git tag。
 
 前端镜像必须以仓库根目录为构建上下文（`docker build -f frontend/Dockerfile .`），因为它依赖 `sdk/typescript`。
+
+### 拉取镜像
+
+当前仓库为公开，拉取可不登录。推送以及私有仓库拉取仍需要固定密码。
+
+```bash
+docker login --username=dt_6684415903 \
+  crpi-jmyvlpzp0j558pln.cn-hangzhou.personal.cr.aliyuncs.com
+
+docker pull crpi-jmyvlpzp0j558pln.cn-hangzhou.personal.cr.aliyuncs.com/chenow/actweave-backend:v0.1.0
+docker pull crpi-jmyvlpzp0j558pln.cn-hangzhou.personal.cr.aliyuncs.com/chenow/actweave-frontend:v0.1.0
+```
+
+若在 ACR 中轮换了固定密码，同步更新 GitHub Secret `ACR_PASSWORD`。
 
 ## 生产前必须替换的值
 

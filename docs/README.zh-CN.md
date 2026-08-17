@@ -15,7 +15,7 @@
 | 从 Web、App 或 BFF 调用 Agent | [AAP 对接指南](./aap-integration-guide.zh-CN.md) · [AAP 接入索引](./integrations/aap.zh-CN.md) |
 | 读取机器契约或使用 SDK | [AAP OpenAPI](./openapi/agent-access-v1.yaml) · [TypeScript SDK](../sdk/typescript/) |
 | 将既有 HTTP 服务导入为 Tool | [OpenAPI 到 Tool](./integrations/openapi.md) |
-| 部署、维护或排查 | [部署](./deployment.zh-CN.md) · [运行手册](./runbooks/) |
+| 部署、维护或排查 | [部署](./deployment.zh-CN.md)（含 [ACR 镜像发布](./deployment.zh-CN.md#发布镜像到-acr)）· [运行手册](./runbooks/) |
 | 修改前后端或协议 | [开发](./development.zh-CN.md) · [贡献指南](../CONTRIBUTING.md) |
 | 报告安全问题 | [安全](../SECURITY.md) |
 

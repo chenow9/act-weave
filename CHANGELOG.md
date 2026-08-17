@@ -6,6 +6,7 @@ This project has no Git tag or published release history in the current checkout
 
 ### Documentation
 
+- Documented the ACR Personal Edition registry, GitHub Actions image-publish workflow, and pull commands.
 - Reframed the project as an Agent control plane and runtime access platform for enterprise systems.
 - Added bilingual product, architecture, concepts, getting-started, deployment, development, security, and integration navigation.
 - Separated Console management API, AAP runtime API, A2A collaboration, OpenAPI import, and MCP’s current non-implementation boundary.
