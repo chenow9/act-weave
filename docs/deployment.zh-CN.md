@@ -16,6 +16,26 @@
 
 启动命令与开发默认凭证见[快速开始](./getting-started.zh-CN.md)。这些值来自 `docker-compose.yml` 与 `backend/config.yaml`，只适合本地开发。
 
+## 发布镜像到 ACR
+
+`.github/workflows/release-images.yml` 在推送 `v*` tag 时构建 `actweave-backend` 与 `actweave-frontend`，并推送到阿里云 ACR 个人版命名空间。该工作流不负责部署。
+
+首次打 tag 前：
+
+1. 在个人版实例的 **访问凭证** 中复制登录地址（`crpi-….personal.cr.aliyuncs.com` 或经典版 `registry.cn-<地域>.aliyuncs.com`）和用户名，并设置 **固定密码**。个人版不支持临时 Token。
+2. 在 GitHub 仓库 **Settings → Secrets and variables → Actions** 中配置变量 `ACR_REGISTRY`（只填主机名，不要带 `https://`）、`ACR_NAMESPACE`，以及密钥 `ACR_USERNAME`、`ACR_PASSWORD`。
+3. 保持 **自动创建仓库** 开启，或预先创建 `actweave-backend` 与 `actweave-frontend`。默认公开是产品选择，不是该工作流的要求。
+4. 把 GitHub 绑到 ACR **代码源** 是可选的。本工作流在 GitHub-hosted runner 上构建后 `docker push`，不走 ACR 源码构建。
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+产物为 `$ACR_REGISTRY/$ACR_NAMESPACE/actweave-{backend,frontend}:v0.1.0` 以及 `:latest`。也可在 **Actions → release-images → Run workflow** 手动指定 tag。
+
+前端镜像必须以仓库根目录为构建上下文（`docker build -f frontend/Dockerfile .`），因为它依赖 `sdk/typescript`。
+
 ## 生产前必须替换的值
 
 不要复制仓库中的 `backend/config.yaml` 开发密钥和 bootstrap 管理员设置。至少需要通过受保护的配置位置或 Secret Manager/KMS 提供：

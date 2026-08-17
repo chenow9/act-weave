@@ -16,6 +16,26 @@ The root `docker-compose.yml` runs:
 
 Use [getting started](./getting-started.md) for the command and development defaults. These values come from `docker-compose.yml` and `backend/config.yaml` and are for local development only.
 
+## Release images to ACR
+
+`.github/workflows/release-images.yml` builds `actweave-backend` and `actweave-frontend` and pushes them to an Alibaba Cloud ACR Personal Edition namespace when a `v*` tag is pushed. It does not deploy the stack.
+
+Before the first tag:
+
+1. In the ACR Personal Edition instance, open **Access Credentials**, copy the login host (`crpi-….personal.cr.aliyuncs.com` or classic `registry.cn-<region>.aliyuncs.com`) and the username, and set a **fixed registry password**. Personal Edition does not issue temporary tokens.
+2. In the GitHub repository: **Settings → Secrets and variables → Actions**. Add variables `ACR_REGISTRY` (host only, no `https://`) and `ACR_NAMESPACE`, and secrets `ACR_USERNAME` and `ACR_PASSWORD`.
+3. Keep **auto-create repository** enabled, or create `actweave-backend` and `actweave-frontend` under the namespace. Default public visibility is a product choice, not a requirement of this workflow.
+4. Binding GitHub as an ACR **code source** is optional. This workflow builds on GitHub-hosted runners and `docker push`es; it does not use ACR’s source-code builder.
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The run tags `$ACR_REGISTRY/$ACR_NAMESPACE/actweave-{backend,frontend}:v0.1.0` and `:latest`. Use **Actions → release-images → Run workflow** to push an arbitrary tag without creating a git tag.
+
+The frontend image must be built with repository-root context (`docker build -f frontend/Dockerfile .`) because it depends on `sdk/typescript`.
+
 ## Values that must change before production
 
 Do not copy the development keys and bootstrap administrator settings in `backend/config.yaml`. At minimum, provide the following through a protected configuration location or Secret Manager/KMS:

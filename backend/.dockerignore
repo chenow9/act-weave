@@ -2,3 +2,6 @@
 coverage.out
 tmp
 *.test
+vendor
+.debug
+.local

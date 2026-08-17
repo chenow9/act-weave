@@ -123,7 +123,7 @@ function tipPosition(target: HTMLElement) {
   return { x, y, placeAbove: below + 72 > window.innerHeight };
 }
 
-function showHoverTip(event: MouseEvent, node: ToolSchemaNode) {
+function showHoverTip(event: MouseEvent | FocusEvent, node: ToolSchemaNode) {
   const text = rowTitle(node);
   if (!text) {
     hideHoverTip();

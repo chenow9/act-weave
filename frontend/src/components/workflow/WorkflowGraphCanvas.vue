@@ -83,7 +83,7 @@ onBeforeUnmount(() => {
 });
 
 watch(
-  () => viewport.zoom,
+  () => viewport.value.zoom,
   (zoom) => {
     if (typeof zoom === "number" && zoom > 0) {
       currentZoom.value = zoom;
@@ -452,7 +452,7 @@ function handleEdgeContextMenu(payload: unknown) {
 
 function syncCurrentZoom() {
   const fromHelper = typeof getViewport === "function" ? getViewport().zoom : undefined;
-  const zoom = fromHelper || viewport.zoom;
+  const zoom = fromHelper || viewport.value.zoom;
   if (typeof zoom === "number" && zoom > 0) {
     currentZoom.value = zoom;
   }

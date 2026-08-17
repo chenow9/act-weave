@@ -1,0 +1,28 @@
+# Applied when a Dockerfile uses the repository root as context
+# (frontend/Dockerfile). Backend builds keep context ./backend.
+.git
+.github
+.grok
+.idea
+.codex
+.multica
+.agent_context
+data
+demos
+docs
+scripts
+backend
+node_modules
+*.md
+LICENSE
+Makefile
+docker-compose.yml
+frontend/node_modules
+frontend/dist
+frontend/e2e
+frontend/test-results
+frontend/playwright-report
+frontend/coverage
+sdk/typescript/node_modules
+sdk/typescript/dist
+sdk/typescript/test
