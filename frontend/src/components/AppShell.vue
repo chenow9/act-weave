@@ -103,6 +103,9 @@ const groupedNavigationLabel = computed(() =>
 );
 const activeWorkspace = computed(() => workspaces.activeWorkspace);
 const filteredWorkspaces = computed(() => switcherResults.value);
+const showWorkspaceSwitcher = computed(
+  () => workspaces.items.length > 0 && activeModule.value !== "overview" && activeModule.value !== "workspaces",
+);
 const userInitials = computed(() => {
   const source = auth.user?.displayName || auth.user?.username || "AW";
   const parts = source.trim().split(/\s+/).filter(Boolean);
@@ -406,11 +409,7 @@ function handleDocumentKeydown(event: KeyboardEvent) {
       </section>
 
       <div class="topbar-right top-right">
-        <div
-          v-if="workspaces.items.length && activeModule !== 'overview'"
-          ref="workspaceSwitcherRef"
-          class="workspace-switcher"
-        >
+        <div v-if="showWorkspaceSwitcher" ref="workspaceSwitcherRef" class="workspace-switcher">
           <button
             class="workspace-switcher-trigger workspace-switch"
             data-testid="workspace-switcher"

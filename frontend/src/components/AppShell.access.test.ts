@@ -92,6 +92,17 @@ describe("AppShell platform-administrator navigation", () => {
     expect(wrapper.find('[data-testid="workspace-switcher"]').exists()).toBe(false);
   });
 
+  it("hides the workspace switcher on the workspaces management page", () => {
+    fixtures.route.path = "/workspaces";
+    fixtures.workspaces.activeWorkspaceId = "workspace-1";
+    fixtures.workspaces.items = [
+      { id: "workspace-1", name: "legacy", displayName: "Legacy Workspace", status: "ACTIVE", mode: "PRODUCTION" },
+    ];
+    fixtures.workspaces.activeWorkspace = { ...fixtures.workspaces.items[0], healthScore: 75 };
+    const wrapper = mountShell();
+    expect(wrapper.find('[data-testid="workspace-switcher"]').exists()).toBe(false);
+  });
+
   it("opens and filters the fluid navigation center", async () => {
     const wrapper = mountShell();
 
