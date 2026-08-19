@@ -169,7 +169,7 @@ func validateProtocolEvent(
 	if err := json.Unmarshal(event.Payload, &wire); err != nil ||
 		wire.SpecVersion != event.SpecVersion || wire.Type != event.Type || wire.EventID != event.ID ||
 		wire.StreamID != event.StreamID || wire.Sequence != event.Sequence ||
-		!wire.OccurredAt.Equal(event.OccurredAt) || wire.WorkspaceID != event.WorkspaceID ||
+		!sameEventTime(wire.OccurredAt, event.OccurredAt) || wire.WorkspaceID != event.WorkspaceID ||
 		wire.AgentID != event.AgentID || wire.ConversationID != event.ConversationID ||
 		wire.RunID != event.RunID || wire.TraceID != event.TraceID ||
 		validator.ValidateEventData(wire.Type, wire.Data) != nil {
@@ -229,4 +229,13 @@ func validHeaderValue(value string, maximum int) bool {
 func validUUID(value string) bool {
 	_, err := uuid.Parse(strings.TrimSpace(value))
 	return err == nil
+}
+
+// Postgres timestamptz is microsecond; some writers keep nanoseconds in JSON.
+func sameEventTime(left, right time.Time) bool {
+	delta := left.Sub(right)
+	if delta < 0 {
+		delta = -delta
+	}
+	return delta < time.Millisecond
 }
