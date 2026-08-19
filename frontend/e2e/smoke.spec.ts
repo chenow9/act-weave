@@ -335,7 +335,7 @@ test.describe("console smoke (mocked API)", () => {
     await expect(page).toHaveURL(/overview|workspaces|agents/, { timeout: 15_000 });
     await expect(page.getByRole("button", { name: /打开用户菜单/ })).toBeVisible({ timeout: 15_000 });
 
-    // Switcher is hidden on overview; open a workspace-scoped page first.
+    // Switcher is hidden on overview and workspaces; open a workspace-scoped page first.
     await page.goto("/agents");
     await expect(page.getByTestId("workspace-switcher")).toBeVisible({ timeout: 15_000 });
     await page.getByTestId("workspace-switcher").click();

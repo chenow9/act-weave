@@ -718,8 +718,34 @@
   border-radius: 8px;
 }
 
-.workspace-member-add-button {
+.workspace-detail-page .workspace-member-add-button {
   min-width: 112px;
+  min-height: 44px;
+  height: 44px;
+  padding: 0 16px;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+.workspace-detail-page .workspace-member-hint {
+  grid-column: 1 / -1;
+  color: #64748b;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.workspace-detail-page .workspace-member-hint.workspace-member-candidate-error {
+  color: #b91c1c;
+}
+
+@media (max-width: 960px) {
+  .workspace-detail-page .workspace-member-add {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace-detail-page .workspace-member-add-button {
+    width: 100%;
+  }
 }
 
 .workspace-member-list {

@@ -1259,12 +1259,6 @@ function reconcileWorkspaceListContext() {
                       :aria-label="t('workspaces.selectMember')"
                     />
                   </label>
-                  <small v-if="memberCandidatesError" class="workspace-member-candidate-error" role="alert">{{
-                    memberCandidatesError
-                  }}</small>
-                  <small v-else-if="!memberCandidatesLoading && !memberCandidates.length">{{
-                    t("workspaces.noActiveUsers")
-                  }}</small>
                 </div>
                 <label class="workspace-member-role-field">
                   <span>{{ t("workspaces.spaceRole") }}</span>
@@ -1282,6 +1276,15 @@ function reconcileWorkspaceListContext() {
                 >
                   <i class="fa-solid fa-user-plus" aria-hidden="true" />{{ t("workspaces.addMember") }}
                 </button>
+                <small
+                  v-if="memberCandidatesError"
+                  class="workspace-member-hint workspace-member-candidate-error"
+                  role="alert"
+                  >{{ memberCandidatesError }}</small
+                >
+                <small v-else-if="!memberCandidatesLoading && !memberCandidates.length" class="workspace-member-hint">{{
+                  t("workspaces.noActiveUsers")
+                }}</small>
               </div>
 
               <div class="workspace-member-list">

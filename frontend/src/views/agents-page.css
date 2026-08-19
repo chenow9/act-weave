@@ -752,10 +752,6 @@
     0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
-.agent-parameters-panel {
-  overflow: visible;
-}
-
 /* Create-mode teaser: delegation/A2A needs a persisted agentId */
 .agent-delegation-deferred-badge {
   min-height: 24px;
@@ -835,6 +831,9 @@
   padding: 12px 16px;
   background: #f8fafc;
   border-bottom: 1px solid #e2e8f0;
+  /* Match the card inner corner (12px radius − 1px border) so the header fill
+     does not leave a white notch in the rounded stroke. */
+  border-radius: 11px 11px 0 0;
 }
 
 .agent-studio-section > header span {
