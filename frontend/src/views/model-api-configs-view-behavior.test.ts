@@ -131,6 +131,44 @@ describe("model config v1 behavior", () => {
     expect(wrapper.text()).toContain("已验证，按需加载已启用");
   });
 
+  it("does not treat a failed probe latency as healthy", async () => {
+    const failed = modelFixture({
+      status: "ERROR",
+      lastLatencyMs: 95,
+      lastErrorCode: "MODEL_CONFIG_AUTHENTICATION_FAILED",
+      lockVersion: 2,
+    });
+    fixture.store.verifyModelConfig = vi.fn(async () => {
+      fixture.store.items = [failed];
+      return failed;
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('button[aria-label="更多操作"]').trigger("click");
+    await wrapper.get('button[aria-label="测试"]').trigger("click");
+    await flushPromises();
+
+    const badge = wrapper.get('[data-testid="model-latency-badge"]');
+    expect(badge.classes()).toContain("danger");
+    expect(badge.text()).toContain("95ms");
+    expect(badge.text()).toContain("失败");
+    expect(badge.text()).not.toContain("健康");
+    expect(wrapper.text()).toContain("Primary 验证未通过：凭据被拒绝，请检查 API Key。");
+    expect(wrapper.text()).not.toContain("95ms 健康");
+  });
+
+  it("keeps a failure toast when the verify request itself throws", async () => {
+    fixture.store.verifyModelConfig = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('button[aria-label="更多操作"]').trigger("click");
+    await wrapper.get('button[aria-label="测试"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.text()).toContain("网络异常，请检查连接后重试。");
+  });
+
   it("shows capability badges from toolDisclosureUI and never from modelName", async () => {
     fixture.store.items = [
       modelFixture({

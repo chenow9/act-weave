@@ -7,5 +7,13 @@
   "VALIDATION_FAILED": "请求参数无效。",
   "INVALID_ARGUMENT": "请求参数无效。",
   "INTERNAL": "服务暂时不可用，请稍后重试。",
-  "RATE_LIMITED": "请求过于频繁，请稍后重试。"
+  "RATE_LIMITED": "请求过于频繁，请稍后重试。",
+  "MODEL_CONFIG_VERIFICATION_TIMEOUT": "验证超时，上游响应过慢。",
+  "MODEL_CONFIG_NETWORK_ERROR": "无法连接到模型地址，请检查网络和 API 请求地址。",
+  "MODEL_CONFIG_AUTHENTICATION_FAILED": "凭据被拒绝，请检查 API Key。",
+  "MODEL_CONFIG_UPSTREAM_ERROR": "上游返回错误，请检查地址和模型名称。",
+  "MODEL_CONFIG_RESPONSES_UNSUPPORTED": "该地址不支持 Agentic Responses 协议，无法完成验证。",
+  "MODEL_CONFIG_TOOL_SEARCH_UNSUPPORTED": "工具检索探测失败，无法确认工具能力。",
+  "MODEL_CONFIG_AGENTIC_STREAM_INVALID": "上游流式响应不符合 Agentic 协议。",
+  "MODEL_CONFIG_AGENTIC_USAGE_INVALID": "上游 usage 字段不符合 Agentic 协议。"
 }

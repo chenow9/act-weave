@@ -9,6 +9,8 @@ import ManagementPageHeader from "../components/ManagementPageHeader.vue";
 import ManagementRowActions, { type ManagementRowAction } from "../components/ManagementRowActions.vue";
 import ManagementSegmentedFilter from "../components/ManagementSegmentedFilter.vue";
 import WorkspaceContextState from "../components/WorkspaceContextState.vue";
+import { te } from "../i18n/tt";
+import { apiErrorMessage } from "../services/api";
 import { useModelConfigStore } from "../stores/modelConfigs";
 import { useWorkspaceStore } from "../stores/workspaces";
 import type {
@@ -368,8 +370,12 @@ async function testConnection(item: ModelApiConfig) {
     }
     await loadModelConfigPage();
     const note =
-      verified.status === "VERIFIED" ? verifySuccessNote(verified) : t("modelApis.verifyFailed", { name: item.name });
+      verified.status === "VERIFIED"
+        ? verifySuccessNote(verified)
+        : verifyFailureNote(item.name, verified.lastErrorCode);
     showActionNote(note);
+  } catch (error) {
+    showActionNote(apiErrorMessage(error, t("modelApis.verifyFailed", { name: item.name })));
   } finally {
     verifyingModelId.value = null;
   }
@@ -620,18 +626,41 @@ function displayedLatency(item: ModelApiConfig) {
   return latencyById.value[item.id] ?? item.lastLatencyMs ?? 0;
 }
 
-function latencyTone(latencyMs: number) {
+function isFailedVerification(item: ModelApiConfig) {
+  return item.status === "ERROR";
+}
+
+function verificationErrorReason(code?: string) {
+  if (code && te(`errors.${code}`)) return t(`errors.${code}`);
+  return t("modelApis.verifyFailedHint");
+}
+
+function verifyFailureNote(name: string, code?: string) {
+  return t("modelApis.verifyFailedWithReason", { name, reason: verificationErrorReason(code) });
+}
+
+function latencyTone(item: ModelApiConfig) {
+  if (isFailedVerification(item)) return "danger";
+  const latencyMs = displayedLatency(item);
   if (!latencyMs) return "untested";
   if (latencyMs < 500) return "healthy";
   if (latencyMs <= 2000) return "warning";
   return "danger";
 }
 
-function latencyLabel(latencyMs: number) {
+function latencyLabel(item: ModelApiConfig) {
+  if (isFailedVerification(item)) return t("modelApis.latencyFailed");
+  const latencyMs = displayedLatency(item);
   if (!latencyMs) return t("modelApis.notTested");
   if (latencyMs < 500) return t("modelApis.latencyHealthy");
   if (latencyMs <= 2000) return t("modelApis.latencySlow");
   return t("modelApis.latencyVerySlow");
+}
+
+function latencyValue(item: ModelApiConfig) {
+  const latencyMs = displayedLatency(item);
+  if (latencyMs) return `${latencyMs}ms`;
+  return isFailedVerification(item) ? t("modelApis.latencyFailed") : "-";
 }
 
 function resetModelFilters() {
@@ -980,11 +1009,14 @@ function handleModelModalKeydown(event: KeyboardEvent) {
             </span>
           </template>
           <template #cell-latency="{ row: item }">
-            <span class="model-latency-badge aw-table-pill" :class="latencyTone(displayedLatency(item))">
-              <span class="model-latency-value">{{
-                displayedLatency(item) ? `${displayedLatency(item)}ms` : "-"
-              }}</span>
-              <span class="model-latency-label aw-table-meta">{{ latencyLabel(displayedLatency(item)) }}</span>
+            <span
+              class="model-latency-badge aw-table-pill"
+              data-testid="model-latency-badge"
+              :class="latencyTone(item)"
+              :title="isFailedVerification(item) ? verificationErrorReason(item.lastErrorCode) : undefined"
+            >
+              <span class="model-latency-value">{{ latencyValue(item) }}</span>
+              <span class="model-latency-label aw-table-meta">{{ latencyLabel(item) }}</span>
             </span>
           </template>
           <template #cell-actions="{ row: item }">
@@ -1030,7 +1062,13 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 <div>
                   <dt>{{ t("modelApis.mobileLatency") }}</dt>
                   <dd>
-                    {{ displayedLatency(item) ? `${displayedLatency(item)}ms` : t("modelApis.notTested") }}
+                    {{
+                      isFailedVerification(item)
+                        ? latencyLabel(item)
+                        : displayedLatency(item)
+                          ? `${displayedLatency(item)}ms`
+                          : t("modelApis.notTested")
+                    }}
                   </dd>
                 </div>
               </dl>

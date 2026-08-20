@@ -7,5 +7,13 @@
   "VALIDATION_FAILED": "Invalid request parameters.",
   "INVALID_ARGUMENT": "Invalid request parameters.",
   "INTERNAL": "The service is temporarily unavailable. Please try again later.",
-  "RATE_LIMITED": "Too many requests. Please try again later."
+  "RATE_LIMITED": "Too many requests. Please try again later.",
+  "MODEL_CONFIG_VERIFICATION_TIMEOUT": "Verification timed out because the upstream was too slow.",
+  "MODEL_CONFIG_NETWORK_ERROR": "Could not reach the model URL. Check the network and API base URL.",
+  "MODEL_CONFIG_AUTHENTICATION_FAILED": "Credentials were rejected. Check the API key.",
+  "MODEL_CONFIG_UPSTREAM_ERROR": "The upstream returned an error. Check the URL and model name.",
+  "MODEL_CONFIG_RESPONSES_UNSUPPORTED": "This URL does not support the Agentic Responses protocol, so verification cannot complete.",
+  "MODEL_CONFIG_TOOL_SEARCH_UNSUPPORTED": "Tool-search probing failed, so tool capability cannot be confirmed.",
+  "MODEL_CONFIG_AGENTIC_STREAM_INVALID": "The upstream stream did not match the Agentic protocol.",
+  "MODEL_CONFIG_AGENTIC_USAGE_INVALID": "The upstream usage fields did not match the Agentic protocol."
 }

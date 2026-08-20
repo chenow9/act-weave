@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"time"
 )
@@ -127,6 +128,19 @@ func (s *VerificationService) Verify(ctx context.Context, workspaceID, configID,
 				policyRaw = policy
 			}
 		}
+	}
+
+	if status == StatusError {
+		code := ""
+		if errorCode != nil {
+			code = *errorCode
+		}
+		slog.Warn("model config verification failed",
+			"workspace_id", workspaceID,
+			"config_id", configID,
+			"error_code", code,
+			"latency_ms", latencyMS,
+		)
 	}
 
 	return s.repository.RecordVerification(ctx, VerificationUpdate{
