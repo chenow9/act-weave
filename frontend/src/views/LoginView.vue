@@ -6,6 +6,7 @@ import { useRoute, useRouter } from "vue-router";
 
 import LoginWeaveMotif from "../components/LoginWeaveMotif.vue";
 import type { AppLocale } from "../i18n/types";
+import { safePostLoginPath } from "../router/redirect";
 import { setLocale } from "../services/locale";
 import { useAuthStore } from "../stores/auth";
 
@@ -17,6 +18,7 @@ const showPassword = ref(false);
 const loginSuccess = ref(false);
 const loginErrorMessage = computed(() => auth.error);
 const passwordChangedNotice = computed(() => route.query.passwordChanged === "1");
+const sessionExpiredNotice = computed(() => route.query.sessionExpired === "1");
 const form = reactive({
   username: "",
   password: "",
@@ -31,7 +33,8 @@ async function submit() {
     await router.push({ name: "change-password" });
     return;
   }
-  await router.push({ name: "overview" });
+  const redirect = safePostLoginPath(route.query.redirect);
+  await router.push(redirect || { name: "overview" });
 }
 
 async function switchLanguage(next: AppLocale) {
@@ -78,6 +81,19 @@ async function switchLanguage(next: AppLocale) {
       <div v-if="loginErrorMessage" class="login-feedback-panel error" role="alert">
         <i class="fa-solid fa-triangle-exclamation" aria-hidden="true" />
         <span>{{ loginErrorMessage }}</span>
+      </div>
+
+      <div
+        v-if="sessionExpiredNotice && !loginErrorMessage && !loginSuccess"
+        class="login-feedback-panel error"
+        role="status"
+        data-testid="session-expired-notice"
+      >
+        <i class="fa-solid fa-triangle-exclamation" aria-hidden="true" />
+        <span>
+          <strong>{{ t("auth.sessionExpired") }}</strong>
+          <small>{{ t("auth.sessionExpiredHint") }}</small>
+        </span>
       </div>
 
       <div

@@ -9,6 +9,7 @@ const fixtures = vi.hoisted(() => ({
     user: { username: "access.user", role: "User", platformRole: "USER", lockVersion: 1 },
     logout: vi.fn(),
     clearSession: vi.fn(),
+    expireSession: vi.fn(),
     applyUser: vi.fn(),
     loading: false,
     error: "",

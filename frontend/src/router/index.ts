@@ -19,6 +19,8 @@ function firstQueryValue(value: LocationQuery[string]): string {
   return typeof first === "string" ? first.trim() : "";
 }
 
+export { safePostLoginPath } from "./redirect";
+
 /** Map legacy /smart-dag query keys onto the editor generate-dock contract. */
 export function mapSmartDagQuery(query: LocationQuery): LocationQuery {
   const next: LocationQuery = { generate: "1" };

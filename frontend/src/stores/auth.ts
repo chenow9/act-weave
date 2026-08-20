@@ -47,7 +47,9 @@ export const useAuthStore = defineStore("auth", {
       clearLegacyStoredSession();
       setAuthSessionHooks({
         onRefreshed: (session) => this.applySession(session),
-        onExpired: () => this.clearSession(),
+        onExpired: () => {
+          void this.expireSession();
+        },
       });
     },
     applySession(session: AuthTokenResponse) {
@@ -65,6 +67,26 @@ export const useAuthStore = defineStore("auth", {
       this.user = null;
       this.mustChangePassword = false;
       setAuthToken("");
+    },
+    /**
+     * Access/refresh expired while the console is already open: drop local
+     * auth and send the user to login. Restore-before-first-navigation must
+     * not redirect here; the router guard handles that case.
+     */
+    async expireSession() {
+      const shouldRedirect = this.initialized && Boolean(this.token || this.user);
+      this.clearSession();
+      if (!shouldRedirect) return;
+      const { router } = await import("../router");
+      const current = router.currentRoute.value;
+      if (current.name === "login") return;
+      await router.replace({
+        name: "login",
+        query: {
+          sessionExpired: "1",
+          ...(current.fullPath && current.fullPath !== "/" ? { redirect: current.fullPath } : {}),
+        },
+      });
     },
     async login(username: string, password: string) {
       this.bindAPIClient();

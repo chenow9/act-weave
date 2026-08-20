@@ -5,6 +5,7 @@ import { navItems } from "../config/navigation";
 import { useAuthStore } from "../stores/auth";
 import type { User } from "../types/domain";
 import { mapSmartDagQuery, router } from "./index";
+import { safePostLoginPath } from "./redirect";
 
 describe("platform administrator route and navigation", () => {
   beforeEach(async () => {
@@ -97,6 +98,16 @@ describe("platform administrator route and navigation", () => {
       feedbackIssues: "EndDisconnected",
       compilationId: "comp-1",
     });
+  });
+
+  it("accepts only in-app paths after login", () => {
+    expect(safePostLoginPath("/model-apis")).toBe("/model-apis");
+    expect(safePostLoginPath("/agents?x=1")).toBe("/agents?x=1");
+    expect(safePostLoginPath("//evil.example")).toBeNull();
+    expect(safePostLoginPath("https://evil.example")).toBeNull();
+    expect(safePostLoginPath("/login")).toBeNull();
+    expect(safePostLoginPath("/change-password")).toBeNull();
+    expect(safePostLoginPath(undefined)).toBeNull();
   });
 
   it("maps legacy smart-dag query keys onto generate-dock query", () => {

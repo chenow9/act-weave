@@ -125,8 +125,7 @@ onMounted(async () => {
     }
   } catch (error) {
     if (getHttpStatus(error) === 401) {
-      auth.clearSession();
-      void router.push({ name: "login" });
+      void auth.expireSession();
     }
   } finally {
     workspaceBootstrapReady.value = true;

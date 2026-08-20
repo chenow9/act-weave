@@ -291,7 +291,7 @@ async function loadWorkspacePage() {
   } catch (error) {
     workspacePageError.value = workspaceLoadErrorMessage(error);
     if (getHttpStatus(error) === 401) {
-      auth.clearSession();
+      void auth.expireSession();
     }
   } finally {
     pageInitialLoading.value = false;

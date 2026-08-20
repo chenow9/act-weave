@@ -4,6 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { APIError, apiClient, refreshAuthSession, setAuthToken, type AuthTokenResponse } from "../services/api";
 import { useAuthStore } from "./auth";
 
+const routerReplace = vi.hoisted(() => vi.fn(async () => undefined));
+const currentRoute = vi.hoisted(() => ({ value: { name: "agents" as string, fullPath: "/agents" } }));
+
 vi.mock("../services/api", async () => {
   const actual = await vi.importActual<typeof import("../services/api")>("../services/api");
   return {
@@ -15,11 +18,19 @@ vi.mock("../services/api", async () => {
   };
 });
 
+vi.mock("../router", () => ({
+  router: {
+    currentRoute,
+    replace: (...args: unknown[]) => routerReplace(...args),
+  },
+}));
+
 describe("v1 auth store", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
     localStorage.clear();
+    currentRoute.value = { name: "agents", fullPath: "/agents" };
   });
 
   it("uses the v1 login response and keeps access tokens out of localStorage", async () => {
@@ -102,6 +113,34 @@ describe("v1 auth store", () => {
     expect(auth.user?.username).toBe("chen.ops");
     expect(auth.error).not.toBe("");
     expect(setAuthToken).not.toHaveBeenLastCalledWith("");
+  });
+
+  it("redirects an initialized expired session to login", async () => {
+    const auth = useAuthStore();
+    auth.initialized = true;
+    auth.applySession(authSession("expired.jwt"));
+
+    await auth.expireSession();
+
+    expect(auth.token).toBe("");
+    expect(auth.user).toBeNull();
+    expect(setAuthToken).toHaveBeenLastCalledWith("");
+    expect(routerReplace).toHaveBeenCalledWith({
+      name: "login",
+      query: { sessionExpired: "1", redirect: "/agents" },
+    });
+  });
+
+  it("does not redirect when session restore fails before the router guard", async () => {
+    const auth = useAuthStore();
+    auth.initialized = false;
+    auth.token = "stale";
+    auth.user = authSession("stale").user as never;
+
+    await auth.expireSession();
+
+    expect(auth.token).toBe("");
+    expect(routerReplace).not.toHaveBeenCalled();
   });
 
   it("shows the backend requestId when login fails", async () => {

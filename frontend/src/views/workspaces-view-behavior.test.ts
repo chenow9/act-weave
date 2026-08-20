@@ -35,7 +35,7 @@ const fixtures = vi.hoisted(() => ({
     ],
     loadModelConfigs: vi.fn(async () => []),
   },
-  authStore: { user: { id: "user-owner" }, logout: vi.fn(), clearSession: vi.fn() },
+  authStore: { user: { id: "user-owner" }, logout: vi.fn(), clearSession: vi.fn(), expireSession: vi.fn() },
   router: { push: vi.fn() },
 }));
 
