@@ -131,6 +131,40 @@ describe("model config v1 behavior", () => {
     expect(wrapper.text()).toContain("已验证，按需加载已启用");
   });
 
+  it("shows testing feedback immediately while verification is in flight", async () => {
+    let resolveVerify: (value: ModelApiConfig) => void = () => undefined;
+    fixture.store.verifyModelConfig = vi.fn(
+      () =>
+        new Promise<ModelApiConfig>((resolve) => {
+          resolveVerify = resolve;
+        }),
+    );
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('button[aria-label="更多操作"]').trigger("click");
+    await wrapper.get('button[aria-label="测试"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("正在测试 Primary");
+    expect(wrapper.get('[data-testid="model-latency-badge"]').text()).toContain("测试中");
+    expect(wrapper.get('[data-testid="model-latency-badge"]').classes()).toContain("testing");
+    const trigger = wrapper.get('button[aria-haspopup="menu"]');
+    expect(trigger.attributes("aria-busy")).toBe("true");
+    expect(trigger.get("i").classes()).toEqual(expect.arrayContaining(["fa-spinner", "fa-spin"]));
+
+    resolveVerify(
+      modelFixture({
+        status: "VERIFIED",
+        lastLatencyMs: 24,
+        lockVersion: 2,
+        toolDisclosureUI: "hidden",
+        agenticCapabilities: { schemaVersion: "agentic-model.v1", toolSearchModes: ["client"] },
+      }),
+    );
+    await flushPromises();
+    expect(wrapper.text()).toContain("已验证，按需加载已启用");
+  });
+
   it("does not treat a failed probe latency as healthy", async () => {
     const failed = modelFixture({
       status: "ERROR",

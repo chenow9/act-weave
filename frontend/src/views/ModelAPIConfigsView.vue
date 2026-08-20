@@ -190,7 +190,12 @@ const modelConfigColumns = computed<ManagementListColumn<ModelApiConfig>[]>(() =
     sortKey: "latency",
     defaultHiddenWhenEmpty: true,
     placeholderValues: ["-", t("modelApis.notTested")],
-    getValue: (item) => (displayedLatency(item) ? `${displayedLatency(item)}ms` : "-"),
+    getValue: (item) =>
+      isTestingModel(item)
+        ? t("modelApis.latencyTesting")
+        : displayedLatency(item)
+          ? `${displayedLatency(item)}ms`
+          : "-",
   },
   { key: "actions", label: t("modelApis.colActions"), width: 68, align: "right", headerAlign: "center" },
 ]);
@@ -363,6 +368,7 @@ async function testConnection(item: ModelApiConfig) {
   if (verifyingModelId.value) return;
   selectModel(item);
   verifyingModelId.value = item.id;
+  showActionNote(t("modelApis.verifying", { name: item.name }));
   try {
     const verified = await modelConfigs.verifyModelConfig(item.id);
     if (verified.lastLatencyMs !== undefined) {
@@ -630,6 +636,10 @@ function isFailedVerification(item: ModelApiConfig) {
   return item.status === "ERROR";
 }
 
+function isTestingModel(item: ModelApiConfig) {
+  return verifyingModelId.value === item.id;
+}
+
 function verificationErrorReason(code?: string) {
   if (code && te(`errors.${code}`)) return t(`errors.${code}`);
   return t("modelApis.verifyFailedHint");
@@ -640,6 +650,7 @@ function verifyFailureNote(name: string, code?: string) {
 }
 
 function latencyTone(item: ModelApiConfig) {
+  if (isTestingModel(item)) return "testing";
   if (isFailedVerification(item)) return "danger";
   const latencyMs = displayedLatency(item);
   if (!latencyMs) return "untested";
@@ -649,6 +660,7 @@ function latencyTone(item: ModelApiConfig) {
 }
 
 function latencyLabel(item: ModelApiConfig) {
+  if (isTestingModel(item)) return t("modelApis.latencyTesting");
   if (isFailedVerification(item)) return t("modelApis.latencyFailed");
   const latencyMs = displayedLatency(item);
   if (!latencyMs) return t("modelApis.notTested");
@@ -658,6 +670,7 @@ function latencyLabel(item: ModelApiConfig) {
 }
 
 function latencyValue(item: ModelApiConfig) {
+  if (isTestingModel(item)) return "…";
   const latencyMs = displayedLatency(item);
   if (latencyMs) return `${latencyMs}ms`;
   return isFailedVerification(item) ? t("modelApis.latencyFailed") : "-";
@@ -1037,9 +1050,10 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                   class="model-mobile-actions-toggle"
                   :aria-label="t('modelApis.moreActions')"
                   :aria-expanded="mobileModelActionMenuId === item.id"
+                  :aria-busy="isTestingModel(item) ? 'true' : 'false'"
                   @click="toggleMobileModelActions(item)"
                 >
-                  <i class="fa-solid fa-ellipsis" />
+                  <i :class="isTestingModel(item) ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-ellipsis'" />
                 </button>
               </div>
               <dl>
@@ -1063,7 +1077,7 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                   <dt>{{ t("modelApis.mobileLatency") }}</dt>
                   <dd>
                     {{
-                      isFailedVerification(item)
+                      isTestingModel(item) || isFailedVerification(item)
                         ? latencyLabel(item)
                         : displayedLatency(item)
                           ? `${displayedLatency(item)}ms`
@@ -1082,9 +1096,15 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                   type="button"
                   role="menuitem"
                   :disabled="Boolean(verifyingModelId)"
+                  :aria-busy="isTestingModel(item) ? 'true' : 'false'"
                   @click="testConnection(item)"
                 >
-                  <i class="fa-solid fa-plug-circle-bolt" /> {{ t("modelApis.testConnection") }}
+                  <i
+                    :class="
+                      isTestingModel(item) ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-plug-circle-bolt'
+                    "
+                  />
+                  {{ isTestingModel(item) ? t("modelApis.verifying", { name: item.name }) : t("modelApis.testConnection") }}
                 </button>
                 <button type="button" role="menuitem" @click="openMobileModelEditor(item)">
                   <i class="fa-solid fa-pen-to-square" /> {{ t("modelApis.editConfig") }}
@@ -1874,6 +1894,12 @@ function handleModelModalKeydown(event: KeyboardEvent) {
   font-size: var(--aw-table-meta-size, 0.8125rem);
   font-weight: var(--aw-table-meta-weight, 400);
   line-height: 1.35;
+}
+
+.model-latency-badge.testing {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+  color: #047857;
 }
 
 .model-latency-badge.healthy {

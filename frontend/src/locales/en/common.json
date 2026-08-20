@@ -82,6 +82,7 @@
   "nextPage": "Next page",
   "gotoPage": "Page {n}",
   "more": "More",
+  "working": "Working",
   "selectRow": "Select {id}",
   "selectAllPage": "Select all on this page",
   "sortAsc": "Sort by {label} ascending",

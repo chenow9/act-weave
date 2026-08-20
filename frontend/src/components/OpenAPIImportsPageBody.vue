@@ -156,9 +156,14 @@ void WorkspaceContextState;
                 type="button"
                 :aria-label="t('openapi.moreActionsAria')"
                 :aria-expanded="mobileImportActionMenuId === record.id"
+                :aria-busy="generatingDraftsByImportId[record.id] ? 'true' : 'false'"
                 @click.stop="toggleMobileImportActions(record)"
               >
-                <i class="fa-solid fa-ellipsis" />
+                <i
+                  :class="
+                    generatingDraftsByImportId[record.id] ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-ellipsis'
+                  "
+                />
               </button>
             </header>
             <dl>
@@ -213,9 +218,18 @@ void WorkspaceContextState;
                 type="button"
                 role="menuitem"
                 :disabled="Boolean(generatingDraftsByImportId[record.id])"
+                :aria-busy="generatingDraftsByImportId[record.id] ? 'true' : 'false'"
                 @click="generateMobileDrafts(record)"
               >
-                <i class="fa-solid fa-wand-magic-sparkles" />{{ t("openapi.generateToolDrafts") }}
+                <i
+                  :class="
+                    generatingDraftsByImportId[record.id]
+                      ? 'fa-solid fa-spinner fa-spin'
+                      : 'fa-solid fa-wand-magic-sparkles'
+                  "
+                />{{
+                  generatingDraftsByImportId[record.id] ? t("openapi.generating") : t("openapi.generateToolDrafts")
+                }}
               </button>
               <button class="danger" type="button" role="menuitem" @click="requestMobileImportRemoval(record, $event)">
                 <i class="fa-solid fa-trash" />{{ t("openapi.deleteRecord") }}

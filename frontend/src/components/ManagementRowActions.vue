@@ -65,6 +65,14 @@ const visiblePrimaryActions = computed(() => {
   return props.primaryActions.slice(0, hasMenu.value ? 2 : 3);
 });
 const isMenuOnly = computed(() => hasMenu.value && visiblePrimaryActions.value.length === 0);
+const pendingMenuActions = computed(() => props.menuActions.filter((action) => action.loading));
+const pendingMenuAction = computed(() => pendingMenuActions.value[0] ?? null);
+const triggerBusy = computed(() => Boolean(pendingMenuAction.value));
+const triggerLabel = computed(() => {
+  const pending = pendingMenuAction.value;
+  if (!pending) return resolvedMenuLabel.value;
+  return pending.disabledReason || pending.label;
+});
 const actionContainerStyle = computed(() => {
   const actionCount = visiblePrimaryActions.value.length + (hasMenu.value ? 1 : 0);
   // Menu-only rows use a lighter 36px control so the sticky actions rail feels less heavy.
@@ -294,16 +302,18 @@ onBeforeUnmount(() => {
       v-if="hasMenu"
       ref="triggerRef"
       class="management-row-action-button management-row-actions-trigger"
+      :class="{ 'is-loading': triggerBusy }"
       type="button"
-      :title="resolvedMenuLabel"
-      :aria-label="resolvedMenuLabel"
+      :title="triggerLabel"
+      :aria-label="triggerLabel"
+      :aria-busy="triggerBusy ? 'true' : 'false'"
       aria-haspopup="menu"
       :aria-controls="menuId"
       :aria-expanded="menuOpen"
       @click="toggleMenu"
     >
-      <i class="fa-solid fa-ellipsis" aria-hidden="true" />
-      <span>{{ t("common.more") }}</span>
+      <i :class="triggerBusy ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-ellipsis'" aria-hidden="true" />
+      <span>{{ triggerBusy ? t("common.working") : t("common.more") }}</span>
     </button>
 
     <Teleport to="body">
@@ -443,8 +453,19 @@ onBeforeUnmount(() => {
   opacity: 0.62;
 }
 
-.management-row-action-button.is-loading:disabled {
+.management-row-action-button.is-loading:disabled,
+.management-row-actions-trigger.is-loading,
+.management-row-actions.is-menu-only .management-row-actions-trigger.is-loading {
   cursor: progress;
+  color: #059669;
+}
+
+.management-row-actions-trigger.is-loading:hover:not(:disabled),
+.management-row-actions-trigger.is-loading:focus-visible,
+.management-row-actions.is-menu-only .management-row-actions-trigger.is-loading:hover:not(:disabled),
+.management-row-actions.is-menu-only .management-row-actions-trigger.is-loading:focus-visible {
+  background: #ecfdf5;
+  color: #047857;
 }
 
 .management-row-actions-menu {

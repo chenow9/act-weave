@@ -374,9 +374,14 @@ void WorkspaceContextState;
                   type="button"
                   :aria-label="t('connections.connectionActionsAria', { name: connection.name })"
                   :aria-expanded="mobileConnectionActionMenuId === connection.id"
+                  :aria-busy="isConnectionVerifying(connection.id) ? 'true' : 'false'"
                   @click.stop="toggleMobileConnectionActions(connection.id)"
                 >
-                  <i class="fa-solid fa-ellipsis" />
+                  <i
+                    :class="
+                      isConnectionVerifying(connection.id) ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-ellipsis'
+                    "
+                  />
                 </button>
               </header>
               <div class="connection-mobile-address">

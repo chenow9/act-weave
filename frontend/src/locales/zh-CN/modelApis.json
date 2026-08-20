@@ -43,6 +43,8 @@
   "editConfig": "编辑配置",
   "deleteConfig": "删除配置",
   "actionTest": "测试",
+  "verifying": "正在测试 {name}…",
+  "latencyTesting": "测试中",
   "actionEdit": "编辑",
   "actionDelete": "删除",
   "verifyBusy": "已有模型配置正在测试",

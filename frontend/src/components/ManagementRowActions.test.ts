@@ -119,6 +119,29 @@ describe("ManagementRowActions", () => {
     expect(actionButton(wrapper, "delete").attributes("title")).toBe("默认工具不能删除");
   });
 
+  it("shows the overflow trigger as busy while a hidden menu action is in flight", () => {
+    const wrapper = trackWrapper(
+      mount(ManagementRowActions, {
+        global: { plugins: [createTestI18n("zh-CN")] },
+        props: {
+          primaryActions: [],
+          menuActions: [
+            { key: "verify", label: "测试", icon: "fa-solid fa-plug-circle-bolt", tone: "primary", loading: true },
+            { key: "edit", label: "编辑", icon: "fa-solid fa-pen-to-square" },
+          ],
+        },
+      }),
+    );
+
+    const trigger = wrapper.get<HTMLButtonElement>('button[aria-haspopup="menu"]');
+    expect(wrapper.classes()).toContain("is-menu-only");
+    expect(trigger.attributes("aria-busy")).toBe("true");
+    expect(trigger.attributes("aria-label")).toBe("测试");
+    expect(trigger.attributes("title")).toBe("测试");
+    expect(trigger.get("i").classes()).toEqual(expect.arrayContaining(["fa-spinner", "fa-spin"]));
+    expect(wrapper.findAll('button[data-action-kind="primary"]')).toHaveLength(0);
+  });
+
   it("keeps a sole menu action inside the overflow menu when primaryActions is empty", async () => {
     const wrapper = trackWrapper(
       mount(ManagementRowActions, {

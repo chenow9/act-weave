@@ -82,6 +82,7 @@
   "nextPage": "下一页",
   "gotoPage": "第 {n} 页",
   "more": "更多",
+  "working": "进行中",
   "selectRow": "选择 {id}",
   "selectAllPage": "选择当前页全部",
   "sortAsc": "按{label}升序排序",

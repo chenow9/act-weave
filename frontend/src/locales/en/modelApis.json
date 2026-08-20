@@ -43,6 +43,8 @@
   "editConfig": "Edit config",
   "deleteConfig": "Delete config",
   "actionTest": "Test",
+  "verifying": "Testing {name}…",
+  "latencyTesting": "Testing",
   "actionEdit": "Edit",
   "actionDelete": "Delete",
   "verifyBusy": "Another model config is being tested",
