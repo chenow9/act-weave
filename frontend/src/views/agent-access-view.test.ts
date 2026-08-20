@@ -33,6 +33,17 @@ const credential = {
   createdAt: "2026-07-20T00:00:00Z",
   lockVersion: 1,
 } as const;
+const grant = {
+  id: "grant-1",
+  agentId: "agent-1",
+  scopes: ["agent:read", "run:create", "run:read", "event:read"],
+  policy: {},
+  status: "ACTIVE",
+  validFrom: "2026-07-20T00:00:00Z",
+  createdAt: "2026-07-20T00:00:00Z",
+  updatedAt: "2026-07-20T00:00:00Z",
+  lockVersion: 1,
+} as const;
 const access = reactive({
   clients: [client],
   selectedClientId: "" as string,
@@ -50,7 +61,7 @@ const access = reactive({
   loadClientDetail: vi.fn(async (clientId: string) => {
     access.selectedClientId = clientId;
     access.credentials = [credential];
-    access.grants = [];
+    access.grants = [grant];
   }),
   clearSelection: vi.fn(() => {
     access.selectedClientId = "";
@@ -108,6 +119,37 @@ describe("Agent Access management view", () => {
     expect(actions).not.toContain("轮换凭证");
     expect(actions).not.toContain("撤销");
     expect(actions).not.toContain("禁用 Client");
+    expect(wrapper.get('[data-testid="export-handoff"]').exists()).toBe(true);
+  });
+
+  it("exports integrator env without a Client Secret and copies the packet", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('[data-testid="select-client-client-1"]').trigger("click");
+    await flushPromises();
+    await wrapper.get('[data-testid="export-handoff"]').trigger("click");
+    await flushPromises();
+    const preview = wrapper.get('[data-testid="export-preview"]').text();
+    expect(preview).toContain("AAP_CLIENT_ID=awcl_public");
+    expect(preview).toContain("AAP_WORKSPACE_ID=workspace-1");
+    expect(preview).toContain("AAP_AGENT_ID=agent-1");
+    expect(preview).toContain("AAP_SCOPES=agent:read run:create run:read event:read");
+    expect(preview).toContain("AAP_CLIENT_SECRET=");
+    expect(preview).not.toMatch(/AAP_CLIENT_SECRET=.+/);
+    expect(preview).not.toContain("awsk_live_once");
+    await wrapper.get('[data-testid="export-base-url"]').setValue("https://actweave.example.com/api/agent-access/v1");
+    expect(wrapper.get('[data-testid="export-preview"]').text()).toContain(
+      "AAP_BASE_URL=https://actweave.example.com/api/agent-access/v1",
+    );
+    await wrapper.get('[data-testid="export-format-json"]').trigger("click");
+    const json = wrapper.get('[data-testid="export-preview"]').text();
+    expect(JSON.parse(json).secrets.clientSecretIncluded).toBe(false);
+    expect(json).not.toContain("awsk_");
+    await wrapper.get('[data-testid="export-copy"]').trigger("click");
+    expect(writeText).toHaveBeenCalled();
+    expect(String(writeText.mock.calls[0]?.[0])).toContain('"clientSecretIncluded": false');
   });
 
   it("shows a creation Secret once and clears it when the modal closes", async () => {

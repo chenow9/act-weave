@@ -44,7 +44,7 @@ Model API 为 Agent 提供模型接入配置。用自然语言生成图草案的
 | --- | --- |
 | ![Agent Access](./images/readme/11-agent-access.png) | ![运行调试台](./images/readme/12-chat.png) |
 
-Agent Access 管理 AAP Client、凭证与授权等控制面对象。运行调试台供已登录 Console 用户试跑 Agent；它不是第三方的生产运行入口。应用侧集成应使用[AAP 对接指南](./aap-integration-guide.zh-CN.md)。
+Agent Access 管理 AAP Client、凭证与授权等控制面对象。Client 详情可导出给第三方的接入配置（Workspace / Client / Agent / Scope；不含 Client Secret）。运行调试台供已登录 Console 用户试跑 Agent；它不是第三方的生产运行入口。应用侧集成应使用[AAP 对接指南](./aap-integration-guide.zh-CN.md)。
 
 ## 审计
 

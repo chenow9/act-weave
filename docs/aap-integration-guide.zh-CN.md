@@ -48,6 +48,8 @@ AAP **不是** ActWeave 管理控制台 API（`/api/v1`）。控制台用户 Ses
 | **已授权 Scope** | 上限；Token 请求必须是其子集 |
 | **CORS 策略** | 优先 **禁止浏览器直连**（走 BFF）。若必须浏览器直连：仅精确 HTTPS Origin |
 
+Workspace 管理员可在控制台 **Agent Access → Client 详情 → 导出接入配置** 一次性导出上表中的公开字段（`.env` 或 JSON）。**Client Secret 不会被导出**——它只在创建或轮换凭证时展示一次，需另行交给集成方的密钥系统。
+
 Client Secret / 私钥只应保存在**你方**密钥管理系统中。密钥不会出现在 Protocol Event、审计详情或应用日志里。
 
 ---

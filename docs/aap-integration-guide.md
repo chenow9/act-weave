@@ -53,6 +53,8 @@ Before you code, obtain from the Workspace admin:
 | **Granted scopes** | Upper bound; your Token request must be a subset |
 | **CORS policy** | Prefer **no browser-direct CORS** (BFF). If browser-direct is required: exact HTTPS origins only |
 
+A Workspace admin can export the public fields in the table from **Agent Access → Client detail → Export integration config** (`.env` or JSON). The **Client Secret is never exported**—it is shown once at creation or credential rotation and must be handed to the integrator’s secret store separately.
+
 Store the Client Secret / private key in **your** secret manager. Secrets never appear in Protocol Events, audit detail payloads, or application logs.
 
 ---

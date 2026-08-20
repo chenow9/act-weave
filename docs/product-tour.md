@@ -44,7 +44,7 @@ The project home shows [Tool governance](../README.md#product-preview), [Agent c
 | --- | --- |
 | ![Agent Access](./images/readme/en/11-agent-access.png) | ![Console run/chat](./images/readme/en/12-chat.png) |
 
-Agent Access manages control-plane AAP Client, credential, and grant objects. Console run/chat lets a signed-in console user trial an Agent; it is not the production runtime entry point for a third party. Application integration belongs in the [AAP integration guide](./aap-integration-guide.md).
+Agent Access manages control-plane AAP Client, credential, and grant objects. Client detail can export an integrator packet (Workspace / Client / Agent / Scope; the Client Secret is never included). Console run/chat lets a signed-in console user trial an Agent; it is not the production runtime entry point for a third party. Application integration belongs in the [AAP integration guide](./aap-integration-guide.md).
 
 ## Audit
 

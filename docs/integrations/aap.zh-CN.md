@@ -23,6 +23,8 @@ Client credentials / private_key_jwt
   → SSE events (Last-Event-ID reconnect)
 ```
 
+Workspace 管理员可在控制台 **Agent Access → Client 详情 → 导出接入配置** 把 Workspace / Client / Agent / Scope 交给集成方（`.env` 或 JSON）。Client Secret 不会出现在导出中。
+
 当前默认部署接受文本 `input`。文件上传路由存在但默认关闭；端到端多模态还需 `runtimeMultimodal`。可选 A2UI 默认关闭（`context_policy.aap.enableA2UI`）；开启后文本仍为一等，`a2ui` 仅在 `item.completed` 上出现（`streaming: false`，`actions: false`），且每个 surface 都符合所广告的组件 catalog。可选出站附件默认关闭（files HTTP 白名单 + `runtimeOutboundAttachments` + `enableOutboundAttachments` + 支持工具的 `toolCalling`）；开启后助手 `output_file` 仅出现在 `item.completed`，v1 发布为纯文本（`actweave.publish_attachment`，≤256 KiB），出站不做病毒扫描。不要在浏览器保存长期 Client Secret，也不要用 `/api/v1` 作为第三方调用入口——它对第三方开放的只有 A2UI schema 分发（`GET /api/v1/a2ui/catalogs/standard/v1/catalog.json`），返回的是静态文档，不含任何工作区数据。Console 的 session+message 文件代理是运营聊天路径，不是第三方 API。
 
 关于 AAP 与 A2A 的边界见[概念](../concepts.zh-CN.md)。

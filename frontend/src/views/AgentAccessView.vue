@@ -21,9 +21,17 @@ import {
 import { useAgentStore } from "../stores/agents";
 import { useAuthStore } from "../stores/auth";
 import { useWorkspaceStore } from "../stores/workspaces";
+import {
+  buildAAPIntegratorHandoff,
+  defaultAAPBaseURL,
+  handoffFilename,
+  renderAAPIntegratorHandoffEnv,
+  renderAAPIntegratorHandoffJSON,
+} from "../utils/aap-integrator-handoff";
 
 type PageView = "list" | "detail";
 type DetailTab = "credentials" | "grants" | "configuration";
+type ExportFormat = "env" | "json";
 type DangerTarget =
   | { kind: "credential"; value: AgentAccessCredential }
   | { kind: "grant"; value: AgentAccessGrant }
@@ -45,11 +53,17 @@ const rotateOpen = ref(false);
 const grantOpen = ref(false);
 const secretOpen = ref(false);
 const dangerOpen = ref(false);
+const exportOpen = ref(false);
 const createModalRef = ref<HTMLElement | null>(null);
 const rotateModalRef = ref<HTMLElement | null>(null);
 const grantModalRef = ref<HTMLElement | null>(null);
 const secretModalRef = ref<HTMLElement | null>(null);
 const dangerModalRef = ref<HTMLElement | null>(null);
+const exportModalRef = ref<HTMLElement | null>(null);
+const exportFormat = ref<ExportFormat>("env");
+const exportGrantId = ref("");
+const exportBaseUrl = ref("");
+const exportCopyNotice = ref("");
 const oneTimeSecret = ref("");
 const oneTimeSecretContext = ref("");
 const copyNotice = ref("");
@@ -172,6 +186,33 @@ const selectedAuthMethodLabel = computed(() =>
   selectedClient.value?.authMethod === "private_key_jwt" ? "Private Key JWT" : "Client Secret Basic",
 );
 
+const exportGrantOptions = computed<AppSelectOption[]>(() =>
+  access.grants.map((grant) => ({
+    label: `${agentName(grant.agentId)}${grant.status === "ACTIVE" ? "" : ` (${t("agentAccess.statusRevoked")})`}`,
+    value: grant.id,
+  })),
+);
+
+const exportPacket = computed(() => {
+  if (!selectedClient.value) return null;
+  return buildAAPIntegratorHandoff({
+    client: selectedClient.value,
+    grants: access.grants,
+    credentials: access.credentials,
+    workspaceId: workspaceId.value,
+    aapBaseUrl: exportBaseUrl.value,
+    selectedGrantId: exportGrantId.value,
+    agentName,
+  });
+});
+
+const exportText = computed(() => {
+  if (!exportPacket.value) return "";
+  return exportFormat.value === "json"
+    ? renderAAPIntegratorHandoffJSON(exportPacket.value)
+    : renderAAPIntegratorHandoffEnv(exportPacket.value);
+});
+
 const clientColumns = computed<ManagementListColumn<AgentAccessClient>[]>(() => [
   {
     key: "name",
@@ -223,6 +264,7 @@ useModalFocus({ visible: rotateOpen, modalRef: rotateModalRef, onClose: () => (r
 useModalFocus({ visible: grantOpen, modalRef: grantModalRef, onClose: () => (grantOpen.value = false) });
 useModalFocus({ visible: secretOpen, modalRef: secretModalRef, onClose: closeSecret });
 useModalFocus({ visible: dangerOpen, modalRef: dangerModalRef, onClose: closeDanger });
+useModalFocus({ visible: exportOpen, modalRef: exportModalRef, onClose: closeExport });
 
 function applyRouteSearch() {
   const q = route.query.q;
@@ -464,6 +506,49 @@ async function copyClientId() {
   }
 }
 
+function openExport() {
+  if (!selectedClient.value) return;
+  exportFormat.value = "env";
+  exportCopyNotice.value = "";
+  exportBaseUrl.value = defaultAAPBaseURL(typeof window === "undefined" ? "" : window.location.origin);
+  const activeGrant = access.grants.find((grant) => grant.status === "ACTIVE") ?? access.grants[0];
+  exportGrantId.value = activeGrant?.id || "";
+  exportOpen.value = true;
+}
+
+function closeExport() {
+  exportOpen.value = false;
+  exportCopyNotice.value = "";
+}
+
+async function copyExport() {
+  const text = exportText.value;
+  if (!text) return;
+  const copied = t("agentAccess.exportCopied");
+  try {
+    await navigator.clipboard?.writeText(text);
+    exportCopyNotice.value = copied;
+    window.setTimeout(() => {
+      if (exportCopyNotice.value === copied) exportCopyNotice.value = "";
+    }, 2000);
+  } catch {
+    exportCopyNotice.value = t("agentAccess.copyFailed");
+  }
+}
+
+function downloadExport() {
+  const client = selectedClient.value;
+  const text = exportText.value;
+  if (!client || !text) return;
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = handoffFilename(client.clientId, exportFormat.value);
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function clearSecret() {
   oneTimeSecret.value = "";
   oneTimeSecretContext.value = "";
@@ -650,23 +735,34 @@ function authMethodShort(method: string) {
               <span v-if="clientIdCopyNotice" class="copy-id-notice" role="status">{{ clientIdCopyNotice }}</span>
             </div>
           </div>
-          <div v-if="canManage" class="detail-actions">
+          <div class="detail-actions">
             <button
-              v-if="selectedClient.status === 'DISABLED'"
+              data-testid="export-handoff"
               class="ghost-button"
               type="button"
-              @click="enableClient(selectedClient)"
+              :aria-label="t('agentAccess.exportHandoffAria')"
+              @click="openExport"
             >
-              {{ t("agentAccess.enable") }}
+              <i class="fa-solid fa-file-export" />{{ t("agentAccess.exportHandoff") }}
             </button>
-            <button
-              v-else
-              class="danger-button"
-              type="button"
-              @click="askDanger({ kind: 'client', value: selectedClient })"
-            >
-              {{ t("agentAccess.disableClient") }}
-            </button>
+            <template v-if="canManage">
+              <button
+                v-if="selectedClient.status === 'DISABLED'"
+                class="ghost-button"
+                type="button"
+                @click="enableClient(selectedClient)"
+              >
+                {{ t("agentAccess.enable") }}
+              </button>
+              <button
+                v-else
+                class="danger-button"
+                type="button"
+                @click="askDanger({ kind: 'client', value: selectedClient })"
+              >
+                {{ t("agentAccess.disableClient") }}
+              </button>
+            </template>
           </div>
         </header>
 
@@ -1115,6 +1211,85 @@ function authMethodShort(method: string) {
         <div class="access-modal-footer">
           <button class="primary-button" type="button" @click="closeSecret">
             {{ t("agentAccess.secretSavedClose") }}
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <div v-if="exportOpen && exportPacket" class="modal-backdrop" @click.self="closeExport">
+      <section
+        ref="exportModalRef"
+        class="modal-card access-modal export-modal"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="t('agentAccess.exportHandoffAria')"
+        tabindex="-1"
+      >
+        <div class="modal-card-head">
+          <div>
+            <span>{{ t("agentAccess.exportEyebrow") }}</span>
+            <h3>{{ t("agentAccess.exportTitle") }}</h3>
+          </div>
+          <button class="icon-action-button" type="button" :aria-label="t('agentAccess.close')" @click="closeExport">
+            <i class="fa-solid fa-xmark" />
+          </button>
+        </div>
+        <div class="modal-form access-modal-form export-modal-form">
+          <p class="export-intro">{{ t("agentAccess.exportIntro") }}</p>
+          <p class="secret-warning">
+            <i class="fa-solid fa-triangle-exclamation" />
+            {{ t("agentAccess.exportSecretNote") }}
+          </p>
+          <p v-if="!exportPacket.selectedGrant" class="export-grant-warning" role="status">
+            {{ t("agentAccess.exportNoGrant") }}
+          </p>
+          <label>
+            <span>{{ t("agentAccess.exportBaseUrl") }}</span>
+            <input v-model="exportBaseUrl" data-testid="export-base-url" data-modal-initial-focus autocomplete="off" />
+            <small>{{ t("agentAccess.exportBaseUrlHint") }}</small>
+          </label>
+          <label v-if="exportGrantOptions.length > 1">
+            <span>{{ t("agentAccess.exportGrant") }}</span>
+            <AppSelect
+              v-model="exportGrantId"
+              :options="exportGrantOptions"
+              :aria-label="t('agentAccess.exportGrantAria')"
+            />
+          </label>
+          <div class="export-format-tabs" role="tablist" :aria-label="t('agentAccess.exportPreviewAria')">
+            <button
+              type="button"
+              role="tab"
+              data-testid="export-format-env"
+              :aria-selected="exportFormat === 'env'"
+              :class="{ active: exportFormat === 'env' }"
+              @click="exportFormat = 'env'"
+            >
+              {{ t("agentAccess.exportFormatEnv") }}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              data-testid="export-format-json"
+              :aria-selected="exportFormat === 'json'"
+              :class="{ active: exportFormat === 'json' }"
+              @click="exportFormat = 'json'"
+            >
+              {{ t("agentAccess.exportFormatJson") }}
+            </button>
+          </div>
+          <pre data-testid="export-preview" class="export-preview" :aria-label="t('agentAccess.exportPreviewAria')">{{
+            exportText
+          }}</pre>
+          <p v-if="exportCopyNotice" class="copy-notice" role="status">{{ exportCopyNotice }}</p>
+        </div>
+        <div class="access-modal-footer">
+          <button class="ghost-button" type="button" @click="closeExport">{{ t("agentAccess.close") }}</button>
+          <button class="ghost-button" type="button" data-testid="export-download" @click="downloadExport">
+            <i class="fa-solid fa-download" />{{ t("agentAccess.exportDownload") }}
+          </button>
+          <button class="primary-button" type="button" data-testid="export-copy" @click="copyExport">
+            <i class="fa-regular fa-copy" />{{ t("agentAccess.exportCopy") }}
           </button>
         </div>
       </section>
@@ -1784,6 +1959,10 @@ function authMethodShort(method: string) {
   width: min(520px, 100%);
 }
 
+.access-modal.export-modal {
+  width: min(760px, 100%);
+}
+
 .access-modal-form {
   min-height: 0;
   overflow: auto;
@@ -1950,6 +2129,64 @@ function authMethodShort(method: string) {
   font-size: 12px;
 }
 
+.export-intro,
+.export-grant-warning {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #475569;
+}
+
+.export-grant-warning {
+  padding: 12px 14px;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.export-modal-form {
+  display: grid;
+  gap: 14px;
+}
+
+.export-format-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.export-format-tabs button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #fff;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.export-format-tabs button.active {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.export-preview {
+  margin: 0;
+  max-height: min(360px, 42vh);
+  overflow: auto;
+  padding: 14px;
+  border-radius: 10px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .modal-backdrop.critical {
   background: rgba(31, 12, 16, 0.5);
 }
@@ -1979,6 +2216,11 @@ function authMethodShort(method: string) {
   .section-heading {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .access-detail-panel .detail-actions {
+    margin-left: 0;
+    width: 100%;
   }
 
   .identity-chips,
