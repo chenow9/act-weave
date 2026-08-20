@@ -509,19 +509,36 @@ func setRefreshCookie(c *gin.Context, value string, expiresAt time.Time) {
 	if maxAge < 1 {
 		maxAge = 1
 	}
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name: refreshCookieName, Value: value, Path: "/api/v1/auth",
-		Expires: expiresAt.UTC(), MaxAge: maxAge, HttpOnly: true, Secure: true,
-		SameSite: http.SameSiteStrictMode,
-	})
+	http.SetCookie(c.Writer, refreshCookie(value, expiresAt.UTC(), maxAge, requestIsHTTPS(c.Request)))
 }
 
 func clearRefreshCookie(c *gin.Context) {
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name: refreshCookieName, Value: "", Path: "/api/v1/auth",
-		Expires: time.Unix(1, 0).UTC(), MaxAge: -1, HttpOnly: true, Secure: true,
+	http.SetCookie(c.Writer, refreshCookie("", time.Unix(1, 0).UTC(), -1, requestIsHTTPS(c.Request)))
+}
+
+func refreshCookie(value string, expiresAt time.Time, maxAge int, secure bool) *http.Cookie {
+	return &http.Cookie{
+		Name: refreshCookieName, Value: value, Path: "/api/v1/auth",
+		Expires: expiresAt, MaxAge: maxAge, HttpOnly: true, Secure: secure,
 		SameSite: http.SameSiteStrictMode,
-	})
+	}
+}
+
+// requestIsHTTPS reports the browser-facing scheme. Direct TLS or the first
+// X-Forwarded-Proto value (set by the Console nginx) counts as HTTPS so the
+// refresh cookie can stay Secure on TLS and still be stored on intranet HTTP.
+func requestIsHTTPS(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if r.TLS != nil {
+		return true
+	}
+	proto := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")))
+	if i := strings.IndexByte(proto, ','); i >= 0 {
+		proto = strings.TrimSpace(proto[:i])
+	}
+	return proto == "https"
 }
 
 func optionalString(value string) *string {

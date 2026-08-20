@@ -3,6 +3,7 @@ package httptransport
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -35,7 +36,7 @@ func TestV1AuthLoginRefreshLogoutAndMe(t *testing.T) {
 	tokens := decodeTokenResponse(t, login)
 	refresh := responseCookie(t, login, refreshCookieName)
 	if tokens.AccessToken == "" || tokens.User.ID != v1AdminUserID || tokens.User.PlatformRole != identity.PlatformRoleAdmin ||
-		refresh.Value == "" || !refresh.HttpOnly || !refresh.Secure || refresh.SameSite != http.SameSiteStrictMode ||
+		refresh.Value == "" || !refresh.HttpOnly || refresh.Secure || refresh.SameSite != http.SameSiteStrictMode ||
 		strings.Contains(login.Body.String(), "refreshToken") || strings.Contains(login.Body.String(), "passwordHash") {
 		t.Fatalf("unsafe login response body=%s cookie=%+v", login.Body.String(), refresh)
 	}
@@ -77,6 +78,53 @@ func TestV1AuthLoginRefreshLogoutAndMe(t *testing.T) {
 		"username": v1AdminName, "password": v1AdminPass, "platformRole": "PLATFORM_ADMIN",
 	}, "", nil)
 	assertErrorResponse(t, unknownField, http.StatusUnprocessableEntity, "VALIDATION_ERROR")
+}
+
+func TestRequestIsHTTPS(t *testing.T) {
+	tlsRequest := httptest.NewRequest(http.MethodGet, "https://console.example/api/v1/auth/refresh", nil)
+	tlsRequest.TLS = &tls.ConnectionState{}
+	cases := []struct {
+		name string
+		req  *http.Request
+		want bool
+	}{
+		{name: "nil", req: nil, want: false},
+		{name: "plain-http", req: httptest.NewRequest(http.MethodGet, "http://192.168.10.62:5174/api/v1/auth/refresh", nil), want: false},
+		{name: "forwarded-http", req: requestWithForwardedProto("http"), want: false},
+		{name: "forwarded-https", req: requestWithForwardedProto("https"), want: true},
+		{name: "forwarded-chain", req: requestWithForwardedProto("https, http"), want: true},
+		{name: "tls", req: tlsRequest, want: true},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			if got := requestIsHTTPS(test.req); got != test.want {
+				t.Fatalf("requestIsHTTPS()=%v want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestRefreshCookieSecureOnForwardedHTTPS(t *testing.T) {
+	fixture := newV1AuthFixture(t)
+	payload, err := json.Marshal(map[string]any{"username": v1AdminName, "password": v1AdminPass})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Forwarded-Proto", "https")
+	response := httptest.NewRecorder()
+	fixture.router.ServeHTTP(response, request)
+	cookie := responseCookie(t, response, refreshCookieName)
+	if response.Code != http.StatusOK || !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteStrictMode {
+		t.Fatalf("https login cookie=%+v status=%d", cookie, response.Code)
+	}
+}
+
+func requestWithForwardedProto(proto string) *http.Request {
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/auth/refresh", nil)
+	request.Header.Set("X-Forwarded-Proto", proto)
+	return request
 }
 
 func TestV1UserProfilePasswordAndAdminCommands(t *testing.T) {
