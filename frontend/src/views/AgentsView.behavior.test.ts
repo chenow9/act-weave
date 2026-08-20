@@ -3,6 +3,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { setI18nLocale } from "../i18n";
+import { APIError } from "../services/api";
 import { createTestI18n } from "../test-utils/i18n";
 import AgentsView from "./AgentsView.vue";
 
@@ -705,6 +706,39 @@ describe("agents view behavior", () => {
       "强化执行边界",
       { preview: false, lockVersion: 3 },
     );
+    wrapper.unmount();
+  });
+
+  it("shows a localized enhance failure instead of raw error JSON", async () => {
+    enhanceAgentPromptMock.mockRejectedValueOnce(
+      new APIError({
+        status: 500,
+        code: "INTERNAL_ERROR",
+        message: "The request could not be completed.",
+        requestId: "req-enhance-1",
+        responseData: {
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "The request could not be completed.",
+            requestId: "req-enhance-1",
+            retryable: true,
+            details: [],
+          },
+        },
+      }),
+    );
+    const wrapper = mountAgentsView();
+    await flushPromises();
+    await selectAgentMenuAction(wrapper, "debug");
+    await wrapper.get("textarea[aria-label='AI 整理要求']").setValue("强化执行边界");
+    await wrapper.get(".agent-weave-button").trigger("click");
+    await flushPromises();
+
+    const toast = wrapper.get(".action-toast.error");
+    expect(toast.text()).toContain("服务暂时不可用");
+    expect(toast.text()).toContain("req-enhance-1");
+    expect(toast.text()).not.toContain('"code"');
+    expect(toast.text()).not.toContain("The request could not be completed.");
     wrapper.unmount();
   });
 

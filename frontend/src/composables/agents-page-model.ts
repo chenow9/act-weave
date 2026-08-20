@@ -1,4 +1,5 @@
 import { tt } from "../i18n/tt";
+import { APIError, apiErrorMessage } from "../services/api";
 /**
  * Agents page model (ZKL-64 item 16).
  */
@@ -453,15 +454,15 @@ export function createAgentsPageModel() {
   }
 
   function agentActionErrorMessage(error: unknown) {
-    const responseError = (error as { response?: { data?: { error?: string } } }).response?.data?.error || "";
-    const timeoutCode = (error as { code?: string }).code || "";
-    if (responseError) {
-      return tt("agents.enhanceFailedWithError", { error: responseError });
-    }
-    if (timeoutCode === "ECONNABORTED") {
+    const code = error instanceof APIError ? error.code : (error as { code?: string }).code || "";
+    if (
+      code === "ECONNABORTED" ||
+      code === "PROMPT_GENERATION_TIMEOUT" ||
+      code === "MODEL_TIMEOUT"
+    ) {
       return tt("agents.enhanceFailedTimeout");
     }
-    return tt("agents.enhanceFailedGeneric");
+    return apiErrorMessage(error, tt("agents.enhanceFailedGeneric"));
   }
 
   function statusTone(status: string) {

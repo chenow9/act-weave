@@ -449,6 +449,9 @@ func mapError(err error) mappedError {
 	case errors.Is(err, agent.ErrPromptOutputInvalid):
 		return mappedError{http.StatusBadGateway, agent.ErrorCodePromptOutputInvalid,
 			"The model returned no usable prompt text."}
+	case errors.Is(err, storedobject.ErrObjectStorage):
+		return mappedError{http.StatusServiceUnavailable, "OBJECT_STORAGE_UNAVAILABLE",
+			"Object storage is temporarily unavailable."}
 	case errors.Is(err, agent.ErrPromptGeneration):
 		if strings.Contains(strings.ToLower(err.Error()), "timeout") ||
 			strings.Contains(strings.ToLower(err.Error()), "deadline") {
