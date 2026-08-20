@@ -141,6 +141,7 @@ const ManagementListStub = {
       <slot name="filters" />
       <template v-for="row in rows" :key="row.id">
         <slot name="cell-selection" :row="row" />
+        <slot name="cell-mode" :row="row" />
       </template>
       <slot v-if="rows[0]" name="cell-createdBy" :row="rows[0]" />
       <slot v-if="rows[0]" name="cell-updatedBy" :row="rows[0]" />
@@ -245,6 +246,21 @@ describe("WorkspacesView management behavior", () => {
     Object.assign(secondPageWorkspace, workspace("second", "Disabled"));
     Object.assign(offPageWorkspace, workspace("off-page"));
     fixtures.workspaceStore = createWorkspaceStore();
+  });
+
+  it("renders localized workspace mode labels instead of the raw API enum", async () => {
+    pageWorkspace.mode = "PRODUCTION";
+    secondPageWorkspace.mode = "SANDBOX";
+    const wrapper = mountView();
+    await flushPromises();
+
+    const pills = wrapper.findAll(".workspace-mode-pill");
+    expect(pills.map((pill) => pill.text())).toEqual(["生产", "沙箱"]);
+    expect(wrapper.text()).not.toContain("PRODUCTION");
+    expect(wrapper.text()).not.toContain("SANDBOX");
+
+    await wrapper.get('[data-action="view"]').trigger("click");
+    expect(wrapper.get(".workspace-detail-page .workspace-mode-pill").text()).toBe("生产");
   });
 
   it("sends search, filters, pagination, and sorting to the Workspace page loader", async () => {

@@ -77,8 +77,25 @@ describe("AppShell platform-administrator navigation", () => {
     expect(wrapper.get('[data-testid="workspace-switcher"]').text()).toContain("Legacy Workspace");
     await wrapper.get('[data-testid="workspace-switcher"]').trigger("click");
     expect(wrapper.get('[role="dialog"][aria-label="选择业务空间"]').exists()).toBe(true);
+    expect(wrapper.get('[data-workspace-id="workspace-1"]').text()).toContain("生产");
+    expect(wrapper.get('[data-workspace-id="workspace-1"]').text()).not.toContain("沙箱");
     await wrapper.get('[data-workspace-id="workspace-2"]').trigger("click");
     expect(fixtures.workspaces.selectWorkspace).toHaveBeenCalledWith("workspace-2");
+  });
+
+  it("labels PRODUCTION workspaces as 生产 and SANDBOX workspaces as 沙箱 in the switcher", async () => {
+    fixtures.route.path = "/agents";
+    fixtures.workspaces.activeWorkspaceId = "workspace-1";
+    fixtures.workspaces.items = [
+      { id: "workspace-1", name: "legacy", displayName: "Legacy Workspace", status: "ACTIVE", mode: "PRODUCTION" },
+      { id: "workspace-2", name: "neiops", displayName: "NeiOps", status: "ACTIVE", mode: "SANDBOX" },
+    ];
+    fixtures.workspaces.activeWorkspace = { ...fixtures.workspaces.items[0], healthScore: 75 };
+    const wrapper = mountShell();
+
+    await wrapper.get('[data-testid="workspace-switcher"]').trigger("click");
+    expect(wrapper.get('[data-workspace-id="workspace-1"]').text()).toContain("生产");
+    expect(wrapper.get('[data-workspace-id="workspace-2"]').text()).toContain("沙箱");
   });
 
   it("hides the workspace switcher on the platform-wide overview page", () => {

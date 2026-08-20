@@ -14,6 +14,7 @@ import ManagementSummaryStrip, { type ManagementSummaryItem } from "../component
 import { useAgentStore } from "../stores/agents";
 import { useAuthStore } from "../stores/auth";
 import { useWorkspaceStore } from "../stores/workspaces";
+import { isProductionWorkspaceMode } from "../utils/workspace-mode";
 import type {
   Agent,
   SortOrder,
@@ -754,6 +755,10 @@ function displayWorkspaceStatus(status: Workspace["status"]) {
   return status === "ACTIVE" ? t("workspaces.online") : t("workspaces.offline");
 }
 
+function displayWorkspaceMode(mode: Workspace["mode"]) {
+  return isProductionWorkspaceMode(mode) ? t("workspaces.prod") : t("workspaces.sandbox");
+}
+
 function modeTone(mode: Workspace["mode"]) {
   return mode.toLowerCase();
 }
@@ -993,7 +998,7 @@ function reconcileWorkspaceListContext() {
           </template>
           <template #cell-mode="{ row: workspace }">
             <span :class="['workspace-mode-pill', 'aw-table-pill', modeTone(workspace.mode)]">{{
-              workspace.mode
+              displayWorkspaceMode(workspace.mode)
             }}</span>
           </template>
           <template #cell-defaultAgent="{ row: workspace }">
@@ -1083,7 +1088,7 @@ function reconcileWorkspaceListContext() {
                     {{ displayWorkspaceStatus(detailWorkspace.status) }}
                   </span>
                   <span :class="['workspace-mode-pill', modeTone(detailWorkspace.mode)]">{{
-                    detailWorkspace.mode
+                    displayWorkspaceMode(detailWorkspace.mode)
                   }}</span>
                 </div>
               </div>
@@ -1166,9 +1171,7 @@ function reconcileWorkspaceListContext() {
               </article>
               <article>
                 <span><i class="fa-solid fa-shield-halved" aria-hidden="true" />{{ t("workspaces.isolationEnv") }}</span
-                ><strong>{{
-                  detailWorkspace.mode === "PRODUCTION" ? t("workspaces.prod") : t("workspaces.sandbox")
-                }}</strong
+                ><strong>{{ displayWorkspaceMode(detailWorkspace.mode) }}</strong>
                 ><small>{{ t("workspaces.isolationHint") }}</small>
               </article>
             </div>
@@ -1189,7 +1192,7 @@ function reconcileWorkspaceListContext() {
                   </div>
                   <div>
                     <dt>{{ t("workspaces.envMode") }}</dt>
-                    <dd>{{ detailWorkspace.mode }}</dd>
+                    <dd>{{ displayWorkspaceMode(detailWorkspace.mode) }}</dd>
                   </div>
                   <div>
                     <dt>{{ t("workspaces.creator") }}</dt>

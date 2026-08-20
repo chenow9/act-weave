@@ -16,6 +16,7 @@ import { setLocale } from "../services/locale";
 import { useAuthStore } from "../stores/auth";
 import { useOverviewStore } from "../stores/overview";
 import { useWorkspaceStore } from "../stores/workspaces";
+import { isProductionWorkspaceMode } from "../utils/workspace-mode";
 
 const { t, locale } = useI18n();
 const route = useRoute();
@@ -203,7 +204,7 @@ function workspaceDisplayName(workspace = activeWorkspace.value) {
 }
 
 function workspaceModeLabel(mode?: string) {
-  return mode === "Production" ? t("shell.modeProduction") : t("shell.modeSandbox");
+  return isProductionWorkspaceMode(mode) ? t("shell.modeProduction") : t("shell.modeSandbox");
 }
 
 async function openNavigation() {
