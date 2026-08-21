@@ -12,6 +12,8 @@ let managementFilterInstanceCount = 0;
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
+import { restoreFocus as restoreTriggerFocus } from "../utils/focus-modality";
+
 const { t } = useI18n();
 
 const props = defineProps<{
@@ -84,7 +86,7 @@ async function openMenu() {
 
 function closeMenu(restoreFocus = false) {
   menuOpen.value = false;
-  if (restoreFocus) void nextTick(() => triggerRef.value?.focus());
+  if (restoreFocus) void nextTick(() => restoreTriggerFocus(triggerRef.value));
 }
 
 function toggleMenu() {

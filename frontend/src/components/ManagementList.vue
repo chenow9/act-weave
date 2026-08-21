@@ -17,6 +17,7 @@ let managementListInstanceCount = 0;
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useSlots, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
+import { restoreFocus as restoreTriggerFocus } from "../utils/focus-modality";
 import DataTable from "./DataTable.vue";
 
 const { t } = useI18n();
@@ -268,7 +269,7 @@ async function openColumnSettings() {
 
 function closeColumnSettings(restoreFocus = false) {
   columnSettingsOpen.value = false;
-  if (restoreFocus) void nextTick(() => columnSettingsTriggerRef.value?.focus());
+  if (restoreFocus) void nextTick(() => restoreTriggerFocus(columnSettingsTriggerRef.value));
 }
 
 function toggleColumnSettings() {
@@ -304,7 +305,7 @@ function openPageSizeMenu(index = currentPageSizeIndex.value) {
 function closePageSizeMenu(restoreFocus = false) {
   pageSizeMenuOpen.value = false;
   pageSizeOptionRefs.value = [];
-  if (restoreFocus) pageSizeTriggerRef.value?.focus();
+  if (restoreFocus) restoreTriggerFocus(pageSizeTriggerRef.value);
 }
 
 function togglePageSizeMenu() {

@@ -27,6 +27,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import type { StyleValue } from "vue";
 import { useI18n } from "vue-i18n";
 
+import { restoreFocus as restoreTriggerFocus } from "../utils/focus-modality";
+
 const { t } = useI18n();
 const DEFAULT_PLACEHOLDERS = computed(() => [
   "-",
@@ -218,7 +220,7 @@ function openColumnSettings() {
 function closeColumnSettings(restoreFocus = false) {
   settingsOpen.value = false;
   if (restoreFocus) {
-    void nextTick(() => settingsTriggerRef.value?.focus());
+    void nextTick(() => restoreTriggerFocus(settingsTriggerRef.value));
   }
 }
 

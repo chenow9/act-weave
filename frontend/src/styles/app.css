@@ -3425,3 +3425,17 @@ a[href]:focus-visible {
   font-size: 9px;
   letter-spacing: 0.12em;
 }
+
+/* Click / modal restore-focus must not keep the keyboard ring. Tab still shows it. */
+html[data-aw-focus-modality="pointer"] :is(
+    button,
+    [role="button"],
+    [role="tab"],
+    [role="menuitem"],
+    [role="option"],
+    a[href],
+    summary
+  ):focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}

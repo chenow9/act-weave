@@ -20,6 +20,7 @@ import type {
   ToolDisclosureMode,
   ToolDisclosureUI,
 } from "../types/domain";
+import { restoreFocus } from "../utils/focus-modality";
 import { resolveToolCapabilityBadge, type ToolCapabilityBadge } from "../utils/model-tool-disclosure";
 import { normalizeRuntimeCapabilities } from "../utils/session-context-config";
 
@@ -211,7 +212,7 @@ onMounted(async () => {
 
 watch(modelModalVisible, async (visible) => {
   if (!visible) {
-    modelModalRestoreTarget?.focus();
+    restoreFocus(modelModalRestoreTarget);
     modelModalRestoreTarget = null;
     return;
   }
@@ -844,7 +845,7 @@ function activeModelConfirmationDialog() {
 
 function restoreModelConfirmationFocus() {
   void nextTick(() => {
-    modelConfirmationRestoreTarget?.focus();
+    restoreFocus(modelConfirmationRestoreTarget);
     modelConfirmationRestoreTarget = null;
   });
 }

@@ -14,6 +14,7 @@ import ManagementSummaryStrip, { type ManagementSummaryItem } from "../component
 import { useAgentStore } from "../stores/agents";
 import { useAuthStore } from "../stores/auth";
 import { useWorkspaceStore } from "../stores/workspaces";
+import { restoreFocus } from "../utils/focus-modality";
 import { isProductionWorkspaceMode } from "../utils/workspace-mode";
 import type {
   Agent,
@@ -569,7 +570,7 @@ function closeWorkspaceModal() {
 
 function restoreLastFocus() {
   void nextTick(() => {
-    lastFocusBeforeModal.value?.focus();
+    restoreFocus(lastFocusBeforeModal.value);
     lastFocusBeforeModal.value = null;
   });
 }

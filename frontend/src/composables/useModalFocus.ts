@@ -1,5 +1,7 @@
 import { nextTick, onBeforeUnmount, watch, type Ref, type WatchSource } from "vue";
 
+import { restoreFocus } from "../utils/focus-modality";
+
 interface ModalFocusOptions {
   visible: WatchSource<boolean>;
   modalRef: Ref<HTMLElement | null>;
@@ -103,7 +105,7 @@ export function useModalFocus(options: ModalFocusOptions) {
       removeListener();
       if (!visible) {
         removeFromStack();
-        restoreTarget?.focus();
+        restoreFocus(restoreTarget);
         restoreTarget = null;
         return;
       }
@@ -120,7 +122,7 @@ export function useModalFocus(options: ModalFocusOptions) {
   onBeforeUnmount(() => {
     removeFromStack();
     removeListener();
-    restoreTarget?.focus();
+    restoreFocus(restoreTarget);
     restoreTarget = null;
   });
 }

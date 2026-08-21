@@ -16,6 +16,9 @@ import App from "./App.vue";
 import { i18n } from "./i18n";
 import { router } from "./router";
 import { applyDocumentLocale, currentLocale } from "./services/locale";
+import { installFocusModality } from "./utils/focus-modality";
+
+installFocusModality();
 
 const app = createApp(App);
 const pinia = createPinia();

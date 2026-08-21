@@ -16,6 +16,7 @@ import type {
   PromptEnhancement,
   Workspace,
 } from "../types/domain";
+import { restoreFocus } from "../utils/focus-modality";
 import { renderMarkdown } from "../utils/markdown";
 import {
   aapFlagBag,
@@ -767,7 +768,7 @@ export function createAgentsPageModel() {
 
   function restoreLastFocus() {
     void nextTick(() => {
-      lastFocusBeforeModal.value?.focus();
+      restoreFocus(lastFocusBeforeModal.value);
       lastFocusBeforeModal.value = null;
     });
   }
