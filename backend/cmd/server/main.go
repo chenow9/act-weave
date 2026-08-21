@@ -84,11 +84,10 @@ func main() {
 				UseSSL:    config.Storage.MinIO.UseSSL,
 				Region:    config.Storage.MinIO.Region,
 			}
-			// AAP file storage substrate (IC-01): idempotent staging + permanent buckets.
 			if err := storedobject.EnsureBuckets(
-				context.Background(), minioConfig, storedobject.AAPBootstrapBuckets()...,
+				context.Background(), minioConfig, storedobject.BootstrapBuckets()...,
 			); err != nil {
-				return fmt.Errorf("ensure AAP object buckets: %w", err)
+				return fmt.Errorf("ensure object storage buckets: %w", err)
 			}
 			app, err := application.Open(context.Background(), application.Config{
 				PostgresDSN:              config.Database.DSN,

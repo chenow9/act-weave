@@ -500,7 +500,8 @@ func (store *ObjectStore) PresignPutWithHeaders(
 }
 
 // EnsureBuckets creates the given MinIO buckets if missing (idempotent).
-// Intended for server bootstrap of AAP staging + permanent buckets.
+// Server bootstrap should pass BootstrapBuckets so environments without
+// compose minio-init still have every product bucket before the first write.
 func EnsureBuckets(ctx context.Context, config MinIOConfig, buckets ...string) error {
 	config.Endpoint = strings.TrimSpace(config.Endpoint)
 	config.AccessKey = strings.TrimSpace(config.AccessKey)
@@ -543,6 +544,16 @@ func EnsureBuckets(ctx context.Context, config MinIOConfig, buckets ...string) e
 		}
 	}
 	return nil
+}
+
+// BootstrapBuckets returns every MinIO bucket this process writes to.
+func BootstrapBuckets() []string {
+	return append([]string{
+		BucketExecutions,
+		BucketAuditPackages,
+		BucketToolTests,
+		BucketConnectionVerifications,
+	}, AAPBootstrapBuckets()...)
 }
 
 // AAPBootstrapBuckets returns staging + permanent buckets for AAP file storage.

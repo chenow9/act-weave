@@ -74,6 +74,54 @@ func TestMinIOStoreStreamsVerifiesAuthorizesAndSigns(t *testing.T) {
 	}
 }
 
+func TestBootstrapBuckets(t *testing.T) {
+	got := BootstrapBuckets()
+	want := []string{
+		BucketExecutions,
+		BucketAuditPackages,
+		BucketToolTests,
+		BucketConnectionVerifications,
+		BucketAAPStaging,
+		BucketAAPFiles,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("BootstrapBuckets = %v want %v", got, want)
+	}
+	seen := make(map[string]struct{}, len(got))
+	for i, bucket := range got {
+		if bucket != want[i] {
+			t.Fatalf("BootstrapBuckets[%d]=%q want %q", i, bucket, want[i])
+		}
+		if _, dup := seen[bucket]; dup {
+			t.Fatalf("duplicate bucket %q", bucket)
+		}
+		seen[bucket] = struct{}{}
+	}
+	for _, bucket := range AAPBootstrapBuckets() {
+		if _, ok := seen[bucket]; !ok {
+			t.Fatalf("AAP bucket %q missing from BootstrapBuckets", bucket)
+		}
+	}
+	for kind, bucket := range map[string]string{
+		KindOpenAPISource: BucketExecutions, KindPromptRunInput: BucketExecutions,
+		KindPromptRunOutput: BucketExecutions, KindPromptPreviewInput: BucketExecutions,
+		KindPromptPreviewOutput: BucketExecutions, KindModelTurn: BucketExecutions,
+		KindChatMessage: BucketExecutions, KindToolInvocationPayload: BucketExecutions,
+		KindExecutionCheckpoint: BucketExecutions, KindChatContextSummary: BucketExecutions,
+		KindToolTestPayload:   BucketToolTests,
+		KindAuditEventPayload: BucketAuditPackages, KindAuditExport: BucketAuditPackages,
+		KindAAPFile: BucketAAPFiles, KindAAPFileDerived: BucketAAPFiles,
+	} {
+		mapped, err := bucketForKind(kind)
+		if err != nil || mapped != bucket {
+			t.Fatalf("bucketForKind(%s)=%q,%v want %q", kind, mapped, err, bucket)
+		}
+		if _, ok := seen[mapped]; !ok {
+			t.Fatalf("bucketForKind(%s)=%q not in BootstrapBuckets", kind, mapped)
+		}
+	}
+}
+
 func TestMinIOStoreControlledBucketMapping(t *testing.T) {
 	tests := map[string]string{
 		KindOpenAPISource: BucketExecutions, KindPromptRunInput: BucketExecutions,
