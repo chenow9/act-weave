@@ -417,8 +417,9 @@ describe("providers management view", () => {
     await flushPromises();
 
     expect(wrapper.get('[data-testid="provider-outbound-identity"]').text()).toContain("用户调用身份");
-    expect(wrapper.get('[data-testid="provider-outbound-identity"]').text()).toContain("可多选");
-    expect(wrapper.get('[data-testid="provider-outbound-identity"]').text()).toContain("只能选择一种");
+    expect(wrapper.get('[data-testid="provider-outbound-identity"]').text()).toContain("可以同时勾选");
+    expect(wrapper.get('[data-testid="provider-outbound-identity"]').text()).toContain("每个连接");
+    expect(wrapper.get('[data-testid="provider-outbound-identity"]').text()).not.toContain("只能选择一种");
     expect(wrapper.text()).toContain("平台按当前用户身份换取短期业务 Token");
     expect(wrapper.text()).toContain("调用方为本次请求提供 Token");
 

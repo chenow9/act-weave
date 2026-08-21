@@ -1670,6 +1670,7 @@ function errorMessage(error: unknown, fallback: string) {
                 <div>
                   <h3>{{ t("providers.sectionIdentity") }}</h3>
                   <p>{{ t("providers.sectionIdentityHint") }}</p>
+                  <p class="provider-section-subhint">{{ t("providers.sectionIdentityConnectionHint") }}</p>
                 </div>
               </div>
               <p v-if="providerDraft.legacyAuthentication" class="provider-migration-note">
@@ -2417,6 +2418,9 @@ function errorMessage(error: unknown, fallback: string) {
   font-size: 11px;
   line-height: 1.5;
 }
+.provider-section-subhint {
+  color: #475569;
+}
 .provider-form-section label,
 .provider-delete-dialog label {
   min-width: 0;
@@ -2533,17 +2537,16 @@ function errorMessage(error: unknown, fallback: string) {
   display: block;
   cursor: pointer;
 }
-/* Visually hidden but focusable native checkbox — never pointer-events:none. */
 .provider-identity-card > input[type="checkbox"] {
   position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+  top: 14px;
+  left: 14px;
+  z-index: 2;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #0d9488;
+  cursor: pointer;
 }
 .provider-identity-card-body {
   position: relative;
@@ -2551,7 +2554,7 @@ function errorMessage(error: unknown, fallback: string) {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 14px 13px;
+  padding: 14px 13px 14px 38px;
   border: 1px solid #dbe3ef;
   border-radius: 10px;
   background: #f8fafc;
