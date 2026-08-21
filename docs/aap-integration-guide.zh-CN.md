@@ -392,7 +392,7 @@ Base：`/api/agent-access/v1`
 | 项 | 默认 |
 | --- | --- |
 | maxBytes | 25 MiB |
-| 允许 MIME | `image/png`、`image/jpeg`、`image/webp`、`image/gif`、`application/pdf` |
+| 允许 MIME | `image/png`、`image/jpeg`、`image/webp`、`image/gif`、`application/pdf`、Word（`.doc` / `.docx`）、Excel（`.xls` / `.xlsx`）、`application/zip` |
 | Staging TTL | 约 15 分钟 |
 | 保留 | EXPIRING 约 30 天（首次成功 createRun 引用可提升保留） |
 | 下载 token TTL | client_content / tool_invoke ≤ 5m；processor_delivery ≤ 10m（硬顶 15m） |

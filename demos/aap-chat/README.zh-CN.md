@@ -19,14 +19,14 @@ npm run dev:mock
 ```
 
 打开 [http://127.0.0.1:5188](http://127.0.0.1:5188)，点空态建议看预约表单 / 趋势图 / 指标 / **生成本月对账单** / **看看这几张现场图** / **出一份巡检复盘包**，或「插入富文本样例」。右上角「开发者」可打开协议铬层、surface JSON 和全部渲染基线。  
-也可点作曲家左侧 **附件** 选择图片/PDF：Mock 模式会在气泡中渲染本地预览（不上传）。助手回传在 `.msg-row.is-assistant .msg-attachments`：**生成本月对账单** 是 CSV 卡片；**看看这几张现场图** 是 2×2 图库；**出一份巡检复盘包** 混排 Markdown、现场图、文件卡片和 A2UI。
+也可点作曲家左侧 **附件** 选择图片、PDF、Word、Excel 或 zip：Mock 模式会在气泡中渲染本地预览（不上传）。助手回传在 `.msg-row.is-assistant .msg-attachments`：**生成本月对账单** 是 CSV 卡片；**看看这几张现场图** 是 2×2 图库；**出一份巡检复盘包** 混排 Markdown、现场图、文件卡片和 A2UI。
 
 ## 附件（选文件 · 上传 · 气泡渲染）
 
 | 能力 | 说明 |
 | --- | --- |
 | 选择 | 曲作家「附件」按钮、拖到输入区、或粘贴图片 |
-| 类型 / 限制 | `png` / `jpeg` / `webp` / `gif` / `pdf`，单文件 ≤ 25MB，最多 8 个 |
+| 类型 / 限制 | `png` / `jpeg` / `webp` / `gif` / `pdf` / Word / Excel / `zip`，单文件 ≤ 25MB，最多 8 个 |
 | Mock（用户） | 本地 Object URL 预览进用户气泡，不走 AAP |
 | Mock（助手回传） | `assistant_done.attachments` 画 CSV / PNG 卡片 |
 | Live | 浏览器用短期 Token：`createFile` → 预签名 PUT → `complete` → `waitUntilReady`，再 `POST /bff/chat` 带 `fileIds` |

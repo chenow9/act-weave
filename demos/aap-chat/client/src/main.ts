@@ -57,13 +57,40 @@ const root = document.querySelector<HTMLDivElement>("#app")!;
 
 const MAX_ATTACHMENTS = 8;
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const MEDIA_DOC = "application/msword";
+const MEDIA_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const MEDIA_XLS = "application/vnd.ms-excel";
+const MEDIA_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const MEDIA_ZIP = "application/zip";
 const ALLOWED_MEDIA = new Set([
   "image/png",
   "image/jpeg",
   "image/webp",
   "image/gif",
   "application/pdf",
+  MEDIA_DOC,
+  MEDIA_DOCX,
+  MEDIA_XLS,
+  MEDIA_XLSX,
+  MEDIA_ZIP,
+  "application/x-zip-compressed",
 ]);
+const ACCEPT_MEDIA = [...ALLOWED_MEDIA].join(",");
+
+function resolveMediaType(file: File): string {
+  const type = (file.type || "").toLowerCase();
+  if (ALLOWED_MEDIA.has(type)) {
+    return type === "application/x-zip-compressed" ? MEDIA_ZIP : type;
+  }
+  const name = (file.name || "").toLowerCase();
+  if (name.endsWith(".docx")) return MEDIA_DOCX;
+  if (name.endsWith(".doc")) return MEDIA_DOC;
+  if (name.endsWith(".xlsx")) return MEDIA_XLSX;
+  if (name.endsWith(".xls")) return MEDIA_XLS;
+  if (name.endsWith(".zip")) return MEDIA_ZIP;
+  if (name.endsWith(".pdf")) return "application/pdf";
+  return type;
+}
 
 const state = {
   mode: "detect" as "mock" | "live" | "detect",
@@ -258,7 +285,7 @@ function render(opts?: { keepDraft?: boolean }) {
             <input
               id="file-input"
               type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
+              accept="${ACCEPT_MEDIA}"
               multiple
               hidden
             />
@@ -266,7 +293,7 @@ function render(opts?: { keepDraft?: boolean }) {
               class="ghost-btn composer-attach-btn"
               type="button"
               id="btn-attach"
-              title="添加图片或 PDF"
+              title="添加图片、PDF、Word、Excel 或 zip"
               ${state.busy || state.pendingAttachments.length >= MAX_ATTACHMENTS ? "disabled" : ""}
             >
               <i class="fa-solid fa-paperclip" aria-hidden="true"></i>
@@ -279,7 +306,7 @@ function render(opts?: { keepDraft?: boolean }) {
               aria-multiline="true"
               aria-label="对话输入"
               contenteditable="${state.busy ? "false" : "true"}"
-              data-placeholder="输入消息… 可添加图片/PDF 附件（Enter 发送，Shift+Enter 换行）"
+              data-placeholder="输入消息… 可添加图片/PDF/Word/Excel/zip 附件（Enter 发送，Shift+Enter 换行）"
               spellcheck="true"
               data-1p-ignore="true"
               data-lpignore="true"
@@ -298,7 +325,7 @@ function render(opts?: { keepDraft?: boolean }) {
               }
               ${escapeHtml(state.status || "就绪")}
             </span>
-            <span>附件经 AAP 预签名上传 · 图片与 PDF 在对话中预览</span>
+            <span>附件经 AAP 预签名上传 · 图片、PDF、Word、Excel、zip 可预览或下载</span>
           </div>
         </footer>
       </section>
@@ -452,7 +479,7 @@ function attachmentChipHtml(a: UiAttachment, removable: boolean): string {
           : "待上传";
   const body = isImage
     ? `<img class="attach-thumb" src="${escapeHtml(a.previewUrl || "")}" alt="${escapeHtml(a.name)}" />`
-    : `<div class="attach-file-icon" aria-hidden="true"><i class="fa-solid ${a.mediaType === "application/pdf" ? "fa-file-pdf" : "fa-file"}"></i></div>`;
+    : `<div class="attach-file-icon" aria-hidden="true"><i class="fa-solid ${attachmentFileIcon(a.mediaType)}"></i></div>`;
   return `
     <div class="attach-chip is-${escapeHtml(a.status)}" data-local-id="${escapeHtml(a.localId)}" title="${escapeHtml(a.error || a.name)}">
       ${body}
@@ -477,6 +504,9 @@ function attachmentKindLabel(mediaType: string): string {
   if (mediaType === "application/json") return "JSON";
   if (mediaType === "text/markdown") return "MD";
   if (mediaType === "text/plain") return "TXT";
+  if (mediaType === MEDIA_DOC || mediaType === MEDIA_DOCX) return "Word";
+  if (mediaType === MEDIA_XLS || mediaType === MEDIA_XLSX) return "Excel";
+  if (mediaType === MEDIA_ZIP || mediaType === "application/x-zip-compressed") return "ZIP";
   if (mediaType.startsWith("image/")) return mediaType.slice(6).toUpperCase() || "IMG";
   if (mediaType.startsWith("text/")) return "TXT";
   return "FILE";
@@ -486,6 +516,9 @@ function attachmentFileIcon(mediaType: string): string {
   if (mediaType === "application/pdf") return "fa-file-pdf";
   if (mediaType === "text/csv") return "fa-file-csv";
   if (mediaType === "application/json" || mediaType.startsWith("text/")) return "fa-file-lines";
+  if (mediaType === MEDIA_DOC || mediaType === MEDIA_DOCX) return "fa-file-word";
+  if (mediaType === MEDIA_XLS || mediaType === MEDIA_XLSX) return "fa-file-excel";
+  if (mediaType === MEDIA_ZIP || mediaType === "application/x-zip-compressed") return "fa-file-zipper";
   return "fa-paperclip";
 }
 
@@ -809,9 +842,9 @@ async function addPendingFiles(files: File[]) {
   }
   const accepted: File[] = [];
   for (const file of files.slice(0, room)) {
-    const media = (file.type || "").toLowerCase();
+    const media = resolveMediaType(file);
     if (!ALLOWED_MEDIA.has(media)) {
-      state.status = `不支持类型：${file.name || media || "unknown"}（仅 png/jpeg/webp/gif/pdf）`;
+      state.status = `不支持类型：${file.name || media || "unknown"}（仅图片、PDF、Word、Excel、zip）`;
       state.statusTone = "error";
       continue;
     }
@@ -836,7 +869,7 @@ async function addPendingFiles(files: File[]) {
       id: localId,
       localId,
       name: file.name || "attachment",
-      mediaType: file.type || "application/octet-stream",
+      mediaType: resolveMediaType(file),
       sizeBytes: file.size,
       previewUrl,
       status: "pending",

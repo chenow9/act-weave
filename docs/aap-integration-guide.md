@@ -397,7 +397,7 @@ Wire protocol and persisted items carry only stable **`fileId`** — never live 
 | Limit | Default |
 | --- | --- |
 | maxBytes | 25 MiB |
-| Allowed MIME | `image/png`, `image/jpeg`, `image/webp`, `image/gif`, `application/pdf` |
+| Allowed MIME | `image/png`, `image/jpeg`, `image/webp`, `image/gif`, `application/pdf`, Word (`.doc` / `.docx`), Excel (`.xls` / `.xlsx`), `application/zip` |
 | Staging TTL | ~15 minutes |
 | Retention | EXPIRING ~30 days (first successful createRun reference may promote retention) |
 | Download token TTL | client_content / tool_invoke ≤ 5m; processor_delivery ≤ 10m (hard cap 15m) |

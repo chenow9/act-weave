@@ -73,6 +73,36 @@ func TestAllowedOutboundMediaType(t *testing.T) {
 		t.Fatal("outbound text types must be allowed")
 	}
 	if AllowedMediaType("text/csv") || AllowedMediaType("application/json") {
-		t.Fatal("inbound allowlist must stay unchanged")
+		t.Fatal("inbound allowlist must not include outbound-only text types")
+	}
+	if !AllowedMediaType(MediaTypeDocx) || !AllowedMediaType(MediaTypeXlsx) || !AllowedMediaType(MediaTypeZip) {
+		t.Fatal("inbound allowlist must include Word, Excel, and zip")
+	}
+}
+
+func TestOfficeAndZipMagicCompatibility(t *testing.T) {
+	t.Parallel()
+	zipBody := []byte{'P', 'K', 0x03, 0x04, 0x00, 0x00}
+	if got := DetectMediaTypeFromSample(zipBody); got != MediaTypeZip {
+		t.Fatalf("zip sniff=%q", got)
+	}
+	oleBody := []byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x00}
+	if got := DetectMediaTypeFromSample(oleBody); got != mediaTypeOLE {
+		t.Fatalf("ole sniff=%q", got)
+	}
+	if !mediaTypesCompatible(MediaTypeDocx, MediaTypeZip) || !mediaTypesCompatible(MediaTypeXlsx, MediaTypeZip) {
+		t.Fatal("docx/xlsx must accept zip magic")
+	}
+	if !mediaTypesCompatible(MediaTypeZip, MediaTypeZipAlt) {
+		t.Fatal("zip aliases")
+	}
+	if !mediaTypesCompatible(MediaTypeDoc, mediaTypeOLE) || !mediaTypesCompatible(MediaTypeXls, mediaTypeOLE) {
+		t.Fatal("legacy Office must accept OLE magic")
+	}
+	if mediaTypesCompatible(MediaTypeDocx, MediaTypePNG) {
+		t.Fatal("docx must not accept png magic")
+	}
+	if mediaTypesCompatible("video/mp4", MediaTypeZip) {
+		t.Fatal("unlisted types stay denied")
 	}
 }

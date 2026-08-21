@@ -30,7 +30,7 @@ Use the paperclip **附件** control (or drag/paste) to stage images/PDFs; Mock 
 | Live (assistant) | Snapshot `output_file` → placeholder card → `getFile` / `getFileContent` hydrate by `fileId` (never `links.content`) |
 | Protocol | BFF adds `input_file` on the user message; assistant returns `output_file` |
 | Download | Live: Bearer `getFileContent` → Blob; Mock: object URL. Includes inbound PDFs |
-| Limits | inbound png/jpeg/webp/gif/pdf · ≤25MB each · max 8 (composer only) |
+| Limits | inbound png/jpeg/webp/gif/pdf/Word/Excel/zip · ≤25MB each · max 8 (composer only) |
 
 Live needs `file:write file:read` in `AAP_SCOPES` and `agentAccess.files.enabled` on the server. Hydrating and downloading assistant files requires **`file:read`**.
 

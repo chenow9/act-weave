@@ -62,17 +62,52 @@ func DetectMediaTypeFromSample(sample []byte) string {
 	// Prefer exact allowlist forms for known magic:
 	switch {
 	case bytes.HasPrefix(sample, []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}):
-		return "image/png"
+		return MediaTypePNG
 	case bytes.HasPrefix(sample, []byte{0xff, 0xd8, 0xff}):
-		return "image/jpeg"
+		return MediaTypeJPEG
 	case bytes.HasPrefix(sample, []byte("GIF87a")) || bytes.HasPrefix(sample, []byte("GIF89a")):
-		return "image/gif"
+		return MediaTypeGIF
 	case len(sample) >= 12 && bytes.Equal(sample[0:4], []byte("RIFF")) && bytes.Equal(sample[8:12], []byte("WEBP")):
-		return "image/webp"
+		return MediaTypeWEBP
 	case bytes.HasPrefix(sample, []byte("%PDF")):
-		return "application/pdf"
+		return MediaTypePDF
+	case isZipMagic(sample):
+		return MediaTypeZip
+	case isOLEMagic(sample):
+		return mediaTypeOLE
 	}
 	return detected
+}
+
+func isZipMagic(sample []byte) bool {
+	if len(sample) < 4 || sample[0] != 'P' || sample[1] != 'K' {
+		return false
+	}
+	return sample[2] == 0x03 && sample[3] == 0x04 ||
+		sample[2] == 0x05 && sample[3] == 0x06 ||
+		sample[2] == 0x07 && sample[3] == 0x08
+}
+
+func isOLEMagic(sample []byte) bool {
+	return bytes.HasPrefix(sample, []byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1})
+}
+
+func zipFamily(mediaType string) bool {
+	switch mediaType {
+	case MediaTypeZip, MediaTypeZipAlt, MediaTypeDocx, MediaTypeXlsx:
+		return true
+	default:
+		return false
+	}
+}
+
+func oleOffice(mediaType string) bool {
+	switch mediaType {
+	case MediaTypeDoc, MediaTypeXls, mediaTypeOLE:
+		return true
+	default:
+		return false
+	}
 }
 
 // mediaTypesCompatible reports whether detected magic is acceptable for declared.
@@ -92,7 +127,15 @@ func mediaTypesCompatible(declared, detected string) bool {
 		return true
 	}
 	// JPEG aliases.
-	if declared == "image/jpeg" && (detected == "image/jpg" || detected == "image/jpeg") {
+	if declared == MediaTypeJPEG && (detected == "image/jpg" || detected == MediaTypeJPEG) {
+		return true
+	}
+	// docx/xlsx are ZIP containers; sniffing reports application/zip.
+	if zipFamily(declared) && zipFamily(detected) {
+		return true
+	}
+	// Legacy .doc/.xls are OLE compound files.
+	if oleOffice(declared) && oleOffice(detected) {
 		return true
 	}
 	return false

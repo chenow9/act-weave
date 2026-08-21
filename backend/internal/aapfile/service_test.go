@@ -359,9 +359,20 @@ func TestCreateRejectsDisallowedMediaAndOversize(t *testing.T) {
 	ctx := context.Background()
 
 	bad := createCCInput(10, "")
-	bad.MediaType = "application/zip"
+	bad.MediaType = "video/mp4"
 	if _, err := service.CreateUploadIntent(ctx, bad); err == nil {
 		t.Fatal("expected media type denied")
+	}
+
+	for _, media := range []string{
+		aapfile.MediaTypeDoc, aapfile.MediaTypeDocx,
+		aapfile.MediaTypeXls, aapfile.MediaTypeXlsx, aapfile.MediaTypeZip,
+	} {
+		ok := createCCInput(10, "")
+		ok.MediaType = media
+		if _, err := service.CreateUploadIntent(ctx, ok); err != nil {
+			t.Fatalf("CreateUploadIntent %s: %v", media, err)
+		}
 	}
 
 	big := createCCInput(int(aapfile.DefaultMaxBytes)+1, "")

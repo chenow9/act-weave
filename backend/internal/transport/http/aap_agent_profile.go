@@ -334,9 +334,7 @@ func aapSupportedContentForFiles(
 		return []aapSupportedContentDTO{{Type: "message", Parts: []string{"text"}}}
 	}
 	maxBytes := aapfile.DefaultMaxBytes
-	mediaTypes := []string{
-		"image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf",
-	}
+	mediaTypes := aapfile.DefaultInboundMediaTypes()
 	if filesGate != nil {
 		if filesGate.MaxBytes > 0 {
 			maxBytes = filesGate.MaxBytes
