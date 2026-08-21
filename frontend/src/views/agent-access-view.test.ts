@@ -168,6 +168,52 @@ describe("Agent Access management view", () => {
     expect(JSON.stringify(access)).not.toContain("awsk_live_once");
   });
 
+  it("copies the one-time secret from an icon in the secret box", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('[data-testid="create-client"]').trigger("click");
+    const create = wrapper.get('[role="dialog"][aria-label="注册 Agent Access Client"]');
+    await create.get('input[placeholder="例如：会员运营 App"]').setValue("Business App");
+    await create
+      .findAll("button")
+      .find((button) => button.text().includes("创建 Client"))
+      ?.trigger("click");
+    await flushPromises();
+    const copy = wrapper.get('[data-testid="copy-secret"]');
+    expect(copy.text().replace(/\s/g, "")).toBe("");
+    expect(copy.attributes("aria-label")).toBe("复制到剪贴板");
+    await copy.trigger("click");
+    await flushPromises();
+    expect(writeText).toHaveBeenCalledWith("awsk_live_once");
+    expect(wrapper.text()).toContain("已复制");
+  });
+
+  it("copies the one-time secret when the clipboard API is missing", async () => {
+    Object.assign(navigator, { clipboard: undefined });
+    const execCommand = vi.fn(() => true);
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      writable: true,
+      value: execCommand,
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('[data-testid="create-client"]').trigger("click");
+    const create = wrapper.get('[role="dialog"][aria-label="注册 Agent Access Client"]');
+    await create.get('input[placeholder="例如：会员运营 App"]').setValue("Business App");
+    await create
+      .findAll("button")
+      .find((button) => button.text().includes("创建 Client"))
+      ?.trigger("click");
+    await flushPromises();
+    await wrapper.get('[data-testid="copy-secret"]').trigger("click");
+    await flushPromises();
+    expect(execCommand).toHaveBeenCalledWith("copy");
+    expect(wrapper.text()).toContain("已复制");
+  });
+
   it("opens client detail from the list and requires REVOKE before destructive actions", async () => {
     const wrapper = mountView();
     await flushPromises();

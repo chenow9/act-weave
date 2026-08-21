@@ -28,6 +28,7 @@ import {
   renderAAPIntegratorHandoffEnv,
   renderAAPIntegratorHandoffJSON,
 } from "../utils/aap-integrator-handoff";
+import { copyText } from "../utils/copy-text";
 
 type PageView = "list" | "detail";
 type DetailTab = "credentials" | "grants" | "configuration";
@@ -487,23 +488,23 @@ function showSecret(secret: string, context: string) {
 
 async function copySecret() {
   if (!oneTimeSecret.value) return;
-  await navigator.clipboard?.writeText(oneTimeSecret.value);
-  copyNotice.value = t("agentAccess.secretCopied");
+  const copied = await copyText(oneTimeSecret.value);
+  copyNotice.value = t(copied ? "agentAccess.secretCopied" : "agentAccess.copyFailed");
 }
 
 async function copyClientId() {
   const clientId = selectedClient.value?.clientId;
   if (!clientId) return;
-  const copied = t("agentAccess.clientIdCopied");
-  try {
-    await navigator.clipboard?.writeText(clientId);
-    clientIdCopyNotice.value = copied;
-    window.setTimeout(() => {
-      if (clientIdCopyNotice.value === copied) clientIdCopyNotice.value = "";
-    }, 2000);
-  } catch {
+  const copied = await copyText(clientId);
+  if (!copied) {
     clientIdCopyNotice.value = t("agentAccess.copyFailed");
+    return;
   }
+  const notice = t("agentAccess.clientIdCopied");
+  clientIdCopyNotice.value = notice;
+  window.setTimeout(() => {
+    if (clientIdCopyNotice.value === notice) clientIdCopyNotice.value = "";
+  }, 2000);
 }
 
 function openExport() {
@@ -524,16 +525,16 @@ function closeExport() {
 async function copyExport() {
   const text = exportText.value;
   if (!text) return;
-  const copied = t("agentAccess.exportCopied");
-  try {
-    await navigator.clipboard?.writeText(text);
-    exportCopyNotice.value = copied;
-    window.setTimeout(() => {
-      if (exportCopyNotice.value === copied) exportCopyNotice.value = "";
-    }, 2000);
-  } catch {
+  const copied = await copyText(text);
+  if (!copied) {
     exportCopyNotice.value = t("agentAccess.copyFailed");
+    return;
   }
+  const notice = t("agentAccess.exportCopied");
+  exportCopyNotice.value = notice;
+  window.setTimeout(() => {
+    if (exportCopyNotice.value === notice) exportCopyNotice.value = "";
+  }, 2000);
 }
 
 function downloadExport() {
@@ -1202,10 +1203,20 @@ function authMethodShort(method: string) {
             <i class="fa-solid fa-triangle-exclamation" />
             {{ t("agentAccess.secretWarning", { context: oneTimeSecretContext }) }}
           </p>
-          <code data-testid="one-time-secret" class="secret-value">{{ oneTimeSecret }}</code>
-          <button class="copy-secret" type="button" data-modal-initial-focus @click="copySecret">
-            <i class="fa-regular fa-copy" />{{ t("agentAccess.copyToClipboard") }}
-          </button>
+          <div class="secret-value-wrap">
+            <code data-testid="one-time-secret" class="secret-value">{{ oneTimeSecret }}</code>
+            <button
+              class="copy-secret"
+              type="button"
+              data-testid="copy-secret"
+              data-modal-initial-focus
+              :aria-label="t('agentAccess.copyToClipboard')"
+              :title="t('agentAccess.copyToClipboard')"
+              @click="copySecret"
+            >
+              <i class="fa-regular fa-copy" aria-hidden="true" />
+            </button>
+          </div>
           <p v-if="copyNotice" class="copy-notice" role="status">{{ copyNotice }}</p>
         </div>
         <div class="access-modal-footer">
@@ -2097,9 +2108,13 @@ function authMethodShort(method: string) {
   color: #9f1239;
 }
 
+.secret-value-wrap {
+  position: relative;
+}
+
 .secret-value {
   display: block;
-  padding: 14px;
+  padding: 14px 42px 14px 14px;
   border-radius: 10px;
   background: #0f172a;
   color: #a7f3d0;
@@ -2110,17 +2125,30 @@ function authMethodShort(method: string) {
 }
 
 .copy-secret {
-  justify-self: start;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 9px;
-  background: #fff;
-  color: #334155;
-  font-size: 12px;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #a7f3d0;
   cursor: pointer;
+}
+
+.copy-secret i {
+  font-size: 12px;
+}
+
+.copy-secret:hover,
+.copy-secret:focus-visible {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ecfdf5;
 }
 
 .copy-notice {
