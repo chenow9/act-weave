@@ -147,7 +147,7 @@ Change the password after the first sign-in. For production, replace repository 
 | Category | Status |
 | --- | --- |
 | Implemented | Workspace/RBAC, Provider/Connection, OpenAPI import, Tool governance, Agents, Workflows, console trials, AAP, SSE, TypeScript SDK, audit, A2A delegation/gateway paths, and `v*` tag image publish to ACR. |
-| Feature-gated | AAP file upload is disabled by default; end-to-end multimodal input also needs `runtimeMultimodal`. LLM context compaction is disabled by default. |
+| Feature-gated | AAP file upload is disabled by default. Image `input_file` also needs `runtimeMultimodal`; document-only input does not. Optional PDF on-demand read (`runtimeInboundRead`) and outbound attachments are off by default. LLM context compaction is disabled by default. |
 | Current limitations | The console is primarily desktop-oriented; some advanced Workflow node types are supported in the backend but not fully exposed by the editor; publish impact analysis does not automatically list every Agent/Workflow reference. |
 | Maturity | No version tags, public release notes, or production SLO/SLA were found. Suitability for a specific production environment must be decided by the deployer after threat modeling, capacity, backup, monitoring, and integration testing. |
 

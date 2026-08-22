@@ -2,6 +2,20 @@ package aapfile
 
 import "testing"
 
+func TestVisionAndDocumentMediaClassification(t *testing.T) {
+	if !IsVisionMediaType("image/png") || !IsVisionMediaType("image/jpg") {
+		t.Fatal("png/jpg should be vision")
+	}
+	if IsVisionMediaType("application/pdf") || IsInboundDocumentMediaType("image/png") {
+		t.Fatal("pdf is document, png is not")
+	}
+	if !IsInboundDocumentMediaType("application/pdf") ||
+		!IsInboundDocumentMediaType(MediaTypeDocx) ||
+		!IsInboundDocumentMediaType(MediaTypeZip) {
+		t.Fatal("pdf/docx/zip should be inbound documents")
+	}
+}
+
 func TestOutboundMediaTypesCompatible(t *testing.T) {
 	t.Parallel()
 

@@ -25,6 +25,7 @@ import (
 	"actweave/backend/internal/metrics"
 	"actweave/backend/internal/modelconfig"
 	"actweave/backend/internal/sessioncontext"
+	"actweave/backend/internal/toolruntime"
 	"actweave/backend/internal/tooltranslator"
 
 	"github.com/cloudwego/eino/components/tool"
@@ -116,8 +117,10 @@ type Dependencies struct {
 	PlatformCalls chatruntime.PlatformToolCallProjector
 	// Files is the AAP file service used to ingest / list / promote outbound files.
 	Files outboundFileService
-	// FilesConfig is the files HTTP + runtimeOutboundAttachments gate. Nil denies inject.
+	// FilesConfig is the files HTTP + runtimeOutboundAttachments / runtimeInboundRead gate. Nil denies inject.
 	FilesConfig *config.AgentAccessFilesConfig
+	// FileOpener opens READY AAP files for in-process platform tools (no URLs).
+	FileOpener toolruntime.PlatformFileOpener
 }
 
 // Bridge implements agentrun.Runtime on the eino engine path.
@@ -150,6 +153,7 @@ type Bridge struct {
 	platformCalls     chatruntime.PlatformToolCallProjector
 	files             outboundFileService
 	filesCfg          *config.AgentAccessFilesConfig
+	fileOpener        toolruntime.PlatformFileOpener
 
 	activeMu   sync.Mutex
 	activeRuns map[string]*activeRunExecution
@@ -220,6 +224,7 @@ func NewBridge(deps Dependencies) (*Bridge, error) {
 		platformCalls:      deps.PlatformCalls,
 		files:              deps.Files,
 		filesCfg:           deps.FilesConfig,
+		fileOpener:         deps.FileOpener,
 		activeRuns:         make(map[string]*activeRunExecution),
 		pendingConfirms:    make(map[string][]einoruntime.PendingConfirmInterrupt),
 		outboundCollectors: make(map[string]*aapfile.OutboundCollector),
@@ -779,8 +784,8 @@ func (b *Bridge) buildMessagesTokenWindow(
 }
 
 // assembleUserSchemaMessage maps durable user content to a model schema message.
-// AAP createRun stores aap.message-content.v1; input_file parts are assembled
-// when Multimodal.RuntimeMultimodal is true, else fail with MODEL_CONTENT_UNSUPPORTED.
+// AAP createRun stores aap.message-content.v1; image input_file parts need
+// RuntimeMultimodal; allowlisted documents become an assembly-time listing.
 func (b *Bridge) assembleUserSchemaMessage(
 	ctx context.Context,
 	workspaceID, agentID, content string,

@@ -580,6 +580,11 @@ export function extractToolSummary(item: ProtocolItem): {
   return { name, status, detail };
 }
 
+/** Developer tool cards fold read_attachment bodies by default (≤256 KiB text). */
+export function foldDeveloperToolDetail(name: string): boolean {
+  return name === "actweave.read_attachment";
+}
+
 // --- Conversation replay (PR-4b): sessionStorage + getConversation/getRun ---
 
 /** Namespaced by workspace+agent so a BFF target switch does not replay the wrong conversation. */

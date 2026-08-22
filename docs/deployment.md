@@ -118,7 +118,7 @@ PostgreSQL is the source of truth for configuration, runs, protocol events, and 
 | Capability | Default or boundary |
 | --- | --- |
 | Main AAP runtime plane | `agentAccess.feature` is enabled in repository local config; production can narrow it with workspace/client allowlists. |
-| AAP files | `agentAccess.files.enabled: false`; when enabled it is also constrained by workspace/client allowlists, quotas, and `runtimeMultimodal`. |
+| AAP files | `agentAccess.files.enabled: false`; when enabled it is also constrained by workspace/client allowlists and quotas. Image assembly uses `runtimeMultimodal`; optional PDF on-demand read uses `runtimeInboundRead`; outbound attachments use `runtimeOutboundAttachments`. |
 | LLM context compaction | `runtime.sessionContext.compaction.enabled: false`; enable gradually according to the runbook. |
 | Tool force publish | Available only to platform administrators when `tools.allowForcePublish` allows it; not the standard publishing path. |
 | A2A no-auth mode | Rejected by default; available for local testing only through an explicit environment switch. |

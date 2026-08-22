@@ -85,10 +85,12 @@ export function compactionSummaryPermanenceWarning(): string {
   return tt("agents.compactionSummaryPermanenceWarning");
 }
 
-/** Agent-only AAP flag bag (session-context-policy.v2). Both default false. */
+/** Agent-only AAP flag bag (session-context-policy.v2). Defaults false. */
 export type AapFlags = {
   includeCompactionSummary: boolean;
   enableA2UI: boolean;
+  enableOutboundAttachments?: boolean;
+  enableInboundRead?: boolean;
 };
 
 /** Read aap flags with boolean defaults (missing / null → false). */
@@ -96,11 +98,18 @@ export function readAapFlags(aap?: SessionContextPolicy["aap"] | null): AapFlags
   return {
     includeCompactionSummary: Boolean(aap?.includeCompactionSummary),
     enableA2UI: Boolean(aap?.enableA2UI),
+    enableOutboundAttachments: Boolean(aap?.enableOutboundAttachments),
+    enableInboundRead: Boolean(aap?.enableInboundRead),
   };
 }
 
 export function anyAapFlagTrue(flags: AapFlags): boolean {
-  return flags.includeCompactionSummary || flags.enableA2UI;
+  return (
+    Boolean(flags.includeCompactionSummary) ||
+    Boolean(flags.enableA2UI) ||
+    Boolean(flags.enableOutboundAttachments) ||
+    Boolean(flags.enableInboundRead)
+  );
 }
 
 /**
@@ -109,7 +118,12 @@ export function anyAapFlagTrue(flags: AapFlags): boolean {
  */
 export function mergeAapFlags(
   current: SessionContextPolicy["aap"] | undefined | null,
-  patch: Partial<{ includeCompactionSummary: boolean; enableA2UI: boolean }>,
+  patch: Partial<{
+    includeCompactionSummary: boolean;
+    enableA2UI: boolean;
+    enableOutboundAttachments: boolean;
+    enableInboundRead: boolean;
+  }>,
 ): AapFlags {
   const base = readAapFlags(current);
   return {
@@ -118,14 +132,22 @@ export function mergeAapFlags(
         ? Boolean(patch.includeCompactionSummary)
         : base.includeCompactionSummary,
     enableA2UI: patch.enableA2UI !== undefined ? Boolean(patch.enableA2UI) : base.enableA2UI,
+    enableOutboundAttachments:
+      patch.enableOutboundAttachments !== undefined
+        ? Boolean(patch.enableOutboundAttachments)
+        : base.enableOutboundAttachments,
+    enableInboundRead:
+      patch.enableInboundRead !== undefined ? Boolean(patch.enableInboundRead) : base.enableInboundRead,
   };
 }
 
-/** Emit aap object with both flags (never omit one key when emitting aap). */
+/** Emit aap object. Core flags always present; inbound/outbound only when true so existing v2 JSON stays stable. */
 export function aapFlagBag(flags: AapFlags): NonNullable<SessionContextPolicy["aap"]> {
   return {
     includeCompactionSummary: flags.includeCompactionSummary,
     enableA2UI: flags.enableA2UI,
+    ...(flags.enableOutboundAttachments ? { enableOutboundAttachments: true } : {}),
+    ...(flags.enableInboundRead ? { enableInboundRead: true } : {}),
   };
 }
 

@@ -15,7 +15,7 @@ This is a direction register, not a delivery-date commitment or support policy. 
 
 ## Underway or gated
 
-- AAP file upload and file-backed multimodal input: routes and storage pipeline exist, but files are disabled by default and multimodal requires a second gate.
+- AAP file upload and file-backed input: routes and storage pipeline exist, but files are disabled by default. Image assembly still needs `runtimeMultimodal`; document listing does not. Optional PDF on-demand read (`runtimeInboundRead`) is a further gate.
 - LLM context compaction: an independent rollout gate exists and is disabled by default; rollout/operational evidence remains necessary before broad enablement.
 - Console coverage of advanced Workflow node types: backend support exists for some nodes that are not fully exposed by the editor.
 

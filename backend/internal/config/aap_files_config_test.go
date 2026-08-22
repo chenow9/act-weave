@@ -9,6 +9,7 @@ func TestAgentAccessFilesConfig(t *testing.T) {
 	t.Run("DefaultDisabled", func(t *testing.T) {
 		var files AgentAccessFilesConfig
 		if files.Enabled || files.RuntimeMultimodal || files.RuntimeOutboundAttachments ||
+			files.RuntimeInboundRead ||
 			files.AllowsWorkspace("a0000000-0000-4000-8000-000000000001") ||
 			files.AllowsClient("b0000000-0000-4000-8000-000000000001") {
 			t.Fatalf("zero files config must be closed: %+v", files)
@@ -59,6 +60,7 @@ func TestAgentAccessFilesConfig(t *testing.T) {
 			"ACTWEAVE_AAP_FILES_MAX_BYTES":                    "1048576",
 			"ACTWEAVE_AAP_FILES_RUNTIME_MULTIMODAL":           "true",
 			"ACTWEAVE_AAP_FILES_RUNTIME_OUTBOUND_ATTACHMENTS": "true",
+			"ACTWEAVE_AAP_FILES_RUNTIME_INBOUND_READ":         "true",
 		}
 		loaded, err := Load(path, lookup(values))
 		if err != nil {
@@ -68,7 +70,8 @@ func TestAgentAccessFilesConfig(t *testing.T) {
 		if !files.Enabled || files.AllowAllWorkspaces || files.AllowAllClients {
 			t.Fatalf("files env override failed: %+v", files)
 		}
-		if files.MaxBytes != 1048576 || !files.RuntimeMultimodal || !files.RuntimeOutboundAttachments {
+		if files.MaxBytes != 1048576 || !files.RuntimeMultimodal || !files.RuntimeOutboundAttachments ||
+			!files.RuntimeInboundRead {
 			t.Fatalf("files numeric/bool env failed: %+v", files)
 		}
 		if !files.AllowsWorkspace("a0000000-0000-4000-8000-0000000000a1") ||

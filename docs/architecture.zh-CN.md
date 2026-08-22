@@ -68,7 +68,7 @@ Agent Runtime 冻结/使用对应 Agent、模型和能力配置来执行；Workf
 
 ## 配置边界与限制
 
-- AAP 文件路由存在，但 `agentAccess.files.enabled` 默认关闭；即使打开，模型多模态组装还需 `runtimeMultimodal`。助手出站附件（`output_file`）另外需要 files 白名单、`runtimeOutboundAttachments`、Agent 策略 `enableOutboundAttachments`，以及支持工具的 `toolCalling`（`function_calling` / `native_client_search`）。见[文件运行手册](./runbooks/aap-file-upload.md)。
+- AAP 文件路由存在，但 `agentAccess.files.enabled` 默认关闭。**图片**组装还需 `runtimeMultimodal`。纯文档 `input_file`（PDF / Office / zip）不依赖该旗，组装成模型清单；可选 PDF 文本读取还需 `runtimeInboundRead` + Agent `enableInboundRead` + 支持工具的 `toolCalling`（`actweave.read_attachment`）。助手出站附件（`output_file`）另外需要 files 白名单、`runtimeOutboundAttachments`、Agent 策略 `enableOutboundAttachments`，以及同样的 toolCalling 约束。见[文件运行手册](./runbooks/aap-file-upload.md)。
 - LLM 上下文压缩存在独立开关，默认关闭。见[上下文压缩运行手册](./runbooks/agent-context-llm-compaction.md)。
 - 工具披露：`client_bounded` 仍是原生生产的唯一模式；`platform_bounded` 与 `carry_all` 是额外的 Agentic 模式，由 `runtime.toolDisclosure` 门控（省略该键保持关闭；仓库配置将其打开）。就绪检查接受 v1 或 v2 三档能力。
 - Compose 是本地全栈启动方式，不构成高可用、备份、TLS、边缘代理或生产运维方案。见[部署](./deployment.zh-CN.md)。

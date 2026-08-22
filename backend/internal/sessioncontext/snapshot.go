@@ -78,6 +78,9 @@ type AAPSnapshot struct {
 	// EnableOutboundAttachments freezes output_file capability. omitempty so
 	// false is absent on existing A2UI/compaction v2 snapshots.
 	EnableOutboundAttachments bool `json:"enableOutboundAttachments,omitempty"`
+	// EnableInboundRead freezes actweave.read_attachment. omitempty so false
+	// is absent on existing A2UI/compaction/outbound v2 snapshots.
+	EnableInboundRead bool `json:"enableInboundRead,omitempty"`
 }
 
 // SnapshotSources records which policy layers contributed to the resolved snapshot.
@@ -219,6 +222,16 @@ func EnableOutboundAttachmentsFromSnapshot(raw json.RawMessage) bool {
 	return doc.AAP.EnableOutboundAttachments
 }
 
+// EnableInboundReadFromSnapshot returns frozen inbound-read capability
+// (false if absent/legacy/v1/err).
+func EnableInboundReadFromSnapshot(raw json.RawMessage) bool {
+	doc, err := ParseResolvedSnapshot(raw)
+	if err != nil || doc.AAP == nil {
+		return false
+	}
+	return doc.AAP.EnableInboundRead
+}
+
 func isRecognizedLegacyPlaceholder(top map[string]json.RawMessage) bool {
 	// Historical test fixtures used memory/maxTurns without schemaVersion.
 	if len(top) == 0 {
@@ -352,18 +365,20 @@ func Resolve(input ResolveInput) (ResolvedSnapshot, json.RawMessage, error) {
 	include := false
 	enableA2UI := false
 	enableOutbound := false
+	enableInbound := false
 	if agentDoc != nil {
 		include = agentDoc.IncludeCompactionSummary()
 		enableA2UI = agentDoc.EnableA2UI()
 		enableOutbound = agentDoc.EnableOutboundAttachments()
+		enableInbound = agentDoc.EnableInboundRead()
 	}
 
-	// Emit v2 when compaction is on or when A2UI / outbound attachments need an aap freeze.
+	// Emit v2 when compaction is on or when A2UI / outbound / inbound-read need an aap freeze.
 	// ParseResolvedSnapshot still requires a full compaction block on every v2 snapshot.
 	schema := SnapshotSchemaV1
 	var compaction *CompactionSnapshot
 	var aap *AAPSnapshot
-	if input.CompactionGateEnabled || enableA2UI || enableOutbound {
+	if input.CompactionGateEnabled || enableA2UI || enableOutbound || enableInbound {
 		schema = SnapshotSchemaV2
 		// Platform defaults for summary knobs; agent summary tightens when present.
 		// Gate-off + enableA2UI uses the same construction (platform defaults when no summary).
@@ -403,6 +418,9 @@ func Resolve(input ResolveInput) (ResolvedSnapshot, json.RawMessage, error) {
 		}
 		if enableOutbound {
 			aap.EnableOutboundAttachments = true
+		}
+		if enableInbound {
+			aap.EnableInboundRead = true
 		}
 	}
 

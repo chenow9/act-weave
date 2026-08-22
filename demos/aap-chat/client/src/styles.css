@@ -951,6 +951,21 @@ textarea {
   overflow: auto;
 }
 
+.tool-fold {
+  padding: 0 12px 8px;
+}
+
+.tool-fold summary {
+  cursor: pointer;
+  color: #64748b;
+  font-size: 12px;
+  padding: 8px 0;
+}
+
+.tool-fold pre {
+  padding: 0 0 8px;
+}
+
 .tool-card.is-failed header {
   color: #b91c1c;
   background: #fef2f2;

@@ -147,7 +147,7 @@ docker compose up --build
 | 分类 | 现状 |
 | --- | --- |
 | 已实现 | Workspace/RBAC、Provider/Connection、OpenAPI 导入、Tool 治理、Agent、Workflow、Console 试跑、AAP、SSE、TypeScript SDK、审计、A2A 委派/网关路径，以及打 `v*` tag 发布镜像到 ACR。 |
-| 受开关限制 | AAP 文件上传默认关闭；端到端多模态输入还需单独开启 `runtimeMultimodal`。LLM 上下文压缩默认关闭。 |
+| 受开关限制 | AAP 文件上传默认关闭。图片 `input_file` 还需 `runtimeMultimodal`；纯文档不需要。可选 PDF 按需读取（`runtimeInboundRead`）与出站附件默认关闭。LLM 上下文压缩默认关闭。 |
 | 当前限制 | 控制台以桌面布局为主；部分高级 Workflow 节点后端支持但编辑器未完全暴露；发布影响分析不会自动列出所有 Agent/Workflow 引用。 |
 | 成熟度 | 未找到版本 tag、公开发布说明或生产 SLO/SLA。是否适合某个生产环境须由部署方基于威胁建模、容量、备份、监控和集成测试决定。 |
 

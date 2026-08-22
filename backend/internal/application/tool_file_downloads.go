@@ -101,6 +101,9 @@ func newPlatformToolFileAccess(
 				Status: file.Status, DeclaredMedia: file.DeclaredMediaType,
 				SizeBytes: file.SizeBytes,
 			}
+			if file.Filename != nil {
+				meta.Filename = strings.TrimSpace(*file.Filename)
+			}
 			if file.StoredObjectID != nil {
 				meta.StoredObjectID = strings.TrimSpace(*file.StoredObjectID)
 			}

@@ -24,6 +24,35 @@ func NormalizeMediaType(value string) (string, error) {
 	return parsed, nil
 }
 
+// IsVisionMediaType reports whether media is an inbound image type assembled as image_url.
+func IsVisionMediaType(mediaType string) bool {
+	normalized, err := NormalizeMediaType(mediaType)
+	if err != nil {
+		return false
+	}
+	if normalized == "image/jpg" {
+		normalized = MediaTypeJPEG
+	}
+	switch normalized {
+	case MediaTypePNG, MediaTypeJPEG, MediaTypeWEBP, MediaTypeGIF:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsInboundDocumentMediaType reports allowlisted non-image inbound types (listing, not vision).
+func IsInboundDocumentMediaType(mediaType string) bool {
+	normalized, err := NormalizeMediaType(mediaType)
+	if err != nil {
+		return false
+	}
+	if IsVisionMediaType(normalized) {
+		return false
+	}
+	return AllowedMediaType(normalized)
+}
+
 // AllowedMediaType reports whether mediaType is in the v1 inbound allowlist.
 func AllowedMediaType(mediaType string) bool {
 	normalized, err := NormalizeMediaType(mediaType)

@@ -4,6 +4,10 @@ This project has no Git tag or published release history in the current checkout
 
 ## Unreleased
 
+### AAP files
+
+- Document-only inbound `input_file` (PDF / Office / zip) no longer requires `runtimeMultimodal` and no longer fails the Run with `MODEL_CONTENT_UNSUPPORTED`. Images still need that flag. Optional on-demand PDF text is the default-off platform tool `actweave.read_attachment` (`runtimeInboundRead` + `enableInboundRead`). Durable parts stay `input_file` + `fileId`.
+
 ### Documentation
 
 - Documented the ACR Personal Edition registry, GitHub Actions image-publish workflow, and pull commands.

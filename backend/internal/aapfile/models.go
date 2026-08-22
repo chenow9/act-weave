@@ -47,6 +47,19 @@ const (
 // PublishAttachmentToolName is the v1 text-only platform publish tool.
 const PublishAttachmentToolName = "actweave.publish_attachment"
 
+// ReadAttachmentToolName is the v1 inbound PDF read tool.
+const ReadAttachmentToolName = "actweave.read_attachment"
+
+// MaxReadTextBytes is the UTF-8 cap on read_attachment result text (KD-IR-10).
+const MaxReadTextBytes = MaxPublishTextBytes
+
+// PDF read tool page limits (KD-IR-10).
+const (
+	PDFDefaultEndPage  = 10
+	PDFMaxPagesPerCall = 20
+	PDFExtractTimeout  = 15 * time.Second
+)
+
 // PublishAttachmentMediaTypes is the v1 tool mediaType enum (text only).
 var PublishAttachmentMediaTypes = []string{
 	"text/plain", "text/csv", "text/markdown", "application/json",

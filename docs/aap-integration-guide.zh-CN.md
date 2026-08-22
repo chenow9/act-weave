@@ -25,7 +25,8 @@
 5. 对 **Interaction** 做 approve / decline / cancel  
 6. （可选，**默认关闭**）上传 **File**、等待 ready，并在 Run 输入中以 `input_file` 部分引用  
 7. （可选，**默认关闭**）当 Agent 开启 `enableA2UI` 时，在助手消息上接收附加的 **A2UI** 声明式界面（MVP 仅展示、无动作回传）  
-8. （可选，**默认关闭**）当 files HTTP 门（含 workspace/client 白名单）、`runtimeOutboundAttachments` 与 Agent `enableOutboundAttachments` 均打开，且冻结的 `toolCalling` 支持工具时，在助手消息上接收 **出站附件**（`output_file`）。v1 发布通道为纯文本工具 `actweave.publish_attachment`；**没有**公开 ingest HTTP
+8. （可选，**默认关闭**）当 files HTTP 门（含 workspace/client 白名单）、`runtimeOutboundAttachments` 与 Agent `enableOutboundAttachments` 均打开，且冻结的 `toolCalling` 支持工具时，在助手消息上接收 **出站附件**（`output_file`）。v1 发布通道为纯文本工具 `actweave.publish_attachment`；**没有**公开 ingest HTTP  
+9. （可选，**默认关闭**）当 files HTTP 门、`runtimeInboundRead` 与 Agent `enableInboundRead` 均打开，且冻结的 `toolCalling` 支持工具时，Agent 可用平台工具 `actweave.read_attachment` **按需读取入站 PDF 文本**。用户消息契约不变（仍是 `input_file` + `fileId`；见 [§9.4](#94-入站按需读取可选附加)）
 
 AAP **不是** ActWeave 管理控制台 API（`/api/v1`）。控制台用户 Session JWT 在 AAP 路由上会被 **拒绝**。Console 聊天可以把会话消息上引用的文件经 session+message 代理渲染出来（见 [§9.3](#93-出站附件可选附加)）；那**不是**文件管理 UI，也**不是** AAP 路由。
 
@@ -66,6 +67,7 @@ Client Secret / 私钥只应保存在**你方**密钥管理系统中。密钥不
 | **File** | 可选对象，含生命周期状态。入站上传：`pending_upload` → … → `ready`，以 `input_file` 引用。Agent 生成的出站文件以 READY 写入，`purpose=AGENT_OUTPUT`，以 `output_file` 引用。GET 状态为事实源（v1 无 File SSE） |
 | **A2UI** | 助手消息上可选的声明式 UI（`type: "a2ui"` content part）。Agent 级 `enableA2UI`，默认关闭。文本始终一等 |
 | **出站附件** | 助手消息上可选的 `output_file` content part（仅稳定 `fileId` + 展示元数据，永不含 URL）。默认关闭；三道门 + `toolCalling` — 见 [§9.3](#93-出站附件可选附加) |
+| **入站按需读取** | 可选平台工具 `actweave.read_attachment`，模型需要时按 `fileId` 抽取 PDF 文本。默认关闭。用户持久化 part 仍是 `input_file` — 见 [§9.4](#94-入站按需读取可选附加) |
 | **Protocol Event** | Run 流上的持久事实（`sequence` 为游标） |
 | **Interaction** | Run 因确认而等待 |
 | **External Subject** | 通过 Token Exchange 绑定的终端用户身份（可选） |
@@ -251,7 +253,7 @@ Content-Type: application/json
 }
 ```
 
-默认部署接受 **text** 消息内容。当 AAP files 已启用且文件为 `ready` 时，还可附加 `{ "type": "input_file", "fileId": "<uuid>" }` 部分（见本页「9.1 文件（可选）」）。`createRun` **拒绝** `output_file`（`UNSUPPORTED_CONTENT_TYPE`）；助手 `output_file` 仅在出站附件开启时出现在 `item.completed` 上（见 [§9.3](#93-出站附件可选附加)）。未知内容类型 → `UNSUPPORTED_CONTENT_TYPE`。多模态模型装配额外依赖 **`RuntimeMultimodal`**（运营开关；默认关闭）。
+默认部署接受 **text** 消息内容。当 AAP files 已启用且文件为 `ready` 时，还可附加 `{ "type": "input_file", "fileId": "<uuid>" }` 部分（见本页「9.1 文件（可选）」）。`createRun` **拒绝** `output_file`（`UNSUPPORTED_CONTENT_TYPE`）；助手 `output_file` 仅在出站附件开启时出现在 `item.completed` 上（见 [§9.3](#93-出站附件可选附加)）。未知内容类型 → `UNSUPPORTED_CONTENT_TYPE`。**图片** `input_file` 组装需要 **`RuntimeMultimodal`**（运营开关；默认关闭）。纯文档 `input_file`（PDF / Office / zip）不需要；可选的 PDF 按需抽文本走 `actweave.read_attachment`（[§9.4](#94-入站按需读取可选附加)）。
 
 ### 步骤 4 — 跟随 Run 事件（SSE）
 
@@ -355,7 +357,7 @@ Base：`/api/agent-access/v1`
 
 ### 9.1 文件（可选）
 
-功能开关：`agentAccess.files.enabled` 默认 **false**。关闭时文件路由以不可见隐蔽（**404**）。端到端多模态模型输入还要求 **`RuntimeMultimodal=true`**；files 已开但 runtime multimodal 关闭时，带 `input_file` 的 `createRun` 以 **422 `FILE_RUNTIME_UNAVAILABLE`** 失败关闭（不创建 Run）。
+功能开关：`agentAccess.files.enabled` 默认 **false**。关闭时文件路由以不可见隐蔽（**404**）。**图片** `input_file` 还要求 **`RuntimeMultimodal=true`**：仅图片或图+文档的 `createRun` 在该旗关闭时以 **422 `FILE_RUNTIME_UNAVAILABLE`** 失败关闭（不创建 Run）。**纯文档** `input_file`（PDF / Word / Excel / zip）**不**要求 `RuntimeMultimodal`；模型在组装期看到清单（文件名 / mediaType / 大小 / `fileId`），不是文件字节，持久化信封仍只有 `input_file` + `fileId`。可选 PDF 文本抽取见 [§9.4](#94-入站按需读取可选附加)。
 
 助手出站附件是**另一道**运行时旗（`runtimeOutboundAttachments`）加上 Agent 策略 — 见 [§9.3](#93-出站附件可选附加)。GET File 响应里这些行的 `purpose` 可为 `AGENT_OUTPUT`；`createFile` **不接受**该 purpose。
 
@@ -815,6 +817,23 @@ GET /api/v1/workspaces/{wid}/sessions/{sid}/messages/{mid}/files/{fileId}/conten
 - 图像 / PDF 生成不是 v1 工具 enum（ingest API 可接受它们，留给未来同进程调用方）
 - A2A inbound complete 不挂出站附件
 
+### 9.4 入站按需读取（可选附加）
+
+入站用户文件仍是 **`type: "input_file"` + 稳定 `fileId`**。**没有**新的 content part，**不**升协议版本。运行时可能在**模型** prompt 组装期追加一小段 `<actweave_attachments>` 清单；该清单**不**写入用户消息，**不**出现在客户端气泡里。
+
+开启后，Agent 可调用平台工具 **`actweave.read_attachment`**（`fileId`，可选 PDF `pages`）抽取 **PDF 文本**（默认 1–10 页，每 call 最多 20 页，UTF-8 `text` ≤ 256 KiB）。Office / zip 会出现在清单上；读取返回 `FILE_MEDIA_TYPE_DENIED`（不解压）。可读 id 仅为本 Conversation 用户消息上的 `input_file`（跨轮；不含 `AGENT_OUTPUT`）。工具结果 JSON 无 URL / `downloadUrl` / 原始文件 base64；`text` 出现在 AAP `tool_call` 完成事件上。`toolCalling: none` **不注入**工具；Run 仍成功，只有清单。
+
+#### 开启（三道门 + toolCalling）
+
+| 层 | 字段 | 默认 |
+| --- | --- | --- |
+| Files HTTP 门 | `agentAccess.files.enabled` **且** workspace/client 白名单 | **关** |
+| 运行时 | `agentAccess.files.runtimeInboundRead`（env `ACTWEAVE_AAP_FILES_RUNTIME_INBOUND_READ`） | **`false`** |
+| Agent 策略 | `context_policy.aap.enableInboundRead`（policy v2；省略 / null → false；快照键在为 true 前 omitempty） | **`false`** |
+| 冻结 `toolCalling` | `function_calling` 或 `native_client_search` | `none` **不注入** |
+
+回滚：**先关 `runtimeInboundRead`**，再停止新写 `enableInboundRead: true`。已经写出 `"enableInboundRead":true` 的 Run **不要**回滚快照解析器。白名单文档「清单代替 fail-closed」在工具关闭后仍然有效（PDF/Office/zip 不再因 `MODEL_CONTENT_UNSUPPORTED` 打挂 Run）。
+
 ---
 
 ## 10. SSE 事件流
@@ -945,11 +964,11 @@ data: {"specVersion":"1.0","type":"stream.error","error":{"code":"TOKEN_EXPIRED"
 | `FILE_MEDIA_TYPE_MISMATCH` | 422 | 否 | 字节与声明 mediaType 不符 |
 | `FILE_INTEGRITY_MISMATCH` | 422 | 否 | sha256 不匹配 |
 | `FILE_PROCESSING_FAILED` | 422 | 否 | 勿引用失败文件 |
-| `FILE_RUNTIME_UNAVAILABLE` | 422 | 否 | `input_file` 需要 `RuntimeMultimodal`；不创建 Run |
+| `FILE_RUNTIME_UNAVAILABLE` | 422 | 否 | 图片或图+文档的 `input_file` 需要 `RuntimeMultimodal`；不创建 Run。纯文档不需要。 |
 | `FILE_PROCESSOR_CALLBACK_LATE` | 409 | 否 | Job 已 TIMED_OUT；不改状态 |
 | `FILE_PENDING_LIMIT` | 429 | 是 | 退避；并发 PENDING_UPLOAD 上限 |
 | `FILE_OUTBOUND_TURN_LIMIT` | 工具结果 | 否 | 本轮出站文件超过 8 个 |
-| `MODEL_CONTENT_UNSUPPORTED` | run failed | 否 | 模型供应商不支持该媒体 |
+| `MODEL_CONTENT_UNSUPPORTED` | run failed | 否 | 模型供应商无法消费该媒体（未知类型，或图片组装失败）。白名单文档改为清单，不再因此失败。 |
 
 OAuth Token 端点错误遵循 RFC 6749 的 `error` / `error_description`，不得回显密钥。
 

@@ -17,8 +17,9 @@ Config path: `agentAccess.files` in `backend/config.yaml`.
 | `maxPendingPerWorkspace` | `20` | Concurrent `PENDING_UPLOAD` cap |
 | `maxReadyBytesPerWorkspace` | `5 GiB` | Soft READY total-bytes quota |
 | `publicUploadBaseUrl` | empty | Public base used for presign rewrite / docs when MinIO is not client-reachable |
-| `runtimeMultimodal` | `false` | Orthogonal: gates model assembly of `input_file`; createRun fails closed with `FILE_RUNTIME_UNAVAILABLE` when false |
+| `runtimeMultimodal` | `false` | Orthogonal: gates **image** assembly of `input_file`. Image-only or mixed image+document createRun fails closed with `FILE_RUNTIME_UNAVAILABLE` when false. Document-only createRun does not require this flag. |
 | `runtimeOutboundAttachments` | `false` | Orthogonal: gates `IngestGenerated` and `actweave.publish_attachment` injection. Env `ACTWEAVE_AAP_FILES_RUNTIME_OUTBOUND_ATTACHMENTS` |
+| `runtimeInboundRead` | `false` | Orthogonal: gates `actweave.read_attachment` injection. Env `ACTWEAVE_AAP_FILES_RUNTIME_INBOUND_READ` |
 | `virusScan.enabled` / `required` | `false` | Optional **inbound** pipeline stage. Outbound ingest does **not** run a virus scanner |
 
 Env overrides (see `config.AgentAccessFilesConfig`): prefer `ACTWEAVE_AAP_FILES_ENABLED` and related `ACTWEAVE_AAP_FILES_*` when present. Changes require process restart.
@@ -27,8 +28,9 @@ Env overrides (see `config.AgentAccessFilesConfig`): prefer `ACTWEAVE_AAP_FILES_
 
 1. Global AAP `agentAccess.feature.enabled` — whole Agent Access surface.
 2. `files.enabled` + workspace/client allowlist — File routes, inbound upload, and outbound ingest.
-3. `runtimeMultimodal` — createRun with `input_file` and model multimodal assembly.
+3. `runtimeMultimodal` — image `input_file` createRun + vision assembly. Document-only runs assemble a listing without this flag.
 4. `runtimeOutboundAttachments` + Agent policy `enableOutboundAttachments` + frozen `toolCalling ∈ {function_calling, native_client_search}` — assistant `output_file`. `toolCalling: none` does **not** inject the tool (Run still succeeds as text).
+5. `runtimeInboundRead` + Agent policy `enableInboundRead` + frozen `toolCalling ∈ {function_calling, native_client_search}` — `actweave.read_attachment` (PDF text). `toolCalling: none` does **not** inject; listing still appears.
 
 ## Outbound attachments (gray)
 
@@ -54,7 +56,7 @@ Integrator contract: [AAP integration guide §9.3](../aap-integration-guide.md#9
 4. **Do not** run `000023_aap_file_outbound` down while `AGENT_OUTPUT` rows exist (the CHECK rollback raises). Do **not** delete `aap_files` / permanent objects as the primary rollback.
 5. Set `agentAccess.files.enabled: false` **last** (or clear the files allowlist). Either conceal action 404s File create/complete/download, including historical outbound files. Non-file AAP routes stay up.
 6. Pipeline / staging GC / retention purge workers idle when there is no work; leave them running.
-7. Optional: keep `runtimeMultimodal: false` so any residual `input_file` createRun fails closed.
+7. Optional: keep `runtimeMultimodal: false` so image / mixed `input_file` createRun still fails closed. Document-only createRun no longer requires that flag. Turn `runtimeInboundRead` off to stop `actweave.read_attachment` injection.
 
 ## MinIO reachability
 
@@ -160,7 +162,7 @@ Keep **`agentAccess.files.enabled` default `false`** until staging GC health, Mi
 1. Postgres + MinIO up; migrations applied through `000006_aap_files` (outbound also needs `000023_aap_file_outbound`).
 2. `agentAccess.files.enabled: false` in default `config.yaml` (confirm before gray).
 3. Staging GC worker starts with the API process; metrics gauges refresh each pass.
-4. Optional local enable: allowlist a single workspace + client; leave `runtimeMultimodal` and `runtimeOutboundAttachments` false until those ICs are green.
+4. Optional local enable: allowlist a single workspace + client; leave `runtimeMultimodal`, `runtimeOutboundAttachments`, and `runtimeInboundRead` false until those ICs are green.
 5. Exercise: create → PUT staging → complete → poll READY; force integrity fail → GC → no staging object.
 6. If an edge proxy fronts AAP: confirm ops proxy guidance above for content/download streams (operator config only).
 7. Outbound (after inbound gray): set `runtimeOutboundAttachments: true` for the same allowlist; Agent `enableOutboundAttachments`; model `toolCalling` must be `function_calling` or `native_client_search`. Accept Live Demos CSV cards and Console session+message proxy. Confirm `toolCalling: none` Agents still reply with text.
@@ -171,10 +173,12 @@ Keep **`agentAccess.files.enabled` default `false`** until staging GC health, Mi
 2. Confirm GC worker health + MinIO reachability table above.
 3. Internal allowlist workspace/client.
 4. Partner gray + `file:read` / `file:write` scopes.
-5. Enable `runtimeMultimodal` separately for model E2E.
+5. Enable `runtimeMultimodal` separately for image E2E.
 6. Enable `runtimeOutboundAttachments` separately for outbound E2E (policy + toolCalling). Do not roll back the snapshot parser after the first `"enableOutboundAttachments":true` snapshot.
-7. Rollback drill: `runtimeOutboundAttachments=false` first, then `files.enabled=false`. Do not down `000023` with `AGENT_OUTPUT` data.
+7. Enable `runtimeInboundRead` separately for PDF on-demand read (policy `enableInboundRead` + toolCalling). Do not roll back the snapshot parser after the first `"enableInboundRead":true` snapshot.
+8. Rollback drill: `runtimeInboundRead=false` and `runtimeOutboundAttachments=false` first, then `files.enabled=false`. Do not down `000023` with `AGENT_OUTPUT` data.
 
 ## Related
 
-- Integration guides: `docs/aap-integration-guide.md` / `.zh-CN.md` (outbound: §9.3)
+- Integration guides: `docs/aap-integration-guide.md` / `.zh-CN.md` (outbound: §9.3; inbound read: §9.4)
+- Design: `docs/design/aap-inbound-read-attachment.md`

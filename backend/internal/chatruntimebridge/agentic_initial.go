@@ -512,6 +512,8 @@ func (b *Bridge) planAgenticRun(
 	}
 
 	tools, catalogFlags := b.maybeInjectOutboundPublish(ctx, job, run, tools, frozenCaps, cfg)
+	tools, inboundFlags := b.maybeInjectInboundRead(ctx, job, run, tools, frozenCaps, cfg)
+	catalogFlags = mergeCatalogFlags(catalogFlags, inboundFlags)
 
 	catalog, err := buildFrozenToolCatalogStrict(ctx, tools, frozenCaps, catalogFlags)
 	if err != nil {
@@ -533,6 +535,9 @@ func (b *Bridge) planAgenticRun(
 	}
 	if shouldAppendOutboundPrompt(catalogFlags) {
 		instruction = aapfile.AppendOutboundPromptRules(instruction)
+	}
+	if shouldAppendInboundReadPrompt(catalogFlags) {
+		instruction = aapfile.AppendInboundReadPromptRules(instruction)
 	}
 
 	mode, calling, err := b.resolveFrozenDisclosure(job.WorkspaceID, cfg, catalog)

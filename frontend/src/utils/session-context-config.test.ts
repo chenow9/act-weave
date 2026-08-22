@@ -42,24 +42,31 @@ describe("aap flag bag helpers", () => {
     expect(readAapFlags(undefined)).toEqual({
       includeCompactionSummary: false,
       enableA2UI: false,
+      enableOutboundAttachments: false,
+      enableInboundRead: false,
     });
     expect(readAapFlags({})).toEqual({
       includeCompactionSummary: false,
       enableA2UI: false,
+      enableOutboundAttachments: false,
+      enableInboundRead: false,
     });
-    expect(readAapFlags({ includeCompactionSummary: true })).toEqual({
+    expect(readAapFlags({ includeCompactionSummary: true })).toMatchObject({
       includeCompactionSummary: true,
       enableA2UI: false,
+      enableInboundRead: false,
     });
     expect(readAapFlags({ enableA2UI: true })).toEqual({
       includeCompactionSummary: false,
       enableA2UI: true,
+      enableOutboundAttachments: false,
+      enableInboundRead: false,
     });
   });
 
   it("mergeAapFlags does not clobber the sibling flag", () => {
     const withInclude = mergeAapFlags({ includeCompactionSummary: true, enableA2UI: false }, { enableA2UI: true });
-    expect(withInclude).toEqual({
+    expect(withInclude).toMatchObject({
       includeCompactionSummary: true,
       enableA2UI: true,
     });
@@ -68,7 +75,7 @@ describe("aap flag bag helpers", () => {
       { includeCompactionSummary: false, enableA2UI: true },
       { includeCompactionSummary: true },
     );
-    expect(withA2UI).toEqual({
+    expect(withA2UI).toMatchObject({
       includeCompactionSummary: true,
       enableA2UI: true,
     });
@@ -77,7 +84,7 @@ describe("aap flag bag helpers", () => {
       { includeCompactionSummary: true, enableA2UI: true },
       { includeCompactionSummary: false },
     );
-    expect(turnOffIncludeKeepsA2UI).toEqual({
+    expect(turnOffIncludeKeepsA2UI).toMatchObject({
       includeCompactionSummary: false,
       enableA2UI: true,
     });
@@ -86,10 +93,22 @@ describe("aap flag bag helpers", () => {
       { includeCompactionSummary: true, enableA2UI: true },
       { enableA2UI: false },
     );
-    expect(turnOffA2UIKeepsInclude).toEqual({
+    expect(turnOffA2UIKeepsInclude).toMatchObject({
       includeCompactionSummary: true,
       enableA2UI: false,
     });
+  });
+
+  it("preserves enableInboundRead across A2UI toggles", () => {
+    let aap = aapFlagBag({
+      includeCompactionSummary: false,
+      enableA2UI: false,
+      enableInboundRead: true,
+    });
+    expect(aap.enableInboundRead).toBe(true);
+    aap = aapFlagBag(mergeAapFlags(aap, { enableA2UI: true }));
+    expect(aap.enableInboundRead).toBe(true);
+    expect(aap.enableA2UI).toBe(true);
   });
 
   it("anyAapFlagTrue / needsSessionContextV2 never allow v1+aap", () => {

@@ -29,6 +29,7 @@ Product overview and local run: root [`README.md`](../README.md) / [`README.zh-C
 6. (Optional, **off by default**) Upload **Files**, wait until ready, and reference them from Run input as `input_file` parts
 7. (Optional, **off by default**) Receive additive **A2UI** surfaces on assistant messages when the Agent has `enableA2UI` (display-only in MVP)
 8. (Optional, **off by default**) Receive assistant **outbound attachments** (`output_file`) when the files HTTP gate (including workspace/client allowlist), `runtimeOutboundAttachments`, and Agent `enableOutboundAttachments` are on, and the frozen `toolCalling` supports tools. v1 publish is text-only (`actweave.publish_attachment`); there is no public ingest HTTP
+9. (Optional, **off by default**) Let the Agent **read inbound PDFs on demand** via platform tool `actweave.read_attachment` when the files HTTP gate, `runtimeInboundRead`, and Agent `enableInboundRead` are on, and the frozen `toolCalling` supports tools. The AAP message contract is unchanged (`input_file` + `fileId` only; see [§9.4](#94-inbound-read-optional-additive))
 
 AAP is **not** the ActWeave management console API (`/api/v1`). Console user session JWTs are **rejected** on AAP routes. Console chat can render files referenced on a session message through a session+message proxy (see [§9.3](#93-outbound-attachments-optional-additive)); that is **not** a file-management UI and **not** an AAP route.
 
@@ -71,6 +72,7 @@ Store the Client Secret / private key in **your** secret manager. Secrets never 
 | **File** | Optional blob with lifecycle status. Inbound upload: `pending_upload` → … → `ready`, referenced as `input_file`. Agent-generated outbound files are written READY with `purpose=AGENT_OUTPUT` and referenced as `output_file`. GET status is the source of truth (no File SSE in v1) |
 | **A2UI** | Optional declarative UI surface on assistant messages (`type: "a2ui"` content part). Agent-level `enableA2UI`; default off. Text remains first-class |
 | **Outbound attachment** | Optional assistant `output_file` content part (stable `fileId` + display metadata, never a URL). Default off; three gates + `toolCalling` — see [§9.3](#93-outbound-attachments-optional-additive) |
+| **Inbound read** | Optional platform tool `actweave.read_attachment` so the model can pull PDF text by `fileId` when needed. Default off. Durable user parts stay `input_file` — see [§9.4](#94-inbound-read-optional-additive) |
 | **Protocol Event** | Durable fact on the Run stream (`sequence` is the cursor) |
 | **Interaction** | Run paused for approve / decline / cancel |
 | **External Subject** | End-user identity from your IdP via Token Exchange (optional) |
@@ -256,7 +258,7 @@ Content-Type: application/json
 }
 ```
 
-Default deployments accept **text** message content. When AAP files is enabled and the file is `ready`, you may also attach `{ "type": "input_file", "fileId": "<uuid>" }` parts (see [§9.1](#91-files-optional)). `createRun` **rejects** `output_file` (`UNSUPPORTED_CONTENT_TYPE`); assistant `output_file` parts arrive on `item.completed` only when outbound attachments are enabled (see [§9.3](#93-outbound-attachments-optional-additive)). Unknown content types → `UNSUPPORTED_CONTENT_TYPE`. Multimodal model assembly additionally requires **`RuntimeMultimodal`** (operator flag; default off).
+Default deployments accept **text** message content. When AAP files is enabled and the file is `ready`, you may also attach `{ "type": "input_file", "fileId": "<uuid>" }` parts (see [§9.1](#91-files-optional)). `createRun` **rejects** `output_file` (`UNSUPPORTED_CONTENT_TYPE`); assistant `output_file` parts arrive on `item.completed` only when outbound attachments are enabled (see [§9.3](#93-outbound-attachments-optional-additive)). Unknown content types → `UNSUPPORTED_CONTENT_TYPE`. **Image** `input_file` assembly requires **`RuntimeMultimodal`** (operator flag; default off). Document-only `input_file` (PDF / Office / zip) does not; optional on-demand PDF text uses `actweave.read_attachment` ([§9.4](#94-inbound-read-optional-additive)).
 
 ### Step 4 — Follow Run events (SSE)
 
@@ -360,7 +362,7 @@ Authoritative request/response schemas: [`openapi/agent-access-v1.yaml`](./opena
 
 ### 9.1 Files (optional)
 
-Feature gate: `agentAccess.files.enabled` defaults to **false**. When disabled, file routes conceal as not visible (**404**). End-to-end multimodal model input additionally requires **`RuntimeMultimodal=true`**; with files enabled but runtime multimodal off, `createRun` with `input_file` fails closed with **422 `FILE_RUNTIME_UNAVAILABLE`** (no Run is created).
+Feature gate: `agentAccess.files.enabled` defaults to **false**. When disabled, file routes conceal as not visible (**404**). **Image** `input_file` additionally requires **`RuntimeMultimodal=true`**: image-only or mixed image+document `createRun` with that flag off fails closed with **422 `FILE_RUNTIME_UNAVAILABLE`** (no Run is created). **Document-only** `input_file` (PDF / Word / Excel / zip) does **not** require `RuntimeMultimodal`; the model sees an assembly-time listing (filename / mediaType / size / `fileId`), not file bytes, and the durable envelope is still `input_file` + `fileId` only. Optional PDF text extraction is [§9.4](#94-inbound-read-optional-additive).
 
 Assistant outbound attachments are a **separate** runtime flag (`runtimeOutboundAttachments`) plus Agent policy — see [§9.3](#93-outbound-attachments-optional-additive). GET File responses may show `purpose=AGENT_OUTPUT` for those rows; `createFile` does **not** accept that purpose.
 
@@ -827,6 +829,23 @@ Authorization: Console `ActionView` + the session belongs to the workspace + the
 - Image / PDF generation is not a v1 tool enum (ingest API may accept them for future same-process callers)
 - A2A inbound complete does not attach outbound files
 
+### 9.4 Inbound read (optional, additive)
+
+Inbound user files stay **`type: "input_file"` + stable `fileId`**. There is **no** new content part and **no** protocol version bump. The runtime may append a short `<actweave_attachments>` listing to the **model** prompt at assembly time; that listing is **not** stored on the user message and **not** shown in client bubbles.
+
+When enabled, the Agent may call the platform tool **`actweave.read_attachment`** (`fileId`, optional PDF `pages`) to extract **PDF text** (default pages 1–10, max 20 pages per call, UTF-8 `text` ≤ 256 KiB). Office and zip appear in the listing; reading them returns `FILE_MEDIA_TYPE_DENIED` (no unzip). Readable ids are this Conversation’s user `input_file` ids only (cross-turn; not `AGENT_OUTPUT`). Tool result JSON has no URL / `downloadUrl` / raw file base64; `text` is present on the AAP `tool_call` completed item. `toolCalling: none` does **not** inject the tool; the Run still succeeds with listing-only.
+
+#### Enable (three gates + toolCalling)
+
+| Layer | Field | Default |
+| --- | --- | --- |
+| Files HTTP gate | `agentAccess.files.enabled` **and** workspace/client allowlist | **off** |
+| Runtime | `agentAccess.files.runtimeInboundRead` (env `ACTWEAVE_AAP_FILES_RUNTIME_INBOUND_READ`) | **`false`** |
+| Agent policy | `context_policy.aap.enableInboundRead` (policy v2; omit / null → false; snapshot key omitempty until true) | **`false`** |
+| Frozen `toolCalling` | `function_calling` or `native_client_search` | `none` **does not inject** |
+
+Rollback: turn **`runtimeInboundRead` off first**, then stop new `enableInboundRead: true` policy. **Do not** roll back the snapshot parser after a Run has written `"enableInboundRead":true`. Listing-instead-of-fail-closed for allowlisted documents stays even when the tool is off (PDF/Office/zip no longer fail the Run with `MODEL_CONTENT_UNSUPPORTED`).
+
 ---
 
 ## 10. SSE event stream
@@ -957,11 +976,11 @@ When a Run needs confirmation:
 | `FILE_MEDIA_TYPE_MISMATCH` | 422 | no | Bytes do not match declared mediaType |
 | `FILE_INTEGRITY_MISMATCH` | 422 | no | sha256 mismatch |
 | `FILE_PROCESSING_FAILED` | 422 | no | Do not reference failed file |
-| `FILE_RUNTIME_UNAVAILABLE` | 422 | no | `input_file` requires `RuntimeMultimodal`; no Run created |
+| `FILE_RUNTIME_UNAVAILABLE` | 422 | no | Image or mixed image+document `input_file` requires `RuntimeMultimodal`; no Run created. Document-only does not. |
 | `FILE_PROCESSOR_CALLBACK_LATE` | 409 | no | Job already TIMED_OUT; leave state |
 | `FILE_PENDING_LIMIT` | 429 | yes | Back off; concurrent PENDING_UPLOAD cap |
 | `FILE_OUTBOUND_TURN_LIMIT` | tool result | no | More than 8 outbound files this turn |
-| `MODEL_CONTENT_UNSUPPORTED` | run failed | no | Provider cannot consume media |
+| `MODEL_CONTENT_UNSUPPORTED` | run failed | no | Provider cannot consume media (unknown type, or image assembly failed). Allowlisted documents list instead of failing. |
 
 OAuth Token Endpoint errors use RFC 6749-style `error` / `error_description` and **must not** echo secrets.
 

@@ -175,6 +175,8 @@ type AgentAccessFilesConfig struct {
 	RuntimeMultimodal bool `yaml:"runtimeMultimodal"`
 	// RuntimeOutboundAttachments gates IngestGenerated and output_file emission. Default off; orthogonal to files HTTP and RuntimeMultimodal.
 	RuntimeOutboundAttachments bool `yaml:"runtimeOutboundAttachments"`
+	// RuntimeInboundRead gates actweave.read_attachment injection. Default off; orthogonal to RuntimeMultimodal.
+	RuntimeInboundRead bool `yaml:"runtimeInboundRead"`
 }
 
 // AllowsWorkspace reports whether the workspace may use AAP File APIs when files are enabled.
@@ -585,6 +587,13 @@ func (config *Config) applyEnvironment(lookup LookupEnv) error {
 			return errors.New("ACTWEAVE_AAP_FILES_RUNTIME_OUTBOUND_ATTACHMENTS must be a boolean")
 		}
 		config.AgentAccess.Files.RuntimeOutboundAttachments = value
+	}
+	if raw, ok := lookup("ACTWEAVE_AAP_FILES_RUNTIME_INBOUND_READ"); ok {
+		value, err := strconv.ParseBool(strings.TrimSpace(raw))
+		if err != nil {
+			return errors.New("ACTWEAVE_AAP_FILES_RUNTIME_INBOUND_READ must be a boolean")
+		}
+		config.AgentAccess.Files.RuntimeInboundRead = value
 	}
 	if raw, ok := lookup("ACTWEAVE_AAP_FILES_PUBLIC_UPLOAD_BASE_URL"); ok {
 		config.AgentAccess.Files.PublicUploadBaseURL = strings.TrimSpace(raw)

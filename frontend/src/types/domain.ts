@@ -60,6 +60,8 @@ export interface SessionContextPolicy {
   aap?: {
     includeCompactionSummary?: boolean;
     enableA2UI?: boolean;
+    enableOutboundAttachments?: boolean;
+    enableInboundRead?: boolean;
   };
 }
 

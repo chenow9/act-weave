@@ -180,6 +180,12 @@ func TestResolveEnableA2UIGateOffEmitsV2WithPlatformDefaultCompaction(t *testing
 	if bytes.Contains(raw, []byte("enableOutboundAttachments")) {
 		t.Fatalf("A2UI-only Resolve must omit enableOutboundAttachments: %s", raw)
 	}
+	if bytes.Contains(raw, []byte("enableInboundRead")) {
+		t.Fatalf("A2UI-only Resolve must omit enableInboundRead: %s", raw)
+	}
+	if sessioncontext.EnableInboundReadFromSnapshot(raw) {
+		t.Fatal("A2UI-only snapshot helper must stay false for inbound read")
+	}
 	if sessioncontext.EnableOutboundAttachmentsFromSnapshot(raw) {
 		t.Fatal("A2UI-only snapshot helper must stay false")
 	}
@@ -576,6 +582,79 @@ func TestEnableOutboundAttachmentsSnapshotFrozenAgainstAgentChange(t *testing.T)
 	}
 	if !sessioncontext.EnableOutboundAttachmentsFromSnapshot(frozen) {
 		t.Fatal("in-flight run snapshot must not flip when agent policy changes")
+	}
+}
+
+func TestParseEnableInboundReadTrueFromSnapshot(t *testing.T) {
+	_, base, err := sessioncontext.Resolve(sessioncontext.ResolveInput{
+		ContextWindowTokens:        128000,
+		DefaultOutputReserveTokens: 4096,
+		OutputTokenLimitMode:       "max_tokens",
+		TokenizerProfile:           "o200k_base",
+		TokenizerVersion:           "2026-01",
+		CompactionGateEnabled:      true,
+		GateEnabled:                true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(base, []byte("enableInboundRead")) {
+		t.Fatalf("compaction-only Resolve must omit enableInboundRead: %s", base)
+	}
+	var top map[string]any
+	if err := json.Unmarshal(base, &top); err != nil {
+		t.Fatal(err)
+	}
+	aap, ok := top["aap"].(map[string]any)
+	if !ok {
+		t.Fatalf("aap missing: %s", base)
+	}
+	aap["enableInboundRead"] = true
+	raw, err := json.Marshal(top)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := sessioncontext.ParseResolvedSnapshot(raw)
+	if err != nil {
+		t.Fatalf("parse snapshot with enableInboundRead: %v", err)
+	}
+	if parsed.AAP == nil || !parsed.AAP.EnableInboundRead {
+		t.Fatalf("parsed aap: %+v", parsed.AAP)
+	}
+	if !sessioncontext.EnableInboundReadFromSnapshot(raw) {
+		t.Fatal("EnableInboundReadFromSnapshot expected true")
+	}
+}
+
+func TestResolveEnableInboundReadGateOffEmitsV2(t *testing.T) {
+	doc, raw, err := sessioncontext.Resolve(sessioncontext.ResolveInput{
+		AgentPolicy: json.RawMessage(`{
+			"schemaVersion":"session-context-policy.v2",
+			"mode":"token_window",
+			"aap":{"enableInboundRead":true}
+		}`),
+		ContextWindowTokens:        128000,
+		DefaultOutputReserveTokens: 4096,
+		OutputTokenLimitMode:       "max_tokens",
+		TokenizerProfile:           "o200k_base",
+		TokenizerVersion:           "2026-01",
+		GateEnabled:                true,
+		CompactionGateEnabled:      false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.SchemaVersion != sessioncontext.SnapshotSchemaV2 {
+		t.Fatalf("schema=%s want v2", doc.SchemaVersion)
+	}
+	if doc.AAP == nil || !doc.AAP.EnableInboundRead || doc.AAP.EnableA2UI || doc.AAP.EnableOutboundAttachments {
+		t.Fatalf("aap=%+v", doc.AAP)
+	}
+	if !bytes.Contains(raw, []byte(`"enableInboundRead":true`)) {
+		t.Fatalf("Resolve must emit enableInboundRead:true: %s", raw)
+	}
+	if !sessioncontext.EnableInboundReadFromSnapshot(raw) {
+		t.Fatal("EnableInboundReadFromSnapshot expected true")
 	}
 }
 

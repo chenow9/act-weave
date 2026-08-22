@@ -58,3 +58,17 @@ func (c *AAPCollector) ObserveOutboundSnapshotFail() {
 	}
 	c.labeled.add("aap_outbound_snapshot_fail_total", nil, 1)
 }
+
+// ObserveInboundRead increments aap_inbound_read_total{result}.
+// result ∈ {ok, denied, error, disabled, unsupported, no_text}.
+func (c *AAPCollector) ObserveInboundRead(result string) {
+	if c == nil {
+		return
+	}
+	switch result {
+	case "ok", "denied", "error", "disabled", "unsupported", "no_text":
+	default:
+		result = "error"
+	}
+	c.labeled.add("aap_inbound_read_total", map[string]string{"result": result}, 1)
+}

@@ -141,27 +141,187 @@ func TestAssembleUserMessage_ImageSuccessWithFakeSource(t *testing.T) {
 	}
 }
 
-func TestAssembleUserMessage_PDFReturnsModelContentUnsupported(t *testing.T) {
+func TestAssembleUserMessage_PDFYieldsListingWithoutBytes(t *testing.T) {
 	src := &fakeFileSource{
 		meta: chatruntime.MultimodalFileMeta{
 			ID: mmFileID, WorkspaceID: mmWorkspace, AgentID: mmAgent,
-			Status: "READY", StoredObjectID: mmObjectID,
+			Status: "READY", StoredObjectID: mmObjectID, Filename: "invoice.pdf",
 			DeclaredMediaType: "application/pdf", SizeBytes: 4,
 		},
 		body: []byte("%PDF"),
 	}
-	a := &chatruntime.MultimodalAssembler{RuntimeMultimodal: true, Files: src}
+	a := &chatruntime.MultimodalAssembler{RuntimeMultimodal: false, Files: src}
 	body := v1Content(
 		map[string]string{"type": "text", "text": "invoice"},
 		map[string]string{"type": "input_file", "fileId": mmFileID, "mediaType": "application/pdf"},
+	)
+	msg, err := a.AssembleUserMessage(context.Background(), mmWorkspace, mmAgent, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(msg.Content, "invoice.pdf") ||
+		!strings.Contains(msg.Content, mmFileID) ||
+		!strings.Contains(msg.Content, "application/pdf") ||
+		!strings.Contains(msg.Content, `sizeBytes="4"`) ||
+		!strings.Contains(msg.Content, "<"+chatruntime.AttachmentsMarker+">") {
+		t.Fatalf("listing missing fields: %q", msg.Content)
+	}
+	if strings.Contains(msg.Content, "%PDF") || strings.Contains(msg.Content, "downloadUrl") ||
+		strings.Contains(msg.Content, "https://") {
+		t.Fatalf("must not inline bytes or URLs: %q", msg.Content)
+	}
+	if len(msg.UserInputMultiContent) != 0 {
+		t.Fatalf("document-only should be text Content, got multi=%d", len(msg.UserInputMultiContent))
+	}
+}
+
+func TestAssembleUserMessage_OfficeAndZipYieldListing(t *testing.T) {
+	cases := []struct {
+		media string
+		name  string
+	}{
+		{"application/vnd.openxmlformats-officedocument.wordprocessingml.document", "brief.docx"},
+		{"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "sheet.xlsx"},
+		{"application/zip", "pack.zip"},
+	}
+	for _, tc := range cases {
+		src := &fakeFileSource{
+			meta: chatruntime.MultimodalFileMeta{
+				ID: mmFileID, WorkspaceID: mmWorkspace, AgentID: mmAgent,
+				Status: "READY", StoredObjectID: mmObjectID, Filename: tc.name,
+				DeclaredMediaType: tc.media, SizeBytes: 12,
+			},
+			body: []byte("PK"),
+		}
+		a := &chatruntime.MultimodalAssembler{RuntimeMultimodal: true, Files: src}
+		body := v1Content(
+			map[string]string{"type": "text", "text": "see file"},
+			map[string]string{"type": "input_file", "fileId": mmFileID, "mediaType": tc.media},
+		)
+		msg, err := a.AssembleUserMessage(context.Background(), mmWorkspace, mmAgent, body)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.media, err)
+		}
+		if !strings.Contains(msg.Content, tc.name) || !strings.Contains(msg.Content, tc.media) {
+			t.Fatalf("%s listing=%q", tc.media, msg.Content)
+		}
+	}
+}
+
+func TestAssembleUserMessage_UnknownMediaStillFailsClosed(t *testing.T) {
+	src := &fakeFileSource{
+		meta: chatruntime.MultimodalFileMeta{
+			ID: mmFileID, WorkspaceID: mmWorkspace, AgentID: mmAgent,
+			Status: "READY", StoredObjectID: mmObjectID,
+			DeclaredMediaType: "video/mp4", SizeBytes: 4,
+		},
+		body: []byte("ftyp"),
+	}
+	a := &chatruntime.MultimodalAssembler{RuntimeMultimodal: true, Files: src}
+	body := v1Content(
+		map[string]string{"type": "input_file", "fileId": mmFileID, "mediaType": "video/mp4"},
 	)
 	_, err := a.AssembleUserMessage(context.Background(), mmWorkspace, mmAgent, body)
 	if !errors.Is(err, chatruntime.ErrModelContentUnsupported) {
 		t.Fatalf("want MODEL_CONTENT_UNSUPPORTED, got %v", err)
 	}
-	if !strings.Contains(err.Error(), chatruntime.ErrCodeModelContentUnsupported) {
-		t.Fatalf("error should include stable code: %v", err)
+}
+
+func TestAssembleUserMessage_MixedImageAndPDF(t *testing.T) {
+	pdfID := "d41f1f2e-7b5a-7c3d-8e9f-1234567890f2"
+	src := &multiFakeFiles{files: map[string]fakeFileSource{
+		mmFileID: {
+			meta: chatruntime.MultimodalFileMeta{
+				ID: mmFileID, WorkspaceID: mmWorkspace, AgentID: mmAgent,
+				Status: "READY", StoredObjectID: mmObjectID,
+				DeclaredMediaType: "image/png", SizeBytes: int64(len(tinyPNG)),
+			},
+			body: tinyPNG,
+		},
+		pdfID: {
+			meta: chatruntime.MultimodalFileMeta{
+				ID: pdfID, WorkspaceID: mmWorkspace, AgentID: mmAgent,
+				Status: "READY", StoredObjectID: "d41f1f2e-7b5a-7c3d-8e9f-1234567890b2",
+				Filename: "contract.pdf", DeclaredMediaType: "application/pdf", SizeBytes: 8,
+			},
+			body: []byte("%PDF-1.1"),
+		},
+	}}
+	a := &chatruntime.MultimodalAssembler{RuntimeMultimodal: true, Files: src, MaxBytes: 1 << 20}
+	body := v1Content(
+		map[string]string{"type": "text", "text": "compare"},
+		map[string]string{"type": "input_file", "fileId": mmFileID, "mediaType": "image/png"},
+		map[string]string{"type": "input_file", "fileId": pdfID, "mediaType": "application/pdf"},
+	)
+	msg, err := a.AssembleUserMessage(context.Background(), mmWorkspace, mmAgent, body)
+	if err != nil {
+		t.Fatal(err)
 	}
+	if len(msg.UserInputMultiContent) != 2 {
+		t.Fatalf("parts=%d want text+image", len(msg.UserInputMultiContent))
+	}
+	text := msg.UserInputMultiContent[0]
+	if text.Type != schema.ChatMessagePartTypeText || !strings.Contains(text.Text, "contract.pdf") {
+		t.Fatalf("text part: %+v", text)
+	}
+	if msg.UserInputMultiContent[1].Type != schema.ChatMessagePartTypeImageURL {
+		t.Fatalf("want image, got %s", msg.UserInputMultiContent[1].Type)
+	}
+	raw, _ := json.Marshal(msg)
+	if strings.Contains(string(raw), "downloadUrl") || strings.Contains(string(raw), "%PDF") {
+		t.Fatalf("leaked url or pdf bytes: %s", raw)
+	}
+}
+
+func TestAssembleUserMessage_MixedRequiresMultimodal(t *testing.T) {
+	src := &fakeFileSource{
+		meta: chatruntime.MultimodalFileMeta{
+			ID: mmFileID, WorkspaceID: mmWorkspace, AgentID: mmAgent,
+			Status: "READY", StoredObjectID: mmObjectID,
+			DeclaredMediaType: "image/png", SizeBytes: int64(len(tinyPNG)),
+		},
+		body: tinyPNG,
+	}
+	a := &chatruntime.MultimodalAssembler{RuntimeMultimodal: false, Files: src}
+	body := v1Content(
+		map[string]string{"type": "input_file", "fileId": mmFileID, "mediaType": "image/png"},
+	)
+	_, err := a.AssembleUserMessage(context.Background(), mmWorkspace, mmAgent, body)
+	if !errors.Is(err, chatruntime.ErrModelContentUnsupported) {
+		t.Fatalf("image without runtime must fail: %v", err)
+	}
+}
+
+func TestTextForTokenEstimateIncludesDocumentListing(t *testing.T) {
+	body := v1Content(
+		map[string]string{"type": "text", "text": "summarize"},
+		map[string]string{"type": "input_file", "fileId": mmFileID, "mediaType": "application/pdf"},
+	)
+	got, ok := chatruntime.TextForTokenEstimate(body)
+	if !ok || !strings.Contains(got, "summarize") || !strings.Contains(got, mmFileID) {
+		t.Fatalf("estimate=%q ok=%v", got, ok)
+	}
+}
+
+type multiFakeFiles struct {
+	files map[string]fakeFileSource
+}
+
+func (m *multiFakeFiles) GetFile(ctx context.Context, workspaceID, fileID string) (chatruntime.MultimodalFileMeta, error) {
+	f, ok := m.files[fileID]
+	if !ok {
+		return chatruntime.MultimodalFileMeta{}, errors.New("not found")
+	}
+	return f.GetFile(ctx, workspaceID, fileID)
+}
+
+func (m *multiFakeFiles) OpenFileBytes(ctx context.Context, workspaceID, storedObjectID string) ([]byte, error) {
+	for _, f := range m.files {
+		if f.meta.StoredObjectID == storedObjectID {
+			return f.OpenFileBytes(ctx, workspaceID, storedObjectID)
+		}
+	}
+	return nil, errors.New("object not found")
 }
 
 func TestAssembleUserMessage_InputFileWithoutRuntimeFailsClosed(t *testing.T) {
@@ -212,6 +372,35 @@ func TestAssembleUserMessage_NeverDropsInputFileWhenOpenFails(t *testing.T) {
 	// Ensure we did not return a text-only message that dropped the file part.
 	if msg != nil && len(msg.UserInputMultiContent) == 1 {
 		t.Fatal("must not return partial assembly that drops input_file")
+	}
+}
+
+func TestAssembleUserAgenticMessage_PDFListing(t *testing.T) {
+	src := &fakeFileSource{
+		meta: chatruntime.MultimodalFileMeta{
+			ID: mmFileID, WorkspaceID: mmWorkspace, AgentID: mmAgent,
+			Status: "READY", StoredObjectID: mmObjectID, Filename: "invoice.pdf",
+			DeclaredMediaType: "application/pdf", SizeBytes: 4,
+		},
+		body: []byte("%PDF"),
+	}
+	a := &chatruntime.MultimodalAssembler{RuntimeMultimodal: false, Files: src}
+	body := v1Content(
+		map[string]string{"type": "text", "text": "invoice"},
+		map[string]string{"type": "input_file", "fileId": mmFileID, "mediaType": "application/pdf"},
+	)
+	msg, err := a.AssembleUserAgenticMessage(context.Background(), mmWorkspace, mmAgent, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := ""
+	for _, block := range msg.ContentBlocks {
+		if block.UserInputText != nil {
+			joined += block.UserInputText.Text
+		}
+	}
+	if !strings.Contains(joined, "invoice.pdf") || !strings.Contains(joined, mmFileID) {
+		t.Fatalf("agentic listing=%q", joined)
 	}
 }
 

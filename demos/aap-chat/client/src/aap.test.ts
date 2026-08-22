@@ -13,6 +13,7 @@ import {
   conversationStorageKey,
   extractInputFileParts,
   extractOutputFileParts,
+  foldDeveloperToolDetail,
   filePartAsOutputRef,
   httpStatusOf,
   placeholderAttachment,
@@ -82,6 +83,13 @@ describe("extractOutputFileParts", () => {
         { id: "u", type: "message", status: "completed", role: "user", content: [] },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe("foldDeveloperToolDetail", () => {
+  it("folds read_attachment and leaves publish open", () => {
+    expect(foldDeveloperToolDetail("actweave.read_attachment")).toBe(true);
+    expect(foldDeveloperToolDetail("actweave.publish_attachment")).toBe(false);
   });
 });
 

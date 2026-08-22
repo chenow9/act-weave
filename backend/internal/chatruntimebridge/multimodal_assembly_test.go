@@ -76,32 +76,37 @@ func TestAssembleUserSchemaMessage_ImageSuccess(t *testing.T) {
 	}
 }
 
-func TestAssembleUserSchemaMessage_UnsupportedFailsClosed(t *testing.T) {
+func TestAssembleUserSchemaMessage_PDFYieldsListing(t *testing.T) {
 	src := &bridgeFakeFiles{
 		meta: chatruntime.MultimodalFileMeta{
 			ID: mmTestFileID, WorkspaceID: mmTestWS, AgentID: mmTestAgent,
-			Status: "READY", StoredObjectID: mmTestObjID,
+			Status: "READY", StoredObjectID: mmTestObjID, Filename: "invoice.pdf",
 			DeclaredMediaType: "application/pdf", SizeBytes: 4,
 		},
 		body: []byte("%PDF"),
 	}
 	b := &Bridge{
 		multimodal: &chatruntime.MultimodalAssembler{
-			RuntimeMultimodal: true, Files: src,
+			RuntimeMultimodal: false, Files: src,
 		},
 	}
 	body, _ := json.Marshal(map[string]any{
 		"schemaVersion": chatruntime.MessageContentSchemaVersion,
 		"parts": []map[string]string{
+			{"type": "text", "text": "invoice"},
 			{"type": "input_file", "fileId": mmTestFileID, "mediaType": "application/pdf"},
 		},
 	})
-	_, err := b.assembleUserSchemaMessage(context.Background(), mmTestWS, mmTestAgent, string(body))
-	if !errors.Is(err, chatruntime.ErrModelContentUnsupported) {
-		t.Fatalf("want MODEL_CONTENT_UNSUPPORTED, got %v", err)
+	msg, err := b.assembleUserSchemaMessage(context.Background(), mmTestWS, mmTestAgent, string(body))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if executionErrorCode(err) != chatruntime.ErrCodeModelContentUnsupported {
-		t.Fatalf("error code=%s", executionErrorCode(err))
+	if !strings.Contains(msg.Content, "invoice.pdf") || !strings.Contains(msg.Content, mmTestFileID) {
+		t.Fatalf("listing=%q", msg.Content)
+	}
+	raw, _ := json.Marshal(msg)
+	if strings.Contains(string(raw), "downloadUrl") || strings.Contains(string(raw), "https://") {
+		t.Fatalf("must not embed download URLs: %s", raw)
 	}
 }
 

@@ -43,10 +43,10 @@ func TestAAPCreateRunInputFile(t *testing.T) {
 		}
 	})
 
-	t.Run("RuntimeMultimodal false returns 422 FILE_RUNTIME_UNAVAILABLE without create", func(t *testing.T) {
+	t.Run("document-only RuntimeMultimodal false is accepted", func(t *testing.T) {
 		gate := filesGateRuntimeOn()
 		gate.RuntimeMultimodal = false
-		router, application, _ := newCreateRunFileRouter(t, gate, &aapCreateRunFileLookup{
+		router, application, lookup := newCreateRunFileRouter(t, gate, &aapCreateRunFileLookup{
 			files: map[string]aapfile.File{
 				aapRunFileIDReady: readyCreateRunFile(aapRunFileIDReady),
 			},
@@ -58,6 +58,68 @@ func TestAAPCreateRunInputFile(t *testing.T) {
 				"content": []any{
 					map[string]any{"type": "text", "text": "summarize"},
 					map[string]any{"type": "input_file", "fileId": aapRunFileIDReady},
+				},
+			}},
+			"stream": false,
+		}, "subject-a", aapRunFileIDKey, "application/json", "")
+		if response.Code != http.StatusAccepted {
+			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+		}
+		if application.sideEffects != 1 {
+			t.Fatalf("run must be created: effects=%d", application.sideEffects)
+		}
+		if lookup.promoteCalls != 1 {
+			t.Fatalf("expected retention promote once, got %d", lookup.promoteCalls)
+		}
+	})
+
+	t.Run("image RuntimeMultimodal false returns 422 FILE_RUNTIME_UNAVAILABLE without create", func(t *testing.T) {
+		gate := filesGateRuntimeOn()
+		gate.RuntimeMultimodal = false
+		router, application, _ := newCreateRunFileRouter(t, gate, &aapCreateRunFileLookup{
+			files: map[string]aapfile.File{
+				aapRunFileIDReady: readyCreateRunImage(aapRunFileIDReady),
+			},
+		})
+		response := requestAAPRun(t, router, http.MethodPost, createRunFileBase(), map[string]any{
+			"conversationId": aapRunConversationID,
+			"input": []any{map[string]any{
+				"type": "message", "role": "user",
+				"content": []any{
+					map[string]any{"type": "text", "text": "what is this"},
+					map[string]any{"type": "input_file", "fileId": aapRunFileIDReady, "mediaType": "image/png"},
+				},
+			}},
+			"stream": false,
+		}, "subject-a", aapRunFileIDKey, "application/json", "")
+		if response.Code != http.StatusUnprocessableEntity ||
+			!strings.Contains(response.Body.String(), "FILE_RUNTIME_UNAVAILABLE") {
+			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+		}
+		if application.sideEffects != 0 {
+			t.Fatalf("run must not be created: effects=%d", application.sideEffects)
+		}
+	})
+
+	t.Run("mixed image+pdf RuntimeMultimodal false returns 422 without create", func(t *testing.T) {
+		gate := filesGateRuntimeOn()
+		gate.RuntimeMultimodal = false
+		pdfID := aapRunFileIDReady
+		imgID := aapRunFileIDProcessing
+		router, application, _ := newCreateRunFileRouter(t, gate, &aapCreateRunFileLookup{
+			files: map[string]aapfile.File{
+				pdfID: readyCreateRunFile(pdfID),
+				imgID: readyCreateRunImage(imgID),
+			},
+		})
+		response := requestAAPRun(t, router, http.MethodPost, createRunFileBase(), map[string]any{
+			"conversationId": aapRunConversationID,
+			"input": []any{map[string]any{
+				"type": "message", "role": "user",
+				"content": []any{
+					map[string]any{"type": "text", "text": "both"},
+					map[string]any{"type": "input_file", "fileId": pdfID},
+					map[string]any{"type": "input_file", "fileId": imgID, "mediaType": "image/png"},
 				},
 			}},
 			"stream": false,
@@ -334,6 +396,15 @@ func readyCreateRunFile(id string) aapfile.File {
 	return aapfile.File{
 		ID: id, WorkspaceID: aapRunWorkspaceID, AgentID: aapRunAgentID,
 		Status: aapfile.StatusReady, DeclaredMediaType: "application/pdf",
+		StoredObjectID: &objectID, ProcessingVersion: 2,
+	}
+}
+
+func readyCreateRunImage(id string) aapfile.File {
+	objectID := "d41f1f2e-7b5a-7c3d-8e9f-1234567890fa"
+	return aapfile.File{
+		ID: id, WorkspaceID: aapRunWorkspaceID, AgentID: aapRunAgentID,
+		Status: aapfile.StatusReady, DeclaredMediaType: "image/png",
 		StoredObjectID: &objectID, ProcessingVersion: 2,
 	}
 }

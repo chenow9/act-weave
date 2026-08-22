@@ -28,3 +28,30 @@ func AppendOutboundPromptRules(instruction string) string {
 	}
 	return instruction + outboundPromptAppendix
 }
+
+// InboundReadPromptMarker is the idempotency token for AppendInboundReadPromptRules.
+const InboundReadPromptMarker = "actweave-inbound-read.v1"
+
+const inboundReadPromptAppendix = `
+
+## Inbound files (` + InboundReadPromptMarker + `)
+
+Users talk about contracts, invoices, tables, and attachments in business language. Treat those as a request to read an attached file, not to invent a tool name.
+When you need the body of an attached PDF, call only ` + "`" + ReadAttachmentToolName + "`" + ` with the fileId from the <actweave_attachments> listing. Optional pages (for example 1-5, 3, 10-). Default is pages 1-10; at most 20 pages per call.
+Never invent tool names, fileIds, or URLs. Never claim you read a file unless that tool returned ok.
+If warning is NO_TEXT_LAYER, say you could not extract text (scanned PDF) instead of inventing content.
+Office and zip attachments are listed but cannot be read in v1 — say so instead of pretending.
+In the user-visible reply, refer to files by filename. Do not mention fileIds, tool names, or protocols.
+`
+
+// AppendInboundReadPromptRules appends v1 read-attachment rules. Idempotent.
+func AppendInboundReadPromptRules(instruction string) string {
+	if strings.Contains(instruction, InboundReadPromptMarker) {
+		return instruction
+	}
+	instruction = strings.TrimRight(instruction, " \t\r\n")
+	if instruction == "" {
+		return strings.TrimSpace(inboundReadPromptAppendix)
+	}
+	return instruction + inboundReadPromptAppendix
+}

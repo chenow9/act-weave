@@ -11,14 +11,15 @@ import (
 // PlatformFileMeta is non-secret metadata for an in-process platform tool open.
 // No download URLs are ever generated on this path (design §5.9.2).
 type PlatformFileMeta struct {
-	FileID          string
-	WorkspaceID     string
-	AgentID         string
-	Status          string
-	DeclaredMedia   string
-	DetectedMedia   string
-	SizeBytes       int64
-	StoredObjectID  string
+	FileID         string
+	WorkspaceID    string
+	AgentID        string
+	Status         string
+	Filename       string
+	DeclaredMedia  string
+	DetectedMedia  string
+	SizeBytes      int64
+	StoredObjectID string
 }
 
 // PlatformOpenedFile is a plaintext body stream opened via SecureStore.

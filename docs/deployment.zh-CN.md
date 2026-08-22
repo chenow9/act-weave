@@ -118,7 +118,7 @@ PostgreSQL 是配置、运行记录、协议事件和审计元数据的事实来
 | 能力 | 默认/边界 |
 | --- | --- |
 | AAP 主运行面 | `agentAccess.feature` 在仓库本地配置中开启；生产可用 workspace/client allowlist 收敛。 |
-| AAP 文件 | `agentAccess.files.enabled: false`；打开后还受 workspace/client allowlist、配额和 `runtimeMultimodal` 约束。 |
+| AAP 文件 | `agentAccess.files.enabled: false`；打开后还受 workspace/client allowlist 和配额约束。图片组装用 `runtimeMultimodal`；可选 PDF 按需读取用 `runtimeInboundRead`；出站附件用 `runtimeOutboundAttachments`。 |
 | 上下文 LLM 压缩 | `runtime.sessionContext.compaction.enabled: false`；请依据运行手册逐步开启。 |
 | Tool 强制发布 | 仅平台管理员、且 `tools.allowForcePublish` 配置允许时可用；不是常规发布策略。 |
 | A2A 的无认证模式 | 默认拒绝；仅在显式环境开关下可用于本地测试。 |

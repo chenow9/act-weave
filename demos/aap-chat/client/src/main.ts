@@ -7,6 +7,7 @@ import {
   extractMessageText,
   extractOutputFileParts,
   extractToolSummary,
+  foldDeveloperToolDetail,
   fetchBffConfig,
   fetchFileBlob,
   followRunLive,
@@ -677,13 +678,18 @@ function toolsHtml(tools: UiMessage["tools"]): string {
   return tools
     .map((t) => {
       const failed = /fail|error/i.test(t.status);
+      const body = t.detail
+        ? foldDeveloperToolDetail(t.name)
+          ? `<details class="tool-fold"><summary>正文（默认折叠）</summary><pre>${escapeHtml(t.detail)}</pre></details>`
+          : `<pre>${escapeHtml(t.detail)}</pre>`
+        : "";
       return `
         <div class="tool-card ${failed ? "is-failed" : ""}">
           <header>
             <span><i class="fa-solid fa-wrench"></i> ${escapeHtml(t.name)}</span>
             <span>${escapeHtml(t.status)}</span>
           </header>
-          ${t.detail ? `<pre>${escapeHtml(t.detail)}</pre>` : ""}
+          ${body}
         </div>`;
     })
     .join("");
