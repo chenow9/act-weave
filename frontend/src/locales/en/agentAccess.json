@@ -24,6 +24,8 @@
   "scopeEventRead": "Read event stream",
   "scopeInteractionDecide": "Handle approval interactions",
   "scopeArtifactRead": "Read Artifact",
+  "scopeFileWrite": "Write File",
+  "scopeFileRead": "Read File",
   "colName": "Name",
   "colClientId": "Client ID",
   "colAuthMethod": "Auth method",

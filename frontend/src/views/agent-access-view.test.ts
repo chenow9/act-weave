@@ -214,6 +214,21 @@ describe("Agent Access management view", () => {
     expect(wrapper.text()).toContain("已复制");
   });
 
+  it("lists file:read and file:write when creating an Agent grant", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('[data-testid="select-client-client-1"]').trigger("click");
+    await flushPromises();
+    await wrapper.get('[data-testid="tab-grants"]').trigger("click");
+    await wrapper.get('[data-testid="open-grant"]').trigger("click");
+    const dialog = wrapper.get('[role="dialog"][aria-label="授权 Agent"]');
+    const values = dialog.findAll('input[type="checkbox"]').map((input) => input.attributes("value"));
+    expect(values).toContain("file:write");
+    expect(values).toContain("file:read");
+    expect(dialog.text()).toContain("写入 File");
+    expect(dialog.text()).toContain("读取 File");
+  });
+
   it("opens client detail from the list and requires REVOKE before destructive actions", async () => {
     const wrapper = mountView();
     await flushPromises();

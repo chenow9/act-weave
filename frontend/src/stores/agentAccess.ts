@@ -14,7 +14,9 @@ export type AgentAccessScope =
   | "run:cancel"
   | "event:read"
   | "interaction:decide"
-  | "artifact:read";
+  | "artifact:read"
+  | "file:write"
+  | "file:read";
 
 export interface AgentAccessClient {
   id: string;

@@ -24,6 +24,8 @@
   "scopeEventRead": "读取事件流",
   "scopeInteractionDecide": "处理审批交互",
   "scopeArtifactRead": "读取 Artifact",
+  "scopeFileWrite": "写入 File",
+  "scopeFileRead": "读取 File",
   "colName": "名称",
   "colClientId": "Client ID",
   "colAuthMethod": "认证方式",
