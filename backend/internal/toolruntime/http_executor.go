@@ -171,6 +171,18 @@ func (executor *HTTPExecutor) Invoke(
 			response.StatusCode, nil,
 		))
 	}
+	spec, specErr := parseHTTPProgressSpec(action)
+	if specErr != nil {
+		return executor.finish(ctx, sink, result, specErr)
+	}
+	if spec != nil {
+		result, err = executor.pollDeclaredProgress(
+			invocationContext, sink, action, spec, policy, input, endpoint, headers, client, result,
+		)
+		if err != nil {
+			return executor.finish(ctx, sink, result, err)
+		}
+	}
 	return executor.finish(ctx, sink, result, nil)
 }
 
@@ -224,10 +236,12 @@ func (*HTTPExecutor) finish(
 }
 
 type httpActionConfig struct {
-	Method      string          `json:"method"`
-	Path        string          `json:"path"`
-	Parameters  []httpParameter `json:"parameters"`
-	RequestBody *httpBodyConfig `json:"requestBody,omitempty"`
+	Method      string              `json:"method"`
+	Path        string              `json:"path"`
+	Parameters  []httpParameter     `json:"parameters"`
+	RequestBody *httpBodyConfig     `json:"requestBody,omitempty"`
+	Progress    *httpProgressConfig `json:"progress,omitempty"`
+	XProgress   *httpProgressConfig `json:"x-actweave-progress,omitempty"`
 }
 
 type httpParameter struct {
@@ -559,6 +573,98 @@ func emitInvocationEvent(ctx context.Context, sink execution.InvocationEventSink
 	return sink.Emit(ctx, execution.InvocationEvent{
 		InvocationID: invocationID, Type: eventType, ErrorCode: errorCode, OccurredAt: time.Now().UTC(),
 	})
+}
+
+func emitProgressEvent(ctx context.Context, sink execution.InvocationEventSink, result execution.InvocationResult, spec *resolvedProgressSpec, document map[string]any) error {
+	if sink == nil || spec == nil {
+		return nil
+	}
+	current, total, unit, message := progressFromDocument(document, spec)
+	return sink.Emit(ctx, execution.InvocationEvent{
+		InvocationID:    result.InvocationID,
+		Type:            execution.EventProgress,
+		OccurredAt:      time.Now().UTC(),
+		ProgressCurrent: current,
+		ProgressTotal:   total,
+		ProgressUnit:    unit,
+		ProgressMessage: message,
+	})
+}
+
+func (executor *HTTPExecutor) pollDeclaredProgress(
+	ctx context.Context,
+	sink execution.InvocationEventSink,
+	action httpActionConfig,
+	spec *resolvedProgressSpec,
+	policy resolvedHTTPPolicy,
+	input map[string]any,
+	endpoint *url.URL,
+	headers map[string]string,
+	client *http.Client,
+	result execution.InvocationResult,
+) (execution.InvocationResult, error) {
+	if spec == nil {
+		return result, nil
+	}
+	mainDoc, _ := decodeJSONObject(result.Output)
+	if doneWhenSatisfied(mainDoc, spec) {
+		_ = emitProgressEvent(ctx, sink, result, spec, mainDoc)
+		return result, nil
+	}
+	pollAction := httpActionConfig{Method: spec.Method, Path: spec.Path, Parameters: action.Parameters}
+	first := true
+	for {
+		if !first {
+			if err := progressSleep(ctx, spec.Interval); err != nil {
+				return progressPollOutcome(result, spec, err)
+			}
+		}
+		first = false
+		if err := ctx.Err(); err != nil {
+			return progressPollOutcome(result, spec, err)
+		}
+		pollInput := overlayJSONObject(input, result.Output)
+		httpRequest, err := buildSnapshotHTTPRequest(ctx, pollAction, pollInput, endpoint, headers)
+		if err != nil {
+			return progressPollOutcome(result, spec, err)
+		}
+		response, err := client.Do(httpRequest)
+		if err != nil {
+			return progressPollOutcome(result, spec, normalizeHTTPTransportError(ctx, err))
+		}
+		payload, readErr := readLimitedHTTPResponse(response.Body, policy.MaxResponseBytes)
+		_ = response.Body.Close()
+		if readErr != nil {
+			return progressPollOutcome(result, spec, readErr)
+		}
+		if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+			return progressPollOutcome(result, spec, execution.NewError(
+				execution.ErrorCodeUpstreamHTTP, "UPSTREAM", response.StatusCode >= 500,
+				response.StatusCode, nil,
+			))
+		}
+		output := normalizeHTTPResponse(payload)
+		doc, _ := decodeJSONObject(output)
+		_ = emitProgressEvent(ctx, sink, result, spec, doc)
+		if doneWhenSatisfied(doc, spec) {
+			result.Output = output
+			result.HTTPStatus = response.StatusCode
+			result.ContentType = response.Header.Get("Content-Type")
+			return result, nil
+		}
+	}
+}
+
+func progressPollOutcome(result execution.InvocationResult, spec *resolvedProgressSpec, err error) (execution.InvocationResult, error) {
+	code := progressFailureCode(err)
+	if spec != nil && spec.FailClosed {
+		if execution.ErrorCode(err) != "" {
+			return result, err
+		}
+		return result, execution.NewError(execution.ErrorCodeProgressPoll, "UPSTREAM", true, 0, err)
+	}
+	result.ProgressError = code
+	return result, nil
 }
 
 func validHTTPMethod(method string) bool {

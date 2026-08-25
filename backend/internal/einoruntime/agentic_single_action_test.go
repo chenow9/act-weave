@@ -259,8 +259,8 @@ func TestSingleActionAgenticModel_ValidOneCallAndFinalText(t *testing.T) {
 		}
 		n++
 	}
-	if n != 1 {
-		t.Fatalf("chunks=%d want 1 (concatenated replay)", n)
+	if n != 2 {
+		t.Fatalf("chunks=%d want 2 (original progressive replay)", n)
 	}
 }
 
@@ -801,8 +801,7 @@ func TestSingleActionGuard_SameIndexProgressiveSingleActionAllowed(t *testing.T)
 		t.Fatalf("single progressive action: %v", err)
 	}
 	defer sr.Close()
-	n := 0
-	var replay *schema.AgenticMessage
+	var replay []*schema.AgenticMessage
 	for {
 		chunk, rerr := sr.Recv()
 		if errors.Is(rerr, io.EOF) {
@@ -811,18 +810,21 @@ func TestSingleActionGuard_SameIndexProgressiveSingleActionAllowed(t *testing.T)
 		if rerr != nil {
 			t.Fatalf("replay Recv: %v", rerr)
 		}
-		replay = chunk
-		n++
+		replay = append(replay, chunk)
 	}
-	if n != 1 {
-		t.Fatalf("replay chunks=%d want 1 (concatenated replay)", n)
+	if len(replay) != 2 {
+		t.Fatalf("replay chunks=%d want 2 (original progressive fragments)", len(replay))
 	}
-	names := functionCallNames(replay)
+	concat, err := agenticmsg.ConcatStream(replay)
+	if err != nil {
+		t.Fatalf("concat progressive replay: %v", err)
+	}
+	names := functionCallNames(concat)
 	if len(names) != 1 || names[0] != "echo" {
-		t.Fatalf("replay calls=%v want [echo]", names)
+		t.Fatalf("concat calls=%v want [echo]", names)
 	}
-	if replay.ContentBlocks[0].FunctionToolCall.Arguments != `{"q":"x"}` {
-		t.Fatalf("args=%q want concatenated {\"q\":\"x\"}", replay.ContentBlocks[0].FunctionToolCall.Arguments)
+	if concat.ContentBlocks[0].FunctionToolCall.Arguments != `{"q":"x"}` {
+		t.Fatalf("args=%q want concatenated {\"q\":\"x\"}", concat.ContentBlocks[0].FunctionToolCall.Arguments)
 	}
 }
 

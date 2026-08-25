@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -290,4 +291,155 @@ func (recorder *eventRecorder) types() []string {
 		values[index] = event.Type
 	}
 	return values
+}
+
+func TestHTTPExecutorPollsProgressUntilDone(t *testing.T) {
+	var polls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch {
+		case request.Method == http.MethodPost && request.URL.Path == "/jobs":
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write([]byte(`{"taskId":"t-1","status":"RUNNING"}`))
+		case request.Method == http.MethodGet && request.URL.Path == "/tasks/t-1/progress":
+			n := polls.Add(1)
+			writer.Header().Set("Content-Type", "application/json")
+			if n < 2 {
+				_, _ = writer.Write([]byte(`{"status":"RUNNING","percent":40,"message":"切片"}`))
+				return
+			}
+			_, _ = writer.Write([]byte(`{"status":"SUCCESS","percent":100,"message":"完成"}`))
+		default:
+			t.Errorf("unexpected %s %s", request.Method, request.URL.Path)
+			writer.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	request := validExecutorRequest(server.URL)
+	request.Snapshot.ActionConfig = json.RawMessage(`{
+		"method":"POST","path":"/jobs",
+		"progress":{
+			"mode":"poll","path":"/tasks/{taskId}/progress","intervalMs":200,
+			"doneWhen":"status == 'SUCCESS'","percentPath":"percent","messagePath":"message"
+		}
+	}`)
+	request.Snapshot.RuntimePolicy = json.RawMessage(`{"timeoutMs":2000,"maxResponseBytes":1024}`)
+	request.Input = json.RawMessage(`{}`)
+	events := &eventRecorder{}
+	result, err := NewHTTPExecutor(server.Client()).Invoke(context.Background(), request, events)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if result.ProgressError != "" {
+		t.Fatalf("progressError=%q", result.ProgressError)
+	}
+	var body map[string]any
+	if json.Unmarshal(result.Output, &body) != nil || body["status"] != "SUCCESS" {
+		t.Fatalf("output=%s", result.Output)
+	}
+	types := events.types()
+	if !reflect.DeepEqual(types, []string{
+		execution.EventStarted, execution.EventProgress, execution.EventProgress, execution.EventCompleted,
+	}) {
+		t.Fatalf("events=%v", types)
+	}
+	if polls.Load() < 2 {
+		t.Fatalf("polls=%d", polls.Load())
+	}
+}
+
+func TestHTTPExecutorProgressPollFailureKeepsMainResult(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/jobs" {
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write([]byte(`{"taskId":"t-1","status":"RUNNING"}`))
+			return
+		}
+		writer.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	request := validExecutorRequest(server.URL)
+	request.Snapshot.ActionConfig = json.RawMessage(`{
+		"method":"POST","path":"/jobs",
+		"progress":{
+			"mode":"poll","path":"/tasks/{taskId}/progress","intervalMs":200,
+			"doneWhen":"status == 'SUCCESS'"
+		}
+	}`)
+	request.Input = json.RawMessage(`{}`)
+	result, err := NewHTTPExecutor(server.Client()).Invoke(context.Background(), request, &eventRecorder{})
+	if err != nil {
+		t.Fatalf("poll failure must not fail the tool: %v", err)
+	}
+	if result.ProgressError != progressErrorPollFailed {
+		t.Fatalf("progressError=%q", result.ProgressError)
+	}
+	if !strings.Contains(string(result.Output), `"taskId":"t-1"`) {
+		t.Fatalf("main result lost: %s", result.Output)
+	}
+}
+
+func TestHTTPExecutorProgressFailClosedFailsTool(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/jobs" {
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write([]byte(`{"taskId":"t-1","status":"RUNNING"}`))
+			return
+		}
+		writer.WriteHeader(http.StatusBadGateway)
+	}))
+	defer server.Close()
+
+	request := validExecutorRequest(server.URL)
+	request.Snapshot.ActionConfig = json.RawMessage(`{
+		"method":"POST","path":"/jobs",
+		"progress":{
+			"mode":"poll","path":"/tasks/{taskId}/progress","intervalMs":200,
+			"doneWhen":"status == 'SUCCESS'","failClosed":true
+		}
+	}`)
+	request.Input = json.RawMessage(`{}`)
+	_, err := NewHTTPExecutor(server.Client()).Invoke(context.Background(), request, &eventRecorder{})
+	if err == nil || execution.ErrorCode(err) != execution.ErrorCodeUpstreamHTTP {
+		t.Fatalf("failClosed err=%v", err)
+	}
+}
+
+func TestHTTPExecutorSkipsPollWhenMainAlreadyDone(t *testing.T) {
+	var polls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/jobs" {
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write([]byte(`{"taskId":"t-1","status":"SUCCESS"}`))
+			return
+		}
+		polls.Add(1)
+		writer.WriteHeader(http.StatusTeapot)
+	}))
+	defer server.Close()
+
+	request := validExecutorRequest(server.URL)
+	request.Snapshot.ActionConfig = json.RawMessage(`{
+		"method":"POST","path":"/jobs",
+		"progress":{
+			"mode":"poll","path":"/tasks/{taskId}/progress","intervalMs":200,
+			"doneWhen":"$.status == 'SUCCESS'"
+		}
+	}`)
+	request.Input = json.RawMessage(`{}`)
+	events := &eventRecorder{}
+	result, err := NewHTTPExecutor(server.Client()).Invoke(context.Background(), request, events)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if polls.Load() != 0 {
+		t.Fatalf("polls=%d want 0", polls.Load())
+	}
+	if !strings.Contains(string(result.Output), `"status":"SUCCESS"`) {
+		t.Fatalf("output=%s", result.Output)
+	}
+	if !reflect.DeepEqual(events.types(), []string{execution.EventStarted, execution.EventProgress, execution.EventCompleted}) {
+		t.Fatalf("events=%v", events.types())
+	}
 }

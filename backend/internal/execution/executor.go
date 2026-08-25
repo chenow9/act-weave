@@ -85,6 +85,10 @@ type InvocationResult struct {
 	StartedAt    time.Time
 	FinishedAt   time.Time
 	Latency      time.Duration
+	// ProgressError is a progress-channel failure that must not fail the tool
+	// unless the tool contract sets failClosed. Empty when poll succeeded or
+	// the action has no progress spec.
+	ProgressError string
 }
 
 type InvocationEvent struct {
@@ -92,13 +96,32 @@ type InvocationEvent struct {
 	Type         string
 	ErrorCode    string
 	OccurredAt   time.Time
+	// Progress* is set on EventProgress only.
+	ProgressCurrent float64
+	ProgressTotal   *float64
+	ProgressUnit    string
+	ProgressMessage string
 }
 
 const (
 	EventStarted   = "STARTED"
 	EventCompleted = "COMPLETED"
 	EventFailed    = "FAILED"
+	EventProgress  = "PROGRESS"
 )
+
+// ProgressUpdate is one platform progress tick for a running invocation.
+type ProgressUpdate struct {
+	InvocationID string
+	Current      float64
+	Total        *float64
+	Unit         string
+	Message      string
+	OccurredAt   time.Time
+}
+
+// ProgressReporter receives live progress ticks. Nil is a no-op.
+type ProgressReporter func(context.Context, ProgressUpdate)
 
 type InvocationEventSink interface {
 	Emit(context.Context, InvocationEvent) error

@@ -348,11 +348,22 @@ func bufferValidateSingleActionStream(ctx context.Context, inner *schema.StreamR
 	if err != nil {
 		return errorOnlyAgenticStream(err), nil
 	}
-	msg, err := validateConcatAndSerializePackedActions(ctx, chunks)
+	concat, err := concatAndValidateAgenticChunks(chunks)
 	if err != nil {
 		return errorOnlyAgenticStream(err), nil
 	}
-	return schema.StreamReaderFromArray([]*schema.AgenticMessage{msg}), nil
+	n, _ := countExecutableActions(concat)
+	kept, err := serializePackedActions(ctx, concat)
+	if err != nil {
+		return errorOnlyAgenticStream(err), nil
+	}
+	if n <= 1 {
+		// Text / single-action turns keep original chunks so assistant
+		// item.delta text_delta stays progressive. Packed N-call turns
+		// replay the serialized one-call message.
+		return schema.StreamReaderFromArray(chunks), nil
+	}
+	return schema.StreamReaderFromArray([]*schema.AgenticMessage{kept}), nil
 }
 
 // errorOnlyAgenticStream returns a reader that yields err on the first Recv
@@ -402,7 +413,7 @@ func drainAndCloseModelStream(sr *schema.StreamReader[*schema.AgenticMessage]) (
 	}
 }
 
-func validateConcatAndSerializePackedActions(ctx context.Context, chunks []*schema.AgenticMessage) (*schema.AgenticMessage, error) {
+func concatAndValidateAgenticChunks(chunks []*schema.AgenticMessage) (*schema.AgenticMessage, error) {
 	if len(chunks) == 0 {
 		return nil, agenticmsg.ErrEmptyConcat
 	}
@@ -414,9 +425,5 @@ func validateConcatAndSerializePackedActions(ctx context.Context, chunks []*sche
 			return nil, fmt.Errorf("einoruntime agentic: stream chunk %d: %w", i, err)
 		}
 	}
-	msg, err := agenticmsg.ConcatStream(chunks)
-	if err != nil {
-		return nil, err
-	}
-	return serializePackedActions(ctx, msg)
+	return agenticmsg.ConcatStream(chunks)
 }

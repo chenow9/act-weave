@@ -32,6 +32,8 @@ const (
 	ErrorCodeResponseRead     = "EXECUTION_RESPONSE_READ_ERROR"
 	ErrorCodeEgressDenied     = "EXECUTION_EGRESS_DENIED"
 	ErrorCodeCredential       = "EXECUTION_CREDENTIAL_ERROR"
+	// ErrorCodeProgressPoll is used only when the tool contract failClosed=true.
+	ErrorCodeProgressPoll = "PROGRESS_POLL_FAILED"
 )
 
 type Error struct {

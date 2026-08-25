@@ -88,9 +88,16 @@ func (mapper *ToolCallProtocolMapper) MapProgress(
 	total *float64,
 	unit, message string,
 ) (protocolevent.ProgressDelta, error) {
+	message = strings.TrimSpace(message)
+	if protocolToolSensitiveText.MatchString(message) {
+		message = ""
+	}
+	if utf8.RuneCountInString(message) > 1024 {
+		message = string([]rune(message)[:1024])
+	}
 	delta := protocolevent.ProgressDelta{
 		Type: protocolevent.DeltaTypeProgress, Current: current, Total: total,
-		Unit: strings.TrimSpace(unit), Message: strings.TrimSpace(message),
+		Unit: strings.TrimSpace(unit), Message: message,
 	}
 	if !validProtocolToolInvocation(invocation, "RUNNING") || mapper.validateDelta(invocation.ID, delta) != nil {
 		return protocolevent.ProgressDelta{}, ErrToolInvocationInvalid

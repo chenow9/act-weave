@@ -295,7 +295,19 @@ function applyDeltaToItem(
     return cloned;
   }
 
-  // progress and unknown deltas: accepted without mutating snapshot fields.
+  if (deltaType === "progress") {
+    if (cloned.type !== "tool_call" && cloned.type !== "workflow_step") {
+      return null;
+    }
+    const current = typeof delta.current === "number" ? delta.current : 0;
+    const total = typeof delta.total === "number" ? delta.total : null;
+    const unit = typeof delta.unit === "string" ? delta.unit : "";
+    const message = typeof delta.message === "string" ? delta.message : "";
+    cloned.progress = { current, total, unit, message };
+    return cloned;
+  }
+
+  // unknown deltas: accepted without mutating snapshot fields.
   return null;
 }
 

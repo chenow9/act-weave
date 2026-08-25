@@ -520,6 +520,9 @@ func (b *Bridge) buildPipelineToolsFrom(
 		// USER Console chat may omit it (pipeline synthesizes internal snapshot).
 		// Resume/confirm path already passes run.PrincipalSnapshot (see pause.go).
 		principalSnap := run.PrincipalSnapshot
+		capturedRun := run
+		capturedJob := job
+		live, _ := b.events.(chatruntime.LiveToolCallProjector)
 		pt, err := einoruntime.NewPipelineTool(einoruntime.PipelineToolConfig{
 			Info:     info,
 			Pipeline: b.toolInvoker,
@@ -544,10 +547,46 @@ func (b *Bridge) buildPipelineToolsFrom(
 			},
 			// Persist TOOL agent_run_steps so Agent 审计中心 shows tool args/results
 			// (timeline only reads agent_run_steps, not tool_invocations alone).
+			OnToolProgress: func(hookCtx context.Context, event einoruntime.ToolProgressEvent) {
+				if live == nil {
+					return
+				}
+				if err := live.ProjectLiveToolProgress(hookCtx, chatruntime.LiveToolProgressInput{
+					Run: capturedRun, Job: capturedJob, Name: event.ToolName,
+					ReleaseID: event.ReleaseID, InvocationID: event.InvocationID,
+					Args: json.RawMessage(event.ArgsJSON), Current: event.Current, Total: event.Total,
+					Unit: event.Unit, Message: event.Message,
+				}); err != nil {
+					b.logger.Error("project tool progress failed",
+						"event", "chatruntimebridge.tool_progress.project_failed",
+						"workspace_id", event.WorkspaceID,
+						"run_id", event.AgentRunID,
+						"tool_name", event.ToolName,
+						"error", err.Error(),
+					)
+				}
+			},
 			OnToolComplete: func(hookCtx context.Context, event einoruntime.ToolCompleteEvent) {
 				if err := b.recordToolStep(hookCtx, event); err != nil {
 					b.logger.Error("record TOOL agent_run_step failed",
 						"event", "chatruntimebridge.tool_step.record_failed",
+						"workspace_id", event.WorkspaceID,
+						"run_id", event.AgentRunID,
+						"tool_name", event.ToolName,
+						"error", err.Error(),
+					)
+				}
+				if live == nil {
+					return
+				}
+				if err := live.ProjectLiveToolCompleted(hookCtx, chatruntime.LiveToolCompleteInput{
+					Run: capturedRun, Job: capturedJob, Name: event.ToolName,
+					ReleaseID: event.ReleaseID, InvocationID: event.InvocationID, Args: json.RawMessage(event.ArgsJSON),
+					Result: json.RawMessage(event.ResultJSON), OK: event.OK, ErrorCode: event.ErrorCode,
+					FinishedAt: time.Now().UTC(),
+				}); err != nil {
+					b.logger.Error("project tool progress complete failed",
+						"event", "chatruntimebridge.tool_progress.complete_failed",
 						"workspace_id", event.WorkspaceID,
 						"run_id", event.AgentRunID,
 						"tool_name", event.ToolName,

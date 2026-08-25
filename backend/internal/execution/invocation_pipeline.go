@@ -51,6 +51,8 @@ type InvokeRequest struct {
 	// DIRECT_INVOCATION REQUEST_PASSTHROUGH attach. Nested AgentRun/Workflow
 	// roots inherit vault bindings from their parent attach; leave empty there.
 	OutboundCredentialsRaw json.RawMessage `json:"-"`
+	// OnProgress receives item.progress ticks from HTTP poll. Optional.
+	OnProgress ProgressReporter `json:"-"`
 }
 
 type ResolveRequest struct {
@@ -368,7 +370,7 @@ func (pipeline *InvocationPipeline) invokeResolved(
 				InvocationID: request.InvocationID, TraceID: request.TraceID,
 				Snapshot: resolved.Snapshot, Connection: connection, Input: append(json.RawMessage(nil), request.Input...),
 				ActorType: request.ActorType, ActorID: request.ActorID, AgentRunID: request.AgentRunID,
-			}, nil)
+			}, progressEventSink(request.OnProgress))
 			return invokeError
 		})
 		invocationError = mapConfiguredHTTPError(resolved.Snapshot.ErrorMappings, result, invocationError)
@@ -397,6 +399,26 @@ func (pipeline *InvocationPipeline) invokeResolved(
 		}
 	}
 	return PipelineResult{InvocationResult: result, Attempts: attempts}, invocationError
+}
+
+func progressEventSink(report ProgressReporter) InvocationEventSink {
+	if report == nil {
+		return nil
+	}
+	return InvocationEventSinkFunc(func(ctx context.Context, event InvocationEvent) error {
+		if event.Type != EventProgress {
+			return nil
+		}
+		report(ctx, ProgressUpdate{
+			InvocationID: event.InvocationID,
+			Current:      event.ProgressCurrent,
+			Total:        event.ProgressTotal,
+			Unit:         event.ProgressUnit,
+			Message:      event.ProgressMessage,
+			OccurredAt:   event.OccurredAt,
+		})
+		return nil
+	})
 }
 
 func (pipeline *InvocationPipeline) failIdempotency(ctx context.Context, request IdempotencyRequest, key, code string) {

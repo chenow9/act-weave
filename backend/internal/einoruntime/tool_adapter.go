@@ -91,6 +91,25 @@ type ToolCompleteEvent struct {
 // the tool result string.
 type ToolCompleteHook func(ctx context.Context, event ToolCompleteEvent)
 
+// ToolProgressEvent is one live progress tick while InvokeResolved is blocked
+// on a declared HTTP poll. Does not occupy a model round.
+type ToolProgressEvent struct {
+	WorkspaceID  string
+	AgentRunID   string
+	ReleaseID    string
+	InvocationID string
+	ToolName     string
+	ArgsJSON     string
+	Current      float64
+	Total        *float64
+	Unit         string
+	Message      string
+}
+
+// ToolProgressHook receives progress ticks. Nil is a no-op. Hook errors must
+// not fail the tool (progress channel failure ≠ tool failure).
+type ToolProgressHook func(ctx context.Context, event ToolProgressEvent)
+
 // PipelineToolConfig constructs one InvokableTool bound to a capability release
 // for a single agent run.
 //
@@ -140,6 +159,8 @@ type PipelineToolConfig struct {
 	// OnToolComplete is optional; chatruntimebridge persists TOOL agent_run_steps
 	// for Agent 审计中心 (arguments + result).
 	OnToolComplete ToolCompleteHook
+	// OnToolProgress is optional; chatruntimebridge projects item.delta progress.
+	OnToolProgress ToolProgressHook
 }
 
 // pipelineTool implements tool.InvokableTool with interrupt-before-invoke and
@@ -166,6 +187,7 @@ type pipelineTool struct {
 	stepID             string
 	onConfirmInterrupt ConfirmInterruptHook
 	onToolComplete     ToolCompleteHook
+	onToolProgress     ToolProgressHook
 }
 
 // Ensure pipelineTool satisfies InvokableTool at compile time.
@@ -206,6 +228,7 @@ func NewPipelineTool(cfg PipelineToolConfig) (tool.InvokableTool, error) {
 		stepID:                strings.TrimSpace(cfg.StepID),
 		onConfirmInterrupt:    cfg.OnConfirmInterrupt,
 		onToolComplete:        cfg.OnToolComplete,
+		onToolProgress:        cfg.OnToolProgress,
 	}, nil
 }
 
@@ -365,6 +388,7 @@ func (t *pipelineTool) invokeResolved(
 		AgentRunID:            t.agentRunID,
 		PrincipalSnapshot:     t.principalSnapshot,
 		AuthorizationSnapshot: append(json.RawMessage(nil), t.authorizationSnapshot...),
+		OnProgress:            t.progressReporter(argsJSON, invocationID),
 	}
 
 	result, invokeErr := t.pipeline.InvokeResolved(ctx, request, resolved)
@@ -374,12 +398,40 @@ func (t *pipelineTool) invokeResolved(
 		t.emitToolComplete(ctx, argsJSON, out, firstNonEmpty(result.InvocationID, invocationID), false, code)
 		return out, nil
 	}
-	out := formatToolSuccessResult(result.Output, map[string]any{
+	meta := map[string]any{
 		"invocationId": result.InvocationID,
 		"cached":       result.Cached,
-	})
+	}
+	if errCode := strings.TrimSpace(result.ProgressError); errCode != "" {
+		meta["progressError"] = errCode
+	}
+	out := formatToolSuccessResult(result.Output, meta)
 	t.emitToolComplete(ctx, argsJSON, out, firstNonEmpty(result.InvocationID, invocationID), true, "")
 	return out, nil
+}
+
+func (t *pipelineTool) progressReporter(argsJSON, invocationID string) execution.ProgressReporter {
+	if t == nil || t.onToolProgress == nil {
+		return nil
+	}
+	toolName := ""
+	if t.info != nil {
+		toolName = t.info.Name
+	}
+	return func(ctx context.Context, update execution.ProgressUpdate) {
+		t.onToolProgress(ctx, ToolProgressEvent{
+			WorkspaceID:  t.workspaceID,
+			AgentRunID:   t.agentRunID,
+			ReleaseID:    t.releaseID,
+			InvocationID: firstNonEmpty(update.InvocationID, invocationID),
+			ToolName:     toolName,
+			ArgsJSON:     argsJSON,
+			Current:      update.Current,
+			Total:        update.Total,
+			Unit:         update.Unit,
+			Message:      update.Message,
+		})
+	}
 }
 
 func (t *pipelineTool) emitToolComplete(

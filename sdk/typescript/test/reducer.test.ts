@@ -236,4 +236,61 @@ describe("RunReducer golden traces", () => {
     expect(content[0]).toMatchObject({ type: "text", text: "Confirm booking:" });
     expect(content[1]).toMatchObject({ type: "a2ui", version: "a2ui-surface.v1" });
   });
+
+  it("stores progress deltas on tool_call without changing status", () => {
+    const base = {
+      specVersion: "1.0",
+      streamId: "run:71000000-0000-4000-8000-0000000000b1",
+      workspaceId: "11000000-0000-4000-8000-000000000001",
+      agentId: "22000000-0000-4000-8000-000000000001",
+      conversationId: "31000000-0000-4000-8000-000000000001",
+      runId: "71000000-0000-4000-8000-0000000000b1",
+      traceId: "progress",
+    } as const;
+    const itemId = "81000000-0000-4000-8000-0000000000b1";
+    const reducer = new RunReducer();
+    reducer.applyAll([
+      {
+        ...base,
+        type: "run.started",
+        eventId: "a1000000-0000-4000-8000-0000000000b1",
+        sequence: 1,
+        occurredAt: "2026-08-11T01:00:00Z",
+        data: {
+          run: {
+            id: base.runId,
+            conversationId: base.conversationId,
+            agentId: base.agentId,
+            status: "running",
+            trigger: "api",
+            startedAt: "2026-08-11T01:00:00Z",
+          },
+        },
+      },
+      {
+        ...base,
+        type: "item.started",
+        eventId: "a1000000-0000-4000-8000-0000000000b2",
+        sequence: 2,
+        occurredAt: "2026-08-11T01:00:01Z",
+        data: {
+          item: { id: itemId, type: "tool_call", status: "in_progress", name: "analyze" },
+        },
+      },
+      {
+        ...base,
+        type: "item.delta",
+        eventId: "a1000000-0000-4000-8000-0000000000b3",
+        sequence: 3,
+        occurredAt: "2026-08-11T01:00:02Z",
+        data: {
+          itemId,
+          delta: { type: "progress", current: 47, total: 100, unit: "percent", message: "切片 3/8" },
+        },
+      },
+    ]);
+    const item = reducer.snapshot().items[0]!;
+    expect(item.status).toBe("in_progress");
+    expect(item.progress).toEqual({ current: 47, total: 100, unit: "percent", message: "切片 3/8" });
+  });
 });
