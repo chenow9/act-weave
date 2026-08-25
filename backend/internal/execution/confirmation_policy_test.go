@@ -192,6 +192,23 @@ func TestConfirmationPolicyRuleVersionsAndDeclarationsAreStrict(t *testing.T) {
 	}
 }
 
+func TestConfirmationPolicyEmptyConnectionIsUnspecified(t *testing.T) {
+	decision, err := EvaluateConfirmationPolicy(ConfirmationPolicyInput{
+		WorkspaceSettings: json.RawMessage(`{}`),
+		Release: ConfirmationReleaseRisk{
+			ReleaseID: "release-1", RiskLevel: "MEDIUM", SideEffectLevel: "WRITE",
+		},
+		Connection: ConfirmationConnectionRisk{},
+		Input:      json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.RequiresConfirmation {
+		t.Fatalf("WRITE without a PRODUCTION connection must not require confirmation: %+v", decision)
+	}
+}
+
 func TestConfirmationPolicyJSONPointerEscapesAndArrayCounts(t *testing.T) {
 	schema := json.RawMessage(`{"x-actweave-confirmation":{
 		"schemaVersion":"release-confirmation-risk.v1","batchCountPaths":["/payload/a~1b/~0items"]

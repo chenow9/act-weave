@@ -1664,33 +1664,31 @@ func TestFunctionToolParameters_CatalogSchemaSecurity(t *testing.T) {
 			t.Fatalf("must not be usage invalid: %v", err)
 		}
 	})
-	// Hostile default with secret marker.
-	t.Run("default_secret_rejected", func(t *testing.T) {
+	// default is a JSON Schema annotation: strip (same as catalog freeze), never
+	// reject, never leak the value into errors.
+	t.Run("default_secret_stripped", func(t *testing.T) {
 		err := validateVerificationResponsesPayload([]byte(sseWithRawParams(
 			`{"type":"object","properties":{"q":{"type":"string","default":"TASK3_M_SECRET"}}}`,
 		)), "text/event-stream")
-		if !errors.Is(err, modelconfig.ErrAgenticStreamInvalid) {
-			t.Fatalf("want stream invalid for default, got %v", err)
+		if err != nil {
+			t.Fatalf("default must be stripped, not rejected: %v", err)
 		}
 		assertNoSecretLeak(t, err)
-		if strings.Contains(err.Error(), "TASK3_M_SECRET") {
-			t.Fatalf("leaked secret: %v", err)
-		}
 	})
-	t.Run("default_nested_object_rejected", func(t *testing.T) {
+	t.Run("default_nested_object_stripped", func(t *testing.T) {
 		err := validateVerificationResponsesPayload([]byte(sseWithRawParams(
 			`{"type":"object","properties":{"o":{"type":"object","default":{"x":1}}}}`,
 		)), "text/event-stream")
-		if !errors.Is(err, modelconfig.ErrAgenticStreamInvalid) {
-			t.Fatalf("want stream invalid, got %v", err)
+		if err != nil {
+			t.Fatalf("nested default must be stripped, not rejected: %v", err)
 		}
 	})
-	t.Run("default_array_rejected", func(t *testing.T) {
+	t.Run("default_array_stripped", func(t *testing.T) {
 		err := validateVerificationResponsesPayload([]byte(sseWithRawParams(
 			`{"type":"object","properties":{"a":{"type":"array","items":{"type":"string"},"default":["x"]}}}`,
 		)), "text/event-stream")
-		if !errors.Is(err, modelconfig.ErrAgenticStreamInvalid) {
-			t.Fatalf("want stream invalid, got %v", err)
+		if err != nil {
+			t.Fatalf("array default must be stripped, not rejected: %v", err)
 		}
 	})
 

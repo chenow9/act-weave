@@ -1,10 +1,12 @@
 package einoruntime
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"actweave/backend/internal/domain"
+	"actweave/backend/internal/principal"
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
@@ -125,16 +127,18 @@ type GraphScope struct {
 type GraphState struct {
 	Scope GraphScope
 
-	ExecutionID         string
-	TraceID             string
-	WorkspaceID         string
-	WorkflowID          string
-	WorkflowVersion     string
-	UserID              string
-	ActorType           string
-	AgentRunID          string
-	WorkflowExecutionID string
-	Trigger             string
+	ExecutionID           string
+	TraceID               string
+	WorkspaceID           string
+	WorkflowID            string
+	WorkflowVersion       string
+	UserID                string
+	ActorType             string
+	AgentRunID            string
+	WorkflowExecutionID   string
+	Trigger               string
+	PrincipalSnapshot     *principal.ExecutionSnapshot
+	AuthorizationSnapshot json.RawMessage
 	// TrialMode auto-confirms Approval nodes (模拟试运行 / D11). Not for production.
 	TrialMode bool
 
@@ -156,16 +160,18 @@ type GraphState struct {
 
 // GraphInput is the compose graph invoke input (design §4.2 execution meta).
 type GraphInput struct {
-	ExecutionID         string
-	TraceID             string
-	WorkspaceID         string
-	WorkflowID          string
-	WorkflowVersion     string
-	UserID              string
-	ActorType           string
-	AgentRunID          string
-	WorkflowExecutionID string
-	Trigger             string
+	ExecutionID           string
+	TraceID               string
+	WorkspaceID           string
+	WorkflowID            string
+	WorkflowVersion       string
+	UserID                string
+	ActorType             string
+	AgentRunID            string
+	WorkflowExecutionID   string
+	Trigger               string
+	PrincipalSnapshot     *principal.ExecutionSnapshot
+	AuthorizationSnapshot json.RawMessage
 	// TrialMode auto-confirms Approval nodes (模拟试运行 / D11). Not for production.
 	TrialMode bool
 	Input     map[string]any
@@ -263,22 +269,36 @@ func newGraphState(in GraphInput) *GraphState {
 			NodeOutputs:  map[string]map[string]any{},
 			WorkflowVars: map[string]any{},
 		},
-		ExecutionID:         in.ExecutionID,
-		TraceID:             in.TraceID,
-		WorkspaceID:         in.WorkspaceID,
-		WorkflowID:          in.WorkflowID,
-		WorkflowVersion:     in.WorkflowVersion,
-		UserID:              in.UserID,
-		ActorType:           in.ActorType,
-		AgentRunID:          in.AgentRunID,
-		WorkflowExecutionID: in.WorkflowExecutionID,
-		Trigger:             in.Trigger,
-		TrialMode:           in.TrialMode,
-		Status:              domain.ExecutionSuccess,
-		InputSummary:        summarizeValue(input),
-		SelectedBranches:    map[string]string{},
-		StartedAt:           started,
+		ExecutionID:           in.ExecutionID,
+		TraceID:               in.TraceID,
+		WorkspaceID:           in.WorkspaceID,
+		WorkflowID:            in.WorkflowID,
+		WorkflowVersion:       in.WorkflowVersion,
+		UserID:                in.UserID,
+		ActorType:             in.ActorType,
+		AgentRunID:            in.AgentRunID,
+		WorkflowExecutionID:   in.WorkflowExecutionID,
+		Trigger:               in.Trigger,
+		PrincipalSnapshot:     clonePrincipalSnapshot(in.PrincipalSnapshot),
+		AuthorizationSnapshot: append(json.RawMessage(nil), in.AuthorizationSnapshot...),
+		TrialMode:             in.TrialMode,
+		Status:                domain.ExecutionSuccess,
+		InputSummary:          summarizeValue(input),
+		SelectedBranches:      map[string]string{},
+		StartedAt:             started,
 	}
+}
+
+func clonePrincipalSnapshot(src *principal.ExecutionSnapshot) *principal.ExecutionSnapshot {
+	if src == nil {
+		return nil
+	}
+	cp := *src
+	if src.Identity.Subject != nil {
+		subject := *src.Identity.Subject
+		cp.Identity.Subject = &subject
+	}
+	return &cp
 }
 
 // toExecution projects GraphState into a domain.Execution snapshot.

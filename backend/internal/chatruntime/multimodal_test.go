@@ -1,10 +1,12 @@
 package chatruntime_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"image/png"
 	"strings"
 	"testing"
 
@@ -20,14 +22,16 @@ const (
 	mmObjectID  = "d41f1f2e-7b5a-7c3d-8e9f-1234567890b1"
 )
 
-// tinyPNG is a minimal valid 1x1 PNG.
+// tinyPNG is a valid 1x1 red PNG (Go png.Encode). The previous 12-byte IDAT
+// variant decoded as config-only and could not be upscaled.
 var tinyPNG = []byte{
 	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
 	0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
 	0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, 0x00, 0x00, 0x00,
-	0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
-	0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xfe, 0xd4, 0xef, 0x00, 0x00,
-	0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+	0x10, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x62, 0xfa, 0xcf, 0xc0, 0x00,
+	0x08, 0x00, 0x00, 0xff, 0xff, 0x03, 0x09, 0x01, 0x02, 0x58, 0xb6, 0xd5,
+	0x50, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60,
+	0x82,
 }
 
 type fakeFileSource struct {
@@ -129,8 +133,15 @@ func TestAssembleUserMessage_ImageSuccessWithFakeSource(t *testing.T) {
 		t.Fatalf("image part: %+v", img)
 	}
 	decoded, err := base64.StdEncoding.DecodeString(*img.Image.Base64Data)
-	if err != nil || len(decoded) != len(tinyPNG) {
-		t.Fatalf("base64 round-trip: err=%v len=%d", err, len(decoded))
+	if err != nil {
+		t.Fatalf("base64: %v", err)
+	}
+	cfg, err := png.DecodeConfig(bytes.NewReader(decoded))
+	if err != nil {
+		t.Fatalf("png: %v", err)
+	}
+	if cfg.Width*cfg.Height < 512 {
+		t.Fatalf("assembled pixels=%d (%dx%d) below Grok minimum 512", cfg.Width*cfg.Height, cfg.Width, cfg.Height)
 	}
 	// Assembly must never embed HTTP download URLs.
 	raw, _ := json.Marshal(msg)
@@ -401,6 +412,46 @@ func TestAssembleUserAgenticMessage_PDFListing(t *testing.T) {
 	}
 	if !strings.Contains(joined, "invoice.pdf") || !strings.Contains(joined, mmFileID) {
 		t.Fatalf("agentic listing=%q", joined)
+	}
+}
+
+func TestAssembleUserAgenticMessage_TinyPNGMeetsGrokPixelMinimum(t *testing.T) {
+	src := &fakeFileSource{
+		meta: chatruntime.MultimodalFileMeta{
+			ID: mmFileID, WorkspaceID: mmWorkspace, AgentID: mmAgent,
+			Status: "READY", StoredObjectID: mmObjectID,
+			DeclaredMediaType: "image/png", SizeBytes: int64(len(tinyPNG)),
+		},
+		body: tinyPNG,
+	}
+	a := &chatruntime.MultimodalAssembler{RuntimeMultimodal: true, Files: src, MaxBytes: 1 << 20}
+	body := v1Content(
+		map[string]string{"type": "text", "text": "描述这张图"},
+		map[string]string{"type": "input_file", "fileId": mmFileID, "mediaType": "image/png"},
+	)
+	msg, err := a.AssembleUserAgenticMessage(context.Background(), mmWorkspace, mmAgent, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var img *schema.UserInputImage
+	for _, block := range msg.ContentBlocks {
+		if block.UserInputImage != nil {
+			img = block.UserInputImage
+		}
+	}
+	if img == nil || img.MIMEType != "image/png" || img.Base64Data == "" {
+		t.Fatalf("missing image block: %+v", msg.ContentBlocks)
+	}
+	raw, err := base64.StdEncoding.DecodeString(img.Base64Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := png.DecodeConfig(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Width*cfg.Height < 512 {
+		t.Fatalf("assembled pixels=%d (%dx%d) below Grok minimum 512", cfg.Width*cfg.Height, cfg.Width, cfg.Height)
 	}
 }
 

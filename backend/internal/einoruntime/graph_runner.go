@@ -2,12 +2,14 @@ package einoruntime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"actweave/backend/internal/domain"
+	"actweave/backend/internal/principal"
 	"actweave/backend/internal/workflowtranslator"
 
 	"github.com/cloudwego/eino/compose"
@@ -80,15 +82,17 @@ func NewCoreGraphRunner(cfg CoreGraphRunnerConfig) *CoreGraphRunner {
 
 // WorkflowRunRequest is the invoke input for CoreGraphRunner.
 type WorkflowRunRequest struct {
-	Plan                domain.CompiledExecutionPlan
-	Input               map[string]any
-	UserID              string
-	WorkspaceID         string
-	WorkflowVersion     string
-	Trigger             string
-	ActorType           string
-	AgentRunID          string
-	WorkflowExecutionID string
+	Plan                  domain.CompiledExecutionPlan
+	Input                 map[string]any
+	UserID                string
+	WorkspaceID           string
+	WorkflowVersion       string
+	Trigger               string
+	ActorType             string
+	AgentRunID            string
+	WorkflowExecutionID   string
+	PrincipalSnapshot     *principal.ExecutionSnapshot
+	AuthorizationSnapshot json.RawMessage
 	// TrialMode enables 模拟试运行 Approval auto-confirm (D11). Production false.
 	TrialMode bool
 	// CheckPointID, when set, is used for compose checkpoint persistence.
@@ -158,19 +162,21 @@ func (r *CoreGraphRunner) Invoke(ctx context.Context, req WorkflowRunRequest) (W
 	}
 
 	input := GraphInput{
-		ExecutionID:         executionID,
-		TraceID:             traceID,
-		WorkspaceID:         workspaceID,
-		WorkflowID:          req.Plan.WorkflowID,
-		WorkflowVersion:     req.WorkflowVersion,
-		UserID:              req.UserID,
-		ActorType:           req.ActorType,
-		AgentRunID:          req.AgentRunID,
-		WorkflowExecutionID: durableWorkflowExecutionID,
-		Trigger:             defaultString(req.Trigger, "Eino Core Workflow Graph"),
-		TrialMode:           req.TrialMode,
-		Input:               cloneAnyMap(req.Input),
-		StartedAt:           started,
+		ExecutionID:           executionID,
+		TraceID:               traceID,
+		WorkspaceID:           workspaceID,
+		WorkflowID:            req.Plan.WorkflowID,
+		WorkflowVersion:       req.WorkflowVersion,
+		UserID:                req.UserID,
+		ActorType:             req.ActorType,
+		AgentRunID:            req.AgentRunID,
+		WorkflowExecutionID:   durableWorkflowExecutionID,
+		Trigger:               defaultString(req.Trigger, "Eino Core Workflow Graph"),
+		PrincipalSnapshot:     clonePrincipalSnapshot(req.PrincipalSnapshot),
+		AuthorizationSnapshot: append(json.RawMessage(nil), req.AuthorizationSnapshot...),
+		TrialMode:             req.TrialMode,
+		Input:                 cloneAnyMap(req.Input),
+		StartedAt:             started,
 	}
 	state := newGraphState(input)
 	runCtx := WithGraphStateHolder(ctx, state)
@@ -248,12 +254,14 @@ func (r *CoreGraphRunner) ResumeApproval(
 	// GraphInput is required by the Runnable type; Start node is not re-run on resume
 	// (checkpoint restores node progress). Values here are mostly unused on pure resume.
 	input := GraphInput{
-		ExecutionID:     req.WorkflowExecutionID,
-		WorkspaceID:     req.WorkspaceID,
-		WorkflowID:      req.Plan.WorkflowID,
-		WorkflowVersion: req.WorkflowVersion,
-		UserID:          req.UserID,
-		Input:           cloneAnyMap(req.Input),
+		ExecutionID:           req.WorkflowExecutionID,
+		WorkspaceID:           req.WorkspaceID,
+		WorkflowID:            req.Plan.WorkflowID,
+		WorkflowVersion:       req.WorkflowVersion,
+		UserID:                req.UserID,
+		PrincipalSnapshot:     clonePrincipalSnapshot(req.PrincipalSnapshot),
+		AuthorizationSnapshot: append(json.RawMessage(nil), req.AuthorizationSnapshot...),
+		Input:                 cloneAnyMap(req.Input),
 	}
 
 	result, invokeErr := graph.Runnable.Invoke(runCtx, input, compose.WithCheckPointID(checkPointID))

@@ -36,6 +36,18 @@ var ErrToolBudgetExceeded = errors.New("tool budget exceeded")
 // ErrToolBudgetMaxInvalid is returned when MaxToolInvocations is negative or >16.
 var ErrToolBudgetMaxInvalid = errors.New("einoruntime tool budget max must be 0 (default 16) or 1..16")
 
+// normalizeMaxIterations maps 0 → DefaultMaxIterations (8).
+// Accepts 1..DefaultMaxToolInvocations (16); rejects negative and >16.
+func normalizeMaxIterations(max int) (int, error) {
+	if max == 0 {
+		return DefaultMaxIterations, nil
+	}
+	if max < 1 || max > DefaultMaxToolInvocations {
+		return 0, fmt.Errorf("%w: got %d", ErrAgenticMaxIterations, max)
+	}
+	return max, nil
+}
+
 // ErrToolBudgetState is returned when run-local budget state is missing/corrupt
 // or cannot be read/written (fail closed — never fall back to a shared counter).
 var ErrToolBudgetState = errors.New("einoruntime tool budget run-local state error")

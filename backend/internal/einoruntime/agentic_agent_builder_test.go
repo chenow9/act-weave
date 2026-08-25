@@ -158,7 +158,7 @@ func TestBuildAgenticAgent_RejectsWrongMode(t *testing.T) {
 	}
 }
 
-func TestBuildAgenticAgent_RejectsNon8Iterations(t *testing.T) {
+func TestBuildAgenticAgent_RejectsOutOfRangeIterations(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	mdl := &scriptedAgenticModel{responses: []*schema.AgenticMessage{agenticmsg.AssistantText("ok")}}
@@ -168,6 +168,10 @@ func TestBuildAgenticAgent_RejectsNon8Iterations(t *testing.T) {
 	if !errors.Is(err, ErrAgenticMaxIterations) {
 		t.Fatalf("got %v", err)
 	}
+	cfg.MaxIterations = -1
+	if _, err := BuildAgenticAgent(ctx, cfg); !errors.Is(err, ErrAgenticMaxIterations) {
+		t.Fatalf("negative: %v", err)
+	}
 	cfg.MaxIterations = 0
 	agent, err := BuildAgenticAgent(ctx, cfg)
 	if err != nil || agent == nil {
@@ -176,6 +180,10 @@ func TestBuildAgenticAgent_RejectsNon8Iterations(t *testing.T) {
 	cfg.MaxIterations = 8
 	if _, err := BuildAgenticAgent(ctx, cfg); err != nil {
 		t.Fatal(err)
+	}
+	cfg.MaxIterations = 16
+	if _, err := BuildAgenticAgent(ctx, cfg); err != nil {
+		t.Fatalf("16 maxiter: %v", err)
 	}
 }
 

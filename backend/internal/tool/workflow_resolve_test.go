@@ -58,6 +58,29 @@ func TestResolveInvocationPublishedWorkflow(t *testing.T) {
 	if !strings.Contains(string(resolved.Snapshot.ActionConfig), wfResolveRevisionID) {
 		t.Fatalf("actionConfig missing revision: %s", resolved.Snapshot.ActionConfig)
 	}
+	if resolved.Connection.ID != "" || resolved.Connection.Environment != "" {
+		t.Fatalf("workflow connection must be empty, got id=%q env=%q", resolved.Connection.ID, resolved.Connection.Environment)
+	}
+	decision, policyErr := execution.EvaluateConfirmationPolicy(execution.ConfirmationPolicyInput{
+		WorkspaceSettings: json.RawMessage(`{}`),
+		Release: execution.ConfirmationReleaseRisk{
+			ReleaseID:            resolved.Snapshot.ReleaseID,
+			RiskLevel:            resolved.RiskLevel,
+			SideEffectLevel:      resolved.SideEffectLevel,
+			RequiresConfirmation: resolved.RequiresConfirmation,
+			InputSchema:          resolved.Snapshot.InputSchema,
+		},
+		Connection: execution.ConfirmationConnectionRisk{
+			ConnectionID: resolved.Connection.ID, Environment: resolved.Connection.Environment,
+		},
+		Input: json.RawMessage(`{"name":"t","files":[]}`),
+	})
+	if policyErr != nil {
+		t.Fatalf("workflow confirmation policy: %v", policyErr)
+	}
+	if decision.RequiresConfirmation && resolved.RequiresConfirmation == false {
+		t.Fatalf("unexpected confirmation required: %+v", decision)
+	}
 }
 
 // Unpublished WORKFLOW (no active release) cannot resolve.

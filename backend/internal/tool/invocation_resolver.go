@@ -166,8 +166,10 @@ func (resolver *InvocationResolver) resolveWorkflowInvocation(
 			ErrorMappings: json.RawMessage(`{}`), RuntimePolicy: json.RawMessage(`{}`),
 			Checksum: resolvedRelease.Checksum,
 		},
+		// Workflows have no HTTP connection. Empty ID+env normalizes to
+		// UNSPECIFIED; PRODUCTION with an empty ID is an invalid confirmation policy.
 		Connection: execution.ConnectionSnapshot{
-			WorkspaceID: request.WorkspaceID, Environment: "PRODUCTION",
+			WorkspaceID: request.WorkspaceID,
 		},
 		Credential: execution.CredentialReference{
 			WorkspaceID:            request.WorkspaceID,

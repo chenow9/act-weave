@@ -83,11 +83,11 @@ var (
 // Policy (stricter fail-closed):
 //   - Supported keywords are retained and re-emitted in canonical form.
 //   - Annotation/extension keywords that never affect validation (title/description
-//     retained when allowed; examples, $comment, readOnly, writeOnly, deprecated,
-//     markdownDescription, x-*) are stripped during canonicalization so digests stay
-//     stable. Examples must never carry secrets into manifests.
-//   - JSON Schema `default` is NOT stripped: it is rejected as unsupported. Defaults
-//     can embed secrets and must never be accepted into catalog freeze or verification.
+//     retained when allowed; default, examples, $comment, readOnly, writeOnly,
+//     deprecated, markdownDescription, x-*) are stripped during canonicalization so
+//     digests stay stable and secret-bearing annotation values never reach the model.
+//     OpenAPI-imported tools commonly include `default` (page size, etc.); stripping
+//     keeps constraint keywords intact while ensuring the keyword never reaches Grok.
 //   - Validation-semantic keywords outside the allowlist are rejected (never silently
 //     dropped), because removing them would change validation semantics.
 //   - $ref is rejected entirely in v1 (external, remote, and local/recursive) unless
@@ -103,12 +103,11 @@ var (
 //
 // Stripped annotation keywords (no validation semantics change):
 //
-//	examples, example, $comment, readOnly, writeOnly, deprecated,
+//	default, examples, example, $comment, readOnly, writeOnly, deprecated,
 //	markdownDescription, x-* vendor extensions
 //
-// Explicitly rejected (not stripped):
-//
-//	default — secret-bearing risk; fail closed with ErrToolSchemaUnsupportedKeyword
+// `default` is stripped (not retained, not rejected) so OpenAPI-imported catalogs
+// freeze, while secret-bearing default values never appear in model-visible JSON.
 var (
 	openaiSchemaAllowedKeywords = map[string]struct{}{
 		"type":                 {},
@@ -135,7 +134,10 @@ var (
 		"title":                {},
 	}
 	openaiSchemaStripKeywords = map[string]struct{}{
-		// "default" intentionally NOT stripped — see reject below / unsupported path.
+		// default is JSON Schema annotation (not a constraint). Strip so page-size
+		// OpenAPI defaults do not fail catalog freeze, and secret-bearing values
+		// never reach Grok / verification / frozen Parameters.
+		"default":             {},
 		"examples":            {},
 		"example":             {},
 		"$comment":            {},
@@ -339,12 +341,9 @@ func canonicalizeSchemaNode(node map[string]any, depth, propCount int) (map[stri
 			// Strip vendor extensions (annotation policy).
 			continue
 		}
-		if k == "default" {
-			// Never strip secret-bearing defaults into a valid schema; fail closed.
-			// Error names the keyword only — never the default value/body.
-			return nil, propCount, fmt.Errorf("%w: default", ErrToolSchemaUnsupportedKeyword)
-		}
 		if _, strip := openaiSchemaStripKeywords[k]; strip {
+			// Drop annotation keys (including default) without copying values so
+			// secret-bearing bodies never enter canonical JSON or error text.
 			continue
 		}
 		if k == "$ref" {

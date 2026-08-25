@@ -187,6 +187,7 @@ func (b *Bridge) pauseForInterrupt(
 			Confirmation: execution.RequestExecutionConfirmationInput{
 				ID: mustNewID(), WorkspaceID: job.WorkspaceID, RunID: job.RunID,
 				TargetItemID: invokeRequest.InvocationID,
+				NodeID:       firstNonEmpty(confirm.StepID, "eino-tool-confirmation"),
 				ReleaseID:    capability.ReleaseID, ConnectionID: resolved.Connection.ID,
 				RequestedBy: run.TriggeredByID, PrincipalSnapshot: &run.PrincipalSnapshot,
 				Decision: decision,

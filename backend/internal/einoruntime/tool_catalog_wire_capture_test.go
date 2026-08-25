@@ -28,8 +28,8 @@ func TestCatalogDigest_WireCapture_AnnotationAB_Coherence(t *testing.T) {
 	ctx := context.Background()
 
 	schemaA := `{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}`
-	// Strip-able annotations only (default is rejected, not stripped).
-	schemaB := `{"type":"object","properties":{"q":{"type":"string","examples":["a"],"x-act":1}},"required":["q"],"$comment":"n"}`
+	// Strip-able annotations only, including default (never reaches the model wire).
+	schemaB := `{"type":"object","properties":{"q":{"type":"string","examples":["a"],"default":"n","x-act":1}},"required":["q"],"$comment":"n"}`
 	toolA := &schemaStubTool{name: "lookup", desc: "look up", schema: schemaA}
 	toolB := &schemaStubTool{name: "lookup", desc: "look up", schema: schemaB}
 

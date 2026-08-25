@@ -2,6 +2,7 @@ package workflowruntime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 
@@ -173,17 +174,19 @@ func (r EinoCoreRunner) ResumeApprovalWithIDs(
 
 func toWorkflowRunRequest(plan domain.CompiledExecutionPlan, ctx ExecutionContext) einoruntime.WorkflowRunRequest {
 	return einoruntime.WorkflowRunRequest{
-		Plan:                plan,
-		Input:               cloneMap(ctx.Input),
-		UserID:              ctx.UserID,
-		WorkspaceID:         ctx.WorkspaceID,
-		WorkflowVersion:     ctx.WorkflowVersion,
-		Trigger:             defaultString(ctx.Trigger, "Eino Core Workflow Graph"),
-		ActorType:           ctx.ActorType,
-		AgentRunID:          ctx.AgentRunID,
-		WorkflowExecutionID: ctx.WorkflowExecutionID,
-		TrialMode:           ctx.TrialMode,
-		RevisionID:          ctx.WorkflowVersion,
+		Plan:                  plan,
+		Input:                 cloneMap(ctx.Input),
+		UserID:                ctx.UserID,
+		WorkspaceID:           ctx.WorkspaceID,
+		WorkflowVersion:       ctx.WorkflowVersion,
+		Trigger:               defaultString(ctx.Trigger, "Eino Core Workflow Graph"),
+		ActorType:             ctx.ActorType,
+		AgentRunID:            ctx.AgentRunID,
+		WorkflowExecutionID:   ctx.WorkflowExecutionID,
+		PrincipalSnapshot:     cloneExecutionPrincipalSnapshot(ctx.PrincipalSnapshot),
+		AuthorizationSnapshot: append(json.RawMessage(nil), ctx.AuthorizationSnapshot...),
+		TrialMode:             ctx.TrialMode,
+		RevisionID:            ctx.WorkflowVersion,
 	}
 }
 
@@ -257,15 +260,17 @@ func (a toolInvokerAdapter) Invoke(ctx context.Context, call einoruntime.Workflo
 		return nil, errors.New("tool invoker is nil")
 	}
 	return a.inner.Invoke(call.ToolID, call.Input, ToolInvocationContext{
-		TraceID:             call.TraceID,
-		WorkflowID:          call.WorkflowID,
-		WorkspaceID:         call.WorkspaceID,
-		NodeID:              call.NodeID,
-		UserID:              call.UserID,
-		ActorType:           call.ActorType,
-		AgentRunID:          call.AgentRunID,
-		WorkflowExecutionID: call.WorkflowExecutionID,
-		ExecutionStepID:     call.ExecutionStepID,
+		TraceID:               call.TraceID,
+		WorkflowID:            call.WorkflowID,
+		WorkspaceID:           call.WorkspaceID,
+		NodeID:                call.NodeID,
+		UserID:                call.UserID,
+		ActorType:             call.ActorType,
+		PrincipalSnapshot:     call.PrincipalSnapshot,
+		AuthorizationSnapshot: append(json.RawMessage(nil), call.AuthorizationSnapshot...),
+		AgentRunID:            call.AgentRunID,
+		WorkflowExecutionID:   call.WorkflowExecutionID,
+		ExecutionStepID:       call.ExecutionStepID,
 	})
 }
 

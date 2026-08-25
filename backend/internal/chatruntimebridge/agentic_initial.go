@@ -600,7 +600,7 @@ func (b *Bridge) buildAgenticAgentFromPlan(
 		Model:                    agenticModel,
 		Tools:                    plan.tools,
 		Catalog:                  plan.catalog,
-		MaxIterations:            einoruntime.DefaultMaxIterations,
+		MaxIterations:            b.maxIterations,
 		MaxToolInvocations:       b.maxTools,
 		ToolSearchMode:           plan.toolSearchMode,
 		ClientToolSearchVerified: clientVerified,

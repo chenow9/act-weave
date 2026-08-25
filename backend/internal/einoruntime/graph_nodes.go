@@ -2,12 +2,14 @@ package einoruntime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
 	"time"
 
 	"actweave/backend/internal/domain"
+	"actweave/backend/internal/principal"
 	"actweave/backend/internal/workflowtranslator"
 
 	"github.com/cloudwego/eino/compose"
@@ -15,17 +17,19 @@ import (
 
 // WorkflowToolCall is the invoker request for a workflow Tool node.
 type WorkflowToolCall struct {
-	ToolID              string
-	Input               map[string]any
-	NodeID              string
-	TraceID             string
-	WorkflowID          string
-	WorkspaceID         string
-	UserID              string
-	ActorType           string
-	AgentRunID          string
-	WorkflowExecutionID string
-	ExecutionStepID     string
+	ToolID                string
+	Input                 map[string]any
+	NodeID                string
+	TraceID               string
+	WorkflowID            string
+	WorkspaceID           string
+	UserID                string
+	ActorType             string
+	AgentRunID            string
+	WorkflowExecutionID   string
+	ExecutionStepID       string
+	PrincipalSnapshot     *principal.ExecutionSnapshot
+	AuthorizationSnapshot json.RawMessage
 }
 
 // WorkflowToolInvoker is the thin tool surface used by eino_core Tool nodes.
@@ -98,6 +102,12 @@ func buildStartLambda(node workflowtranslator.GraphNode) *compose.Lambda {
 			}
 			if st.Trigger == "" {
 				st.Trigger = in.Trigger
+			}
+			if st.PrincipalSnapshot == nil && in.PrincipalSnapshot != nil {
+				st.PrincipalSnapshot = clonePrincipalSnapshot(in.PrincipalSnapshot)
+			}
+			if len(st.AuthorizationSnapshot) == 0 && len(in.AuthorizationSnapshot) > 0 {
+				st.AuthorizationSnapshot = append(json.RawMessage(nil), in.AuthorizationSnapshot...)
 			}
 			// TrialMode is sticky once set from invoke input (模拟试运行).
 			if in.TrialMode {
@@ -231,16 +241,18 @@ func invokeToolWithStep(
 	// chat/AAP invoke a published WORKFLOW without a pre-created execution row
 	// (trial and production :execute always set a real id).
 	result, err := deps.invoker.Invoke(ctx, WorkflowToolCall{
-		ToolID:              toolID,
-		Input:               resolvedInput,
-		NodeID:              node.ID,
-		TraceID:             st.TraceID,
-		WorkflowID:          st.WorkflowID,
-		WorkspaceID:         st.WorkspaceID,
-		UserID:              st.UserID,
-		ActorType:           st.ActorType,
-		AgentRunID:          st.AgentRunID,
-		WorkflowExecutionID: strings.TrimSpace(st.WorkflowExecutionID),
+		ToolID:                toolID,
+		Input:                 resolvedInput,
+		NodeID:                node.ID,
+		TraceID:               st.TraceID,
+		WorkflowID:            st.WorkflowID,
+		WorkspaceID:           st.WorkspaceID,
+		UserID:                st.UserID,
+		ActorType:             st.ActorType,
+		AgentRunID:            st.AgentRunID,
+		WorkflowExecutionID:   strings.TrimSpace(st.WorkflowExecutionID),
+		PrincipalSnapshot:     clonePrincipalSnapshot(st.PrincipalSnapshot),
+		AuthorizationSnapshot: append(json.RawMessage(nil), st.AuthorizationSnapshot...),
 	})
 	if err != nil {
 		return nil, stepInput, err

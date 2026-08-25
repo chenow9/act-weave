@@ -535,10 +535,12 @@ func validateInvocationSchema(ctx context.Context, schemaJSON, valueJSON json.Ra
 	// Coerce common response shapes before VisitJSON so tools can return real data.
 	if response {
 		value = coerceResponseValueToSchema(value, &schema)
-	}
-	if response {
 		return schema.VisitJSON(value, openapi3.VisitAsResponse()) == nil
 	}
+	// Request: only JSON decimal-digit strings → integer/number (NeiOps Jackson
+	// Long as string; workflow refs pass create.data as "26" into integer params).
+	// Do not reuse response coercions (null array → [], bool → string, …).
+	value = coerceRequestNumericStringsToSchema(value, &schema)
 	return schema.VisitJSON(value, openapi3.VisitAsRequest()) == nil
 }
 
@@ -656,6 +658,119 @@ func coerceResponseValueToSchema(value any, schema *openapi3.Schema) any {
 	default:
 		return typed
 	}
+}
+
+// coerceRequestNumericStringsToSchema walks value with schema guidance and
+// converts decimal-digit JSON strings into numbers when the schema says
+// integer or number. All other request shapes are left unchanged.
+func coerceRequestNumericStringsToSchema(value any, schema *openapi3.Schema) any {
+	if schema == nil {
+		return value
+	}
+	if len(schema.AllOf) > 0 {
+		coerced := value
+		for _, ref := range schema.AllOf {
+			if ref != nil && ref.Value != nil {
+				coerced = coerceRequestNumericStringsToSchema(coerced, ref.Value)
+			}
+		}
+		return coerced
+	}
+	schemaTypes := schemaTypeSet(schema)
+	switch typed := value.(type) {
+	case map[string]any:
+		if !schemaTypes["object"] && len(schemaTypes) > 0 && !schemaTypes[""] {
+			return typed
+		}
+		props := schema.Properties
+		for key, child := range typed {
+			if prop, ok := props[key]; ok && prop != nil && prop.Value != nil {
+				typed[key] = coerceRequestNumericStringsToSchema(child, prop.Value)
+			}
+		}
+		return typed
+	case []any:
+		itemSchema := (*openapi3.Schema)(nil)
+		if schema.Items != nil {
+			itemSchema = schema.Items.Value
+		}
+		if itemSchema == nil {
+			return typed
+		}
+		for index, child := range typed {
+			typed[index] = coerceRequestNumericStringsToSchema(child, itemSchema)
+		}
+		return typed
+	case string:
+		if schemaTypes["integer"] {
+			if number, ok := parseStrictJSONIntegerString(typed); ok {
+				return number
+			}
+			return typed
+		}
+		if schemaTypes["number"] {
+			if number, ok := parseStrictJSONNumberString(typed); ok {
+				return number
+			}
+		}
+		return typed
+	default:
+		return typed
+	}
+}
+
+func parseStrictJSONIntegerString(raw string) (json.Number, bool) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return "", false
+	}
+	rest := s
+	if rest[0] == '-' {
+		rest = rest[1:]
+		if rest == "" {
+			return "", false
+		}
+	}
+	for i := 0; i < len(rest); i++ {
+		if rest[i] < '0' || rest[i] > '9' {
+			return "", false
+		}
+	}
+	return json.Number(s), true
+}
+
+func parseStrictJSONNumberString(raw string) (json.Number, bool) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return "", false
+	}
+	rest := s
+	if rest[0] == '-' {
+		rest = rest[1:]
+		if rest == "" {
+			return "", false
+		}
+	}
+	dot := false
+	digit := false
+	for i := 0; i < len(rest); i++ {
+		c := rest[i]
+		if c == '.' {
+			if dot {
+				return "", false
+			}
+			dot = true
+			continue
+		}
+		if c < '0' || c > '9' {
+			return "", false
+		}
+		digit = true
+	}
+	if !digit {
+		return "", false
+	}
+	return json.Number(s), true
 }
 
 func schemaTypeSet(schema *openapi3.Schema) map[string]bool {

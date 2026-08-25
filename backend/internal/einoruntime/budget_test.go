@@ -550,12 +550,9 @@ func buildAgenticAgentWithBudgetMW(
 			tools = append(tools, t)
 		}
 	}
-	maxIter := cfg.MaxIterations
-	if maxIter == 0 {
-		maxIter = DefaultMaxIterations
-	}
-	if maxIter != DefaultMaxIterations {
-		return nil, fmt.Errorf("%w: got %d", ErrAgenticMaxIterations, cfg.MaxIterations)
+	maxIter, err := normalizeMaxIterations(cfg.MaxIterations)
+	if err != nil {
+		return nil, err
 	}
 	unknown := cfg.UnknownToolsHandler
 	if unknown == nil {

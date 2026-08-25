@@ -189,6 +189,9 @@ func TestPauseForInterrupt_EmbedsEinoChatResumeAndTouchesTTL(t *testing.T) {
 	if err := b.pauseForInterrupt(context.Background(), job, runs.run, result, RuntimeGenerationClassic); err != nil {
 		t.Fatalf("pauseForInterrupt: %v", err)
 	}
+	if confirms.input.Resume.Confirmation.NodeID == "" {
+		t.Fatal("confirmation NodeID must be set (AAP pause used to omit it and fail with invalid execution confirmation)")
+	}
 
 	// Outer schema + nested einoChatResume.
 	snap := confirms.input.Resume.RequestSnapshot

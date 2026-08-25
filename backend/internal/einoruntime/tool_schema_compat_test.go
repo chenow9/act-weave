@@ -46,7 +46,6 @@ func TestCanonicalParametersSchema_Rejects(t *testing.T) {
 		{"nested duplicate key", `{"type":"object","properties":{"a":{"type":"string","type":"number"}}}`, ErrToolSchemaDuplicateKey},
 		{"external ref", `{"$ref":"https://example.com/schema.json"}`, ErrToolSchemaExternalRef},
 		{"local ref", `{"$ref":"#/definitions/foo"}`, ErrToolSchemaUnsafeRef},
-		{"default keyword", `{"type":"object","properties":{"q":{"type":"string","default":"x"}}}`, ErrToolSchemaUnsupportedKeyword},
 		{"unsupported allOf", `{"type":"object","allOf":[]}`, ErrToolSchemaUnsupportedKeyword},
 		{"non object type", `{"type":"string"}`, ErrToolSchemaInvalidRoot},
 		{"type number", `{"type":7}`, ErrToolSchemaInvalidValue},
@@ -306,10 +305,9 @@ func TestCanonicalParametersSchema_LosslessNumericNoFloat64(t *testing.T) {
 
 func TestCanonicalParametersSchema_StripsAnnotationsKeepsValidation(t *testing.T) {
 	t.Parallel()
-	// examples / x-* still stripped; default is rejected (not stripped).
 	raw := json.RawMessage(`{
 		"type":"object",
-		"properties":{"q":{"type":"string","examples":["ex"]}},
+		"properties":{"q":{"type":"string","examples":["ex"],"default":"TASK3_M_SECRET"}},
 		"description":"ok",
 		"x-vendor":true
 	}`)
@@ -317,7 +315,8 @@ func TestCanonicalParametersSchema_StripsAnnotationsKeepsValidation(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(out), "x-vendor") || strings.Contains(string(out), "examples") {
+	if strings.Contains(string(out), "x-vendor") || strings.Contains(string(out), "examples") ||
+		strings.Contains(string(out), `"default"`) || strings.Contains(string(out), "TASK3_M_SECRET") {
 		t.Fatalf("annotations not stripped: %s", out)
 	}
 	if !strings.Contains(string(out), `"q"`) {
@@ -325,41 +324,52 @@ func TestCanonicalParametersSchema_StripsAnnotationsKeepsValidation(t *testing.T
 	}
 }
 
-func TestCanonicalParametersSchema_RejectsDefault(t *testing.T) {
+func TestCanonicalParametersSchema_StripsDefault(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name string
 		raw  string
+		bare string
 	}{
-		{"root_default", `{"type":"object","default":"TASK3_M_SECRET"}`},
-		{"prop_default_string", `{"type":"object","properties":{"q":{"type":"string","default":"TASK3_M_SECRET"}}}`},
-		{"nested_default_object", `{"type":"object","properties":{"o":{"type":"object","default":{"k":"TASK3_M_SECRET"}}}}`},
-		{"nested_default_array", `{"type":"object","properties":{"a":{"type":"array","items":{"type":"string"},"default":["TASK3_M_SECRET"]}}}`},
+		{
+			"root_default",
+			`{"type":"object","default":"TASK3_M_SECRET"}`,
+			`{"type":"object"}`,
+		},
+		{
+			"prop_default_string",
+			`{"type":"object","properties":{"q":{"type":"string","default":"TASK3_M_SECRET"}}}`,
+			`{"type":"object","properties":{"q":{"type":"string"}}}`,
+		},
+		{
+			"nested_default_object",
+			`{"type":"object","properties":{"o":{"type":"object","default":{"k":"TASK3_M_SECRET"}}}}`,
+			`{"type":"object","properties":{"o":{"type":"object"}}}`,
+		},
+		{
+			"nested_default_array",
+			`{"type":"object","properties":{"a":{"type":"array","items":{"type":"string"},"default":["TASK3_M_SECRET"]}}}`,
+			`{"type":"object","properties":{"a":{"type":"array","items":{"type":"string"}}}}`,
+		},
 	}
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := canonicalizeAndValidateParametersSchema(json.RawMessage(tc.raw))
-			if err == nil || !errors.Is(err, ErrToolSchemaUnsupportedKeyword) {
-				t.Fatalf("want unsupported keyword for default, got %v", err)
+			got, err := canonicalizeAndValidateParametersSchema(json.RawMessage(tc.raw))
+			if err != nil {
+				t.Fatalf("default must be stripped, not rejected: %v", err)
 			}
-			if strings.Contains(err.Error(), "TASK3_M_SECRET") {
-				t.Fatalf("error leaked default secret: %v", err)
+			if strings.Contains(string(got), `"default"`) || strings.Contains(string(got), "TASK3_M_SECRET") {
+				t.Fatalf("default/secret leaked into canonical schema: %s", got)
+			}
+			want, err := canonicalizeAndValidateParametersSchema(json.RawMessage(tc.bare))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != string(want) {
+				t.Fatalf("stripped default must match bare schema:\ngot %s\nwant %s", got, want)
 			}
 		})
-	}
-	// Equivalent schema without default still digests stably.
-	ok := json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`)
-	a, err := canonicalizeAndValidateParametersSchema(ok)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := canonicalizeAndValidateParametersSchema(ok)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(a) != string(b) {
-		t.Fatalf("digest not stable:\n%s\n%s", a, b)
 	}
 }
 

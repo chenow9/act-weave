@@ -79,8 +79,8 @@ type Dependencies struct {
 	// true Stream → item.delta projection (D14 / A.5). When set, drive always
 	// wires StreamDeltaRecorder.Sink so deltas leave the in-memory buffer.
 	TextSinkFactory TextSinkFactory
-	// MaxIterations overrides the model-round budget (0 / negative → default).
-	// Agentic initial path always uses einoruntime.DefaultMaxIterations (8).
+	// MaxIterations overrides the model-round budget (0 / negative → default 8).
+	// Agentic initial/resume/delegation honor this value (1..16).
 	MaxIterations int
 	// MaxToolInvocations hard-caps tool InvokableRun calls per run.
 	// Contract (aligned with einoruntime / config; no silent clamp):

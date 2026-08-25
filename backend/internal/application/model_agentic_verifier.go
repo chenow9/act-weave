@@ -276,7 +276,12 @@ func (verifier *modelConfigVerifier) probeAgenticCapabilities(ctx context.Contex
 	// --- Probe B: Client tool-search + echo function call (ordered contract) ---
 	searchStart := time.Now()
 	if err := verifier.probeClientToolSearch(ctx, am, mw, opts); err != nil {
-		if !isAgenticToolSearchCapabilityMiss(err) {
+		// Native search miss OR the inner 45s probe budget firing while the
+		// outer 120s budget is still live. Grok/cliproxy often accept the
+		// tool_search tool, then sit on high-reasoning text instead of 400 —
+		// that must fall through to function_calling, not become a blanket
+		// MODEL_CONFIG_VERIFICATION_TIMEOUT that leaves the config unverified.
+		if !isAgenticToolSearchCapabilityMiss(err) && !phase2InnerBudgetExceeded(ctx, err) {
 			observeVerificationPhase(metrics.DisclosurePhaseToolSearch, metrics.DisclosureOutcomeError, metrics.DisclosureToolCallingUnverified, time.Since(searchStart))
 			return modelconfig.AgenticCapabilities{}, err
 		}
@@ -833,6 +838,19 @@ func mapAgenticToolSearchError(err error) error {
 // must not enter Phase 3.
 func isAgenticToolSearchCapabilityMiss(err error) bool {
 	return errors.Is(err, modelconfig.ErrToolSearchUnsupported) || isPhase2CapabilityHTTPReject(err)
+}
+
+// phase2InnerBudgetExceeded is true when probeClientToolSearch hit its own 45s
+// deadline while the parent verification context is still live. The outer
+// timeout (and parent cancel) stay infrastructure TIMEOUT.
+func phase2InnerBudgetExceeded(parent context.Context, err error) bool {
+	if err == nil || parent == nil {
+		return false
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	return parent.Err() == nil
 }
 
 // isPhase2CapabilityHTTPReject is only 400/422. Auth, missing route, rate

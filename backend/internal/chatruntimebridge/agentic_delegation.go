@@ -380,7 +380,7 @@ func (b *Bridge) buildAgenticChildAgent(
 		Model:                    parts.Model,
 		Tools:                    tools,
 		Catalog:                  catalog,
-		MaxIterations:            einoruntime.DefaultMaxIterations,
+		MaxIterations:            b.maxIterations,
 		MaxToolInvocations:       b.maxTools,
 		ToolSearchMode:           mode,
 		ClientToolSearchVerified: clientVerified,

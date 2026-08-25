@@ -75,6 +75,29 @@ func TestHTTPExecutorInvokesImmutableSnapshotAndNormalizesResponse(t *testing.T)
 	}
 }
 
+func TestHTTPExecutorIgnoresSharedClientTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		time.Sleep(80 * time.Millisecond)
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusOK)
+		_, _ = writer.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+	shared := &http.Client{Transport: server.Client().Transport, Timeout: 20 * time.Millisecond}
+	request := validExecutorRequest(server.URL)
+	request.Snapshot.RuntimePolicy = json.RawMessage(`{"timeoutMs":500,"maxResponseBytes":1024}`)
+	result, err := NewHTTPExecutor(shared).Invoke(context.Background(), request, nil)
+	if err != nil {
+		t.Fatalf("runtimePolicy timeout must govern, shared Client.Timeout must not: %v", err)
+	}
+	if result.HTTPStatus != http.StatusOK {
+		t.Fatalf("http status: got %d", result.HTTPStatus)
+	}
+	if shared.Timeout != 20*time.Millisecond {
+		t.Fatalf("shared client Timeout mutated: %s", shared.Timeout)
+	}
+}
+
 func TestHTTPExecutorTimeoutCancellationAndResponseLimit(t *testing.T) {
 	t.Run("timeout", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {

@@ -808,9 +808,9 @@ func (t *schemaStubTool) InvokableRun(_ context.Context, _ string, _ ...tool.Opt
 func TestBuildToolCatalog_AnnotationStripIdenticalDigestAndModelSchema(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	// A: semantic schema only. B: same semantic + strip-able annotation noise (not default).
+	// A: semantic schema only. B: same semantic + strip-able annotation noise (including default).
 	schemaA := `{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}`
-	schemaB := `{"type":"object","properties":{"q":{"type":"string","examples":["a"],"x-vendor":true}},"required":["q"],"$comment":"noise"}`
+	schemaB := `{"type":"object","properties":{"q":{"type":"string","examples":["a"],"default":"TASK3_M_SECRET","x-vendor":true}},"required":["q"],"$comment":"noise"}`
 	toolA := &schemaStubTool{name: "lookup", desc: "look up", schema: schemaA}
 	toolB := &schemaStubTool{name: "lookup", desc: "look up", schema: schemaB}
 	catA, err := BuildToolCatalog(ctx, []ToolCatalogBuildEntry{{Tool: toolA, Exposure: ToolExposureDeferred}})
@@ -863,7 +863,8 @@ func TestBuildToolCatalog_AnnotationStripIdenticalDigestAndModelSchema(t *testin
 	if string(canonA) != string(entA.Parameters) || string(canonB) != string(entB.Parameters) {
 		t.Fatalf("model-visible schema must match catalog Parameters:\nentry=%s\ncanonA=%s\ncanonB=%s", entA.Parameters, canonA, canonB)
 	}
-	if strings.Contains(string(canonA), "examples") || strings.Contains(string(canonA), "x-vendor") {
+	if strings.Contains(string(canonA), "examples") || strings.Contains(string(canonA), "x-vendor") ||
+		strings.Contains(string(canonA), `"default"`) || strings.Contains(string(canonA), "TASK3_M_SECRET") {
 		t.Fatalf("annotations leaked into model-visible schema: %s", canonA)
 	}
 	// Mutation of original tool schema after build cannot change frozen catalog.
@@ -880,17 +881,45 @@ func TestBuildToolCatalog_AnnotationStripIdenticalDigestAndModelSchema(t *testin
 	}
 }
 
-func TestBuildToolCatalog_RejectsDefaultKeyword(t *testing.T) {
+func TestBuildToolCatalog_StripsDefaultKeyword(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	schema := `{"type":"object","properties":{"q":{"type":"string","default":"TASK3_M_SECRET"}},"required":["q"]}`
-	tool := &schemaStubTool{name: "lookup", desc: "look up", schema: schema}
-	_, err := BuildToolCatalog(ctx, []ToolCatalogBuildEntry{{Tool: tool, Exposure: ToolExposureDeferred}})
-	if err == nil || !errors.Is(err, ErrToolSchemaUnsupportedKeyword) {
-		t.Fatalf("want catalog reject default, got %v", err)
+	withDefault := `{"type":"object","properties":{"q":{"type":"string","default":"TASK3_M_SECRET"}},"required":["q"]}`
+	bare := `{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}`
+	toolWith := &schemaStubTool{name: "lookup", desc: "look up", schema: withDefault}
+	toolBare := &schemaStubTool{name: "lookup", desc: "look up", schema: bare}
+	catWith, err := BuildToolCatalog(ctx, []ToolCatalogBuildEntry{{Tool: toolWith, Exposure: ToolExposureDeferred}})
+	if err != nil {
+		t.Fatalf("default must be stripped at freeze, not rejected: %v", err)
 	}
-	if strings.Contains(err.Error(), "TASK3_M_SECRET") {
-		t.Fatalf("error leaked default secret: %v", err)
+	catBare, err := BuildToolCatalog(ctx, []ToolCatalogBuildEntry{{Tool: toolBare, Exposure: ToolExposureDeferred}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ent, ok := catWith.Entry("lookup")
+	if !ok {
+		t.Fatal("missing lookup entry after default strip")
+	}
+	if strings.Contains(string(ent.Parameters), `"default"`) || strings.Contains(string(ent.Parameters), "TASK3_M_SECRET") {
+		t.Fatalf("default/secret leaked into frozen catalog: %s", ent.Parameters)
+	}
+	if catWith.CatalogDigest() != catBare.CatalogDigest() {
+		t.Fatalf("stripped default must not rotate catalog digest: %s vs %s", catWith.CatalogDigest(), catBare.CatalogDigest())
+	}
+	info, err := catWith.ToolInfoCopy("lookup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js, err := info.ParamsOneOf.ToJSONSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(js)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), `"default"`) || strings.Contains(string(raw), "TASK3_M_SECRET") {
+		t.Fatalf("default/secret leaked into model-visible ToolInfo: %s", raw)
 	}
 }
 

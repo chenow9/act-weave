@@ -1346,6 +1346,72 @@ func TestIsAgenticToolSearchCapabilityMissHTTP(t *testing.T) {
 	}
 }
 
+func TestPhase2InnerBudgetExceeded(t *testing.T) {
+	t.Parallel()
+	parent := context.Background()
+	if phase2InnerBudgetExceeded(parent, modelconfig.ErrToolSearchUnsupported) {
+		t.Fatal("capability miss is not an inner-budget timeout")
+	}
+	if phase2InnerBudgetExceeded(parent, context.Canceled) {
+		t.Fatal("cancel is not an inner deadline")
+	}
+	inner, cancel := context.WithTimeout(parent, time.Nanosecond)
+	defer cancel()
+	<-inner.Done()
+	if !phase2InnerBudgetExceeded(parent, inner.Err()) {
+		t.Fatal("inner probe deadline with live parent must fall through to function_calling")
+	}
+	expired, expireCancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer expireCancel()
+	<-expired.Done()
+	if phase2InnerBudgetExceeded(expired, expired.Err()) {
+		t.Fatal("outer verification deadline must stay TIMEOUT")
+	}
+	if phase2InnerBudgetExceeded(nil, context.DeadlineExceeded) {
+		t.Fatal("nil parent must not classify as inner-budget miss")
+	}
+}
+
+func TestAgenticVerifierGrokStyleOpenSSEFallsThroughToFunctionCalling(t *testing.T) {
+	// cliproxy/Grok: reasoning items + encrypted_content + vendor usage extras
+	// on the stream probe; native tool_search is a text miss. Function calling
+	// must still verify. EOF-hold is covered by
+	// TestVerificationTransport_SSEStopsWithoutWaitingForEOF (holding this
+	// handler open would deadlock HTTP/1.1 connection reuse on later probes).
+	fake := &contractFakeResponsesServer{handler: func(turn int, body map[string]any, w http.ResponseWriter, r *http.Request) {
+		if stream, _ := body["stream"].(bool); stream {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, grokStyleVerificationSSE())
+			return
+		}
+		if isFunctionCallingProbeRequest(body) {
+			nonce := extractVerificationNonceFromBody(body)
+			writeContractResponse(w, body, contractEchoCallResponse(nonce))
+			return
+		}
+		writeContractResponse(w, body, contractTextResponse("tool_search is not available", true))
+	}}
+	srv := fake.start(t)
+	v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
+		return nil
+	})}
+	start := time.Now()
+	caps, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if elapsed > 5*time.Second {
+		t.Fatalf("Grok-style open SSE waited %v (likely draining to EOF)", elapsed)
+	}
+	if caps.ToolCalling != modelconfig.ToolCallingFunctionCalling {
+		t.Fatalf("got toolCalling=%q want function_calling", caps.ToolCalling)
+	}
+	if countFunctionCallingProbeBodies(fake.snapshotBodies()) != 1 {
+		t.Fatal("open Grok SSE + tool_search miss must run the function-calling probe")
+	}
+}
+
 func TestVerificationServiceCASWithAgenticVerifier(t *testing.T) {
 	// Integration-style: repository CAS after concurrent edit during probe.
 	// Uses modelconfig package tests primarily; here ensure typed codes map.

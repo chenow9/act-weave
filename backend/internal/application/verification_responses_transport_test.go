@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"actweave/backend/internal/modelconfig"
 )
@@ -280,6 +281,185 @@ func TestVerificationTransport_404ResponsesUnsupported(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "sk-should-not-leak") {
 		t.Fatalf("secret leaked: %v", err)
+	}
+}
+
+// grokStyleVerificationSSE is a compact cliproxy/Grok 4.6 Responses stream:
+// reasoning output items (empty summary on added, encrypted_content on done),
+// reasoning_summary_* events, vendor usage extras, and a trailing blank frame.
+func grokStyleVerificationSSE() string {
+	events := []struct {
+		name string
+		obj  map[string]any
+	}{
+		{"response.created", map[string]any{
+			"type": "response.created", "sequence_number": 0,
+			"response": map[string]any{
+				"id": "resp_grok", "object": "response", "status": "in_progress",
+				"output": []any{}, "usage": nil,
+			},
+		}},
+		{"response.in_progress", map[string]any{
+			"type": "response.in_progress", "sequence_number": 1,
+			"response": map[string]any{
+				"id": "resp_grok", "object": "response", "status": "in_progress",
+				"output": []any{},
+			},
+		}},
+		{"response.output_item.added", map[string]any{
+			"type": "response.output_item.added", "output_index": 0, "sequence_number": 2,
+			"item": map[string]any{
+				"type": "reasoning", "id": "rs_1", "status": "in_progress", "summary": []any{},
+			},
+		}},
+		{"response.reasoning_summary_part.added", map[string]any{
+			"type": "response.reasoning_summary_part.added", "item_id": "rs_1",
+			"output_index": 0, "summary_index": 0, "sequence_number": 3,
+			"part": map[string]any{"type": "summary_text", "text": ""},
+		}},
+		{"response.reasoning_summary_text.delta", map[string]any{
+			"type": "response.reasoning_summary_text.delta", "item_id": "rs_1",
+			"output_index": 0, "summary_index": 0, "sequence_number": 4, "delta": "think",
+		}},
+		{"response.reasoning_summary_text.done", map[string]any{
+			"type": "response.reasoning_summary_text.done", "item_id": "rs_1",
+			"output_index": 0, "summary_index": 0, "sequence_number": 5, "text": "think",
+		}},
+		{"response.reasoning_summary_part.done", map[string]any{
+			"type": "response.reasoning_summary_part.done", "item_id": "rs_1",
+			"output_index": 0, "summary_index": 0, "sequence_number": 6,
+			"part": map[string]any{"type": "summary_text", "text": "think"},
+		}},
+		{"response.output_item.done", map[string]any{
+			"type": "response.output_item.done", "output_index": 0, "sequence_number": 7,
+			"item": map[string]any{
+				"type": "reasoning", "id": "rs_1", "status": "completed",
+				"summary":           []any{map[string]any{"type": "summary_text", "text": "think"}},
+				"encrypted_content": "enc-blob",
+			},
+		}},
+		{"response.output_item.added", map[string]any{
+			"type": "response.output_item.added", "output_index": 1, "sequence_number": 8,
+			"item": map[string]any{
+				"type": "message", "id": "msg_1", "status": "in_progress",
+				"role": "assistant", "content": []any{},
+			},
+		}},
+		{"response.content_part.added", map[string]any{
+			"type": "response.content_part.added", "item_id": "msg_1",
+			"output_index": 1, "content_index": 0, "sequence_number": 9,
+			"part": map[string]any{
+				"type": "output_text", "text": "", "logprobs": []any{}, "annotations": []any{},
+			},
+		}},
+		{"response.output_text.delta", map[string]any{
+			"type": "response.output_text.delta", "item_id": "msg_1",
+			"output_index": 1, "content_index": 0, "sequence_number": 10,
+			"delta": "ack", "logprobs": []any{},
+		}},
+		{"response.output_text.done", map[string]any{
+			"type": "response.output_text.done", "item_id": "msg_1",
+			"output_index": 1, "content_index": 0, "sequence_number": 11,
+			"text": "ack", "logprobs": []any{},
+		}},
+		{"response.content_part.done", map[string]any{
+			"type": "response.content_part.done", "item_id": "msg_1",
+			"output_index": 1, "content_index": 0, "sequence_number": 12,
+			"part": map[string]any{
+				"type": "output_text", "text": "ack", "logprobs": []any{}, "annotations": []any{},
+			},
+		}},
+		{"response.output_item.done", map[string]any{
+			"type": "response.output_item.done", "output_index": 1, "sequence_number": 13,
+			"item": map[string]any{
+				"type": "message", "id": "msg_1", "status": "completed", "role": "assistant",
+				"content": []any{map[string]any{
+					"type": "output_text", "text": "ack", "logprobs": []any{}, "annotations": []any{},
+				}},
+			},
+		}},
+		{"response.completed", map[string]any{
+			"type": "response.completed", "sequence_number": 14,
+			"response": map[string]any{
+				"id": "resp_grok", "object": "response", "status": "completed",
+				"output": []any{
+					map[string]any{
+						"type": "reasoning", "id": "rs_1", "status": "completed",
+						"summary":           []any{map[string]any{"type": "summary_text", "text": "think"}},
+						"encrypted_content": "enc-blob",
+					},
+					map[string]any{
+						"type": "message", "id": "msg_1", "status": "completed", "role": "assistant",
+						"content": []any{map[string]any{
+							"type": "output_text", "text": "ack", "logprobs": []any{}, "annotations": []any{},
+						}},
+					},
+				},
+				"usage": map[string]any{
+					"input_tokens": 10, "output_tokens": 6, "total_tokens": 16,
+					"input_tokens_details":  map[string]any{"cached_tokens": 2},
+					"output_tokens_details": map[string]any{"reasoning_tokens": 4},
+					// Grok/cliproxy vendor extras — must not fail verification.
+					"num_sources_used":           0,
+					"num_server_side_tools_used": 0,
+					"cost_in_usd_ticks":          1,
+					"context_details":            map[string]any{"input_tokens": 10, "output_tokens": 6},
+				},
+			},
+		}},
+	}
+	var b strings.Builder
+	for _, ev := range events {
+		raw, _ := json.Marshal(ev.obj)
+		b.WriteString("event: " + ev.name + "\ndata: " + string(raw) + "\n\n")
+	}
+	// cliproxy extra blank frame after the terminal event.
+	b.WriteString("\n")
+	return b.String()
+}
+
+func TestValidateVerificationSSE_GrokReasoningEncryptedContentAndVendorUsage(t *testing.T) {
+	if err := validateVerificationResponsesPayload([]byte(grokStyleVerificationSSE()), "text/event-stream"); err != nil {
+		t.Fatalf("Grok reasoning/encrypted_content/vendor usage extras must accept: %v", err)
+	}
+}
+
+func TestVerificationTransport_SSEStopsWithoutWaitingForEOF(t *testing.T) {
+	hang := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, grokStyleVerificationSSE())
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		<-hang
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(hang) })
+
+	c := wrapClientWithVerificationUsageValidator(srv.Client())
+	start := time.Now()
+	resp, err := c.Post(srv.URL+"/v1/responses", "application/json", strings.NewReader(`{"stream":true}`))
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("transport: %v", err)
+	}
+	t.Cleanup(func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	})
+	if elapsed > 2*time.Second {
+		t.Fatalf("SSE transport waited %v for EOF after response.completed", elapsed)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"type":"response.completed"`) &&
+		!strings.Contains(string(body), `"type": "response.completed"`) {
+		t.Fatalf("restored body missing completed event: %s", body)
 	}
 }
 

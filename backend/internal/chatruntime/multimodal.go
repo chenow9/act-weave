@@ -54,9 +54,11 @@ const AttachmentsMarker = "actweave_attachments"
 
 // MultimodalAssembler builds schema.Message values for the model from durable
 // chat content. READY image input_file parts are assembled as UserInputMultiContent
-// (base64, no URLs) when RuntimeMultimodal is true. Inbound-allowlisted non-image
-// files become an assembly-time <actweave_attachments> listing (never fail-closed,
-// never inlined as bytes/URLs). Unknown media types fail with ErrModelContentUnsupported.
+// (base64, no URLs) when RuntimeMultimodal is true. Images below 512 total
+// pixels are nearest-neighbor upscaled (Grok/xAI invalid_image). Inbound-allowlisted
+// non-image files become an assembly-time <actweave_attachments> listing (never
+// fail-closed, never inlined as bytes/URLs). Unknown media types fail with
+// ErrModelContentUnsupported.
 type MultimodalAssembler struct {
 	// RuntimeMultimodal gates image assembly (config.AgentAccessFiles.RuntimeMultimodal).
 	// Document listings do not require this flag; images still fail closed when false.
@@ -367,6 +369,13 @@ func (a *MultimodalAssembler) openVisionImage(
 	if !IsVisionMediaType(mediaType) {
 		mediaType = "image/png"
 	}
+	body, mediaType = prepareVisionImage(body, mediaType)
+	if int64(len(body)) > maxBytes {
+		return assembledImage{}, fmt.Errorf("%w: file body exceeds assembly size limit", ErrModelContentUnsupported)
+	}
+	if len(body) == 0 {
+		return assembledImage{}, fmt.Errorf("%w: empty file body", ErrModelContentUnsupported)
+	}
 	return assembledImage{
 		base64: base64.StdEncoding.EncodeToString(body),
 		mime:   mediaType,
@@ -537,8 +546,9 @@ func TextForTokenEstimate(content string) (string, bool) {
 
 // AssembleUserAgenticMessage maps durable user content to a validated Agentic
 // user message (Task 4A). Text → UserInputText; READY vision input_file →
-// UserInputImage (base64); documents → listing on the text block.
-// Never projects tool/reasoning/search blocks into public text.
+// UserInputImage (base64, upscaled to >=512 pixels when needed); documents →
+// listing on the text block. Never projects tool/reasoning/search blocks into
+// public text.
 func (a *MultimodalAssembler) AssembleUserAgenticMessage(
 	ctx context.Context,
 	workspaceID, agentID, content string,

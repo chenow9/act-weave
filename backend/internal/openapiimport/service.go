@@ -233,6 +233,9 @@ func schemasForEndpoint(endpoint domain.OpenAPIEndpoint) (json.RawMessage, json.
 func parameterSchema(parameter domain.ToolParameter) map[string]any {
 	value := schemaBase(parameter.Type, parameter.Description)
 	if parameter.DefaultValue != nil {
+		// Keep JSON Schema default on stored InputSchema so HTTP execution can
+		// fill omitted optional params (pageSize). Catalog freeze strips
+		// `default` before Grok so secret-bearing values never reach the model.
 		value["default"] = parameter.DefaultValue
 	}
 	if len(parameter.Children) > 0 {

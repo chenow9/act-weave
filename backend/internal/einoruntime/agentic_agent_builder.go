@@ -49,8 +49,8 @@ var (
 	// ErrAgenticCarryAllTooLarge is returned when carry-all is requested with
 	// more than CarryAllHardLimit non-platform-control tools.
 	ErrAgenticCarryAllTooLarge = errors.New("einoruntime agentic builder: carry-all catalog exceeds hard limit")
-	// ErrAgenticMaxIterations is returned when MaxIterations is not 0 (normalize to 8) or 8.
-	ErrAgenticMaxIterations = errors.New("einoruntime agentic builder: MaxIterations must be 8")
+	// ErrAgenticMaxIterations is returned when MaxIterations is outside 0 (default 8) or 1..16.
+	ErrAgenticMaxIterations = errors.New("einoruntime agentic builder: MaxIterations must be 0 (default 8) or 1..16")
 	// ErrAgenticTooManyImmediate is returned when immediate tools exceed the platform ceiling.
 	ErrAgenticTooManyImmediate = errors.New("einoruntime agentic builder: too many immediate tools")
 	// ErrAgenticPromptCacheKeyRequired is returned when PromptCacheKey is empty.
@@ -104,7 +104,7 @@ type AgenticAgentBuildConfig struct {
 	Catalog *ToolCatalogSnapshot
 
 	// MaxIterations caps model rounds. Zero normalizes to DefaultMaxIterations (8).
-	// Any value other than 0 or 8 is rejected (no larger hidden bound).
+	// 1..DefaultMaxToolInvocations (16) accepted; negative and >16 rejected.
 	MaxIterations int
 	// MaxToolInvocations hard-caps tool executions across Invokable, Streamable,
 	// EnhancedInvokable, and EnhancedStreamable paths.
@@ -170,16 +170,11 @@ func BuildAgenticAgent(ctx context.Context, cfg AgenticAgentBuildConfig) (*adk.T
 	hasTools := len(tools) > 0
 	catalogNonEmpty := cfg.Catalog != nil && cfg.Catalog.Len() > 0
 
-	// MaxIterations: 0 → 8; only 8 accepted otherwise.
-	maxIter := cfg.MaxIterations
-	if maxIter == 0 {
-		maxIter = DefaultMaxIterations
-	}
-	if maxIter != DefaultMaxIterations {
-		return nil, fmt.Errorf("%w: got %d", ErrAgenticMaxIterations, cfg.MaxIterations)
+	maxIter, err := normalizeMaxIterations(cfg.MaxIterations)
+	if err != nil {
+		return nil, err
 	}
 
-	// Budget middleware validates limit (0→16, 1..16; reject negative/>16).
 	budgetMW, err := NewToolBudgetMiddleware(cfg.MaxToolInvocations)
 	if err != nil {
 		return nil, err

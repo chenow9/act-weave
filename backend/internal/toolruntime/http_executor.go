@@ -37,6 +37,13 @@ type HTTPExecutor struct {
 func NewHTTPExecutor(client *http.Client) *HTTPExecutor {
 	if client == nil {
 		client = &http.Client{}
+	} else {
+		// Per-call deadline comes from runtimePolicy.timeoutMs via request
+		// context. The application-wide HTTP client defaults to 15s; leaving
+		// that Timeout here would cut ingest/wait tools before their policy.
+		cloned := *client
+		cloned.Timeout = 0
+		client = &cloned
 	}
 	return &HTTPExecutor{client: client, active: make(map[string]context.CancelFunc)}
 }

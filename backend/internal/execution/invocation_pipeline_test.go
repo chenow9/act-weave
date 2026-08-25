@@ -219,6 +219,48 @@ func TestValidateInvocationSchemaAllowsNullListOnResponse(t *testing.T) {
 	}
 }
 
+func TestRequestCoercesStringIDsToInteger(t *testing.T) {
+	schema := json.RawMessage(`{
+		"type":"object",
+		"required":["taskId","files"],
+		"properties":{
+			"taskId":{"type":"integer"},
+			"files":{"type":"array","items":{"type":"object","properties":{"fileId":{"type":"string"}}}}
+		},
+		"additionalProperties":false
+	}`)
+	// NeiOps Result<Long> + ToStringSerializer → data is a JSON string.
+	input := json.RawMessage(`{"taskId":"26","files":[{"fileId":"aded8e96-fe6d-5fcd-bd20-305772e73bee"}]}`)
+	if !MatchToolInputSchema(context.Background(), schema, input) {
+		t.Fatal("string taskId should coerce to integer for workflow attach mapping")
+	}
+}
+
+func TestRequestDoesNotApplyResponseCoercions(t *testing.T) {
+	arraySchema := json.RawMessage(`{
+		"type":"object",
+		"required":["files"],
+		"properties":{"files":{"type":"array","items":{"type":"object"}}}
+	}`)
+	if MatchToolInputSchema(context.Background(), arraySchema, json.RawMessage(`{"files":null}`)) {
+		t.Fatal("request null array must not coerce to []")
+	}
+	intSchema := json.RawMessage(`{
+		"type":"object",
+		"required":["taskId"],
+		"properties":{"taskId":{"type":"integer"}}
+	}`)
+	if MatchToolInputSchema(context.Background(), intSchema, json.RawMessage(`{"taskId":"26.0"}`)) {
+		t.Fatal("request float-shaped string must not coerce to integer")
+	}
+	if MatchToolInputSchema(context.Background(), intSchema, json.RawMessage(`{"taskId":"abc"}`)) {
+		t.Fatal("request non-numeric string must not coerce to integer")
+	}
+	if MatchToolInputSchema(context.Background(), intSchema, json.RawMessage(`{"taskId":"1e2"}`)) {
+		t.Fatal("request scientific string must not coerce to integer")
+	}
+}
+
 func TestApplyInputSchemaDefaultsFillsMissingPagination(t *testing.T) {
 	schema := json.RawMessage(`{
 		"type":"object",

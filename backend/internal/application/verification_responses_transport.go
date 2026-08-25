@@ -1,6 +1,7 @@
 package application
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -15,6 +16,12 @@ import (
 
 	"actweave/backend/internal/modelconfig"
 )
+
+// errVerificationSSEComplete is an internal signal that readVerificationSSE
+// saw an authentic response.completed and should stop without waiting for EOF.
+// cliproxy/Grok keep the HTTP body open (chunked keep-alive) after the terminal
+// event; draining to EOF is what turned a 3s stream into a 30s/40s TIMEOUT.
+var errVerificationSSEComplete = errors.New("verification sse terminal complete")
 
 // Verification-only response body cap. Probes are low-token; this bounds memory
 // while allowing full JSON/SSE capture for strict usage validation. The raw body
@@ -92,21 +99,12 @@ func (t *verificationUsageTransport) RoundTrip(req *http.Request) (*http.Respons
 	if !isResponsesAPIPath(req) {
 		return resp, nil
 	}
-	if resp.Body == nil {
-		return resp, fmt.Errorf("%w: empty responses body", modelconfig.ErrAgenticUsageInvalid)
-	}
-	limited := io.LimitReader(resp.Body, verificationResponsesBodyCap+1)
-	buf, readErr := io.ReadAll(limited)
+	ct := strings.ToLower(resp.Header.Get("Content-Type"))
+	buf, readErr := consumeVerificationResponsesBody(resp.Body, ct)
 	_ = resp.Body.Close()
 	if readErr != nil {
-		return nil, fmt.Errorf("%w: read responses body", modelconfig.ErrAgenticStreamInvalid)
+		return nil, readErr
 	}
-	if len(buf) > verificationResponsesBodyCap {
-		// Cap exceeded — fail closed without retaining body.
-		// RoundTrip contract: non-nil error must not pair with a response.
-		return nil, fmt.Errorf("%w: responses body exceeds verification cap", modelconfig.ErrAgenticStreamInvalid)
-	}
-	ct := strings.ToLower(resp.Header.Get("Content-Type"))
 	if err := validateVerificationResponsesPayload(buf, ct); err != nil {
 		// Return nil response so callers cannot ignore the validation error.
 		return nil, err
@@ -115,6 +113,134 @@ func (t *verificationUsageTransport) RoundTrip(req *http.Request) (*http.Respons
 	resp.Body = io.NopCloser(bytes.NewReader(buf))
 	resp.ContentLength = int64(len(buf))
 	return resp, nil
+}
+
+func consumeVerificationResponsesBody(body io.ReadCloser, contentType string) ([]byte, error) {
+	if body == nil {
+		return nil, fmt.Errorf("%w: empty responses body", modelconfig.ErrAgenticUsageInvalid)
+	}
+	if strings.Contains(contentType, "text/event-stream") {
+		buf, err := readVerificationSSE(body)
+		if err != nil {
+			return nil, wrapVerificationBodyReadError(err)
+		}
+		return buf, nil
+	}
+	limited := io.LimitReader(body, verificationResponsesBodyCap+1)
+	buf, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, wrapVerificationBodyReadError(err)
+	}
+	if len(buf) > verificationResponsesBodyCap {
+		// Cap exceeded — fail closed without retaining body.
+		return nil, fmt.Errorf("%w: responses body exceeds verification cap", modelconfig.ErrAgenticStreamInvalid)
+	}
+	return buf, nil
+}
+
+func wrapVerificationBodyReadError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return err
+	}
+	var networkError net.Error
+	if errors.As(err, &networkError) {
+		return mapVerificationTransportNetworkError(err)
+	}
+	if errors.Is(err, modelconfig.ErrAgenticStreamInvalid) ||
+		errors.Is(err, modelconfig.ErrAgenticUsageInvalid) {
+		return err
+	}
+	return fmt.Errorf("%w: read responses body", modelconfig.ErrAgenticStreamInvalid)
+}
+
+// readVerificationSSE copies SSE frames until an authentic response.completed
+// (or a typed validation failure). It does not wait for the upstream to close
+// the body. Unknown allowlist failures and usage defects fail immediately.
+func readVerificationSSE(r io.Reader) ([]byte, error) {
+	scn := bufio.NewScanner(r)
+	scn.Buffer(nil, verificationResponsesBodyCap+1)
+	var out bytes.Buffer
+	var dataBuf strings.Builder
+	var eventType string
+	sawData := false
+	state := &sseStreamState{}
+
+	writeLine := func(line string) error {
+		if out.Len()+len(line)+1 > verificationResponsesBodyCap {
+			return fmt.Errorf("%w: responses body exceeds verification cap", modelconfig.ErrAgenticStreamInvalid)
+		}
+		out.WriteString(line)
+		out.WriteByte('\n')
+		return nil
+	}
+	flush := func() error {
+		if !sawData {
+			eventType = ""
+			return nil
+		}
+		data := strings.TrimSpace(dataBuf.String())
+		dataBuf.Reset()
+		sawData = false
+		et := strings.TrimSpace(eventType)
+		eventType = ""
+		if data == "" || data == "[DONE]" {
+			return nil
+		}
+		if err := validateVerificationSSEDataEvent(et, []byte(data), state); err != nil {
+			return err
+		}
+		if state.terminalCompletedCount == 1 {
+			return errVerificationSSEComplete
+		}
+		return nil
+	}
+
+	for scn.Scan() {
+		line := strings.TrimRight(scn.Text(), "\r")
+		if line == "" {
+			if err := writeLine(""); err != nil {
+				return nil, err
+			}
+			if err := flush(); err != nil {
+				if errors.Is(err, errVerificationSSEComplete) {
+					return out.Bytes(), nil
+				}
+				return nil, err
+			}
+			continue
+		}
+		if err := writeLine(line); err != nil {
+			return nil, err
+		}
+		if strings.HasPrefix(line, "event:") {
+			eventType = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+			continue
+		}
+		if strings.HasPrefix(line, "data:") {
+			payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if sawData {
+				dataBuf.WriteByte('\n')
+			}
+			dataBuf.WriteString(payload)
+			sawData = true
+		}
+	}
+	if err := scn.Err(); err != nil {
+		return nil, err
+	}
+	if err := flush(); err != nil {
+		if errors.Is(err, errVerificationSSEComplete) {
+			return out.Bytes(), nil
+		}
+		return nil, err
+	}
+	if state.terminalCompletedCount == 0 {
+		return nil, fmt.Errorf("%w: missing response.completed terminal event", modelconfig.ErrAgenticStreamInvalid)
+	}
+	return out.Bytes(), nil
 }
 
 func discardAndCloseBody(body io.ReadCloser) {
