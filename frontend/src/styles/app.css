@@ -552,8 +552,12 @@ a[href]:focus-visible {
   box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
 }
 
-.app-select input[role="combobox"]:focus-visible {
+.app-select input[role="combobox"]:focus,
+.app-select input[role="combobox"]:focus-visible,
+.app-select .el-select__input:focus,
+.app-select .el-select__input:focus-visible {
   outline: none;
+  box-shadow: none;
 }
 
 .app-select .el-select__selection {
@@ -2893,6 +2897,27 @@ a[href]:focus-visible {
   box-shadow: var(--aw-focus);
 }
 
+/*
+ * Wrapped controls already paint focus on the chrome. The inner field is
+ * caret / filter-only; a second :focus-visible ring shows up as an empty
+ * inner rectangle (AppSelect with no value is the obvious case).
+ */
+:is(
+    .app-select,
+    .el-select,
+    .search-box,
+    .agent-search-box,
+    .chat-session-search,
+    .login-field-shell,
+    .composer-input,
+    .confirmation-input,
+    .chat-input-shell
+  )
+  :is(input, textarea):is(:focus, :focus-visible) {
+  outline: none;
+  box-shadow: none;
+}
+
 .app-shell {
   display: block;
   min-width: 0;
@@ -3427,12 +3452,14 @@ a[href]:focus-visible {
 }
 
 /* Click / modal restore-focus must not keep the keyboard ring. Tab still shows it. */
-html[data-aw-focus-modality="pointer"] :is(
+html[data-aw-focus-modality="pointer"]
+  :is(
     button,
     [role="button"],
     [role="tab"],
     [role="menuitem"],
     [role="option"],
+    [role="combobox"],
     a[href],
     summary
   ):focus-visible {

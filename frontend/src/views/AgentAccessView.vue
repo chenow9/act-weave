@@ -157,6 +157,8 @@ const scopeOptions = computed<Array<{ value: AgentAccessScope; label: string }>>
   { value: "event:read", label: t("agentAccess.scopeEventRead") },
   { value: "interaction:decide", label: t("agentAccess.scopeInteractionDecide") },
   { value: "artifact:read", label: t("agentAccess.scopeArtifactRead") },
+  { value: "file:write", label: t("agentAccess.scopeFileWrite") },
+  { value: "file:read", label: t("agentAccess.scopeFileRead") },
 ]);
 
 const authMethodOptions: AppSelectOption[] = [
@@ -790,7 +792,12 @@ function authMethodShort(method: string) {
           <button type="button" :class="{ active: activeTab === 'credentials' }" @click="activeTab = 'credentials'">
             {{ t("agentAccess.tabCredentials") }} <span>{{ access.credentials.length }}</span>
           </button>
-          <button type="button" :class="{ active: activeTab === 'grants' }" @click="activeTab = 'grants'">
+          <button
+            type="button"
+            data-testid="tab-grants"
+            :class="{ active: activeTab === 'grants' }"
+            @click="activeTab = 'grants'"
+          >
             {{ t("agentAccess.tabGrants") }} <span>{{ access.grants.length }}</span>
           </button>
           <button type="button" :class="{ active: activeTab === 'configuration' }" @click="activeTab = 'configuration'">
@@ -872,7 +879,13 @@ function authMethodShort(method: string) {
               <h3>{{ t("agentAccess.grantsTitle") }}</h3>
               <p>{{ t("agentAccess.grantsBody") }}</p>
             </div>
-            <button v-if="canManage" class="primary-button compact" type="button" @click="openGrant">
+            <button
+              v-if="canManage"
+              data-testid="open-grant"
+              class="primary-button compact"
+              type="button"
+              @click="openGrant"
+            >
               <i class="fa-solid fa-link" />{{ t("agentAccess.grantAgent") }}
             </button>
           </div>
