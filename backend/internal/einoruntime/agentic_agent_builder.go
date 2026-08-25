@@ -280,10 +280,9 @@ func BuildAgenticAgent(ctx context.Context, cfg AgenticAgentBuildConfig) (*adk.T
 	middlewares = append(middlewares, budgetMW)
 	middlewares = append(middlewares, cfg.ExtraToolMiddlewares...)
 
-	// Production structural invariant: at most one executable action per model
-	// turn (function call and/or native client tool-search). ParallelToolCalls=false
-	// and ExecuteSequentially=true remain defense-in-depth; this guard fails closed
-	// before ToolsNode even when a non-platform AgenticModel ignores them.
+	// Production: ToolsNode sees one executable action per visit. Packed unique
+	// CallIDs are queued and replayed in order; duplicate CallIDs fail closed.
+	// ParallelToolCalls=false and ExecuteSequentially=true remain defense-in-depth.
 	guardedModel := wrapSingleActionAgenticModel(cfg.Model)
 
 	return adk.NewTypedChatModelAgent(ctx, &adk.TypedChatModelAgentConfig[*schema.AgenticMessage]{

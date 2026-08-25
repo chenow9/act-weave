@@ -5,47 +5,71 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 
+	"github.com/cloudwego/eino-ext/components/model/agenticopenai"
+	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
 	"actweave/backend/internal/agenticmsg"
 )
 
-// ErrMultiActionModelTurn is returned when a single assistant/model turn
-// contains more than one executable action (ordinary function_tool_call and/or
-// native client tool-search call). Production agents must never hand multi-action
-// turns to ToolsNode: pinned Eino ToolsNode.Stream races on a shared err capture
-// even with ExecuteSequentially=true when >=2 EnhancedStreamable tools run.
-//
-// One executable action is allowed; zero actions (final text / reasoning) is allowed.
-// errors.Is matchable.
+// MaxExecutableActionsPerTurn is how many function/tool-search calls from one
+// model output are executed (in order). ToolsNode still sees one call per visit
+// so HITL can pause before later calls and Stream races on ≥2 EnhancedStreamable
+// tools are avoided. Extra calls above this cap are dropped. Each queued replay
+// still consumes one agent iteration but does not call the inner model.
+const MaxExecutableActionsPerTurn = 8
+
+const queuedActionsRunLocalKey = "einoruntime.agentic.queued_actions"
+
+// Gob names for checkpointed packed-call leftovers (run-local Extra).
+const (
+	queuedActionRegisterName  = "actweave_queued_exec_action_v1"
+	queuedActionsRegisterName = "actweave_queued_exec_actions_v1"
+)
+
+// ErrMultiActionModelTurn is returned when a model turn cannot be serialized
+// into one-call-per-ToolsNode visits (duplicate CallIDs). Unique-CallID extras
+// are queued for later visits instead.
 var ErrMultiActionModelTurn = errors.New("einoruntime agentic: multi-action model turn rejected")
+
+// errQueuedActionsNeedAgentRun is returned when extras cannot be checkpointed
+// because Generate/Stream ran outside an agent Run (wrapper unit tests).
+var errQueuedActionsNeedAgentRun = errors.New("einoruntime agentic: queued actions require agent run-local state")
 
 // ErrInvalidModelOutput is returned when a model Generate path yields a nil
 // message with a nil error (invalid success-shaped output). Wrapped with
 // agenticmsg.ErrNilMessage so Task 1 typed causes remain errors.Is matchable.
 var ErrInvalidModelOutput = errors.New("einoruntime agentic: invalid model output")
 
-// wrapSingleActionAgenticModel is the production AgenticModel boundary used
-// unconditionally by BuildAgenticAgent. It fails closed before ToolsNode sees
-// multi-action Generate/Stream outputs, regardless of which concrete model
-// implementation the caller supplies.
+func init() {
+	schema.RegisterName[queuedExecutableAction](queuedActionRegisterName)
+	schema.RegisterName[[]queuedExecutableAction](queuedActionsRegisterName)
+}
+
+// queuedExecutableAction is gob-safe remaining work from a packed model turn.
+type queuedExecutableAction struct {
+	Name      string
+	CallID    string
+	Arguments string
+	Search    bool
+}
+
 func wrapSingleActionAgenticModel(inner model.AgenticModel) model.AgenticModel {
 	if inner == nil {
 		return nil
 	}
-	// Avoid double-wrapping when tests/helpers re-wrap an already-guarded model.
 	if _, ok := inner.(*singleActionAgenticModel); ok {
 		return inner
 	}
 	return &singleActionAgenticModel{inner: inner}
 }
 
-// singleActionAgenticModel enforces at most one executable action per model turn
-// on both Generate and Stream paths. Generate is equivalent in strictness to
-// Stream: multi-action block-count first, then full agenticmsg protocol
-// validation before any payload reaches Eino / ToolsNode.
+// singleActionAgenticModel keeps ToolsNode at one executable action per visit.
+// Packed unique-CallID extras are queued in run-local state and replayed on
+// later Generate/Stream without calling the inner model.
 type singleActionAgenticModel struct {
 	inner model.AgenticModel
 }
@@ -54,41 +78,39 @@ func (m *singleActionAgenticModel) Generate(ctx context.Context, input []*schema
 	if m == nil || m.inner == nil {
 		return nil, errors.New("einoruntime agentic: nil model")
 	}
+	if queued, ok, err := popQueuedAction(ctx); err != nil {
+		return nil, err
+	} else if ok {
+		return queued.validatedMessage()
+	}
 	msg, err := m.inner.Generate(ctx, input, opts...)
 	if err != nil {
 		return nil, err
 	}
-	// (nil, nil) is invalid model output — never return success-shaped nil.
 	if msg == nil {
 		return nil, fmt.Errorf("%w: model Generate returned (nil, nil): %w", ErrInvalidModelOutput, agenticmsg.ErrNilMessage)
 	}
-	// Order matches Stream validateConcatAndRejectMultiAction:
-	//  1. count executable action content blocks (not CallID identity);
-	//     ErrMultiActionModelTurn for n>1 so colliding/empty-ID multi-actions
-	//     keep the structural classification rather than a later Validate miss;
-	//  2. strict agenticmsg.Validate for all remaining content/role/union/
-	//     protocol invariants (nil blocks, unsupported server/MCP/media/refusal,
-	//     union conflicts, malformed single calls/arguments/extensions).
-	if err := rejectMultiActionMessage(msg); err != nil {
-		return nil, err
-	}
 	if err := agenticmsg.Validate(msg); err != nil {
-		// Preserve typed agenticmsg causes for errors.Is.
 		return nil, err
 	}
-	return msg, nil
+	return serializePackedActions(ctx, msg)
 }
 
 func (m *singleActionAgenticModel) Stream(ctx context.Context, input []*schema.AgenticMessage, opts ...model.Option) (*schema.StreamReader[*schema.AgenticMessage], error) {
 	if m == nil || m.inner == nil {
 		return nil, errors.New("einoruntime agentic: nil model")
 	}
+	if queued, ok, err := popQueuedAction(ctx); err != nil {
+		return nil, err
+	} else if ok {
+		msg, verr := queued.validatedMessage()
+		if verr != nil {
+			return nil, verr
+		}
+		return schema.StreamReaderFromArray([]*schema.AgenticMessage{msg}), nil
+	}
 	sr, err := m.inner.Stream(ctx, input, opts...)
 	if err != nil {
-		// Underlying Stream may legally return (non-nil reader, non-nil error).
-		// Own and Close any non-nil reader exactly once before propagating the
-		// original Stream error; do not read or expose chunks. Preserve error
-		// identity (errors.Is / ==) as far as the interface permits.
 		if sr != nil {
 			sr.Close()
 		}
@@ -97,25 +119,184 @@ func (m *singleActionAgenticModel) Stream(ctx context.Context, input []*schema.A
 	if sr == nil {
 		return nil, errors.New("einoruntime agentic: nil model stream")
 	}
-	// Fail closed before Eino / ToolsNode observes any chunk: fully buffer the
-	// inner stream, Close it promptly, validate+concat via agenticmsg, then
-	// count final executable action content blocks (not unique CallIDs).
-	return bufferValidateSingleActionStream(sr)
+	return bufferValidateSingleActionStream(ctx, sr)
 }
 
-// rejectMultiActionMessage fails closed when msg carries more than one
-// executable action content block. Nil message is not multi-action
-// (caller/engine handles nil). Counting is by content-block cardinality only —
-// identical/colliding/empty CallIDs do not collapse actions.
-func rejectMultiActionMessage(msg *schema.AgenticMessage) error {
-	n, err := countExecutableActions(msg)
+func serializePackedActions(ctx context.Context, msg *schema.AgenticMessage) (*schema.AgenticMessage, error) {
+	if err := rejectDuplicateActionCallIDs(msg); err != nil {
+		return nil, err
+	}
+	kept, queued, dropped := splitExecutableActions(msg)
+	if len(queued) > 0 {
+		if err := enqueueQueuedActions(ctx, queued); err != nil {
+			// Wrapper unit tests call Generate/Stream without an agent Run.
+			// Keep the first action so the split stays observable; extras drop.
+			if !errors.Is(err, errQueuedActionsNeedAgentRun) {
+				return nil, fmt.Errorf("einoruntime agentic: cannot persist queued actions: %w", err)
+			}
+		}
+	}
+	if dropped > 0 {
+		slog.Warn("einoruntime agentic: dropping extra executable actions over per-turn cap",
+			"kept", 1, "queued", len(queued), "dropped", dropped, "cap", MaxExecutableActionsPerTurn)
+	}
+	return kept, nil
+}
+
+func rejectDuplicateActionCallIDs(msg *schema.AgenticMessage) error {
+	seen := map[string]struct{}{}
+	for _, block := range executableActionBlocks(msg) {
+		id := block.FunctionToolCall.CallID
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			return fmt.Errorf("%w: duplicate CallID %q", ErrMultiActionModelTurn, id)
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
+}
+
+func executableActionBlocks(msg *schema.AgenticMessage) []*schema.ContentBlock {
+	if msg == nil {
+		return nil
+	}
+	var out []*schema.ContentBlock
+	for _, block := range msg.ContentBlocks {
+		if isExecutableActionBlock(block) {
+			out = append(out, block)
+		}
+	}
+	return out
+}
+
+func isExecutableActionBlock(block *schema.ContentBlock) bool {
+	return block != nil && block.Type == schema.ContentBlockTypeFunctionToolCall && block.FunctionToolCall != nil
+}
+
+func splitExecutableActions(msg *schema.AgenticMessage) (kept *schema.AgenticMessage, queued []queuedExecutableAction, dropped int) {
+	if msg == nil {
+		return nil, nil, 0
+	}
+	out := make([]*schema.ContentBlock, 0, len(msg.ContentBlocks))
+	keptAction := false
+	for _, block := range msg.ContentBlocks {
+		if !isExecutableActionBlock(block) {
+			out = append(out, block)
+			continue
+		}
+		if !keptAction {
+			out = append(out, block)
+			keptAction = true
+			continue
+		}
+		if len(queued) < MaxExecutableActionsPerTurn-1 {
+			queued = append(queued, queuedFromBlock(block))
+			continue
+		}
+		dropped++
+	}
+	clone := *msg
+	clone.ContentBlocks = out
+	return &clone, queued, dropped
+}
+
+func queuedFromBlock(block *schema.ContentBlock) queuedExecutableAction {
+	q := queuedExecutableAction{
+		Name:      block.FunctionToolCall.Name,
+		CallID:    block.FunctionToolCall.CallID,
+		Arguments: block.FunctionToolCall.Arguments,
+	}
+	if agenticopenai.GetToolSearchToolCall(block) {
+		q.Search = true
+	}
+	return q
+}
+
+func (q queuedExecutableAction) toMessage() *schema.AgenticMessage {
+	call := schema.FunctionToolCall{Name: q.Name, CallID: q.CallID, Arguments: q.Arguments}
+	block := schema.NewContentBlock(&call)
+	if q.Search {
+		block.Extra = map[string]any{"openai-tool-search-tool-call": true}
+	}
+	return &schema.AgenticMessage{
+		Role:          schema.AgenticRoleTypeAssistant,
+		ContentBlocks: []*schema.ContentBlock{block},
+	}
+}
+
+func (q queuedExecutableAction) validatedMessage() (*schema.AgenticMessage, error) {
+	msg := q.toMessage()
+	if err := agenticmsg.Validate(msg); err != nil {
+		return nil, fmt.Errorf("einoruntime agentic: queued action replay: %w", err)
+	}
+	return msg, nil
+}
+
+func enqueueQueuedActions(ctx context.Context, extra []queuedExecutableAction) error {
+	if len(extra) == 0 {
+		return nil
+	}
+	cur, inRun, err := loadQueuedActions(ctx)
 	if err != nil {
 		return err
 	}
-	if n > 1 {
-		return fmt.Errorf("%w: got %d executable actions in one model turn", ErrMultiActionModelTurn, n)
+	if !inRun {
+		return errQueuedActionsNeedAgentRun
 	}
-	return nil
+	out := make([]queuedExecutableAction, 0, len(cur)+len(extra))
+	out = append(out, cur...)
+	out = append(out, extra...)
+	return adk.SetRunLocalValue(ctx, queuedActionsRunLocalKey, out)
+}
+
+func popQueuedAction(ctx context.Context) (queuedExecutableAction, bool, error) {
+	cur, inRun, err := loadQueuedActions(ctx)
+	if err != nil {
+		return queuedExecutableAction{}, false, err
+	}
+	if !inRun || len(cur) == 0 {
+		return queuedExecutableAction{}, false, nil
+	}
+	next := cur[0]
+	rest := cloneQueuedActions(cur[1:])
+	if rest == nil {
+		rest = []queuedExecutableAction{}
+	}
+	if err := adk.SetRunLocalValue(ctx, queuedActionsRunLocalKey, rest); err != nil {
+		return queuedExecutableAction{}, false, err
+	}
+	return next, true, nil
+}
+
+func loadQueuedActions(ctx context.Context) ([]queuedExecutableAction, bool, error) {
+	v, found, err := adk.GetRunLocalValue(ctx, queuedActionsRunLocalKey)
+	if err != nil {
+		// Outside an agent Run there is no queue (wrapper unit tests).
+		return nil, false, nil
+	}
+	if !found || v == nil {
+		return nil, true, nil
+	}
+	switch q := v.(type) {
+	case []queuedExecutableAction:
+		return cloneQueuedActions(q), true, nil
+	default:
+		return nil, true, fmt.Errorf("einoruntime agentic: corrupt queued actions type %T", v)
+	}
+}
+
+func cloneQueuedActions(in []queuedExecutableAction) []queuedExecutableAction {
+	if len(in) == 0 {
+		if in == nil {
+			return nil
+		}
+		return []queuedExecutableAction{}
+	}
+	out := make([]queuedExecutableAction, len(in))
+	copy(out, in)
+	return out
 }
 
 // countExecutableActions counts ordinary function_tool_call blocks and native
@@ -144,8 +325,8 @@ func countExecutableActions(msg *schema.AgenticMessage) (int, error) {
 
 // bufferValidateSingleActionStream fully reads and buffers the inner model
 // stream, Closes the inner reader exactly once, validates and concatenates
-// chunks with the Task 1 agenticmsg protocol, then rejects multi-action turns
-// by counting final executable action content blocks (never unique CallIDs).
+// chunks with the Task 1 agenticmsg protocol, then serializes packed actions
+// so ToolsNode sees one call (extras queued for later visits).
 //
 // Tradeoff: intentional full buffering adds latency and peak memory equal to
 // one model-turn stream. That is accepted for structural safety — ToolsNode
@@ -162,19 +343,16 @@ func countExecutableActions(msg *schema.AgenticMessage) (int, error) {
 // Contract: do not infinite-drain after Close. The pinned StreamReader contract
 // is Recv-until-EOF-or-error then Close exactly once; Close unblocks a blocked
 // producer Send. There is no secondary post-reject drain loop.
-func bufferValidateSingleActionStream(inner *schema.StreamReader[*schema.AgenticMessage]) (*schema.StreamReader[*schema.AgenticMessage], error) {
+func bufferValidateSingleActionStream(ctx context.Context, inner *schema.StreamReader[*schema.AgenticMessage]) (*schema.StreamReader[*schema.AgenticMessage], error) {
 	chunks, err := drainAndCloseModelStream(inner)
 	if err != nil {
-		// Upstream already Closed; expose error on Recv so Stream setup itself
-		// is not the only surface (both Stream-err and first-Recv-err consumers
-		// fail closed without seeing content).
 		return errorOnlyAgenticStream(err), nil
 	}
-	if err := validateConcatAndRejectMultiAction(chunks); err != nil {
+	msg, err := validateConcatAndSerializePackedActions(ctx, chunks)
+	if err != nil {
 		return errorOnlyAgenticStream(err), nil
 	}
-	// Replay original chunks (array reader; Close is a no-op; no upstream).
-	return schema.StreamReaderFromArray(chunks), nil
+	return schema.StreamReaderFromArray([]*schema.AgenticMessage{msg}), nil
 }
 
 // errorOnlyAgenticStream returns a reader that yields err on the first Recv
@@ -224,47 +402,21 @@ func drainAndCloseModelStream(sr *schema.StreamReader[*schema.AgenticMessage]) (
 	}
 }
 
-// validateConcatAndRejectMultiAction applies the strict agenticmsg stream
-// protocol then rejects multi-action turns by final content-block count.
-//
-// Order:
-//  1. Empty stream → agenticmsg.ErrEmptyConcat (fail closed; strict-equivalent
-//     to Generate (nil,nil) in that no success-shaped empty payload is
-//     observed; Stream surfaces ErrEmptyConcat on first Recv via
-//     errorOnlyAgenticStream, never a clean empty replay).
-//  2. ValidateStreamChunk each chunk (fail closed on malformed fragments).
-//  3. schema.ConcatAgenticMessages to materialize final content blocks
-//     (StreamingMeta.Index groups progressive fragments of one action;
-//     distinct indexes remain distinct actions even with colliding CallIDs).
-//  4. Count executable action content blocks; reject n > 1 as
-//     ErrMultiActionModelTurn before complete Validate (so multi-action is not
-//     masked by a later completeness error on empty/partial IDs).
-//  5. agenticmsg.ConcatStream for full protocol (stream validate + concat +
-//     complete Validate / stream-only index normalization).
-func validateConcatAndRejectMultiAction(chunks []*schema.AgenticMessage) error {
-	// Fail closed on zero chunks — never treat empty model stream as valid
-	// zero-action EOF. Preserve errors.Is(..., agenticmsg.ErrEmptyConcat).
+func validateConcatAndSerializePackedActions(ctx context.Context, chunks []*schema.AgenticMessage) (*schema.AgenticMessage, error) {
 	if len(chunks) == 0 {
-		return agenticmsg.ErrEmptyConcat
+		return nil, agenticmsg.ErrEmptyConcat
 	}
 	for i, c := range chunks {
 		if c == nil {
-			return fmt.Errorf("%w: at index %d", agenticmsg.ErrNilChunk, i)
+			return nil, fmt.Errorf("%w: at index %d", agenticmsg.ErrNilChunk, i)
 		}
 		if err := agenticmsg.ValidateStreamChunk(c); err != nil {
-			return fmt.Errorf("einoruntime agentic: stream chunk %d: %w", i, err)
+			return nil, fmt.Errorf("einoruntime agentic: stream chunk %d: %w", i, err)
 		}
 	}
-	raw, err := schema.ConcatAgenticMessages(chunks)
+	msg, err := agenticmsg.ConcatStream(chunks)
 	if err != nil {
-		return fmt.Errorf("%w: %v", agenticmsg.ErrConcat, err)
+		return nil, err
 	}
-	if err := rejectMultiActionMessage(raw); err != nil {
-		return err
-	}
-	// Full Task 1 protocol on the same chunks (complete-message Validate).
-	if _, err := agenticmsg.ConcatStream(chunks); err != nil {
-		return err
-	}
-	return nil
+	return serializePackedActions(ctx, msg)
 }

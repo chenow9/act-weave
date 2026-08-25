@@ -1,10 +1,14 @@
 package einoruntime
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -12,6 +16,7 @@ import (
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"github.com/cloudwego/eino/schema/openai"
 
@@ -47,6 +52,19 @@ func (m *fixedResponseAgenticModel) Stream(ctx context.Context, input []*schema.
 	return schema.StreamReaderFromArray([]*schema.AgenticMessage{m.gen}), nil
 }
 
+func functionCallNames(msg *schema.AgenticMessage) []string {
+	if msg == nil {
+		return nil
+	}
+	var names []string
+	for _, block := range msg.ContentBlocks {
+		if block != nil && block.FunctionToolCall != nil {
+			names = append(names, block.FunctionToolCall.Name)
+		}
+	}
+	return names
+}
+
 func multiFunctionCallMsg(calls ...schema.FunctionToolCall) *schema.AgenticMessage {
 	blocks := make([]*schema.ContentBlock, 0, len(calls))
 	for i := range calls {
@@ -74,7 +92,7 @@ func markToolSearchBlock(msg *schema.AgenticMessage) *schema.AgenticMessage {
 	return msg
 }
 
-func TestSingleActionAgenticModel_GenerateTwoCallsRejected(t *testing.T) {
+func TestSingleActionAgenticModel_GenerateTwoCallsKeepsFirst(t *testing.T) {
 	t.Parallel()
 	inner := &fixedResponseAgenticModel{
 		gen: multiFunctionCallMsg(
@@ -83,13 +101,17 @@ func TestSingleActionAgenticModel_GenerateTwoCallsRejected(t *testing.T) {
 		),
 	}
 	m := wrapSingleActionAgenticModel(inner)
-	_, err := m.Generate(context.Background(), []*schema.AgenticMessage{agenticmsg.UserText("hi")})
-	if !errors.Is(err, ErrMultiActionModelTurn) {
-		t.Fatalf("err=%v want ErrMultiActionModelTurn", err)
+	msg, err := m.Generate(context.Background(), []*schema.AgenticMessage{agenticmsg.UserText("hi")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := functionCallNames(msg)
+	if len(names) != 1 || names[0] != "a" {
+		t.Fatalf("function calls=%v want [a]", names)
 	}
 }
 
-func TestSingleActionAgenticModel_StreamSameChunkTwoCallsRejected(t *testing.T) {
+func TestSingleActionAgenticModel_StreamSameChunkTwoCallsKeepsFirst(t *testing.T) {
 	t.Parallel()
 	inner := &fixedResponseAgenticModel{
 		streamChunks: []*schema.AgenticMessage{
@@ -100,25 +122,25 @@ func TestSingleActionAgenticModel_StreamSameChunkTwoCallsRejected(t *testing.T) 
 		},
 	}
 	m := wrapSingleActionAgenticModel(inner)
-	// Buffer-before-observe: first Recv is ErrMultiActionModelTurn; no content chunks.
 	sr, err := m.Stream(context.Background(), []*schema.AgenticMessage{agenticmsg.UserText("hi")})
 	if err != nil {
 		t.Fatalf("Stream setup: %v", err)
 	}
 	defer sr.Close()
 	chunk, rerr := sr.Recv()
-	if chunk != nil {
-		t.Fatal("expected no content chunk on multi-action reject")
+	if rerr != nil {
+		t.Fatalf("Recv: %v", rerr)
 	}
-	if !errors.Is(rerr, ErrMultiActionModelTurn) {
-		t.Fatalf("Recv err=%v want ErrMultiActionModelTurn", rerr)
+	names := functionCallNames(chunk)
+	if len(names) != 1 || names[0] != "a" {
+		t.Fatalf("function calls=%v want [a]", names)
 	}
 }
 
-func TestSingleActionAgenticModel_StreamCallsSplitAcrossChunksRejected(t *testing.T) {
+func TestSingleActionAgenticModel_StreamCallsSplitAcrossChunksKeepsFirst(t *testing.T) {
 	t.Parallel()
 	// Two complete single-call chunks with different CallIDs / stream indexes —
-	// multi-action across stream. Guard buffers fully and rejects before any chunk.
+	// concatenated into one packed turn; keep the first, queue the rest.
 	chunk1 := multiFunctionCallMsg(schema.FunctionToolCall{Name: "a", CallID: "c1", Arguments: `{"q":"1"}`})
 	chunk1.ContentBlocks[0].StreamingMeta = &schema.StreamingMeta{Index: 0}
 	chunk2 := multiFunctionCallMsg(schema.FunctionToolCall{Name: "b", CallID: "c2", Arguments: `{"q":"2"}`})
@@ -132,15 +154,16 @@ func TestSingleActionAgenticModel_StreamCallsSplitAcrossChunksRejected(t *testin
 	}
 	defer sr.Close()
 	chunk, rerr := sr.Recv()
-	if chunk != nil {
-		t.Fatal("expected no content chunk on multi-action reject")
+	if rerr != nil {
+		t.Fatalf("Recv: %v", rerr)
 	}
-	if !errors.Is(rerr, ErrMultiActionModelTurn) {
-		t.Fatalf("Recv err=%v want ErrMultiActionModelTurn", rerr)
+	names := functionCallNames(chunk)
+	if len(names) != 1 || names[0] != "a" {
+		t.Fatalf("function calls=%v want [a]", names)
 	}
 }
 
-func TestSingleActionAgenticModel_MixedSearchAndFunctionRejected(t *testing.T) {
+func TestSingleActionAgenticModel_MixedSearchAndFunctionKeepsSearchFirst(t *testing.T) {
 	t.Parallel()
 	search := multiFunctionCallMsg(schema.FunctionToolCall{
 		Name: ClientToolSearchToolName, CallID: "ts-1", Arguments: `{"query":"x"}`,
@@ -159,12 +182,15 @@ func TestSingleActionAgenticModel_MixedSearchAndFunctionRejected(t *testing.T) {
 
 	inner := &fixedResponseAgenticModel{gen: mixed}
 	m := wrapSingleActionAgenticModel(inner)
-	_, err := m.Generate(context.Background(), []*schema.AgenticMessage{agenticmsg.UserText("hi")})
-	if !errors.Is(err, ErrMultiActionModelTurn) {
-		t.Fatalf("err=%v want ErrMultiActionModelTurn", err)
+	got, err := m.Generate(context.Background(), []*schema.AgenticMessage{agenticmsg.UserText("hi")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := functionCallNames(got)
+	if len(names) != 1 || names[0] != ClientToolSearchToolName {
+		t.Fatalf("function calls=%v want [%s]", names, ClientToolSearchToolName)
 	}
 
-	// Stream form of the same mixed turn — rejected before any chunk is observed.
 	inner2 := &fixedResponseAgenticModel{streamChunks: []*schema.AgenticMessage{mixed}}
 	m2 := wrapSingleActionAgenticModel(inner2)
 	sr, err := m2.Stream(context.Background(), []*schema.AgenticMessage{agenticmsg.UserText("hi")})
@@ -172,9 +198,13 @@ func TestSingleActionAgenticModel_MixedSearchAndFunctionRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sr.Close()
-	_, rerr := sr.Recv()
-	if !errors.Is(rerr, ErrMultiActionModelTurn) {
-		t.Fatalf("stream err=%v want ErrMultiActionModelTurn", rerr)
+	chunk, rerr := sr.Recv()
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	names = functionCallNames(chunk)
+	if len(names) != 1 || names[0] != ClientToolSearchToolName {
+		t.Fatalf("stream function calls=%v want [%s]", names, ClientToolSearchToolName)
 	}
 }
 
@@ -229,15 +259,12 @@ func TestSingleActionAgenticModel_ValidOneCallAndFinalText(t *testing.T) {
 		}
 		n++
 	}
-	if n != 2 {
-		t.Fatalf("chunks=%d want 2", n)
+	if n != 1 {
+		t.Fatalf("chunks=%d want 1 (concatenated replay)", n)
 	}
 }
 
-// TestSingleActionGuard_RealToolsNodeNeverExecutesOnRejectedMultiAction builds a
-// real agent via BuildAgenticAgent and proves multi-action model turns fail closed
-// with ErrMultiActionModelTurn before any tool executes (ToolsNode/TypedRunner).
-func TestSingleActionGuard_RealToolsNodeNeverExecutesOnRejectedMultiAction(t *testing.T) {
+func TestSingleActionGuard_RealToolsNodeExecutesPackedCallsInOrder(t *testing.T) {
 	ctx := context.Background()
 	var calls int64
 	bt := &countingBudgetTool{name: "echo_multi", calls: &calls}
@@ -245,12 +272,11 @@ func TestSingleActionGuard_RealToolsNodeNeverExecutesOnRejectedMultiAction(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Adversarial model emits two function calls in one Generate/Stream turn.
 	multi := multiFunctionCallMsg(
 		schema.FunctionToolCall{Name: "echo_multi", CallID: "m1", Arguments: `{"q":"a"}`},
 		schema.FunctionToolCall{Name: "echo_multi", CallID: "m2", Arguments: `{"q":"b"}`},
 	)
-	mdl := &scriptedAgenticModel{responses: []*schema.AgenticMessage{multi, agenticmsg.AssistantText("should-not")}}
+	mdl := &scriptedAgenticModel{responses: []*schema.AgenticMessage{multi, agenticmsg.AssistantText("after-both")}}
 	agent, err := BuildAgenticAgent(ctx, baseAgenticCfg(mdl, []tool.BaseTool{bt}, cat))
 	if err != nil {
 		t.Fatal(err)
@@ -266,14 +292,353 @@ func TestSingleActionGuard_RealToolsNodeNeverExecutesOnRejectedMultiAction(t *te
 	} else if res != nil {
 		hard = res.Err
 	}
-	if hard == nil {
-		t.Fatalf("expected multi-action rejection; res=%+v", res)
+	if hard != nil {
+		t.Fatalf("packed unique CallIDs: %v", hard)
 	}
-	if !errors.Is(hard, ErrMultiActionModelTurn) {
-		t.Fatalf("hard=%v want ErrMultiActionModelTurn", hard)
+	if atomic.LoadInt64(&calls) != 2 {
+		t.Fatalf("tool calls=%d want 2", calls)
 	}
-	if atomic.LoadInt64(&calls) != 0 {
-		t.Fatalf("tool must not execute on rejected multi-action; calls=%d", calls)
+}
+
+func TestPackedCallsDropOverPerTurnCap(t *testing.T) {
+	ctx := context.Background()
+	var calls int64
+	bt := &countingBudgetTool{name: "cap_tool", calls: &calls}
+	cat, err := BuildToolCatalog(ctx, []ToolCatalogBuildEntry{{Tool: bt, Exposure: ToolExposureDeferred}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	callsIn := make([]schema.FunctionToolCall, MaxExecutableActionsPerTurn+1)
+	for i := range callsIn {
+		callsIn[i] = schema.FunctionToolCall{
+			Name: "cap_tool", CallID: fmt.Sprintf("c%d", i+1), Arguments: `{"q":"x"}`,
+		}
+	}
+	mdl := &scriptedAgenticModel{responses: []*schema.AgenticMessage{
+		multiFunctionCallMsg(callsIn...),
+		agenticmsg.AssistantText("after-cap"),
+	}}
+	agent, err := BuildAgenticAgent(ctx, baseAgenticCfg(mdl, []tool.BaseTool{bt}, cat))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, runErr := NewAgenticEngine(AgenticEngineConfig{Store: newMemCheckPointStore()}).Run(ctx, agent, AgenticRunInput{
+		WorkspaceID: "ws-cap", RunID: "run-cap",
+		Messages: []*schema.AgenticMessage{agenticmsg.UserText("go")},
+	})
+	var hard error
+	if runErr != nil {
+		hard = runErr
+	} else if res != nil {
+		hard = res.Err
+	}
+	if hard != nil {
+		t.Fatalf("cap run: %v", hard)
+	}
+	if atomic.LoadInt64(&calls) != int64(MaxExecutableActionsPerTurn) {
+		t.Fatalf("tool calls=%d want %d", calls, MaxExecutableActionsPerTurn)
+	}
+}
+
+func TestSplitExecutableActions_OrderCapAndSearch(t *testing.T) {
+	t.Parallel()
+	search := schema.FunctionToolCall{Name: ClientToolSearchToolName, CallID: "ts-1", Arguments: `{"query":"x"}`}
+	a := schema.FunctionToolCall{Name: "a", CallID: "a-1", Arguments: `{"q":"1"}`}
+	b := schema.FunctionToolCall{Name: "b", CallID: "b-1", Arguments: `{"q":"2"}`}
+	msg := multiFunctionCallMsg(search, a, b)
+	msg.ContentBlocks[0].Extra = map[string]any{"openai-tool-search-tool-call": true}
+
+	kept, queued, dropped := splitExecutableActions(msg)
+	if dropped != 0 {
+		t.Fatalf("dropped=%d want 0", dropped)
+	}
+	names := functionCallNames(kept)
+	if len(names) != 1 || names[0] != ClientToolSearchToolName {
+		t.Fatalf("kept=%v want [%s]", names, ClientToolSearchToolName)
+	}
+	if len(queued) != 2 || queued[0].Name != "a" || queued[1].Name != "b" {
+		t.Fatalf("queued=%+v want a then b", queued)
+	}
+	if queued[0].Search || queued[1].Search {
+		t.Fatal("ordinary queued calls must not carry search Extra")
+	}
+
+	calls := make([]schema.FunctionToolCall, MaxExecutableActionsPerTurn+2)
+	for i := range calls {
+		calls[i] = schema.FunctionToolCall{Name: "t", CallID: fmt.Sprintf("c%d", i+1), Arguments: `{}`}
+	}
+	_, queued, dropped = splitExecutableActions(multiFunctionCallMsg(calls...))
+	if len(queued) != MaxExecutableActionsPerTurn-1 || dropped != 2 {
+		t.Fatalf("queued=%d dropped=%d want queued=%d dropped=2", len(queued), dropped, MaxExecutableActionsPerTurn-1)
+	}
+}
+
+func TestQueuedExecutableActionsGobRoundTrip(t *testing.T) {
+	t.Parallel()
+	original := []queuedExecutableAction{
+		{Name: "echo", CallID: "c1", Arguments: `{"q":"1"}`},
+		{Name: ClientToolSearchToolName, CallID: "ts-1", Arguments: `{"query":"x"}`, Search: true},
+	}
+	probe := map[string]any{queuedActionsRunLocalKey: original}
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(probe); err != nil {
+		t.Fatalf("gob encode: %v", err)
+	}
+	var decoded map[string]any
+	if err := gob.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&decoded); err != nil {
+		t.Fatalf("gob decode: %v", err)
+	}
+	got, ok := decoded[queuedActionsRunLocalKey].([]queuedExecutableAction)
+	if !ok {
+		t.Fatalf("decoded type %T want []queuedExecutableAction", decoded[queuedActionsRunLocalKey])
+	}
+	if len(got) != 2 || got[0] != original[0] || got[1] != original[1] {
+		t.Fatalf("decoded=%+v want %+v", got, original)
+	}
+}
+
+func TestPackedCallsExecuteInOrderAndSkipInnerModel(t *testing.T) {
+	ctx := context.Background()
+	log := &seqLog{}
+	a := &seqInvokableTool{name: "tool_a", log: log}
+	b := &seqInvokableTool{name: "tool_b", log: log}
+	c := &seqInvokableTool{name: "tool_c", log: log}
+	cat, err := BuildToolCatalog(ctx, []ToolCatalogBuildEntry{
+		{Tool: a, Exposure: ToolExposureDeferred},
+		{Tool: b, Exposure: ToolExposureDeferred},
+		{Tool: c, Exposure: ToolExposureDeferred},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packed := multiFunctionCallMsg(
+		schema.FunctionToolCall{Name: "tool_a", CallID: "a1", Arguments: `{"q":"1"}`},
+		schema.FunctionToolCall{Name: "tool_b", CallID: "b1", Arguments: `{"q":"2"}`},
+		schema.FunctionToolCall{Name: "tool_c", CallID: "c1", Arguments: `{"q":"3"}`},
+	)
+	inner := &scriptedAgenticModel{responses: []*schema.AgenticMessage{
+		packed,
+		agenticmsg.AssistantText("after-abc"),
+	}}
+	counting := &countingAgenticModel{inner: inner}
+	agent, err := BuildAgenticAgent(ctx, baseAgenticCfg(counting, []tool.BaseTool{a, b, c}, cat))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, runErr := NewAgenticEngine(AgenticEngineConfig{Store: newMemCheckPointStore()}).Run(ctx, agent, AgenticRunInput{
+		WorkspaceID: "ws-order", RunID: "run-order",
+		Messages: []*schema.AgenticMessage{agenticmsg.UserText("go")},
+	})
+	if hard := packedRunHardErr(res, runErr); hard != nil {
+		t.Fatalf("packed order: %v", hard)
+	}
+	if res == nil || res.FinalAssistantText != "after-abc" {
+		t.Fatalf("text=%v", res)
+	}
+	if got := log.snapshot(); len(got) != 3 || got[0] != "tool_a" || got[1] != "tool_b" || got[2] != "tool_c" {
+		t.Fatalf("order=%v want [tool_a tool_b tool_c]", got)
+	}
+	if counting.calls.Load() != 2 {
+		t.Fatalf("inner model calls=%d want 2 (queued replays must skip inner)", counting.calls.Load())
+	}
+}
+
+func TestPackedCallsMixedSearchThenFunction(t *testing.T) {
+	ctx := context.Background()
+	log := &seqLog{}
+	echo := &seqInvokableTool{name: "echo_packed", log: log}
+	cat, err := BuildToolCatalog(ctx, []ToolCatalogBuildEntry{
+		{Tool: echo, Exposure: ToolExposureDeferred},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packed := multiFunctionCallMsg(
+		schema.FunctionToolCall{
+			Name: ClientToolSearchToolName, CallID: "ts-1",
+			Arguments: `{"query":"select:echo_packed","max_results":1}`,
+		},
+		schema.FunctionToolCall{Name: "echo_packed", CallID: "e-1", Arguments: `{"q":"hi"}`},
+	)
+	packed.ContentBlocks[0].Extra = map[string]any{"openai-tool-search-tool-call": true}
+	inner := &scriptedAgenticModel{responses: []*schema.AgenticMessage{
+		packed,
+		agenticmsg.AssistantText("after-search-echo"),
+	}}
+	counting := &countingAgenticModel{inner: inner}
+	cfg := baseAgenticCfg(counting, []tool.BaseTool{echo}, cat)
+	cfg.ExtraToolMiddlewares = []compose.ToolMiddleware{seqToolNameMiddleware(log)}
+	agent, err := BuildAgenticAgent(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, runErr := NewAgenticEngine(AgenticEngineConfig{Store: newMemCheckPointStore()}).Run(ctx, agent, AgenticRunInput{
+		WorkspaceID: "ws-mixed", RunID: "run-mixed",
+		Messages: []*schema.AgenticMessage{agenticmsg.UserText("go")},
+	})
+	if hard := packedRunHardErr(res, runErr); hard != nil {
+		t.Fatalf("mixed packed: %v", hard)
+	}
+	if res == nil || res.FinalAssistantText != "after-search-echo" {
+		t.Fatalf("text=%v", res)
+	}
+	got := log.snapshot()
+	// Middleware records search; the echo tool also self-logs. Dedup consecutive
+	// names so either single or double echo still proves search-then-echo order.
+	compact := compactConsecutive(got)
+	if len(compact) < 2 || compact[0] != ClientToolSearchToolName || compact[1] != "echo_packed" {
+		t.Fatalf("order=%v (compact=%v) want [%s echo_packed ...]", got, compact, ClientToolSearchToolName)
+	}
+	if counting.calls.Load() != 2 {
+		t.Fatalf("inner model calls=%d want 2", counting.calls.Load())
+	}
+}
+
+func TestPackedCallsHITLPausesBeforeLaterCall(t *testing.T) {
+	ctx := context.Background()
+	log := &seqLog{}
+	hitl := &seqHITLTool{name: "hitl_packed", log: log}
+	echo := &seqInvokableTool{name: "echo_after_hitl", log: log}
+	cat, err := BuildToolCatalog(ctx, []ToolCatalogBuildEntry{
+		{Tool: hitl, Exposure: ToolExposureDeferred},
+		{Tool: echo, Exposure: ToolExposureDeferred},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packed := multiFunctionCallMsg(
+		schema.FunctionToolCall{Name: "hitl_packed", CallID: "h-1", Arguments: `{"q":"need"}`},
+		schema.FunctionToolCall{Name: "echo_after_hitl", CallID: "e-1", Arguments: `{"q":"later"}`},
+	)
+	inner := &scriptedAgenticModel{responses: []*schema.AgenticMessage{
+		packed,
+		agenticmsg.AssistantText("after-resume"),
+	}}
+	counting := &countingAgenticModel{inner: inner}
+	agent, err := BuildAgenticAgent(ctx, baseAgenticCfg(counting, []tool.BaseTool{hitl, echo}, cat))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newMemCheckPointStore()
+	engine := NewAgenticEngine(AgenticEngineConfig{Store: store})
+	r1, err := engine.Run(ctx, agent, AgenticRunInput{
+		WorkspaceID: "ws-pack-hitl", RunID: "run-pack-hitl",
+		Messages: []*schema.AgenticMessage{agenticmsg.UserText("start")},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if r1 == nil || !r1.Interrupted || len(r1.InterruptContextIDs) == 0 {
+		t.Fatalf("expected interrupt: %+v", r1)
+	}
+	if got := log.snapshot(); len(got) != 1 || got[0] != "hitl_packed:interrupt" {
+		t.Fatalf("at interrupt order=%v want [hitl_packed:interrupt]", got)
+	}
+	if counting.calls.Load() != 1 {
+		t.Fatalf("inner model calls at interrupt=%d want 1", counting.calls.Load())
+	}
+
+	r2, err := engine.Resume(ctx, agent, AgenticResumeInput{
+		WorkspaceID:  "ws-pack-hitl",
+		RunID:        "run-pack-hitl",
+		CheckpointID: r1.CheckpointID,
+		Targets:      resumeTargetMap(r1.InterruptContextIDs, "yes"),
+	})
+	if err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	if hard := packedRunHardErr(r2, nil); hard != nil {
+		t.Fatalf("resume: %v", hard)
+	}
+	if r2 == nil || r2.Interrupted {
+		t.Fatalf("expected completion after resume: %+v", r2)
+	}
+	if r2.FinalAssistantText != "after-resume" {
+		t.Fatalf("text=%q", r2.FinalAssistantText)
+	}
+	if got := log.snapshot(); len(got) != 3 ||
+		got[0] != "hitl_packed:interrupt" || got[1] != "hitl_packed:resume" || got[2] != "echo_after_hitl" {
+		t.Fatalf("after resume order=%v", got)
+	}
+	if counting.calls.Load() != 2 {
+		t.Fatalf("inner model calls=%d want 2", counting.calls.Load())
+	}
+}
+
+func TestPackedCallsTwoHITLConfirmsOneAtATime(t *testing.T) {
+	ctx := context.Background()
+	log := &seqLog{}
+	a := &seqHITLTool{name: "hitl_a", log: log}
+	b := &seqHITLTool{name: "hitl_b", log: log}
+	cat, err := BuildToolCatalog(ctx, []ToolCatalogBuildEntry{
+		{Tool: a, Exposure: ToolExposureDeferred},
+		{Tool: b, Exposure: ToolExposureDeferred},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packed := multiFunctionCallMsg(
+		schema.FunctionToolCall{Name: "hitl_a", CallID: "ha-1", Arguments: `{"q":"a"}`},
+		schema.FunctionToolCall{Name: "hitl_b", CallID: "hb-1", Arguments: `{"q":"b"}`},
+	)
+	inner := &scriptedAgenticModel{responses: []*schema.AgenticMessage{
+		packed,
+		agenticmsg.AssistantText("both-approved"),
+	}}
+	agent, err := BuildAgenticAgent(ctx, baseAgenticCfg(inner, []tool.BaseTool{a, b}, cat))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newMemCheckPointStore()
+	engine := NewAgenticEngine(AgenticEngineConfig{Store: store})
+	r1, err := engine.Run(ctx, agent, AgenticRunInput{
+		WorkspaceID: "ws-two-hitl", RunID: "run-two-hitl",
+		Messages: []*schema.AgenticMessage{agenticmsg.UserText("start")},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if r1 == nil || !r1.Interrupted {
+		t.Fatalf("expected first confirm: %+v", r1)
+	}
+	if got := log.snapshot(); len(got) != 1 || got[0] != "hitl_a:interrupt" {
+		t.Fatalf("first pause order=%v want only hitl_a", got)
+	}
+
+	r2, err := engine.Resume(ctx, agent, AgenticResumeInput{
+		WorkspaceID:  "ws-two-hitl",
+		RunID:        "run-two-hitl",
+		CheckpointID: r1.CheckpointID,
+		Targets:      resumeTargetMap(r1.InterruptContextIDs, "yes"),
+	})
+	if err != nil {
+		t.Fatalf("Resume 1: %v", err)
+	}
+	if r2 == nil || !r2.Interrupted {
+		t.Fatalf("expected second confirm: %+v", r2)
+	}
+	if got := log.snapshot(); len(got) != 3 ||
+		got[0] != "hitl_a:interrupt" || got[1] != "hitl_a:resume" || got[2] != "hitl_b:interrupt" {
+		t.Fatalf("second pause order=%v", got)
+	}
+
+	r3, err := engine.Resume(ctx, agent, AgenticResumeInput{
+		WorkspaceID:  "ws-two-hitl",
+		RunID:        "run-two-hitl",
+		CheckpointID: r2.CheckpointID,
+		Targets:      resumeTargetMap(r2.InterruptContextIDs, "yes"),
+	})
+	if err != nil {
+		t.Fatalf("Resume 2: %v", err)
+	}
+	if hard := packedRunHardErr(r3, nil); hard != nil {
+		t.Fatalf("second resume: %v", hard)
+	}
+	if r3 == nil || r3.Interrupted || r3.FinalAssistantText != "both-approved" {
+		t.Fatalf("expected completion: %+v", r3)
+	}
+	if got := log.snapshot(); len(got) != 4 || got[3] != "hitl_b:resume" {
+		t.Fatalf("final order=%v", got)
 	}
 }
 
@@ -313,8 +678,8 @@ func TestSingleActionGuard_Race(t *testing.T) {
 	}
 	for i := 0; i < n*2; i++ {
 		err := <-errCh
-		if !errors.Is(err, ErrMultiActionModelTurn) {
-			t.Fatalf("race err=%v want ErrMultiActionModelTurn", err)
+		if err != nil {
+			t.Fatalf("race err=%v want unique CallIDs kept", err)
 		}
 	}
 }
@@ -385,8 +750,8 @@ func TestSingleActionGuard_EmptyAndMissingCallIDsStillCountBlocks(t *testing.T) 
 	)
 	_, err := wrapSingleActionAgenticModel(&fixedResponseAgenticModel{gen: msg}).
 		Generate(context.Background(), []*schema.AgenticMessage{agenticmsg.UserText("go")})
-	if !errors.Is(err, ErrMultiActionModelTurn) {
-		t.Fatalf("Generate empty IDs: err=%v want ErrMultiActionModelTurn", err)
+	if !errors.Is(err, agenticmsg.ErrMalformedBlock) {
+		t.Fatalf("Generate empty IDs: err=%v want ErrMalformedBlock", err)
 	}
 
 	// Stream path: two indexes, empty CallIDs (stream fragments allow empty IDs
@@ -407,8 +772,8 @@ func TestSingleActionGuard_EmptyAndMissingCallIDsStillCountBlocks(t *testing.T) 
 	defer sr.Close()
 	// Multi-action is preferred over a later complete-Validate failure on empty IDs.
 	_, rerr := sr.Recv()
-	if !errors.Is(rerr, ErrMultiActionModelTurn) {
-		t.Fatalf("Stream empty IDs: err=%v want ErrMultiActionModelTurn", rerr)
+	if !errors.Is(rerr, agenticmsg.ErrMalformedBlock) {
+		t.Fatalf("Stream empty IDs: err=%v want ErrMalformedBlock", rerr)
 	}
 }
 
@@ -437,18 +802,27 @@ func TestSingleActionGuard_SameIndexProgressiveSingleActionAllowed(t *testing.T)
 	}
 	defer sr.Close()
 	n := 0
+	var replay *schema.AgenticMessage
 	for {
-		_, rerr := sr.Recv()
+		chunk, rerr := sr.Recv()
 		if errors.Is(rerr, io.EOF) {
 			break
 		}
 		if rerr != nil {
 			t.Fatalf("replay Recv: %v", rerr)
 		}
+		replay = chunk
 		n++
 	}
-	if n != 2 {
-		t.Fatalf("replay chunks=%d want 2", n)
+	if n != 1 {
+		t.Fatalf("replay chunks=%d want 1 (concatenated replay)", n)
+	}
+	names := functionCallNames(replay)
+	if len(names) != 1 || names[0] != "echo" {
+		t.Fatalf("replay calls=%v want [echo]", names)
+	}
+	if replay.ContentBlocks[0].FunctionToolCall.Arguments != `{"q":"x"}` {
+		t.Fatalf("args=%q want concatenated {\"q\":\"x\"}", replay.ContentBlocks[0].FunctionToolCall.Arguments)
 	}
 }
 
@@ -615,7 +989,146 @@ var (
 	_ model.AgenticModel = (*fixedResponseAgenticModel)(nil)
 	_ model.AgenticModel = (*collidingStreamModel)(nil)
 	_ model.AgenticModel = (*streamOnlyAgenticModel)(nil)
+	_ tool.InvokableTool = (*seqInvokableTool)(nil)
+	_ tool.InvokableTool = (*seqHITLTool)(nil)
 )
+
+type seqLog struct {
+	mu  sync.Mutex
+	got []string
+}
+
+func (s *seqLog) add(name string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.got = append(s.got, name)
+	s.mu.Unlock()
+}
+
+func (s *seqLog) snapshot() []string {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, len(s.got))
+	copy(out, s.got)
+	return out
+}
+
+type seqInvokableTool struct {
+	name string
+	log  *seqLog
+}
+
+func (t *seqInvokableTool) Info(_ context.Context) (*schema.ToolInfo, error) {
+	return &schema.ToolInfo{
+		Name: t.name, Desc: "ordered invokable",
+		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+			"q": {Type: schema.String, Required: true},
+		}),
+	}, nil
+}
+
+func (t *seqInvokableTool) InvokableRun(_ context.Context, _ string, _ ...tool.Option) (string, error) {
+	t.log.add(t.name)
+	return `{"ok":true}`, nil
+}
+
+type seqHITLTool struct {
+	name string
+	log  *seqLog
+}
+
+func (t *seqHITLTool) Info(_ context.Context) (*schema.ToolInfo, error) {
+	return &schema.ToolInfo{
+		Name: t.name, Desc: "HITL interrupt tool",
+		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+			"q": {Type: schema.String, Required: true},
+		}),
+	}, nil
+}
+
+func (t *seqHITLTool) InvokableRun(ctx context.Context, _ string, _ ...tool.Option) (string, error) {
+	wasInterrupted, _, _ := tool.GetInterruptState[any](ctx)
+	if !wasInterrupted {
+		t.log.add(t.name + ":interrupt")
+		return "", tool.Interrupt(ctx, "need_approval")
+	}
+	t.log.add(t.name + ":resume")
+	isResume, hasData, data := tool.GetResumeContext[string](ctx)
+	if isResume && hasData {
+		return "approved:" + data, nil
+	}
+	return "resumed_no_data", nil
+}
+
+func seqToolNameMiddleware(log *seqLog) compose.ToolMiddleware {
+	record := func(in *compose.ToolInput) {
+		if in != nil {
+			log.add(in.Name)
+		}
+	}
+	return compose.ToolMiddleware{
+		Invokable: func(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
+			return func(ctx context.Context, in *compose.ToolInput) (*compose.ToolOutput, error) {
+				record(in)
+				return next(ctx, in)
+			}
+		},
+		Streamable: func(next compose.StreamableToolEndpoint) compose.StreamableToolEndpoint {
+			return func(ctx context.Context, in *compose.ToolInput) (*compose.StreamToolOutput, error) {
+				record(in)
+				return next(ctx, in)
+			}
+		},
+		EnhancedInvokable: func(next compose.EnhancedInvokableToolEndpoint) compose.EnhancedInvokableToolEndpoint {
+			return func(ctx context.Context, in *compose.ToolInput) (*compose.EnhancedInvokableToolOutput, error) {
+				record(in)
+				return next(ctx, in)
+			}
+		},
+		EnhancedStreamable: func(next compose.EnhancedStreamableToolEndpoint) compose.EnhancedStreamableToolEndpoint {
+			return func(ctx context.Context, in *compose.ToolInput) (*compose.EnhancedStreamableToolOutput, error) {
+				record(in)
+				return next(ctx, in)
+			}
+		},
+	}
+}
+
+func packedRunHardErr(res *AgenticRunResult, runErr error) error {
+	if runErr != nil {
+		return runErr
+	}
+	if res != nil {
+		return res.Err
+	}
+	return nil
+}
+
+func resumeTargetMap(ids []string, v any) map[string]any {
+	out := make(map[string]any, len(ids))
+	for _, id := range ids {
+		out[id] = v
+	}
+	return out
+}
+
+func compactConsecutive(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := []string{in[0]}
+	for _, s := range in[1:] {
+		if s != out[len(out)-1] {
+			out = append(out, s)
+		}
+	}
+	return out
+}
 
 // --- Generate path strictness (equivalent to Stream) ---
 
@@ -744,7 +1257,7 @@ func TestSingleActionAgenticModel_GenerateMalformedRejected(t *testing.T) {
 				schema.FunctionToolCall{Name: "a", CallID: "", Arguments: `{}`},
 				schema.FunctionToolCall{Name: "b", CallID: "", Arguments: `{}`},
 			),
-			wantMulti: true,
+			wantIs: agenticmsg.ErrMalformedBlock,
 		},
 	}
 	for _, tc := range cases {
@@ -848,20 +1361,21 @@ func TestSingleActionGuard_GenerateRealTypedRunnerNonStreaming(t *testing.T) {
 		}
 	})
 
-	t.Run("multi_action_generate_zero_tools", func(t *testing.T) {
+	t.Run("multi_action_generate_both_tools_in_order", func(t *testing.T) {
 		multi := multiFunctionCallMsg(
 			schema.FunctionToolCall{Name: "multi_tool", CallID: "m1", Arguments: `{"q":"a"}`},
 			schema.FunctionToolCall{Name: "multi_tool", CallID: "m2", Arguments: `{"q":"b"}`},
 		)
-		hard, calls := runNonStreaming(t, &fixedResponseAgenticModel{gen: multi}, "multi_tool")
-		if hard == nil {
-			t.Fatal("expected multi-action rejection")
+		mdl := &scriptedAgenticModel{responses: []*schema.AgenticMessage{
+			multi,
+			agenticmsg.AssistantText("after-both"),
+		}}
+		hard, calls := runNonStreaming(t, mdl, "multi_tool")
+		if hard != nil {
+			t.Fatalf("packed unique CallIDs: %v", hard)
 		}
-		if !errors.Is(hard, ErrMultiActionModelTurn) {
-			t.Fatalf("hard=%v want ErrMultiActionModelTurn", hard)
-		}
-		if calls != 0 {
-			t.Fatalf("tool calls=%d want 0", calls)
+		if calls != 2 {
+			t.Fatalf("tool calls=%d want 2", calls)
 		}
 	})
 
