@@ -128,6 +128,22 @@ func TestMapAgenticOptionsValidation(t *testing.T) {
 	if got.MaxTokens == nil || *got.MaxTokens != 128 {
 		t.Fatalf("maxTokens=%v", got.MaxTokens)
 	}
+	if got.Vision {
+		t.Fatal("omitted vision must default false")
+	}
+}
+
+func TestVisionEnabled(t *testing.T) {
+	t.Parallel()
+	if VisionEnabled(nil) || VisionEnabled(json.RawMessage(`{}`)) || VisionEnabled(json.RawMessage(`{"vision":false}`)) {
+		t.Fatal("default/false must be off")
+	}
+	if !VisionEnabled(json.RawMessage(`{"vision":true}`)) {
+		t.Fatal("vision:true must enable pixel assembly")
+	}
+	if VisionEnabled(json.RawMessage(`{"vision":true,"unknownKey":1}`)) {
+		t.Fatal("invalid options must not enable vision")
+	}
 }
 
 func TestNewOpenAIAgenticModelValidation(t *testing.T) {

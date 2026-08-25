@@ -139,8 +139,9 @@ func preflightAgenticResume(plan *agenticFrozenPlan, targets map[string]any) err
 		})
 	}
 
-	got, err := est.EstimateAgenticRequestV2(
-		plan.instruction, toolExposureForDisclosure(plan.catalog, plan.toolSearchMode), messages)
+	exposure := toolExposureForDisclosure(plan.catalog, plan.toolSearchMode)
+	exposure.MaxIterations = plan.maxIterations
+	got, err := est.EstimateAgenticRequestV2(plan.instruction, exposure, messages)
 	if err != nil {
 		return execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
 	}

@@ -376,10 +376,9 @@ runtime:
 }
 
 // testRuntimeMaxToolInvocationsContract locks the production-wide invariant:
-// 0 → default 16; 1..16 valid; -1 and 17 (and any negative/>16) fail closed.
-// Normalized must not silently default negatives or clamp >16.
+// 0 → default 32; 1..64 valid; -1 and 65 fail closed.
+// Normalized must not silently default negatives or clamp over the hard max.
 func testRuntimeMaxToolInvocationsContract(t *testing.T) {
-	// Normalized: 0 → 16; boundaries 1 and 16 preserved; negatives and 17 untouched.
 	if n := (EinoRuntimeTuning{}).Normalized(); n.MaxToolInvocations != DefaultEinoMaxToolInvocations {
 		t.Fatalf("0 normalize: got %d want %d", n.MaxToolInvocations, DefaultEinoMaxToolInvocations)
 	}
@@ -392,12 +391,11 @@ func testRuntimeMaxToolInvocationsContract(t *testing.T) {
 	if n := (EinoRuntimeTuning{MaxToolInvocations: -1}).Normalized(); n.MaxToolInvocations != -1 {
 		t.Fatalf("negative must not be silently defaulted: got %d", n.MaxToolInvocations)
 	}
-	if n := (EinoRuntimeTuning{MaxToolInvocations: 17}).Normalized(); n.MaxToolInvocations != 17 {
-		t.Fatalf(">16 must not be silently clamped: got %d", n.MaxToolInvocations)
+	if n := (EinoRuntimeTuning{MaxToolInvocations: MaxEinoMaxToolInvocations + 1}).Normalized(); n.MaxToolInvocations != MaxEinoMaxToolInvocations+1 {
+		t.Fatalf("over max must not be silently clamped: got %d", n.MaxToolInvocations)
 	}
 
-	// Validate() / validateEinoMaxToolInvocations: 0,1,16 ok; -1,17 fail.
-	for _, ok := range []int{0, 1, 16} {
+	for _, ok := range []int{0, 1, 16, DefaultEinoMaxToolInvocations, MaxEinoMaxToolInvocations} {
 		if err := validateEinoMaxToolInvocations(ok); err != nil {
 			t.Fatalf("validate(%d) unexpected: %v", ok, err)
 		}
@@ -405,7 +403,7 @@ func testRuntimeMaxToolInvocationsContract(t *testing.T) {
 			t.Fatalf("Validate(%d) unexpected: %v", ok, err)
 		}
 	}
-	for _, bad := range []int{-1, 17, -3, 100} {
+	for _, bad := range []int{-1, MaxEinoMaxToolInvocations + 1, -3, 100} {
 		if err := validateEinoMaxToolInvocations(bad); err == nil {
 			t.Fatalf("validate(%d) must fail", bad)
 		}
@@ -429,27 +427,30 @@ func testRuntimeMaxToolInvocationsContract(t *testing.T) {
 	if err := loaded.ValidateServer(); err != nil {
 		t.Fatalf("maxToolInvocations=16 must pass: %v", err)
 	}
+	loaded.Runtime.Eino.MaxToolInvocations = MaxEinoMaxToolInvocations
+	if err := loaded.ValidateServer(); err != nil {
+		t.Fatalf("maxToolInvocations=%d must pass: %v", MaxEinoMaxToolInvocations, err)
+	}
 	loaded.Runtime.Eino.MaxToolInvocations = -1
 	if err := loaded.ValidateServer(); err == nil {
 		t.Fatal("maxToolInvocations=-1 must fail ValidateServer")
 	}
-	loaded.Runtime.Eino.MaxToolInvocations = 17
+	loaded.Runtime.Eino.MaxToolInvocations = MaxEinoMaxToolInvocations + 1
 	if err := loaded.ValidateServer(); err == nil {
-		t.Fatal("maxToolInvocations=17 must fail ValidateServer")
+		t.Fatal("maxToolInvocations over hard max must fail ValidateServer")
 	}
 
-	// Env override >16 loads but fails validation (no silent clamp at load).
 	over, err := Load(path, lookup(map[string]string{
-		"ACTWEAVE_RUNTIME_EINO_MAX_TOOL_INVOCATIONS": "17",
+		"ACTWEAVE_RUNTIME_EINO_MAX_TOOL_INVOCATIONS": "65",
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if over.Runtime.Eino.MaxToolInvocations != 17 {
-		t.Fatalf("env 17 must not be clamped at load: got %d", over.Runtime.Eino.MaxToolInvocations)
+	if over.Runtime.Eino.MaxToolInvocations != 65 {
+		t.Fatalf("env 65 must not be clamped at load: got %d", over.Runtime.Eino.MaxToolInvocations)
 	}
 	if err := over.ValidateServer(); err == nil {
-		t.Fatal("env maxToolInvocations=17 must fail ValidateServer")
+		t.Fatal("env maxToolInvocations=65 must fail ValidateServer")
 	}
 	neg, err := Load(path, lookup(map[string]string{
 		"ACTWEAVE_RUNTIME_EINO_MAX_TOOL_INVOCATIONS": "-1",

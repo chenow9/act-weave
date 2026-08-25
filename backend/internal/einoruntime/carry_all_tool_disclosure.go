@@ -7,11 +7,13 @@ import (
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"actweave/backend/internal/modelconfig"
 )
 
 // CarryAllHardLimit is the maximum number of non-platform-control catalog
 // tools that may be disclosed with full schema in carry-all mode.
-const CarryAllHardLimit = MaxImmediatePlatformTools
+const CarryAllHardLimit = modelconfig.CarryAllHardLimit
 
 // CarryAllToolDisclosureMiddleware puts every catalog business tool (full
 // schema, name ascending) plus immediate platform-control tools into ToolInfos.

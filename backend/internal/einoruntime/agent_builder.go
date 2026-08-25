@@ -30,10 +30,10 @@ type AgentBuildConfig struct {
 	// Tools are InvokableTool instances (e.g. PipelineTool from PR5).
 	Tools []tool.BaseTool
 
-	// MaxIterations caps model rounds. Zero → DefaultMaxIterations (8).
+	// MaxIterations caps model rounds. Zero → DefaultMaxIterations (16).
 	MaxIterations int
 	// MaxToolInvocations hard-caps tool InvokableRun calls.
-	// Zero → DefaultMaxToolInvocations (16). Values <0 or >16 are rejected.
+	// Zero → DefaultMaxToolInvocations (32). Values <0 or >64 are rejected.
 	MaxToolInvocations int
 
 	// UnknownToolsHandler handles hallucinated tool names. Optional; defaults
@@ -56,7 +56,7 @@ func BuildChatModelAgent(ctx context.Context, cfg AgentBuildConfig) (*adk.ChatMo
 	if maxIter <= 0 {
 		maxIter = DefaultMaxIterations
 	}
-	// Same limit contract as agentic path: 0→16, 1..16; reject negative/>16.
+	// Same limit contract as agentic path: 0→32, 1..64; reject negative/>64.
 	budgetMW, err := NewToolBudgetMiddleware(cfg.MaxToolInvocations)
 	if err != nil {
 		return nil, err

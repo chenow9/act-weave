@@ -50,7 +50,7 @@ func TestAssembleUserSchemaMessage_ImageSuccess(t *testing.T) {
 	}
 	b := &Bridge{
 		multimodal: &chatruntime.MultimodalAssembler{
-			RuntimeMultimodal: true, Files: src, MaxBytes: 1 << 20,
+			RuntimeMultimodal: true, VisionEnabled: true, Files: src, MaxBytes: 1 << 20,
 		},
 	}
 	body, _ := json.Marshal(map[string]any{
@@ -60,7 +60,7 @@ func TestAssembleUserSchemaMessage_ImageSuccess(t *testing.T) {
 			{"type": "input_file", "fileId": mmTestFileID, "mediaType": "image/png"},
 		},
 	})
-	msg, err := b.assembleUserSchemaMessage(context.Background(), mmTestWS, mmTestAgent, string(body))
+	msg, err := b.assembleUserSchemaMessage(context.Background(), mmTestWS, mmTestAgent, string(body), json.RawMessage(`{"vision":true}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestAssembleUserSchemaMessage_PDFYieldsListing(t *testing.T) {
 			{"type": "input_file", "fileId": mmTestFileID, "mediaType": "application/pdf"},
 		},
 	})
-	msg, err := b.assembleUserSchemaMessage(context.Background(), mmTestWS, mmTestAgent, string(body))
+	msg, err := b.assembleUserSchemaMessage(context.Background(), mmTestWS, mmTestAgent, string(body), json.RawMessage(`{"vision":true}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestAssembleUserSchemaMessage_NilAssemblerTextOnly(t *testing.T) {
 		"schemaVersion": chatruntime.MessageContentSchemaVersion,
 		"parts":         []map[string]string{{"type": "text", "text": "hi"}},
 	})
-	msg, err := b.assembleUserSchemaMessage(context.Background(), mmTestWS, mmTestAgent, string(body))
+	msg, err := b.assembleUserSchemaMessage(context.Background(), mmTestWS, mmTestAgent, string(body), json.RawMessage(`{"vision":true}`))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -504,25 +504,22 @@ func TestBoundedSearch_RunLocalLoadedUniqueness(t *testing.T) {
 			}
 		}
 	}
-	// Cumulative cap: pre-load 39 names, then select 2 more → reject.
-	// Build a large catalog of 45 deferred tools.
-	bigNames := make([]string, 0, 45)
-	for i := 0; i < 45; i++ {
+	capCount := MaxLoadedDefinitionsPerRun
+	bigNames := make([]string, 0, capCount+5)
+	for i := 0; i < capCount+5; i++ {
 		bigNames = append(bigNames, fmt.Sprintf("tool_%03d", i))
 	}
 	bigCat, _ := buildTestCatalog(t, bigNames...)
-	preloaded := bigNames[:39]
-	// Select two more would exceed 40.
-	if _, _, err := executeBoundedToolSearch(bigCat, `{"query":"select:tool_039,tool_040"}`, preloaded, MaxLoadedDefinitionsPerRun); !errors.Is(err, ErrToolSearchLoadCapExceeded) {
+	preloaded := bigNames[:capCount-1]
+	selectQuery := fmt.Sprintf(`{"query":"select:%s,%s"}`, bigNames[capCount-1], bigNames[capCount])
+	if _, _, err := executeBoundedToolSearch(bigCat, selectQuery, preloaded, MaxLoadedDefinitionsPerRun); !errors.Is(err, ErrToolSearchLoadCapExceeded) {
 		t.Fatalf("cap exceed select: %v", err)
 	}
-	// At exactly 40, further keyword returns cap error.
-	full := bigNames[:40]
+	full := bigNames[:capCount]
 	if _, _, err := executeBoundedToolSearch(bigCat, `{"query":"tool","max_results":5}`, full, MaxLoadedDefinitionsPerRun); !errors.Is(err, ErrToolSearchLoadCapExceeded) {
 		t.Fatalf("at cap keyword: %v", err)
 	}
-	// Room for 1 more via keyword.
-	almost := bigNames[:39]
+	almost := bigNames[:capCount-1]
 	got, newly3, err := executeBoundedToolSearch(bigCat, `{"query":"tool","max_results":5}`, almost, MaxLoadedDefinitionsPerRun)
 	if err != nil {
 		t.Fatal(err)

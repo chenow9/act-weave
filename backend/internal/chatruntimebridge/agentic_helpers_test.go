@@ -407,8 +407,8 @@ func TestBuildRunPromptCacheKey_NoPII(t *testing.T) {
 }
 
 func TestToolExposure_EstimateMaxLoadedBounds(t *testing.T) {
-	// 0 deferred → max 0; 5 → 5; 40 → 40; 41 → 40 derived
-	for _, n := range []int{0, 1, 5, 40, 41} {
+	capCount := contextwindow.DefaultAgenticMaxIterations * contextwindow.AgenticMaxLoadedToolsPerSearch
+	for _, n := range []int{0, 1, 5, capCount, capCount + 1} {
 		meta := make([]contextwindow.ToolMetadata, n)
 		cands := make([]contextwindow.ToolSchema, n)
 		for i := 0; i < n; i++ {
@@ -427,13 +427,12 @@ func TestToolExposure_EstimateMaxLoadedBounds(t *testing.T) {
 			t.Fatal(err)
 		}
 		got, err := est.EstimateAgenticRequest("sys", exp, nil)
-		if n > 40 {
-			// 41 deferred is allowed; max loaded clamped to 40
+		if n > capCount {
 			if err != nil {
 				t.Fatalf("n=%d err=%v", n, err)
 			}
-			if got.MaxLoadedToolCount != 40 {
-				t.Fatalf("n=%d max=%d", n, got.MaxLoadedToolCount)
+			if got.MaxLoadedToolCount != capCount {
+				t.Fatalf("n=%d max=%d want %d", n, got.MaxLoadedToolCount, capCount)
 			}
 		} else {
 			if err != nil {

@@ -8,7 +8,7 @@ import (
 )
 
 // TestNewBridge_MaxToolInvocationsContract locks the production-wide budget
-// invariant at the bridge boundary: 0 → default 16; 1..16 valid; -1 and 17 fail
+// invariant at the bridge boundary: 0 → default 32; 1..64 valid; -1 and 65 fail
 // closed (never silently defaulted or clamped).
 func TestNewBridge_MaxToolInvocationsContract(t *testing.T) {
 	t.Parallel()
@@ -28,7 +28,7 @@ func TestNewBridge_MaxToolInvocationsContract(t *testing.T) {
 	}
 
 	// Boundaries that must succeed.
-	for _, max := range []int{0, 1, 16} {
+	for _, max := range []int{0, 1, 16, 32, 64} {
 		b, err := chatruntimebridge.NewBridge(base(max))
 		if err != nil {
 			t.Fatalf("MaxToolInvocations=%d: unexpected error: %v", max, err)
@@ -39,7 +39,7 @@ func TestNewBridge_MaxToolInvocationsContract(t *testing.T) {
 	}
 
 	// Adversarial invalid values must fail closed.
-	for _, max := range []int{-1, 17, -3, 100} {
+	for _, max := range []int{-1, 65, -3, 100} {
 		b, err := chatruntimebridge.NewBridge(base(max))
 		if err == nil {
 			t.Fatalf("MaxToolInvocations=%d: expected error, got bridge=%v", max, b)

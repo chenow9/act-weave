@@ -11,9 +11,12 @@ import (
 )
 
 // Default Eino runtime budgets. Applied when config values are zero/unset.
+// Hard maxima are the fail-closed ceilings; they are not silent clamps.
 const (
-	DefaultEinoMaxIterations      = 8
-	DefaultEinoMaxToolInvocations = 16
+	DefaultEinoMaxIterations      = 16
+	MaxEinoMaxIterations          = 32
+	DefaultEinoMaxToolInvocations = 32
+	MaxEinoMaxToolInvocations     = 64
 
 	// DefaultModelVerificationTimeoutSeconds is the outer budget for one model
 	// config verification attempt (modelconfig.VerificationService.Verify wraps
@@ -226,21 +229,23 @@ func (cfg WorkflowRuntimeConfig) Normalized() WorkflowRuntimeConfig {
 
 // EinoRuntimeTuning holds orchestration budgets shared by agent/workflow eino paths.
 type EinoRuntimeTuning struct {
-	// MaxIterations caps model rounds (adk MaxIterations). Default 8.
+	// MaxIterations caps model rounds (adk MaxIterations).
+	// 0 → DefaultEinoMaxIterations (16). 1..MaxEinoMaxIterations (32) accepted.
 	MaxIterations int `yaml:"maxIterations"`
 	// MaxToolInvocations hard-caps total tool calls per run.
 	// Contract (production-wide, no silent clamp):
-	//   - 0 → DefaultEinoMaxToolInvocations (16) via Normalized / applyRuntimeDefaults
-	//   - 1..16 accepted as-is
-	//   - negative or >16 fail closed (Validate / validateRuntimeConfig / bridge)
+	//   - 0 → DefaultEinoMaxToolInvocations (32) via Normalized / applyRuntimeDefaults
+	//   - 1..MaxEinoMaxToolInvocations (64) accepted as-is
+	//   - negative or >64 fail closed (Validate / validateRuntimeConfig / bridge)
 	MaxToolInvocations int `yaml:"maxToolInvocations"`
 }
 
 // Normalized applies zero-value defaults for eino budgets.
 //
-// MaxToolInvocations: exactly 0 maps to DefaultEinoMaxToolInvocations (16).
-// Negative and >16 values are left unchanged so Validate/validateRuntimeConfig
-// and production boundaries can fail closed — never silently defaulted or clamped.
+// MaxToolInvocations: exactly 0 maps to DefaultEinoMaxToolInvocations (32).
+// Negative and >MaxEinoMaxToolInvocations values are left unchanged so
+// Validate/validateRuntimeConfig and production boundaries can fail closed —
+// never silently defaulted or clamped.
 func (tuning EinoRuntimeTuning) Normalized() EinoRuntimeTuning {
 	out := tuning
 	if out.MaxIterations <= 0 {
@@ -252,25 +257,40 @@ func (tuning EinoRuntimeTuning) Normalized() EinoRuntimeTuning {
 	return out
 }
 
-// Validate reports whether MaxToolInvocations is within the production contract.
-// Accepts 0 (meaning default 16 before normalize) and 1..DefaultEinoMaxToolInvocations.
-// Negative and >16 fail closed.
+// Validate reports whether MaxIterations and MaxToolInvocations are within
+// the production contract. 0 means default before normalize.
 func (tuning EinoRuntimeTuning) Validate() error {
+	if err := validateEinoMaxIterations(tuning.MaxIterations); err != nil {
+		return err
+	}
 	if err := validateEinoMaxToolInvocations(tuning.MaxToolInvocations); err != nil {
 		return err
 	}
 	return nil
 }
 
-// validateEinoMaxToolInvocations enforces 0 (default 16) or 1..DefaultEinoMaxToolInvocations.
+func validateEinoMaxIterations(max int) error {
+	if max == 0 {
+		return nil
+	}
+	if max < 1 || max > MaxEinoMaxIterations {
+		return fmt.Errorf(
+			"runtime.eino.maxIterations must be 0 (default %d) or 1..%d, got %d",
+			DefaultEinoMaxIterations, MaxEinoMaxIterations, max,
+		)
+	}
+	return nil
+}
+
+// validateEinoMaxToolInvocations enforces 0 (default 32) or 1..MaxEinoMaxToolInvocations.
 func validateEinoMaxToolInvocations(max int) error {
 	if max == 0 {
 		return nil
 	}
-	if max < 0 || max > DefaultEinoMaxToolInvocations {
+	if max < 0 || max > MaxEinoMaxToolInvocations {
 		return fmt.Errorf(
 			"runtime.eino.maxToolInvocations must be 0 (default %d) or 1..%d, got %d",
-			DefaultEinoMaxToolInvocations, DefaultEinoMaxToolInvocations, max,
+			DefaultEinoMaxToolInvocations, MaxEinoMaxToolInvocations, max,
 		)
 	}
 	return nil
@@ -544,7 +564,7 @@ func (config *Config) applyRuntimeDefaults() {
 	if config.Runtime.Eino.MaxIterations <= 0 {
 		config.Runtime.Eino.MaxIterations = DefaultEinoMaxIterations
 	}
-	// Exactly 0 → default 16. Negative and >16 are left for validateRuntimeConfig
+	// Exactly 0 → default 32. Negative and >64 are left for validateRuntimeConfig
 	// to reject (no silent clamp/default of invalid values).
 	if config.Runtime.Eino.MaxToolInvocations == 0 {
 		config.Runtime.Eino.MaxToolInvocations = DefaultEinoMaxToolInvocations
@@ -659,15 +679,16 @@ func validateRuntimeConfig(cfg RuntimeConfig) error {
 	if err := validateWorkflowRuntimeConfig(cfg.Workflow); err != nil {
 		return err
 	}
-	if cfg.Eino.MaxIterations <= 0 {
-		return errors.New("runtime.eino.maxIterations must be a positive integer")
+	if cfg.Eino.MaxIterations < 1 || cfg.Eino.MaxIterations > MaxEinoMaxIterations {
+		return fmt.Errorf(
+			"runtime.eino.maxIterations must be 1..%d (0 defaults to %d at load), got %d",
+			MaxEinoMaxIterations, DefaultEinoMaxIterations, cfg.Eino.MaxIterations,
+		)
 	}
-	// After applyRuntimeDefaults, 0 has already become 16. Reject negative and >16
-	// (and any residual 0 if defaults were bypassed) — 1..16 only at this boundary.
-	if cfg.Eino.MaxToolInvocations < 1 || cfg.Eino.MaxToolInvocations > DefaultEinoMaxToolInvocations {
+	if cfg.Eino.MaxToolInvocations < 1 || cfg.Eino.MaxToolInvocations > MaxEinoMaxToolInvocations {
 		return fmt.Errorf(
 			"runtime.eino.maxToolInvocations must be 1..%d (0 defaults to %d at load), got %d",
-			DefaultEinoMaxToolInvocations, DefaultEinoMaxToolInvocations, cfg.Eino.MaxToolInvocations,
+			MaxEinoMaxToolInvocations, DefaultEinoMaxToolInvocations, cfg.Eino.MaxToolInvocations,
 		)
 	}
 	// After applyRuntimeDefaults 0 has already become 90. A residual 0 can only

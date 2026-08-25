@@ -163,7 +163,7 @@ func TestBuildAgenticAgent_RejectsOutOfRangeIterations(t *testing.T) {
 	ctx := context.Background()
 	mdl := &scriptedAgenticModel{responses: []*schema.AgenticMessage{agenticmsg.AssistantText("ok")}}
 	cfg := baseAgenticCfg(mdl, nil, nil)
-	cfg.MaxIterations = 20
+	cfg.MaxIterations = MaxMaxIterations + 1
 	_, err := BuildAgenticAgent(ctx, cfg)
 	if !errors.Is(err, ErrAgenticMaxIterations) {
 		t.Fatalf("got %v", err)
@@ -183,7 +183,11 @@ func TestBuildAgenticAgent_RejectsOutOfRangeIterations(t *testing.T) {
 	}
 	cfg.MaxIterations = 16
 	if _, err := BuildAgenticAgent(ctx, cfg); err != nil {
-		t.Fatalf("16 maxiter: %v", err)
+		t.Fatal(err)
+	}
+	cfg.MaxIterations = MaxMaxIterations
+	if _, err := BuildAgenticAgent(ctx, cfg); err != nil {
+		t.Fatalf("%d maxiter: %v", MaxMaxIterations, err)
 	}
 }
 
@@ -208,11 +212,11 @@ func TestBuildAgenticAgent_RejectsTooManyImmediate(t *testing.T) {
 	}
 }
 
-func TestBuildAgenticAgent_RejectsMaxToolInvocationsAbove16(t *testing.T) {
+func TestBuildAgenticAgent_RejectsMaxToolInvocationsAboveCap(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	cfg := baseAgenticCfg(&scriptedAgenticModel{}, nil, nil)
-	cfg.MaxToolInvocations = 17
+	cfg.MaxToolInvocations = MaxMaxToolInvocations + 1
 	_, err := BuildAgenticAgent(ctx, cfg)
 	if !errors.Is(err, ErrToolBudgetMaxInvalid) {
 		t.Fatalf("got %v", err)

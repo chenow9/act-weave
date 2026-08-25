@@ -25,7 +25,7 @@ const (
 	ErrorCodeAgentModelToolsUnsupported   = "AGENT_MODEL_TOOLS_UNSUPPORTED"
 
 	CarryAllSoftLimit = 5
-	CarryAllHardLimit = 8
+	CarryAllHardLimit = 32
 )
 
 var (

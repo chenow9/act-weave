@@ -14,8 +14,8 @@ import (
 
 // Stable error code for run.failed when provider/runtime cannot assemble
 // input_file content for the model (design §5.8 / KD-23). Distinct from
-// FILE_RUNTIME_UNAVAILABLE which is only returned at createRun when
-// RuntimeMultimodal is off.
+// FILE_RUNTIME_UNAVAILABLE which is returned at createRun when the files
+// HTTP gate is closed.
 const ErrCodeModelContentUnsupported = "MODEL_CONTENT_UNSUPPORTED"
 
 // ErrModelContentUnsupported is returned when message parts include input_file
@@ -54,20 +54,39 @@ const AttachmentsMarker = "actweave_attachments"
 
 // MultimodalAssembler builds schema.Message values for the model from durable
 // chat content. READY image input_file parts are assembled as UserInputMultiContent
-// (base64, no URLs) when RuntimeMultimodal is true. Images below 512 total
-// pixels are nearest-neighbor upscaled (Grok/xAI invalid_image). Inbound-allowlisted
-// non-image files become an assembly-time <actweave_attachments> listing (never
-// fail-closed, never inlined as bytes/URLs). Unknown media types fail with
-// ErrModelContentUnsupported.
+// (base64, no URLs) when both RuntimeMultimodal and VisionEnabled are true.
+// Images below 512 total pixels are nearest-neighbor upscaled (Grok/xAI
+// invalid_image). Otherwise images join the assembly-time <actweave_attachments>
+// listing with inbound-allowlisted non-image files (never fail-closed, never
+// inlined as bytes/URLs). Unknown media types fail with ErrModelContentUnsupported.
 type MultimodalAssembler struct {
-	// RuntimeMultimodal gates image assembly (config.AgentAccessFiles.RuntimeMultimodal).
-	// Document listings do not require this flag; images still fail closed when false.
+	// RuntimeMultimodal is the platform pixel-egress gate
+	// (config.AgentAccessFiles.RuntimeMultimodal). Off → images are listed, never
+	// sent as model vision parts.
 	RuntimeMultimodal bool
+	// VisionEnabled is the per-model Options.vision flag (default false). Off →
+	// images are listed even when RuntimeMultimodal is on.
+	VisionEnabled bool
 	// Files loads file metadata and (for images) permanent bodies.
 	// Required when messages contain input_file.
 	Files MultimodalFileSource
 	// MaxBytes caps image body reads (0 → 25 MiB).
 	MaxBytes int64
+}
+
+// WithVision returns a shallow copy with VisionEnabled set. nil receiver becomes
+// an assembler with vision only (still needs Files for input_file).
+func (a *MultimodalAssembler) WithVision(enabled bool) *MultimodalAssembler {
+	if a == nil {
+		return &MultimodalAssembler{VisionEnabled: enabled}
+	}
+	cp := *a
+	cp.VisionEnabled = enabled
+	return &cp
+}
+
+func (a *MultimodalAssembler) sendVisionPixels() bool {
+	return a != nil && a.RuntimeMultimodal && a.VisionEnabled
 }
 
 const defaultMultimodalMaxBytes int64 = 25 << 20
@@ -121,7 +140,8 @@ func normalizeAssemblyMediaType(mediaType string) string {
 //
 //   - Legacy plain text / non-v1 JSON → Content string (Console/history compat).
 //   - aap.message-content.v1 text-only → Content = joined text (not raw JSON).
-//   - v1 with image input_file → UserInputMultiContent when RuntimeMultimodal.
+//   - v1 with image input_file → UserInputMultiContent when RuntimeMultimodal
+//     and VisionEnabled; otherwise the same listing as documents.
 //   - v1 with allowlisted document input_file → listing appended to user text.
 func (a *MultimodalAssembler) AssembleUserMessage(
 	ctx context.Context,
@@ -254,9 +274,8 @@ func (a *MultimodalAssembler) assembleUser(
 	}
 
 	var (
-		images    []assembledImage
-		listing   []listingEntry
-		hasVision bool
+		images  []assembledImage
+		listing []listingEntry
 	)
 	for _, p := range parts {
 		if p.Type != "input_file" {
@@ -268,12 +287,20 @@ func (a *MultimodalAssembler) assembleUser(
 		}
 		switch kind {
 		case fileKindVision:
-			hasVision = true
-			img, err := a.openVisionImage(ctx, workspaceID, meta, maxBytes)
-			if err != nil {
-				return assembledUser{}, err
+			if a.sendVisionPixels() {
+				img, err := a.openVisionImage(ctx, workspaceID, meta, maxBytes)
+				if err != nil {
+					return assembledUser{}, err
+				}
+				images = append(images, img)
+				break
 			}
-			images = append(images, img)
+			listing = append(listing, listingEntry{
+				fileID:    meta.ID,
+				filename:  meta.Filename,
+				mediaType: normalizeAssemblyMediaType(firstNonEmptyMedia(p.MediaType, meta.DetectedMediaType, meta.DeclaredMediaType)),
+				sizeBytes: meta.SizeBytes,
+			})
 		case fileKindDocument:
 			listing = append(listing, listingEntry{
 				fileID:    meta.ID,
@@ -288,9 +315,6 @@ func (a *MultimodalAssembler) assembleUser(
 				ErrModelContentUnsupported, media,
 			)
 		}
-	}
-	if hasVision && (a == nil || !a.RuntimeMultimodal) {
-		return assembledUser{}, fmt.Errorf("%w: multimodal runtime unavailable for input_file", ErrModelContentUnsupported)
 	}
 	text = appendAttachmentListing(text, formatAttachmentListing(listing))
 	if text == "" && len(images) == 0 {
@@ -546,7 +570,8 @@ func TextForTokenEstimate(content string) (string, bool) {
 
 // AssembleUserAgenticMessage maps durable user content to a validated Agentic
 // user message (Task 4A). Text → UserInputText; READY vision input_file →
-// UserInputImage (base64, upscaled to >=512 pixels when needed); documents →
+// UserInputImage (base64, upscaled to >=512 pixels when needed) when vision
+// pixels are enabled; otherwise images join the document listing. Documents →
 // listing on the text block. Never projects tool/reasoning/search blocks into
 // public text.
 func (a *MultimodalAssembler) AssembleUserAgenticMessage(

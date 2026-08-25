@@ -42,10 +42,11 @@ func TestAgenticEstimatorReserveBoundsAndStability(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Build 45 deferred tools with decreasing schema sizes so top-40 are largest.
+	defaultCap := contextwindow.DefaultAgenticMaxIterations * contextwindow.AgenticMaxLoadedToolsPerSearch
+	// Build enough deferred tools that the default load cap binds.
 	var meta []contextwindow.ToolMetadata
 	var full []contextwindow.ToolSchema
-	for i := 0; i < 45; i++ {
+	for i := 0; i < defaultCap+5; i++ {
 		name := fmt.Sprintf("tool_%02d", i)
 		// Larger schema for lower indices (tool_00 largest).
 		params := json.RawMessage(fmt.Sprintf(`{"type":"object","properties":{"p":{"type":"string","description":"%s"}}}`, strings.Repeat("x", 200-i*2)))
@@ -64,7 +65,7 @@ func TestAgenticEstimatorReserveBoundsAndStability(t *testing.T) {
 	exposure := contextwindow.ToolExposureEstimate{
 		DeferredMetadata: meta,
 		LoadCandidates:   full,
-		// MaxLoadedTools omitted (0) — derived as min(47, 40)=40.
+		// MaxLoadedTools omitted (0) — derived as min(catalog, defaultCap).
 	}
 	a, err := est.EstimateAgenticRequest("system", exposure, nil)
 	if err != nil {
@@ -80,11 +81,11 @@ func TestAgenticEstimatorReserveBoundsAndStability(t *testing.T) {
 	if a.ToolsTokens != a.ImmediateToolsTokens+a.DeferredMetadataTokens+a.DynamicToolLoadReserveTokens {
 		t.Fatalf("ToolsTokens sum mismatch: %+v", a)
 	}
-	if a.MaxLoadedToolCount != 40 {
-		t.Fatalf("max loaded=%d want 40", a.MaxLoadedToolCount)
+	if a.MaxLoadedToolCount != defaultCap {
+		t.Fatalf("max loaded=%d want %d", a.MaxLoadedToolCount, defaultCap)
 	}
 
-	// Fewer than five deferred tools: MaxLoaded = deferredCount, still reserves all 8 search groups.
+	// Fewer than five deferred tools: MaxLoaded = deferredCount, still reserves all default search groups.
 	small := contextwindow.ToolExposureEstimate{
 		DeferredMetadata: meta[:3],
 		LoadCandidates:   full[:3],
@@ -99,8 +100,7 @@ func TestAgenticEstimatorReserveBoundsAndStability(t *testing.T) {
 	if s.DynamicToolLoadReserveTokens <= 0 {
 		t.Fatalf("small catalog reserve: %+v", s)
 	}
-	// Prove 8 search groups are reserved even with only 3 deferred:
-	// search overhead floor = 8 * 96 + 8 * 32 = 1024 (constants internal; reserve > framing alone).
+	// Prove default search groups are reserved even with only 3 deferred.
 	// Compare 1 deferred vs 3 deferred: search component identical, only schema+loaded framing differ.
 	one := contextwindow.ToolExposureEstimate{
 		DeferredMetadata: meta[:1],
@@ -110,28 +110,28 @@ func TestAgenticEstimatorReserveBoundsAndStability(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Both must include full 8-group search overhead; 3-tool reserve >= 1-tool reserve.
+	// Both must include full default-group search overhead; 3-tool reserve >= 1-tool reserve.
 	if s.DynamicToolLoadReserveTokens < r1.DynamicToolLoadReserveTokens {
 		t.Fatalf("3-tool reserve %d < 1-tool %d", s.DynamicToolLoadReserveTokens, r1.DynamicToolLoadReserveTokens)
 	}
 
-	// 40 vs 41+: MaxLoaded capped at 40; reserve for top-40 schema portion.
-	e40 := contextwindow.ToolExposureEstimate{DeferredMetadata: meta[:40], LoadCandidates: full[:40]}
-	e41 := contextwindow.ToolExposureEstimate{DeferredMetadata: meta[:41], LoadCandidates: full[:41]}
-	r40, err := est.EstimateAgenticRequest("", e40, nil)
+	// cap vs cap+1: MaxLoaded capped; reserve for top-cap schema portion.
+	eCap := contextwindow.ToolExposureEstimate{DeferredMetadata: meta[:defaultCap], LoadCandidates: full[:defaultCap]}
+	eOver := contextwindow.ToolExposureEstimate{DeferredMetadata: meta[:defaultCap+1], LoadCandidates: full[:defaultCap+1]}
+	rCap, err := est.EstimateAgenticRequest("", eCap, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r41, err := est.EstimateAgenticRequest("", e41, nil)
+	rOver, err := est.EstimateAgenticRequest("", eOver, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r40.MaxLoadedToolCount != 40 || r41.MaxLoadedToolCount != 40 {
-		t.Fatalf("max loaded 40/41: %d/%d", r40.MaxLoadedToolCount, r41.MaxLoadedToolCount)
+	if rCap.MaxLoadedToolCount != defaultCap || rOver.MaxLoadedToolCount != defaultCap {
+		t.Fatalf("max loaded cap/over: %d/%d want %d", rCap.MaxLoadedToolCount, rOver.MaxLoadedToolCount, defaultCap)
 	}
-	if r40.DynamicToolLoadReserveTokens != r41.DynamicToolLoadReserveTokens {
-		if r41.DynamicToolLoadReserveTokens < r40.DynamicToolLoadReserveTokens {
-			t.Fatalf("41 reserve smaller than 40: %d < %d", r41.DynamicToolLoadReserveTokens, r40.DynamicToolLoadReserveTokens)
+	if rCap.DynamicToolLoadReserveTokens != rOver.DynamicToolLoadReserveTokens {
+		if rOver.DynamicToolLoadReserveTokens < rCap.DynamicToolLoadReserveTokens {
+			t.Fatalf("over reserve smaller than cap: %d < %d", rOver.DynamicToolLoadReserveTokens, rCap.DynamicToolLoadReserveTokens)
 		}
 	}
 }
@@ -252,9 +252,8 @@ func TestAgenticEstimatorNegativeDeltaClamp(t *testing.T) {
 	if got.DynamicToolLoadReserveTokens < 0 {
 		t.Fatalf("negative reserve: %d", got.DynamicToolLoadReserveTokens)
 	}
-	// With deferred present, reserve includes 8 search groups → strictly positive.
 	if got.DynamicToolLoadReserveTokens == 0 {
-		t.Fatal("expected positive reserve with deferred tools (8 search groups)")
+		t.Fatal("expected positive reserve with deferred tools")
 	}
 }
 
@@ -309,7 +308,7 @@ func TestAgenticPreflightStructuralBounds(t *testing.T) {
 		MaxLoadedToolCount:       5,
 		ActualLoadedToolCount:    0,
 	}
-	// Exact boundaries 0/40 accepted; 41/-1 rejected as invalid input.
+	bound := contextwindow.AgenticMaxLoadedDefinitionsPerRun
 	for _, tc := range []struct {
 		name    string
 		mod     func(*contextwindow.AgenticPreflightInput)
@@ -324,25 +323,25 @@ func TestAgenticPreflightStructuralBounds(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name: "max_40_actual_40",
+			name: "max_bound_actual_bound",
 			mod: func(in *contextwindow.AgenticPreflightInput) {
-				in.MaxLoadedToolCount = 40
-				in.ActualLoadedToolCount = 40
+				in.MaxLoadedToolCount = bound
+				in.ActualLoadedToolCount = bound
 			},
 			wantErr: nil,
 		},
 		{
-			name: "max_40_actual_0",
+			name: "max_bound_actual_0",
 			mod: func(in *contextwindow.AgenticPreflightInput) {
-				in.MaxLoadedToolCount = 40
+				in.MaxLoadedToolCount = bound
 				in.ActualLoadedToolCount = 0
 			},
 			wantErr: nil,
 		},
 		{
-			name: "max_41_invalid",
+			name: "max_over_bound_invalid",
 			mod: func(in *contextwindow.AgenticPreflightInput) {
-				in.MaxLoadedToolCount = 41
+				in.MaxLoadedToolCount = bound + 1
 				in.ActualLoadedToolCount = 0
 			},
 			wantErr: contextwindow.ErrAgenticEstimatorInvalid,
@@ -356,10 +355,10 @@ func TestAgenticPreflightStructuralBounds(t *testing.T) {
 			wantErr: contextwindow.ErrAgenticEstimatorInvalid,
 		},
 		{
-			name: "actual_41_invalid",
+			name: "actual_over_bound_invalid",
 			mod: func(in *contextwindow.AgenticPreflightInput) {
-				in.MaxLoadedToolCount = 40
-				in.ActualLoadedToolCount = 41
+				in.MaxLoadedToolCount = bound
+				in.ActualLoadedToolCount = bound + 1
 			},
 			wantErr: contextwindow.ErrAgenticEstimatorInvalid,
 		},
@@ -612,7 +611,8 @@ func TestAgenticEstimatorOverflowAndBounds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := est.EstimateAgenticRequest("", contextwindow.ToolExposureEstimate{MaxLoadedTools: 41}, nil); err == nil {
+	over := contextwindow.DefaultAgenticMaxIterations*contextwindow.AgenticMaxLoadedToolsPerSearch + 1
+	if _, err := est.EstimateAgenticRequest("", contextwindow.ToolExposureEstimate{MaxLoadedTools: over}, nil); err == nil {
 		t.Fatal("expected max loaded out of range reject")
 	}
 	if _, err := est.EstimateAgenticRequest("", contextwindow.ToolExposureEstimate{MaxLoadedTools: -1}, nil); err == nil {
@@ -628,13 +628,14 @@ func TestDeriveMaxLoadedToolCount(t *testing.T) {
 	if contextwindow.DeriveMaxLoadedToolCount(3) != 3 {
 		t.Fatal("3")
 	}
-	if contextwindow.DeriveMaxLoadedToolCount(40) != 40 {
-		t.Fatal("40")
+	capCount := contextwindow.DefaultAgenticMaxIterations * contextwindow.AgenticMaxLoadedToolsPerSearch
+	if contextwindow.DeriveMaxLoadedToolCount(capCount) != capCount {
+		t.Fatal("at cap")
 	}
-	if contextwindow.DeriveMaxLoadedToolCount(41) != 40 {
-		t.Fatal("41->40")
+	if contextwindow.DeriveMaxLoadedToolCount(capCount+1) != capCount {
+		t.Fatal("over cap")
 	}
-	if contextwindow.DeriveMaxLoadedToolCount(500) != contextwindow.AgenticMaxLoadedDefinitionsPerRun {
+	if contextwindow.DeriveMaxLoadedToolCount(500) != capCount {
 		t.Fatal("500")
 	}
 }

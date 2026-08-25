@@ -106,6 +106,7 @@ func TestAssembleUserMessage_ImageSuccessWithFakeSource(t *testing.T) {
 	}
 	a := &chatruntime.MultimodalAssembler{
 		RuntimeMultimodal: true,
+		VisionEnabled:     true,
 		Files:             src,
 		MaxBytes:          1 << 20,
 	}
@@ -258,7 +259,7 @@ func TestAssembleUserMessage_MixedImageAndPDF(t *testing.T) {
 			body: []byte("%PDF-1.1"),
 		},
 	}}
-	a := &chatruntime.MultimodalAssembler{RuntimeMultimodal: true, Files: src, MaxBytes: 1 << 20}
+	a := &chatruntime.MultimodalAssembler{RuntimeMultimodal: true, VisionEnabled: true, Files: src, MaxBytes: 1 << 20}
 	body := v1Content(
 		map[string]string{"type": "text", "text": "compare"},
 		map[string]string{"type": "input_file", "fileId": mmFileID, "mediaType": "image/png"},
@@ -284,22 +285,37 @@ func TestAssembleUserMessage_MixedImageAndPDF(t *testing.T) {
 	}
 }
 
-func TestAssembleUserMessage_MixedRequiresMultimodal(t *testing.T) {
+func TestAssembleUserMessage_ImageWithoutVisionLists(t *testing.T) {
 	src := &fakeFileSource{
 		meta: chatruntime.MultimodalFileMeta{
 			ID: mmFileID, WorkspaceID: mmWorkspace, AgentID: mmAgent,
-			Status: "READY", StoredObjectID: mmObjectID,
+			Status: "READY", StoredObjectID: mmObjectID, Filename: "shot.png",
 			DeclaredMediaType: "image/png", SizeBytes: int64(len(tinyPNG)),
 		},
 		body: tinyPNG,
 	}
-	a := &chatruntime.MultimodalAssembler{RuntimeMultimodal: false, Files: src}
 	body := v1Content(
+		map[string]string{"type": "text", "text": "see this"},
 		map[string]string{"type": "input_file", "fileId": mmFileID, "mediaType": "image/png"},
 	)
-	_, err := a.AssembleUserMessage(context.Background(), mmWorkspace, mmAgent, body)
-	if !errors.Is(err, chatruntime.ErrModelContentUnsupported) {
-		t.Fatalf("image without runtime must fail: %v", err)
+	for _, a := range []*chatruntime.MultimodalAssembler{
+		{RuntimeMultimodal: false, VisionEnabled: true, Files: src},
+		{RuntimeMultimodal: true, VisionEnabled: false, Files: src},
+	} {
+		msg, err := a.AssembleUserMessage(context.Background(), mmWorkspace, mmAgent, body)
+		if err != nil {
+			t.Fatalf("image must list when vision pixels are off: %v", err)
+		}
+		if msg.UserInputMultiContent != nil {
+			t.Fatal("must not send vision parts")
+		}
+		if !strings.Contains(msg.Content, "shot.png") || !strings.Contains(msg.Content, mmFileID) {
+			t.Fatalf("listing=%q", msg.Content)
+		}
+		raw, _ := json.Marshal(msg)
+		if strings.Contains(string(raw), "Base64") || strings.Contains(string(raw), src.meta.StoredObjectID) {
+			t.Fatalf("must not inline image bytes: %s", raw)
+		}
 	}
 }
 
@@ -368,7 +384,7 @@ func TestAssembleUserMessage_NeverDropsInputFileWhenOpenFails(t *testing.T) {
 		body: nil,
 	}
 	// Force empty body after open.
-	a := &chatruntime.MultimodalAssembler{RuntimeMultimodal: true, Files: src}
+	a := &chatruntime.MultimodalAssembler{RuntimeMultimodal: true, VisionEnabled: true, Files: src}
 	body := v1Content(
 		map[string]string{"type": "text", "text": "see image"},
 		map[string]string{"type": "input_file", "fileId": mmFileID},
@@ -424,7 +440,7 @@ func TestAssembleUserAgenticMessage_TinyPNGMeetsGrokPixelMinimum(t *testing.T) {
 		},
 		body: tinyPNG,
 	}
-	a := &chatruntime.MultimodalAssembler{RuntimeMultimodal: true, Files: src, MaxBytes: 1 << 20}
+	a := &chatruntime.MultimodalAssembler{RuntimeMultimodal: true, VisionEnabled: true, Files: src, MaxBytes: 1 << 20}
 	body := v1Content(
 		map[string]string{"type": "text", "text": "描述这张图"},
 		map[string]string{"type": "input_file", "fileId": mmFileID, "mediaType": "image/png"},

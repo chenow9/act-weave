@@ -74,6 +74,8 @@
   "credentialHelpEdit": "Only the Secret reference is submitted. The server never returns or backfills key plaintext.",
   "fieldApiBase": "API base URL",
   "fieldModelName": "Model name",
+  "fieldVision": "Vision input",
+  "visionHelp": "When on, uploaded images are sent as model vision parts. When off (default), the model only sees that an image or attachment was uploaded. Does not change document handling.",
   "createdByLockedTitle": "Creator is recorded by server audit fields and cannot be changed by the client.",
   "createdByPending": "Recorded by the server after save",
   "runtimeSection": "Session context capacity",
@@ -142,7 +144,7 @@
   "disclosureUnavailable": "This model cannot call tools and cannot be bound to an Agent that has tools.",
   "disclosureBinaryHelp": "Choose how the model sees tools. Saving affects new runs only.",
   "disclosureOnDemand": "On-demand search (recommended; load at most 5 tools each time)",
-  "disclosureCarryAll": "Carry all (only for Agents with 8 tools or fewer)",
+  "disclosureCarryAll": "Carry all (only for Agents with 32 tools or fewer)",
   "disclosureSave": "Save disclosure policy",
   "disclosureSaved": "{name}: disclosure policy updated.",
   "disclosureSaveFailed": "Failed to save the disclosure policy. Check the network or try again later."

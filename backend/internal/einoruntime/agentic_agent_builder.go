@@ -49,8 +49,8 @@ var (
 	// ErrAgenticCarryAllTooLarge is returned when carry-all is requested with
 	// more than CarryAllHardLimit non-platform-control tools.
 	ErrAgenticCarryAllTooLarge = errors.New("einoruntime agentic builder: carry-all catalog exceeds hard limit")
-	// ErrAgenticMaxIterations is returned when MaxIterations is outside 0 (default 8) or 1..16.
-	ErrAgenticMaxIterations = errors.New("einoruntime agentic builder: MaxIterations must be 0 (default 8) or 1..16")
+	// ErrAgenticMaxIterations is returned when MaxIterations is outside 0 (default 16) or 1..32.
+	ErrAgenticMaxIterations = errors.New("einoruntime agentic builder: MaxIterations must be 0 (default 16) or 1..32")
 	// ErrAgenticTooManyImmediate is returned when immediate tools exceed the platform ceiling.
 	ErrAgenticTooManyImmediate = errors.New("einoruntime agentic builder: too many immediate tools")
 	// ErrAgenticPromptCacheKeyRequired is returned when PromptCacheKey is empty.
@@ -103,13 +103,13 @@ type AgenticAgentBuildConfig struct {
 	// tools↔catalog mismatch (nil Tools, empty, missing, extra, duplicate).
 	Catalog *ToolCatalogSnapshot
 
-	// MaxIterations caps model rounds. Zero normalizes to DefaultMaxIterations (8).
-	// 1..DefaultMaxToolInvocations (16) accepted; negative and >16 rejected.
+	// MaxIterations caps model rounds. Zero normalizes to DefaultMaxIterations (16).
+	// 1..MaxMaxIterations (32) accepted; negative and >32 rejected.
 	MaxIterations int
 	// MaxToolInvocations hard-caps tool executions across Invokable, Streamable,
 	// EnhancedInvokable, and EnhancedStreamable paths.
-	// Zero → DefaultMaxToolInvocations (16). Includes the search executor.
-	// Values <0 or >16 are rejected with ErrToolBudgetMaxInvalid.
+	// Zero → DefaultMaxToolInvocations (32). Includes the search executor.
+	// Values <0 or >64 are rejected with ErrToolBudgetMaxInvalid.
 	MaxToolInvocations int
 
 	// ToolSearchMode selects disclosure. client_bounded requires

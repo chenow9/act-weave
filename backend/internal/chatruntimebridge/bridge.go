@@ -23,6 +23,7 @@ import (
 	"actweave/backend/internal/einoruntime"
 	"actweave/backend/internal/execution"
 	"actweave/backend/internal/metrics"
+	"actweave/backend/internal/modelapi"
 	"actweave/backend/internal/modelconfig"
 	"actweave/backend/internal/sessioncontext"
 	"actweave/backend/internal/toolruntime"
@@ -79,14 +80,14 @@ type Dependencies struct {
 	// true Stream → item.delta projection (D14 / A.5). When set, drive always
 	// wires StreamDeltaRecorder.Sink so deltas leave the in-memory buffer.
 	TextSinkFactory TextSinkFactory
-	// MaxIterations overrides the model-round budget (0 / negative → default 8).
-	// Agentic initial/resume/delegation honor this value (1..16).
+	// MaxIterations overrides the model-round budget (0 / negative → default 16).
+	// Agentic initial/resume/delegation honor this value (1..32).
 	MaxIterations int
 	// MaxToolInvocations hard-caps tool InvokableRun calls per run.
 	// Contract (aligned with einoruntime / config; no silent clamp):
-	//   - 0 → einoruntime.DefaultMaxToolInvocations (16)
-	//   - 1..16 accepted as-is
-	//   - negative or >16 → NewBridge error
+	//   - 0 → einoruntime.DefaultMaxToolInvocations (32)
+	//   - 1..64 accepted as-is
+	//   - negative or >64 → NewBridge error
 	MaxToolInvocations int
 	Logger             *slog.Logger
 	Now                func() time.Time
@@ -197,6 +198,11 @@ func NewBridge(deps Dependencies) (*Bridge, error) {
 	maxIter := deps.MaxIterations
 	if maxIter <= 0 {
 		maxIter = einoruntime.DefaultMaxIterations
+	} else if maxIter > einoruntime.MaxMaxIterations {
+		return nil, fmt.Errorf(
+			"chatruntimebridge: MaxIterations must be 0 (default %d) or 1..%d, got %d",
+			einoruntime.DefaultMaxIterations, einoruntime.MaxMaxIterations, deps.MaxIterations,
+		)
 	}
 	// Fail closed for invalid tool budget at the bridge boundary (same contract
 	// as einoruntime.normalizeMaxToolInvocations / config.validateEinoMaxToolInvocations).
@@ -233,17 +239,17 @@ func NewBridge(deps Dependencies) (*Bridge, error) {
 
 // normalizeBridgeMaxToolInvocations enforces the production-wide tool budget
 // contract at the bridge construction boundary:
-//   - 0 → einoruntime.DefaultMaxToolInvocations (16)
-//   - 1..16 accepted as-is
-//   - negative or >16 → error (never silently defaulted or clamped)
+//   - 0 → einoruntime.DefaultMaxToolInvocations (32)
+//   - 1..MaxMaxToolInvocations (64) accepted as-is
+//   - negative or >64 → error (never silently defaulted or clamped)
 func normalizeBridgeMaxToolInvocations(max int) (int, error) {
 	if max == 0 {
 		return einoruntime.DefaultMaxToolInvocations, nil
 	}
-	if max < 0 || max > einoruntime.DefaultMaxToolInvocations {
+	if max < 0 || max > einoruntime.MaxMaxToolInvocations {
 		return 0, fmt.Errorf(
 			"chatruntimebridge: MaxToolInvocations must be 0 (default %d) or 1..%d, got %d",
-			einoruntime.DefaultMaxToolInvocations, einoruntime.DefaultMaxToolInvocations, max,
+			einoruntime.DefaultMaxToolInvocations, einoruntime.MaxMaxToolInvocations, max,
 		)
 	}
 	return max, nil
@@ -647,7 +653,7 @@ func (b *Bridge) buildMessages(
 		}
 		switch role {
 		case "user":
-			userMsg, userErr := b.assembleUserSchemaMessage(ctx, job.WorkspaceID, configuredAgent.ID, content)
+			userMsg, userErr := b.assembleUserSchemaMessage(ctx, job.WorkspaceID, configuredAgent.ID, content, nil)
 			if userErr != nil {
 				return nil, userErr
 			}
@@ -763,7 +769,7 @@ func (b *Bridge) buildMessagesTokenWindow(
 		case contextwindow.RoleSystem:
 			out = append(out, schema.SystemMessage(m.Content))
 		case contextwindow.RoleUser:
-			userMsg, userErr := b.assembleUserSchemaMessage(ctx, job.WorkspaceID, run.AgentID, m.Content)
+			userMsg, userErr := b.assembleUserSchemaMessage(ctx, job.WorkspaceID, run.AgentID, m.Content, modelOptionsFromRun(run))
 			if userErr != nil {
 				return nil, userErr
 			}
@@ -789,17 +795,30 @@ func (b *Bridge) buildMessagesTokenWindow(
 func (b *Bridge) assembleUserSchemaMessage(
 	ctx context.Context,
 	workspaceID, agentID, content string,
+	modelOptions json.RawMessage,
 ) (*schema.Message, error) {
-	assembler := b.multimodal
-	if assembler == nil {
-		// No multimodal wiring: still decode v1 text; fail closed on input_file.
-		assembler = &chatruntime.MultimodalAssembler{RuntimeMultimodal: false}
-	}
+	assembler := b.assemblerForModelOptions(modelOptions)
 	msg, err := assembler.AssembleUserMessage(ctx, workspaceID, agentID, content)
 	if err != nil {
 		return nil, err
 	}
 	return msg, nil
+}
+
+func (b *Bridge) assemblerForModelOptions(options json.RawMessage) *chatruntime.MultimodalAssembler {
+	base := b.multimodal
+	if base == nil {
+		base = &chatruntime.MultimodalAssembler{RuntimeMultimodal: false}
+	}
+	return base.WithVision(modelapi.VisionEnabled(options))
+}
+
+func modelOptionsFromRun(run execution.AgentRun) json.RawMessage {
+	cfg, err := parseModelSnapshotStrict(run.ModelSnapshot, run.WorkspaceID)
+	if err != nil {
+		return nil
+	}
+	return cfg.Options
 }
 
 // historyPageSize is the reverse-page resource bound for session-context assembly.

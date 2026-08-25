@@ -14,8 +14,10 @@ import (
 // defaultMaxToolCalls and config.DefaultEinoMaxIterations /
 // DefaultEinoMaxToolInvocations.
 const (
-	DefaultMaxIterations      = 8
-	DefaultMaxToolInvocations = 16
+	DefaultMaxIterations      = 16
+	MaxMaxIterations          = 32
+	DefaultMaxToolInvocations = 32
+	MaxMaxToolInvocations     = 64
 
 	// ToolBudgetExceededCode is the user-safe errorCode in tool result JSON
 	// (legacy chatruntime TOOL_BUDGET_EXCEEDED).
@@ -34,15 +36,15 @@ const (
 var ErrToolBudgetExceeded = errors.New("tool budget exceeded")
 
 // ErrToolBudgetMaxInvalid is returned when MaxToolInvocations is negative or >16.
-var ErrToolBudgetMaxInvalid = errors.New("einoruntime tool budget max must be 0 (default 16) or 1..16")
+var ErrToolBudgetMaxInvalid = errors.New("einoruntime tool budget max must be 0 (default 32) or 1..64")
 
-// normalizeMaxIterations maps 0 → DefaultMaxIterations (8).
-// Accepts 1..DefaultMaxToolInvocations (16); rejects negative and >16.
+// normalizeMaxIterations maps 0 → DefaultMaxIterations (16).
+// Accepts 1..MaxMaxIterations (32); rejects negative and >32.
 func normalizeMaxIterations(max int) (int, error) {
 	if max == 0 {
 		return DefaultMaxIterations, nil
 	}
-	if max < 1 || max > DefaultMaxToolInvocations {
+	if max < 1 || max > MaxMaxIterations {
 		return 0, fmt.Errorf("%w: got %d", ErrAgenticMaxIterations, max)
 	}
 	return max, nil
@@ -52,13 +54,13 @@ func normalizeMaxIterations(max int) (int, error) {
 // or cannot be read/written (fail closed — never fall back to a shared counter).
 var ErrToolBudgetState = errors.New("einoruntime tool budget run-local state error")
 
-// normalizeMaxToolInvocations maps 0 → DefaultMaxToolInvocations (16).
-// Accepts 1..16; rejects negative and >16.
+// normalizeMaxToolInvocations maps 0 → DefaultMaxToolInvocations (32).
+// Accepts 1..MaxMaxToolInvocations (64); rejects negative and >64.
 func normalizeMaxToolInvocations(max int) (int, error) {
 	if max == 0 {
 		return DefaultMaxToolInvocations, nil
 	}
-	if max < 0 || max > DefaultMaxToolInvocations {
+	if max < 0 || max > MaxMaxToolInvocations {
 		return 0, fmt.Errorf("%w: got %d", ErrToolBudgetMaxInvalid, max)
 	}
 	return max, nil
@@ -120,9 +122,9 @@ func tryAcquireRunLocalBudget(ctx context.Context, max int) (bool, error) {
 // middleware instance), and Resume continues the prior count.
 //
 // Limit contract (no silent clamping):
-//   - 0 → DefaultMaxToolInvocations (16)
-//   - 1..16 accepted as-is
-//   - negative or >16 → ErrToolBudgetMaxInvalid
+//   - 0 → DefaultMaxToolInvocations (32)
+//   - 1..MaxMaxToolInvocations (64) accepted as-is
+//   - negative or >64 → ErrToolBudgetMaxInvalid
 func NewToolBudgetMiddleware(max int) (compose.ToolMiddleware, error) {
 	max, err := normalizeMaxToolInvocations(max)
 	if err != nil {

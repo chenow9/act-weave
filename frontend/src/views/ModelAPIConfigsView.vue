@@ -278,9 +278,21 @@ function modelDraftFingerprint(config: ModelApiConfig) {
     credentialSecretId: config.credentialSecretId || "",
     apiBase: config.apiBase,
     modelName: config.modelName,
+    vision: Boolean(config.options?.vision),
     runtimeCapabilities: config.runtimeCapabilities || {},
   });
 }
+
+const draftVision = computed({
+  get() {
+    return Boolean(activeModelDraft.value?.options?.vision);
+  },
+  set(value: boolean) {
+    const draft = activeModelDraft.value;
+    if (!draft) return;
+    draft.options = { ...(draft.options || {}), vision: value };
+  },
+});
 
 function draftRuntimeCaps(): ModelRuntimeCapabilities {
   const draft = activeModelDraft.value;
@@ -1345,6 +1357,11 @@ function handleModelModalKeydown(event: KeyboardEvent) {
                 {{ visibleModelDraftValidationError("modelName") }}
               </span>
             </label>
+            <label class="model-disclosure-option" data-testid="model-field-vision">
+              <input v-model="draftVision" type="checkbox" />
+              <span>{{ t("modelApis.fieldVision") }}</span>
+            </label>
+            <p class="model-modal-fieldset-help">{{ t("modelApis.visionHelp") }}</p>
             <section
               v-if="modelModalMode === 'edit' && showsDisclosureSection(draftDisclosureUI())"
               class="model-modal-fieldset model-disclosure-section"

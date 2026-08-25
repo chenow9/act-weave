@@ -165,19 +165,19 @@ func TestToolBudgetMiddleware_DefaultCap(t *testing.T) {
 
 func TestToolBudgetMiddleware_RejectsInvalidMax(t *testing.T) {
 	t.Parallel()
-	if _, err := NewToolBudgetMiddleware(17); !errors.Is(err, ErrToolBudgetMaxInvalid) {
-		t.Fatalf("production 17: %v", err)
+	if _, err := NewToolBudgetMiddleware(MaxMaxToolInvocations + 1); !errors.Is(err, ErrToolBudgetMaxInvalid) {
+		t.Fatalf("production over max: %v", err)
 	}
 	if _, err := NewToolBudgetMiddleware(-1); !errors.Is(err, ErrToolBudgetMaxInvalid) {
 		t.Fatalf("production -1: %v", err)
 	}
-	if _, _, err := newToolBudgetMiddlewareWithCounter(17); !errors.Is(err, ErrToolBudgetMaxInvalid) {
-		t.Fatalf("test helper 17: %v", err)
+	if _, _, err := newToolBudgetMiddlewareWithCounter(MaxMaxToolInvocations + 1); !errors.Is(err, ErrToolBudgetMaxInvalid) {
+		t.Fatalf("test helper over max: %v", err)
 	}
 	if _, _, err := newToolBudgetMiddlewareWithCounter(-5); !errors.Is(err, ErrToolBudgetMaxInvalid) {
 		t.Fatalf("test helper -5: %v", err)
 	}
-	// Zero and 1..16 still accepted.
+	// Zero and 1..64 still accepted.
 	if _, err := NewToolBudgetMiddleware(0); err != nil {
 		t.Fatalf("zero: %v", err)
 	}
@@ -186,6 +186,9 @@ func TestToolBudgetMiddleware_RejectsInvalidMax(t *testing.T) {
 	}
 	if _, err := NewToolBudgetMiddleware(16); err != nil {
 		t.Fatalf("16: %v", err)
+	}
+	if _, err := NewToolBudgetMiddleware(MaxMaxToolInvocations); err != nil {
+		t.Fatalf("%d: %v", MaxMaxToolInvocations, err)
 	}
 }
 
@@ -281,8 +284,8 @@ func TestNormalizeMaxToolInvocations(t *testing.T) {
 	if err != nil || n != 8 {
 		t.Fatalf("8: n=%d err=%v", n, err)
 	}
-	if _, err := normalizeMaxToolInvocations(17); !errors.Is(err, ErrToolBudgetMaxInvalid) {
-		t.Fatalf("17: %v", err)
+	if _, err := normalizeMaxToolInvocations(MaxMaxToolInvocations + 1); !errors.Is(err, ErrToolBudgetMaxInvalid) {
+		t.Fatalf("over max: %v", err)
 	}
 	if _, err := normalizeMaxToolInvocations(-3); !errors.Is(err, ErrToolBudgetMaxInvalid) {
 		t.Fatalf("neg: %v", err)

@@ -235,6 +235,7 @@ func preflightAgenticInboundTurn(plan *agenticFrozenPlan, userText string) error
 		return execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
 	}
 	exposure := toolExposureForDisclosure(plan.catalog, plan.toolSearchMode)
+	exposure.MaxIterations = plan.maxIterations
 	got, err := est.EstimateAgenticRequestV2(plan.instruction, exposure, []contextwindow.Message{
 		{Role: contextwindow.RoleUser, Content: userText},
 	})

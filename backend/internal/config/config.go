@@ -171,7 +171,8 @@ type AgentAccessFilesConfig struct {
 		Enabled  bool `yaml:"enabled"`
 		Required bool `yaml:"required"`
 	} `yaml:"virusScan"`
-	// RuntimeMultimodal gates model assembly of input_file (IC-08); orthogonal to files gate.
+	// RuntimeMultimodal is the platform pixel-egress gate for vision input_file
+	// (IC-08). Orthogonal to files HTTP gate and to per-model Options.vision.
 	RuntimeMultimodal bool `yaml:"runtimeMultimodal"`
 	// RuntimeOutboundAttachments gates IngestGenerated and output_file emission. Default off; orthogonal to files HTTP and RuntimeMultimodal.
 	RuntimeOutboundAttachments bool `yaml:"runtimeOutboundAttachments"`

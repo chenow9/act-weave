@@ -27,10 +27,10 @@ const (
 	// MaxLoadedToolsPerSearch is the hard ceiling of definitions returned per search.
 	MaxLoadedToolsPerSearch = 5
 
-	// MaxToolSearchCallsPerRun is implied by MaxIterations=8 with ParallelToolCalls=false.
+	// MaxToolSearchCallsPerRun follows DefaultMaxIterations with ParallelToolCalls=false.
 	MaxToolSearchCallsPerRun = DefaultMaxIterations
 
-	// MaxLoadedDefinitionsPerRun is the structural worst-case load ceiling (8×5).
+	// MaxLoadedDefinitionsPerRun is the structural worst-case load ceiling.
 	MaxLoadedDefinitionsPerRun = MaxToolSearchCallsPerRun * MaxLoadedToolsPerSearch
 )
 

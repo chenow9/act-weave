@@ -26,12 +26,14 @@ const (
 	DisclosureModeCarryAll        = "carry_all"
 	DisclosureModeNone            = "none"
 
-	// AgenticMaxIterations is fixed/validated at 8 (D3 / D7).
-	AgenticMaxIterations = 8
+	// DefaultAgenticMaxIterations is the estimator default when MaxIterations is 0.
+	DefaultAgenticMaxIterations = 16
+	// MaxAgenticMaxIterations is the structural ceiling for search-group reserve.
+	MaxAgenticMaxIterations = 32
 	// AgenticMaxLoadedToolsPerSearch is fixed at 5.
 	AgenticMaxLoadedToolsPerSearch = 5
-	// AgenticMaxLoadedDefinitionsPerRun is 5 * 8 = 40.
-	AgenticMaxLoadedDefinitionsPerRun = AgenticMaxIterations * AgenticMaxLoadedToolsPerSearch
+	// AgenticMaxLoadedDefinitionsPerRun is the structural ceiling (32×5).
+	AgenticMaxLoadedDefinitionsPerRun = MaxAgenticMaxIterations * AgenticMaxLoadedToolsPerSearch
 
 	// Prompt-cache canonical constants (exact pins; arbitrary strings rejected).
 	PromptCacheProviderProtocolOpenAIResponsesV1 = "openai-responses-v1"
@@ -76,6 +78,8 @@ type ToolExposureEstimate struct {
 	LoadCandidates []ToolSchema
 	// MaxLoadedTools follows the mode split on ToolExposureEstimate.
 	MaxLoadedTools int
+	// MaxIterations is the run model-round budget. 0 → DefaultAgenticMaxIterations.
+	MaxIterations int
 	// DisclosureMode is a contextwindow string: "" / "client_bounded" /
 	// "platform_bounded" / "carry_all" / "none". Exact enum; no whitespace.
 	DisclosureMode string
@@ -111,8 +115,8 @@ type AgenticEstimateResult struct {
 // EstimateAgenticRequest estimates a Responses/Agentic request with deferred-aware
 // tool accounting. Classic EstimateRequest is unchanged.
 //
-// MaxIterations is fixed at 8. MaxLoadedToolCount is always derived as
-// min(deferredCount, 40) — callers cannot lower the structural bound.
+// MaxLoadedToolCount is derived as min(deferredCount, MaxIterations*5).
+// Callers cannot lower the structural bound except by setting MaxIterations.
 func (e *Estimator) EstimateAgenticRequest(
 	system string,
 	exposure ToolExposureEstimate,
@@ -122,8 +126,9 @@ func (e *Estimator) EstimateAgenticRequest(
 		return AgenticEstimateResult{}, ErrUnavailableProfile
 	}
 	deferredCount := len(exposure.DeferredMetadata)
-	maxLoaded := DeriveMaxLoadedToolCount(deferredCount)
-	if exposure.MaxLoadedTools < 0 || exposure.MaxLoadedTools > AgenticMaxLoadedDefinitionsPerRun {
+	maxLoaded := deriveMaxLoadedToolCount(deferredCount, exposure.MaxIterations)
+	loadCap := maxLoadedDefinitionsForIterations(exposure.MaxIterations)
+	if exposure.MaxLoadedTools < 0 || exposure.MaxLoadedTools > loadCap {
 		return AgenticEstimateResult{}, fmt.Errorf("%w: MaxLoadedTools out of range", ErrAgenticEstimatorInvalid)
 	}
 	// Reject conflicting nonzero input (caller cannot lower/raise the derived bound).
@@ -584,13 +589,32 @@ func (e *Estimator) estimatePlatformBoundedReserve(exposure ToolExposureEstimate
 	return total, nil
 }
 
-// DeriveMaxLoadedToolCount returns min(deferredCount, 5*8=40). Platform-frozen.
+func resolveAgenticMaxIterations(maxIter int) int {
+	if maxIter <= 0 {
+		return DefaultAgenticMaxIterations
+	}
+	if maxIter > MaxAgenticMaxIterations {
+		return MaxAgenticMaxIterations
+	}
+	return maxIter
+}
+
+func maxLoadedDefinitionsForIterations(maxIter int) int {
+	return resolveAgenticMaxIterations(maxIter) * AgenticMaxLoadedToolsPerSearch
+}
+
+// DeriveMaxLoadedToolCount returns min(deferredCount, default 16×5).
 func DeriveMaxLoadedToolCount(deferredCount int) int {
+	return deriveMaxLoadedToolCount(deferredCount, 0)
+}
+
+func deriveMaxLoadedToolCount(deferredCount, maxIter int) int {
 	if deferredCount <= 0 {
 		return 0
 	}
-	if deferredCount > AgenticMaxLoadedDefinitionsPerRun {
-		return AgenticMaxLoadedDefinitionsPerRun
+	capCount := maxLoadedDefinitionsForIterations(maxIter)
+	if deferredCount > capCount {
+		return capCount
 	}
 	return deferredCount
 }
@@ -756,7 +780,7 @@ func (e *Estimator) estimateDynamicToolLoadReserve(exposure ToolExposureEstimate
 
 	// If any deferred tools exist, reserve all 8 search call/output + turn framing
 	// groups regardless of fewer loaded definitions (repeated searches still cost 8 turns).
-	numSearchGroups := AgenticMaxIterations
+	numSearchGroups := resolveAgenticMaxIterations(exposure.MaxIterations)
 
 	searchOverhead, err := mulInt64(int64(numSearchGroups), agenticSearchCallOutputGroupTokens)
 	if err != nil {
@@ -831,8 +855,7 @@ func PreflightAgenticMandatory(in AgenticPreflightInput) (AgenticPreflightResult
 		in.DynamicReserveTokens < 0 || in.MandatoryTokens < 0 {
 		return AgenticPreflightResult{}, ErrAgenticEstimatorInvalid
 	}
-	// Structural bounds: MaxLoaded and ActualLoaded must be in [0, 40].
-	const platformMaxLoaded = AgenticMaxLoadedDefinitionsPerRun // 40
+	const platformMaxLoaded = AgenticMaxLoadedDefinitionsPerRun
 	if in.MaxLoadedToolCount < 0 || in.MaxLoadedToolCount > platformMaxLoaded {
 		return AgenticPreflightResult{}, ErrAgenticEstimatorInvalid
 	}

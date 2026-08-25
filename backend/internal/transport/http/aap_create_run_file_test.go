@@ -73,10 +73,10 @@ func TestAAPCreateRunInputFile(t *testing.T) {
 		}
 	})
 
-	t.Run("image RuntimeMultimodal false returns 422 FILE_RUNTIME_UNAVAILABLE without create", func(t *testing.T) {
+	t.Run("image RuntimeMultimodal false is accepted", func(t *testing.T) {
 		gate := filesGateRuntimeOn()
 		gate.RuntimeMultimodal = false
-		router, application, _ := newCreateRunFileRouter(t, gate, &aapCreateRunFileLookup{
+		router, application, lookup := newCreateRunFileRouter(t, gate, &aapCreateRunFileLookup{
 			files: map[string]aapfile.File{
 				aapRunFileIDReady: readyCreateRunImage(aapRunFileIDReady),
 			},
@@ -92,21 +92,23 @@ func TestAAPCreateRunInputFile(t *testing.T) {
 			}},
 			"stream": false,
 		}, "subject-a", aapRunFileIDKey, "application/json", "")
-		if response.Code != http.StatusUnprocessableEntity ||
-			!strings.Contains(response.Body.String(), "FILE_RUNTIME_UNAVAILABLE") {
+		if response.Code != http.StatusAccepted {
 			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 		}
-		if application.sideEffects != 0 {
-			t.Fatalf("run must not be created: effects=%d", application.sideEffects)
+		if application.sideEffects != 1 {
+			t.Fatalf("run must be created: effects=%d", application.sideEffects)
+		}
+		if lookup.promoteCalls != 1 {
+			t.Fatalf("expected retention promote once, got %d", lookup.promoteCalls)
 		}
 	})
 
-	t.Run("mixed image+pdf RuntimeMultimodal false returns 422 without create", func(t *testing.T) {
+	t.Run("mixed image+pdf RuntimeMultimodal false is accepted", func(t *testing.T) {
 		gate := filesGateRuntimeOn()
 		gate.RuntimeMultimodal = false
 		pdfID := aapRunFileIDReady
 		imgID := aapRunFileIDProcessing
-		router, application, _ := newCreateRunFileRouter(t, gate, &aapCreateRunFileLookup{
+		router, application, lookup := newCreateRunFileRouter(t, gate, &aapCreateRunFileLookup{
 			files: map[string]aapfile.File{
 				pdfID: readyCreateRunFile(pdfID),
 				imgID: readyCreateRunImage(imgID),
@@ -124,12 +126,14 @@ func TestAAPCreateRunInputFile(t *testing.T) {
 			}},
 			"stream": false,
 		}, "subject-a", aapRunFileIDKey, "application/json", "")
-		if response.Code != http.StatusUnprocessableEntity ||
-			!strings.Contains(response.Body.String(), "FILE_RUNTIME_UNAVAILABLE") {
+		if response.Code != http.StatusAccepted {
 			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 		}
-		if application.sideEffects != 0 {
-			t.Fatalf("run must not be created: effects=%d", application.sideEffects)
+		if application.sideEffects != 1 {
+			t.Fatalf("run must be created: effects=%d", application.sideEffects)
+		}
+		if lookup.promoteCalls != 2 {
+			t.Fatalf("expected retention promote for both files, got %d", lookup.promoteCalls)
 		}
 	})
 

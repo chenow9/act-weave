@@ -420,6 +420,7 @@ type agenticFrozenPlan struct {
 	delBudget         *agentdelegation.Budget
 	toolSearchMode    einoruntime.ToolSearchMode
 	toolCalling       string
+	maxIterations     int
 }
 
 // planAgenticRun performs the frozen-identity validation shared by every Agentic
@@ -564,6 +565,7 @@ func (b *Bridge) planAgenticRun(
 		delBudget:         delBudget,
 		toolSearchMode:    mode,
 		toolCalling:       calling,
+		maxIterations:     b.maxIterations,
 	}, nil
 }
 
@@ -904,7 +906,7 @@ func (b *Bridge) buildAgenticMessagesTokenWindow(
 		case contextwindow.RoleSystem:
 			out = append(out, agenticmsg.System(m.Content))
 		case contextwindow.RoleUser:
-			userMsg, userErr := b.assembleUserAgenticMessage(ctx, job.WorkspaceID, run.AgentID, m.Content)
+			userMsg, userErr := b.assembleUserAgenticMessage(ctx, job.WorkspaceID, run.AgentID, m.Content, modelOptionsFromRun(run))
 			if userErr != nil {
 				return nil, userErr
 			}
@@ -1002,6 +1004,7 @@ func (b *Bridge) estimateAndPreflightAgentic(
 	if err != nil {
 		return execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
 	}
+	exposure.MaxIterations = b.maxIterations
 	got, err := est.EstimateAgenticRequestV2(system, exposure, estMsgs)
 	if err != nil {
 		return execution.NewContextError(execution.ErrCodeContextAssemblyFailed)
@@ -1123,11 +1126,9 @@ func assemblyRecordLeaksSensitive(rec execution.ContextAssemblyRecord, job agent
 func (b *Bridge) assembleUserAgenticMessage(
 	ctx context.Context,
 	workspaceID, agentID, content string,
+	modelOptions json.RawMessage,
 ) (*schema.AgenticMessage, error) {
-	assembler := b.multimodal
-	if assembler == nil {
-		assembler = &chatruntime.MultimodalAssembler{RuntimeMultimodal: false}
-	}
+	assembler := b.assemblerForModelOptions(modelOptions)
 	msg, err := assembler.AssembleUserAgenticMessage(ctx, workspaceID, agentID, content)
 	if err != nil {
 		return nil, err

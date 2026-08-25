@@ -123,7 +123,7 @@ func TestAssertAgentModelToolCompatibilityNativeAndFunctionCalling(t *testing.T)
 		RequireVerified: false,
 	})
 	tooLarge, ok := modelconfig.AsCarryAllTooLarge(err)
-	if !ok || tooLarge.Count != 9 || tooLarge.Limit != 8 || tooLarge.AgentID != "agent-9" {
+	if !ok || tooLarge.Count != modelconfig.CarryAllHardLimit+1 || tooLarge.Limit != modelconfig.CarryAllHardLimit || tooLarge.AgentID != "agent-9" {
 		t.Fatalf("carry-all overflow: %+v err=%v", tooLarge, err)
 	}
 }

@@ -245,7 +245,7 @@ func TestV1ModelConfigSetDisclosure(t *testing.T) {
 	bigID := insertHTTPAgent(t, f, value.ID, "big-agent")
 	catalog.counts[smallID] = 3
 	catalog.counts[warnID] = 7
-	catalog.counts[bigID] = 9
+	catalog.counts[bigID] = modelconfig.CarryAllHardLimit + 1
 
 	tooBig := f.request(t, http.MethodPost, f.base+"/model-configs/"+value.ID+":set-disclosure", map[string]any{
 		"lockVersion": afterEmpty.LockVersion,
@@ -254,7 +254,7 @@ func TestV1ModelConfigSetDisclosure(t *testing.T) {
 		},
 	}, f.token, nil)
 	assertErrorResponse(t, tooBig, http.StatusUnprocessableEntity, modelconfig.ErrorCodeToolCarryAllTooLarge)
-	if !strings.Contains(tooBig.Body.String(), bigID) || !strings.Contains(tooBig.Body.String(), `"limit":8`) {
+	if !strings.Contains(tooBig.Body.String(), bigID) || !strings.Contains(tooBig.Body.String(), `"limit":32`) {
 		t.Fatalf("too-large details missing: %s", tooBig.Body.String())
 	}
 

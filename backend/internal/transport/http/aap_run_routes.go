@@ -249,8 +249,9 @@ func (routes *AAPRunRoutes) createRun(c *gin.Context) {
 		return
 	}
 	parts := aapRunContentParts(request.Input)
-	// KD-IR-7: files HTTP gate is required for any input_file. Image/mixed
-	// still need RuntimeMultimodal; document-only does not.
+	// Files HTTP gate is required for any input_file. Images are accepted even
+	// when RuntimeMultimodal is off; assembly lists them unless the bound
+	// model Options.vision is on and pixel egress is enabled.
 	if aap.HasInputFilePart(parts) {
 		if routes.filesGate == nil || !routes.filesGate.AllowsWorkspace(scope.WorkspaceID) {
 			_ = outboundidentity.ZeroCredentialsRaw(creds)
@@ -262,11 +263,6 @@ func (routes *AAPRunRoutes) createRun(c *gin.Context) {
 			if !errors.Is(err, errAAPCreateRunAuthResponded) {
 				RespondError(c, err)
 			}
-			return
-		}
-		if createRunHasVisionInputFile(parts) && !routes.filesGate.RuntimeMultimodal {
-			_ = outboundidentity.ZeroCredentialsRaw(creds)
-			RespondError(c, aap.ErrFileRuntimeUnavailable)
 			return
 		}
 	}
@@ -760,15 +756,6 @@ func (routes *AAPRunRoutes) authorizeCreateRunFiles(
 		}
 	}
 	return nil
-}
-
-func createRunHasVisionInputFile(parts []aap.RunContentPart) bool {
-	for _, part := range parts {
-		if part.Type == "input_file" && aapfile.IsVisionMediaType(part.MediaType) {
-			return true
-		}
-	}
-	return false
 }
 
 // errAAPCreateRunAuthResponded signals that authorizeAAPRequest already aborted the response.

@@ -529,6 +529,7 @@ type agenticMappedOptions struct {
 	TopP        *float32
 	MaxTokens   *int
 	Reasoning   *responses.ReasoningParam
+	Vision      bool
 }
 
 // knownAgenticOptionKeys are the only modelconfig.Options keys accepted by the
@@ -547,6 +548,7 @@ var knownAgenticOptionKeys = map[string]struct{}{
 	"parallel_tool_calls": {},
 	"apiVersion":          {},
 	"api_version":         {},
+	"vision":              {},
 }
 
 // aliasPairs lists camelCase/snake_case pairs that must not both be present.
@@ -595,6 +597,7 @@ func mapAgenticOptions(raw json.RawMessage) (agenticMappedOptions, error) {
 		ParallelSnake     *bool    `json:"parallel_tool_calls"`
 		APIVersion        *string  `json:"apiVersion"`
 		APIVersionSnake   *string  `json:"api_version"`
+		Vision            *bool    `json:"vision"`
 	}
 	if err := json.Unmarshal(raw, &opts); err != nil {
 		return out, fmt.Errorf("modelapi agentic options: invalid types: %w", err)
@@ -649,7 +652,20 @@ func mapAgenticOptions(raw json.RawMessage) (agenticMappedOptions, error) {
 		return out, ErrAgenticParallelToolCallsFixed
 	}
 	// Explicit false is accepted; value is always forced false on the config.
+	if opts.Vision != nil {
+		out.Vision = *opts.Vision
+	}
 	return out, nil
+}
+
+// VisionEnabled reports whether model Options turn on pixel vision assembly.
+// Omitted, empty, invalid, or explicit false → false (listing path for images).
+func VisionEnabled(options json.RawMessage) bool {
+	mapped, err := mapAgenticOptions(options)
+	if err != nil {
+		return false
+	}
+	return mapped.Vision
 }
 
 // agenticReasoningEffort maps modelconfig reasoningEffort onto Responses
