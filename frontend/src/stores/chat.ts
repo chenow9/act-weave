@@ -16,6 +16,7 @@ import {
   type ConsoleRunProjectionState,
   type ConsoleStreamEffects,
   type StreamFrame,
+  type ToolProgressCard,
 } from "../services/run-event-stream";
 import type {
   AgentRun,
@@ -46,6 +47,8 @@ interface ChatState {
   latestRun?: AgentRun;
   latestRunSteps: AgentRunStep[];
   runStatus?: AgentRunStatus;
+  /** Live tool_call progress cards for the current run. */
+  toolProgressCards: ToolProgressCard[];
   /** Per-run stream health (ZKL-56 UX-03). */
   streamHealthByRun: Record<string, RunStreamHealth>;
   runEventCursorByRun: Record<string, number>;
@@ -77,6 +80,7 @@ export const useChatStore = defineStore("chat", {
     latestRun: undefined,
     latestRunSteps: [],
     runStatus: undefined,
+    toolProgressCards: [],
     streamHealthByRun: {},
     runEventCursorByRun: {},
     loading: false,
@@ -139,6 +143,7 @@ export const useChatStore = defineStore("chat", {
       this.messages = response.data.messages;
       this.pendingConfirmation = undefined;
       this.pendingResumeToken = undefined;
+      this.toolProgressCards = [];
       persistActiveSession(session);
       this.restorePendingConfirmation(session);
       if (session.latestRunId) {
@@ -294,6 +299,7 @@ export const useChatStore = defineStore("chat", {
       this.latestRun = undefined;
       this.latestRunSteps = [];
       this.runStatus = undefined;
+      this.toolProgressCards = [];
     },
     restorePendingConfirmation(session: WorkspaceChatSession) {
       if (!session.pendingConfirmationId) return;
@@ -539,6 +545,11 @@ export const useChatStore = defineStore("chat", {
         this.pendingResumeToken = undefined;
         this.upsertActiveSession({ pendingConfirmationId: undefined });
       }
+      if (effects.toolProgressReplace) {
+        this.toolProgressCards = effects.toolProgressCards || [];
+      } else if (effects.toolProgressCards?.length) {
+        this.toolProgressCards = upsertToolProgressCards(this.toolProgressCards, effects.toolProgressCards);
+      }
     },
     applyRunUpdate(run: AgentRun) {
       // Terminal is absorbing: late RUNNING/PENDING GET must not demote (ZKL-56).
@@ -590,6 +601,23 @@ export const useChatStore = defineStore("chat", {
     },
   },
 });
+
+function upsertToolProgressCards(current: ToolProgressCard[], incoming: ToolProgressCard[]): ToolProgressCard[] {
+  const next = [...current];
+  for (const card of incoming) {
+    const index = next.findIndex((item) => item.id === card.id);
+    if (index < 0) {
+      next.push(card);
+      continue;
+    }
+    next[index] = {
+      ...next[index],
+      ...card,
+      name: card.name || next[index].name,
+    };
+  }
+  return next;
+}
 
 function streamURL(workspaceId: string, runId: string) {
   const baseURL = String(apiClient.defaults?.baseURL || "/api/v1").replace(/\/$/, "");

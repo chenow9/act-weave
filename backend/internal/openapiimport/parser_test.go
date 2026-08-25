@@ -1,6 +1,7 @@
 package openapiimport
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -108,6 +109,54 @@ components:
 	}
 	if endpoint.ResponseFields[0].Name != "accepted" || endpoint.ResponseFields[0].Type != "boolean" {
 		t.Fatalf("unexpected response field mapping: %+v", endpoint.ResponseFields[0])
+	}
+}
+
+func TestParseDocumentCapturesProgressExtension(t *testing.T) {
+	result, err := ParseDocument(ParseInput{
+		FileName: "progress.yaml",
+		Content: []byte(`
+openapi: 3.0.3
+info: { title: Jobs, version: 1.0.0 }
+paths:
+  /jobs:
+    post:
+      operationId: createJob
+      summary: Create job
+      x-actweave-progress:
+        mode: poll
+        path: /jobs/{jobId}/progress
+        intervalMs: 2000
+        doneWhen: "status == 'SUCCESS'"
+        percentPath: percent
+        messagePath: message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId: { type: string }
+`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Endpoints) != 1 || len(result.Endpoints[0].Progress) == 0 {
+		t.Fatalf("progress spec missing: %+v", result.Endpoints)
+	}
+	var spec map[string]any
+	if json.Unmarshal(result.Endpoints[0].Progress, &spec) != nil || spec["mode"] != "poll" {
+		t.Fatalf("progress=%s", result.Endpoints[0].Progress)
 	}
 }
 

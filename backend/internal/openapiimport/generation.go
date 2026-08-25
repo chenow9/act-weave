@@ -301,11 +301,28 @@ func actionConfigForEndpoint(endpoint Endpoint) (json.RawMessage, error) {
 		"method": strings.ToUpper(strings.TrimSpace(endpoint.Method)),
 		"path":   strings.TrimSpace(endpoint.Path), "parameters": parameters,
 	}
+	if progress := progressSpecFromInputSchema(endpoint.InputSchema); progress != nil {
+		action["progress"] = progress
+	}
 	encoded, err := json.Marshal(action)
 	if err != nil {
 		return nil, err
 	}
 	return encoded, nil
+}
+
+func progressSpecFromInputSchema(inputSchema json.RawMessage) any {
+	var schema struct {
+		Progress json.RawMessage `json:"x-actweave-progress"`
+	}
+	if json.Unmarshal(inputSchema, &schema) != nil || len(schema.Progress) == 0 {
+		return nil
+	}
+	var progress any
+	if json.Unmarshal(schema.Progress, &progress) != nil || progress == nil {
+		return nil
+	}
+	return progress
 }
 
 func endpointRisk(method string) (string, string) {

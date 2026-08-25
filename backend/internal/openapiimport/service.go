@@ -207,6 +207,12 @@ func schemasForEndpoint(endpoint domain.OpenAPIEndpoint) (json.RawMessage, json.
 	if len(required) > 0 {
 		input["required"] = required
 	}
+	if len(endpoint.Progress) > 0 {
+		var progress any
+		if json.Unmarshal(endpoint.Progress, &progress) == nil && progress != nil {
+			input["x-actweave-progress"] = progress
+		}
+	}
 
 	outputProperties := make(map[string]any, len(endpoint.ResponseFields))
 	for index, field := range endpoint.ResponseFields {

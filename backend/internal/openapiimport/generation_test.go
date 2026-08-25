@@ -124,6 +124,53 @@ func TestGenerateToolsCreatesReviewableWorkspaceDraft(t *testing.T) {
 	}
 }
 
+func TestGenerateToolsCopiesProgressSpecIntoActionConfig(t *testing.T) {
+	parsed, err := ParseDocument(ParseInput{FileName: "jobs.yaml", Content: []byte(`
+openapi: 3.0.3
+info: { title: Jobs, version: 1.0.0 }
+paths:
+  /jobs:
+    post:
+      operationId: createJob
+      summary: Create job
+      x-actweave-progress:
+        mode: poll
+        path: /jobs/{jobId}/progress
+        doneWhen: "status == 'SUCCESS'"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, properties: { name: { type: string } } }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { type: object, properties: { jobId: { type: string } } }
+`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputSchema, _, _, err := schemasForEndpoint(parsed.Endpoints[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	action, err := actionConfigForEndpoint(Endpoint{
+		Method: "POST", Path: "/jobs", InputSchema: inputSchema,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if json.Unmarshal(action, &decoded) != nil {
+		t.Fatal(decoded)
+	}
+	progress, _ := decoded["progress"].(map[string]any)
+	if progress == nil || progress["mode"] != "poll" || progress["path"] != "/jobs/{jobId}/progress" {
+		t.Fatalf("actionConfig progress=%v", decoded["progress"])
+	}
+}
+
 func TestGenerateToolsBatchFailureRollsBackAllEndpoints(t *testing.T) {
 	importRepository, _, db := newProviderImportTest(t)
 	parseService, err := NewParseService(importRepository, KinOpenAPIParser{}, sequenceIDs(

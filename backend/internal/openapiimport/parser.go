@@ -1,6 +1,7 @@
 package openapiimport
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -100,6 +101,11 @@ func normalizeOperation(method string, path string, item *openapi3.PathItem, ope
 	schemaIssues := validateEndpointSchemas(requestParams, responseFields)
 	issues = append(issues, schemaIssues...)
 
+	progress, progressIssue := operationProgressSpec(operation)
+	if progressIssue != "" {
+		issues = append(issues, progressIssue)
+	}
+
 	return domain.OpenAPIEndpoint{
 		Method:          strings.ToUpper(method),
 		Path:            path,
@@ -110,7 +116,37 @@ func normalizeOperation(method string, path string, item *openapi3.PathItem, ope
 		ResponseFields:  responseFields,
 		Issues:          issues,
 		Ready:           toolID != "" && path != "" && method != "" && len(schemaIssues) == 0,
+		Progress:        progress,
 	}
+}
+
+func operationProgressSpec(operation *openapi3.Operation) (json.RawMessage, string) {
+	if operation == nil || len(operation.Extensions) == 0 {
+		return nil, ""
+	}
+	ext, ok := operation.Extensions["x-actweave-progress"]
+	if !ok || ext == nil {
+		return nil, ""
+	}
+	raw, err := json.Marshal(ext)
+	if err != nil {
+		return nil, "x-actweave-progress ignored: not JSON"
+	}
+	var cfg struct {
+		Mode string `json:"mode"`
+		Path string `json:"path"`
+	}
+	if json.Unmarshal(raw, &cfg) != nil {
+		return nil, "x-actweave-progress ignored: invalid object"
+	}
+	if strings.ToLower(strings.TrimSpace(cfg.Mode)) != "poll" {
+		return nil, "x-actweave-progress ignored: mode must be poll"
+	}
+	path := strings.TrimSpace(cfg.Path)
+	if path == "" || !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
+		return nil, "x-actweave-progress ignored: path must be an absolute HTTP path"
+	}
+	return raw, ""
 }
 
 func markDuplicateOperationIDs(endpoints []domain.OpenAPIEndpoint) {

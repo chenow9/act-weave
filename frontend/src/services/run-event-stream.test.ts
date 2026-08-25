@@ -280,6 +280,42 @@ describe("run-event-stream pure projection", () => {
     expect(result.effects.assistantMessages[0]).toMatchObject({ id: itemId, content: "late", status: "PROCESSING" });
   });
 
+  it("projects tool_call progress onto effects without changing assistant text", () => {
+    const toolId = "82000000-0000-4000-8000-000000000099";
+    let state = createProjectionState();
+    state = applyStreamFrame(
+      state,
+      parseSSEBlock(
+        sseBlock("item.started", 3, {
+          item: { id: toolId, type: "tool_call", status: "in_progress", name: "analyze" },
+        }),
+        runId,
+      )!,
+    ).state;
+    const progressed = applyStreamFrame(
+      state,
+      parseSSEBlock(
+        sseBlock("item.delta", 4, {
+          itemId: toolId,
+          delta: { type: "progress", current: 47, total: 100, unit: "percent", message: "切片 3/8" },
+        }),
+        runId,
+      )!,
+    );
+    expect(progressed.effects.assistantMessages).toEqual([]);
+    expect(progressed.effects.toolProgressCards).toEqual([
+      {
+        id: toolId,
+        name: "",
+        status: "in_progress",
+        current: 47,
+        total: 100,
+        unit: "percent",
+        message: "切片 3/8",
+      },
+    ]);
+  });
+
   it("maps protocol run statuses", () => {
     expect(mapProtocolRunStatus("accepted")).toBe("PENDING");
     expect(mapProtocolRunStatus("running")).toBe("RUNNING");

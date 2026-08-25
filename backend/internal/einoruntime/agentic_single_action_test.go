@@ -443,6 +443,51 @@ func TestPackedCallsExecuteInOrderAndSkipInnerModel(t *testing.T) {
 	}
 }
 
+func TestPackedCallsDoNotConsumeIterations(t *testing.T) {
+	ctx := context.Background()
+	log := &seqLog{}
+	a := &seqInvokableTool{name: "iter_a", log: log}
+	b := &seqInvokableTool{name: "iter_b", log: log}
+	cat, err := BuildToolCatalog(ctx, []ToolCatalogBuildEntry{
+		{Tool: a, Exposure: ToolExposureDeferred},
+		{Tool: b, Exposure: ToolExposureDeferred},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	packed := multiFunctionCallMsg(
+		schema.FunctionToolCall{Name: "iter_a", CallID: "ia1", Arguments: `{"q":"1"}`},
+		schema.FunctionToolCall{Name: "iter_b", CallID: "ib1", Arguments: `{"q":"2"}`},
+	)
+	inner := &scriptedAgenticModel{responses: []*schema.AgenticMessage{
+		packed,
+		agenticmsg.AssistantText("after-two"),
+	}}
+	counting := &countingAgenticModel{inner: inner}
+	cfg := baseAgenticCfg(counting, []tool.BaseTool{a, b}, cat)
+	cfg.MaxIterations = 2
+	agent, err := BuildAgenticAgent(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, runErr := NewAgenticEngine(AgenticEngineConfig{Store: newMemCheckPointStore()}).Run(ctx, agent, AgenticRunInput{
+		WorkspaceID: "ws-iter-pack", RunID: "run-iter-pack",
+		Messages: []*schema.AgenticMessage{agenticmsg.UserText("go")},
+	})
+	if hard := packedRunHardErr(res, runErr); hard != nil {
+		t.Fatalf("packed 2 tools with MaxIterations=2: %v", hard)
+	}
+	if res == nil || res.FinalAssistantText != "after-two" {
+		t.Fatalf("text=%v", res)
+	}
+	if got := log.snapshot(); len(got) != 2 || got[0] != "iter_a" || got[1] != "iter_b" {
+		t.Fatalf("order=%v", got)
+	}
+	if counting.calls.Load() != 2 {
+		t.Fatalf("inner model calls=%d want 2", counting.calls.Load())
+	}
+}
+
 func TestPackedCallsMixedSearchThenFunction(t *testing.T) {
 	ctx := context.Background()
 	log := &seqLog{}

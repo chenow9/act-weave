@@ -268,6 +268,33 @@ async function mockApiV1(page: Page, options?: { workspaceRoleForAdmin?: string;
       return json(200, { items: [] });
     }
 
+    if (method === "GET" && /^\/workspaces\/[^/]+\/agent-access\/clients$/.test(path)) {
+      return json(200, {
+        items: [
+          {
+            id: "client-1",
+            workspaceId: "ws-1",
+            servicePrincipalId: "principal-1",
+            clientId: "awcl_public",
+            name: "Business App",
+            status: "ACTIVE",
+            authMethod: "client_secret_basic",
+            allowedCorsOrigins: [],
+            tokenTtlSeconds: 600,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            lockVersion: 1,
+          },
+        ],
+      });
+    }
+    if (method === "GET" && /\/agent-access\/clients\/[^/]+\/credentials$/.test(path)) {
+      return json(200, { items: [] });
+    }
+    if (method === "GET" && /\/agent-access\/clients\/[^/]+\/grants$/.test(path)) {
+      return json(200, { items: [] });
+    }
+
     if (method === "GET" && path === "/overview/metrics") {
       return json(200, emptyOverviewMetrics());
     }
@@ -442,5 +469,23 @@ test.describe("console smoke (mocked API)", () => {
     await expect(page.getByRole("button", { name: "查看 Smoke Created Workspace 详情", exact: true })).toBeVisible({
       timeout: 15_000,
     });
+  });
+
+  test("Agent Access grant dialog offers file:read and file:write", async ({ page }) => {
+    await mockApiV1(page, { workspaceRoleForAdmin: "OWNER" });
+    await loginAs(page, "admin");
+    await expect(page).toHaveURL(/overview|workspaces|agents/, { timeout: 15_000 });
+    await page.goto("/agent-access");
+    await expect(page.getByRole("heading", { name: /Agent Access/i }).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Business App")).toBeVisible({ timeout: 15_000 });
+    await page.getByText("详情", { exact: true }).click();
+    await page.getByTestId("tab-grants").click();
+    await page.getByTestId("open-grant").click();
+    const dialog = page.getByRole("dialog", { name: "授权 Agent" });
+    await expect(dialog).toBeVisible({ timeout: 10_000 });
+    await expect(dialog.locator('input[type="checkbox"][value="file:read"]')).toBeVisible();
+    await expect(dialog.locator('input[type="checkbox"][value="file:write"]')).toBeVisible();
+    await expect(dialog.getByText("读取 File")).toBeVisible();
+    await expect(dialog.getByText("写入 File")).toBeVisible();
   });
 });

@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"reflect"
 
 	"github.com/cloudwego/eino-ext/components/model/agenticopenai"
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 
 	"actweave/backend/internal/agenticmsg"
@@ -81,6 +83,7 @@ func (m *singleActionAgenticModel) Generate(ctx context.Context, input []*schema
 	if queued, ok, err := popQueuedAction(ctx); err != nil {
 		return nil, err
 	} else if ok {
+		refundPackedReplayIteration(ctx)
 		return queued.validatedMessage()
 	}
 	msg, err := m.inner.Generate(ctx, input, opts...)
@@ -103,6 +106,7 @@ func (m *singleActionAgenticModel) Stream(ctx context.Context, input []*schema.A
 	if queued, ok, err := popQueuedAction(ctx); err != nil {
 		return nil, err
 	} else if ok {
+		refundPackedReplayIteration(ctx)
 		msg, verr := queued.validatedMessage()
 		if verr != nil {
 			return nil, verr
@@ -285,6 +289,33 @@ func loadQueuedActions(ctx context.Context) ([]queuedExecutableAction, bool, err
 	default:
 		return nil, true, fmt.Errorf("einoruntime agentic: corrupt queued actions type %T", v)
 	}
+}
+
+// refundPackedReplayIteration returns the ChatModel visit that was spent on a
+// queued packed-call replay. The agent decrements RemainingIterations in the
+// node PreHandler before Generate/Stream; extras must not burn a model round.
+func refundPackedReplayIteration(ctx context.Context) {
+	_ = compose.ProcessState(ctx, func(_ context.Context, st any) error {
+		if st == nil {
+			return nil
+		}
+		v := reflect.ValueOf(st)
+		if v.Kind() == reflect.Pointer {
+			if v.IsNil() {
+				return nil
+			}
+			v = v.Elem()
+		}
+		if v.Kind() != reflect.Struct {
+			return nil
+		}
+		field := v.FieldByName("RemainingIterations")
+		if !field.IsValid() || !field.CanSet() || field.Kind() != reflect.Int {
+			return nil
+		}
+		field.SetInt(field.Int() + 1)
+		return nil
+	})
 }
 
 func cloneQueuedActions(in []queuedExecutableAction) []queuedExecutableAction {

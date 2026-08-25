@@ -50,6 +50,25 @@ function formatAttachmentBytes(sizeBytes?: number) {
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function toolProgressPercent(card: { current?: number; total?: number | null; unit?: string }) {
+  if (typeof card.current !== "number") return null;
+  if (card.unit === "percent") return Math.max(0, Math.min(100, card.current));
+  if (typeof card.total === "number" && card.total > 0) {
+    return Math.max(0, Math.min(100, (card.current / card.total) * 100));
+  }
+  return null;
+}
+
+function toolProgressLabel(card: { current?: number; total?: number | null; unit?: string; status?: string }) {
+  if (card.status === "completed") return t("chat.toolProgressDone");
+  if (card.status === "failed") return t("chat.toolProgressFailed");
+  if (typeof card.current === "number" && card.unit === "percent") return `${Math.round(card.current)}%`;
+  if (typeof card.current === "number" && typeof card.total === "number") {
+    return `${card.current}/${card.total}`;
+  }
+  return t("chat.toolProgressRunning");
+}
+
 function attachmentMeta(attachment: ChatMessageAttachment) {
   return [attachment.mediaType, formatAttachmentBytes(attachment.sizeBytes)].filter(Boolean).join(" · ");
 }
@@ -443,6 +462,29 @@ onBeforeUnmount(() => {
                     <span class="assistant-working-dots" aria-hidden="true"><span /><span /><span /></span>
                     <span>{{ t("chat.assistantWorking") }}</span>
                   </p>
+                  <ul
+                    v-if="message.status === 'PROCESSING' && chat.toolProgressCards?.length"
+                    class="tool-progress-list"
+                    :aria-label="t('chat.toolProgressAria')"
+                  >
+                    <li v-for="card in chat.toolProgressCards" :key="card.id" class="tool-progress-card">
+                      <div class="tool-progress-head">
+                        <strong>{{ card.name || t("chat.toolProgressUntitled") }}</strong>
+                        <span>{{ toolProgressLabel(card) }}</span>
+                      </div>
+                      <div
+                        v-if="toolProgressPercent(card) != null"
+                        class="tool-progress-track"
+                        role="progressbar"
+                        :aria-valuemin="0"
+                        :aria-valuemax="100"
+                        :aria-valuenow="toolProgressPercent(card)"
+                      >
+                        <span class="tool-progress-fill" :style="{ width: `${toolProgressPercent(card)}%` }" />
+                      </div>
+                      <p v-if="card.message">{{ card.message }}</p>
+                    </li>
+                  </ul>
                   <A2UISurface
                     v-for="(surface, surfaceIndex) in message.a2ui ?? []"
                     :key="`${message.id}-a2ui-${surfaceIndex}`"

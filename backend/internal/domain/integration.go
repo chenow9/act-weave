@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -99,4 +100,6 @@ type OpenAPIEndpoint struct {
 	ResponseFields  []ToolResponseField `json:"responseFields"`
 	Issues          []string            `json:"issues"`
 	Ready           bool                `json:"ready"`
+	// Progress is a copy of operation x-actweave-progress, if present and valid.
+	Progress json.RawMessage `json:"progress,omitempty"`
 }

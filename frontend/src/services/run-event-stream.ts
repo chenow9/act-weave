@@ -123,6 +123,20 @@ export interface ConsoleStreamEffects {
   legacyExecution?: WorkflowExecution;
   /** Skip loadRun for high-frequency deltas. */
   skipLoadRun?: boolean;
+  /** Live tool_call progress cards from the AAP reducer snapshot. */
+  toolProgressCards?: ToolProgressCard[];
+  /** When true, replace chat.toolProgressCards instead of upserting. */
+  toolProgressReplace?: boolean;
+}
+
+export interface ToolProgressCard {
+  id: string;
+  name: string;
+  status: string;
+  current?: number;
+  total?: number | null;
+  unit?: string;
+  message?: string;
 }
 
 /** 404 not-ready: 200ms → 500ms → 1s, max ~15 attempts (design §6.5). */
@@ -358,6 +372,14 @@ function projectReducerSnapshot(
   }
   if (frame.type === "item.delta") effects.skipLoadRun = true;
 
+  effects.toolProgressReplace = true;
+  effects.toolProgressCards = [];
+  for (const item of snapshot.items) {
+    if (item?.type === "tool_call" && typeof item.id === "string") {
+      effects.toolProgressCards.push(toolProgressCardFromItem(item as unknown as Record<string, unknown>));
+    }
+  }
+
   for (const item of snapshot.items) {
     if (!item || item.type !== "message" || item.role !== "assistant" || typeof item.id !== "string") {
       continue;
@@ -412,6 +434,10 @@ function applyProtocolFrame(state: ConsoleRunProjectionState, frame: StreamFrame
     case "item.started": {
       const item = isRecord(data.item) ? data.item : undefined;
       if (!item || typeof item.id !== "string") return;
+      if (item.type === "tool_call") {
+        effects.toolProgressCards = [toolProgressCardFromItem(item)];
+        return;
+      }
       if (item.type === "message" && item.role === "assistant") {
         const content = extractMessageText(item);
         ensureAssistant(state, item.id, content, false);
@@ -430,6 +456,20 @@ function applyProtocolFrame(state: ConsoleRunProjectionState, frame: StreamFrame
       const itemId = typeof data.itemId === "string" ? data.itemId : "";
       const delta = isRecord(data.delta) ? data.delta : undefined;
       if (!itemId || !delta) return;
+      if (delta.type === "progress") {
+        effects.toolProgressCards = [
+          {
+            id: itemId,
+            name: "",
+            status: "in_progress",
+            current: typeof delta.current === "number" ? delta.current : 0,
+            total: typeof delta.total === "number" ? delta.total : null,
+            unit: typeof delta.unit === "string" ? delta.unit : "",
+            message: typeof delta.message === "string" ? delta.message : "",
+          },
+        ];
+        return;
+      }
       if (delta.type !== "text_delta") return;
       const text = typeof delta.text === "string" ? delta.text : "";
       const existing = state.assistantByItemId[itemId];
@@ -449,6 +489,10 @@ function applyProtocolFrame(state: ConsoleRunProjectionState, frame: StreamFrame
     case "item.completed": {
       const item = isRecord(data.item) ? data.item : undefined;
       if (!item || typeof item.id !== "string") return;
+      if (item.type === "tool_call") {
+        effects.toolProgressCards = [toolProgressCardFromItem(item)];
+        return;
+      }
       if (item.type === "message" && (item.role === "assistant" || state.assistantByItemId[item.id])) {
         const content = extractMessageText(item) || state.assistantByItemId[item.id]?.content || "";
         const surfaces = extractMessageSurfaces(item);
@@ -582,6 +626,19 @@ function extractMessageSurfaces(item: Record<string, unknown>): unknown[] {
     if (isRecord(part.surface)) surfaces.push(part.surface);
   }
   return surfaces;
+}
+
+function toolProgressCardFromItem(item: Record<string, unknown>): ToolProgressCard {
+  const progress = isRecord(item.progress) ? item.progress : undefined;
+  return {
+    id: String(item.id || ""),
+    name: typeof item.name === "string" ? item.name : "",
+    status: typeof item.status === "string" ? item.status : "in_progress",
+    current: typeof progress?.current === "number" ? progress.current : undefined,
+    total: typeof progress?.total === "number" ? progress.total : null,
+    unit: typeof progress?.unit === "string" ? progress.unit : undefined,
+    message: typeof progress?.message === "string" ? progress.message : undefined,
+  };
 }
 
 function extractMessageAttachments(item: Record<string, unknown>): ChatMessageAttachment[] {
