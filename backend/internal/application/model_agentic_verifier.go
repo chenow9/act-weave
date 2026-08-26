@@ -237,7 +237,11 @@ func (verifier *modelConfigVerifier) probeAgenticCapabilities(ctx context.Contex
 	if verifier.secrets == nil {
 		return modelconfig.AgenticCapabilities{}, errors.New("model verification secrets are required")
 	}
-	am, err := modelapi.NewOpenAIAgenticModelWithEgress(ctx, client, verifier.secrets, config, verifier.egress)
+	probeConfig, err := verificationProbeConfig(config)
+	if err != nil {
+		return modelconfig.AgenticCapabilities{}, mapAgenticConstructionError(err)
+	}
+	am, err := modelapi.NewOpenAIAgenticModelWithEgress(ctx, client, verifier.secrets, probeConfig, verifier.egress)
 	if err != nil {
 		return modelconfig.AgenticCapabilities{}, mapAgenticConstructionError(err)
 	}
@@ -273,35 +277,40 @@ func (verifier *modelConfigVerifier) probeAgenticCapabilities(ctx context.Contex
 	}
 	observeVerificationPhase(metrics.DisclosurePhaseResponses, metrics.DisclosureOutcomeOK, metrics.DisclosureToolCallingUnverified, time.Since(respStart))
 
-	// --- Probe B: Client tool-search + echo function call (ordered contract) ---
+	// --- Probe C before B: ordinary function tools, no tool_search/defer_loading.
+	// xAI/cliproxy 403s native search for non-alpha accounts and then reports
+	// auth_unavailable, so a later function-calling probe cannot run. Chat
+	// already proved the key. Prefer a working function_calling classification
+	// over native search when both would succeed.
+	fcStart := time.Now()
+	fcCaps, fcErr := verifier.probeFunctionCalling(ctx, am, echoInfo)
+	if fcErr != nil {
+		observeVerificationPhase(metrics.DisclosurePhaseFunctionCalling, metrics.DisclosureOutcomeError, metrics.DisclosureToolCallingUnverified, time.Since(fcStart))
+		return fcCaps, fcErr
+	}
+	if fcCaps.ToolCalling == modelconfig.ToolCallingFunctionCalling {
+		observeVerificationPhase(metrics.DisclosurePhaseFunctionCalling, metrics.DisclosureOutcomeOK, metrics.DisclosureToolCallingFunction, time.Since(fcStart))
+		observeVerificationPhase(metrics.DisclosurePhaseToolSearch, metrics.DisclosureOutcomeSkipped, metrics.DisclosureToolCallingFunction, 0)
+		return fcCaps, nil
+	}
+	observeVerificationPhase(metrics.DisclosurePhaseFunctionCalling, metrics.DisclosureOutcomeOK, metrics.DisclosureToolCallingNone, time.Since(fcStart))
+
+	// --- Probe B: Client tool-search + echo (upgrade none → native) ---
 	searchStart := time.Now()
 	if err := verifier.probeClientToolSearch(ctx, am, mw, opts); err != nil {
 		// Native search miss OR the inner 45s probe budget firing while the
 		// outer 120s budget is still live. Grok/cliproxy often accept the
 		// tool_search tool, then sit on high-reasoning text instead of 400 —
-		// that must fall through to function_calling, not become a blanket
-		// MODEL_CONFIG_VERIFICATION_TIMEOUT that leaves the config unverified.
+		// that must not become a blanket MODEL_CONFIG_VERIFICATION_TIMEOUT.
+		// xAI 403 on tool_search/defer_loading is a feature gate, not a dead key.
 		if !isAgenticToolSearchCapabilityMiss(err) && !phase2InnerBudgetExceeded(ctx, err) {
 			observeVerificationPhase(metrics.DisclosurePhaseToolSearch, metrics.DisclosureOutcomeError, metrics.DisclosureToolCallingUnverified, time.Since(searchStart))
 			return modelconfig.AgenticCapabilities{}, err
 		}
-		observeVerificationPhase(metrics.DisclosurePhaseToolSearch, metrics.DisclosureOutcomeSkipped, metrics.DisclosureToolCallingUnverified, time.Since(searchStart))
-		// Native search is not available; classify ordinary function calling.
-		fcStart := time.Now()
-		caps, fcErr := verifier.probeFunctionCalling(ctx, am, echoInfo)
-		if fcErr != nil {
-			observeVerificationPhase(metrics.DisclosurePhaseFunctionCalling, metrics.DisclosureOutcomeError, metrics.DisclosureToolCallingUnverified, time.Since(fcStart))
-			return caps, fcErr
-		}
-		calling := caps.ToolCalling
-		if calling == "" {
-			calling = metrics.DisclosureToolCallingNone
-		}
-		observeVerificationPhase(metrics.DisclosurePhaseFunctionCalling, metrics.DisclosureOutcomeOK, calling, time.Since(fcStart))
-		return caps, nil
+		observeVerificationPhase(metrics.DisclosurePhaseToolSearch, metrics.DisclosureOutcomeSkipped, metrics.DisclosureToolCallingNone, time.Since(searchStart))
+		return modelconfig.AgenticCapabilities{ToolCalling: modelconfig.ToolCallingNone}, nil
 	}
 	observeVerificationPhase(metrics.DisclosurePhaseToolSearch, metrics.DisclosureOutcomeOK, metrics.DisclosureToolCallingNative, time.Since(searchStart))
-	observeVerificationPhase(metrics.DisclosurePhaseFunctionCalling, metrics.DisclosureOutcomeSkipped, metrics.DisclosureToolCallingNative, 0)
 	return modelconfig.AgenticCapabilities{ToolCalling: modelconfig.ToolCallingNativeClientSearch}, nil
 }
 
@@ -604,8 +613,9 @@ func requireExactEchoFunctionCall(msg *schema.AgenticMessage, nonce string) erro
 		if block == nil {
 			continue
 		}
-		if block.AssistantGenText != nil && strings.TrimSpace(block.AssistantGenText.Text) != "" {
-			return fmt.Errorf("%w: unexpected text with echo function call", modelconfig.ErrToolSearchUnsupported)
+		if block.AssistantGenText != nil {
+			// Grok and other reasoning models may emit prose next to the echo call.
+			continue
 		}
 		if block.ServerToolCall != nil {
 			return fmt.Errorf("%w: unexpected server tool call after search", modelconfig.ErrToolSearchUnsupported)
@@ -833,11 +843,16 @@ func mapAgenticToolSearchError(err error) error {
 }
 
 // isAgenticToolSearchCapabilityMiss reports a Phase 2 contract miss (no search,
-// hosted, arg drift, unexpected text/function, bad search output) or an HTTP
-// 400/422 reject of the native-search request. Infra failures stay ERROR and
-// must not enter Phase 3.
+// hosted, arg drift, unexpected text/function, bad search output), an HTTP
+// 400/422/403 reject of the native-search request, or a 403 mapped as
+// authentication after Phase A chat already succeeded. xAI returns 403
+// "tool_search and defer_loading are only available for alpha users" in that
+// last case; ordinary function calling may still work. 401 on /models or the
+// tool-less stream stays infrastructure because those run before this check.
 func isAgenticToolSearchCapabilityMiss(err error) bool {
-	return errors.Is(err, modelconfig.ErrToolSearchUnsupported) || isPhase2CapabilityHTTPReject(err)
+	return errors.Is(err, modelconfig.ErrToolSearchUnsupported) ||
+		errors.Is(err, modelconfig.ErrUpstreamAuthentication) ||
+		isPhase2CapabilityHTTPReject(err)
 }
 
 // phase2InnerBudgetExceeded is true when probeClientToolSearch hit its own 45s
@@ -853,14 +868,17 @@ func phase2InnerBudgetExceeded(parent context.Context, err error) bool {
 	return parent.Err() == nil
 }
 
-// isPhase2CapabilityHTTPReject is only 400/422. Auth, missing route, rate
+// isPhase2CapabilityHTTPReject is 400/403/422. 403 is the xAI alpha gate for
+// native tool_search / defer_loading. Missing route, 401-as-upstream, rate
 // limits, and 5xx stay infrastructure.
 func isPhase2CapabilityHTTPReject(err error) bool {
 	if !errors.Is(err, modelconfig.ErrVerificationUpstream) {
 		return false
 	}
 	status := verificationHTTPStatus(err)
-	return status == http.StatusBadRequest || status == http.StatusUnprocessableEntity
+	return status == http.StatusBadRequest ||
+		status == http.StatusForbidden ||
+		status == http.StatusUnprocessableEntity
 }
 
 // mapAgenticFunctionCallingProbeError maps Phase 3 Generate failures.
@@ -931,6 +949,26 @@ func isFunctionCallingCapabilityHTTPReject(err error) bool {
 		return false
 	}
 	return status >= 400 && status < 500
+}
+
+// verificationProbeConfig copies the stored model config and forces low
+// reasoning for the capability probe only. High/default reasoning makes Grok
+// write a long acknowledgment instead of calling actweave_verification_echo.
+func verificationProbeConfig(config modelconfig.Config) (modelconfig.Config, error) {
+	out := config
+	merged := map[string]json.RawMessage{}
+	if len(config.Options) > 0 && string(config.Options) != "null" {
+		if err := json.Unmarshal(config.Options, &merged); err != nil {
+			return modelconfig.Config{}, err
+		}
+	}
+	merged["reasoningEffort"] = json.RawMessage(`"low"`)
+	raw, err := json.Marshal(merged)
+	if err != nil {
+		return modelconfig.Config{}, err
+	}
+	out.Options = raw
+	return out, nil
 }
 
 func verificationHTTPStatus(err error) int {

@@ -236,32 +236,32 @@ func successHandler(t *testing.T) func(int, map[string]any, http.ResponseWriter,
 		if _, ok := body["previous_response_id"]; ok {
 			t.Errorf("turn %d must not have previous_response_id", turn)
 		}
-		// Contract: every probe phase must advertise client tool_search + deferred echo
-		// when tools are present (tool-search turns). Stream text probe may omit tools.
-		if tools, ok := body["tools"].([]any); ok && len(tools) > 0 {
-			assertVerificationProbeTools(t, turn, tools)
-		}
-		switch turn {
-		case 1:
-			// Plain stream probe — usage without optional details also accepted.
-			writeContractResponse(w, body, contractTextResponse("ack", false))
-		case 2:
-			// First tool-search request must carry tools catalog.
-			if tools, ok := body["tools"].([]any); !ok || len(tools) == 0 {
-				t.Errorf("turn 2 must include tools array")
-			} else {
-				assertVerificationProbeTools(t, turn, tools)
-			}
-			writeContractResponse(w, body, contractToolSearchResponse("client"))
-		default:
+		rawBody, _ := json.Marshal(body)
+		hasSearchOutput := strings.Contains(string(rawBody), `"type":"tool_search_output"`) ||
+			strings.Contains(string(rawBody), `"type": "tool_search_output"`)
+		if hasSearchOutput {
 			nonce := extractVerificationNonceFromBody(body)
 			if nonce == "" || !strings.HasPrefix(nonce, "awv-") {
 				t.Errorf("turn %d missing verification nonce in input", turn)
 			}
-			// Second request should carry the client-completed search output in input.
 			assertHasToolSearchOutput(t, turn, body)
 			writeContractResponse(w, body, contractEchoCallResponse(nonce))
+			return
 		}
+		// Function-calling is probed before native tool_search. The native
+		// success path must miss that probe (plain text) so search still runs.
+		if isFunctionCallingProbeRequest(body) {
+			writeContractResponse(w, body, contractTextResponse("skip function calling", false))
+			return
+		}
+		// Native tool-search turns advertise client tool_search + deferred echo.
+		// Stream text probe may omit tools.
+		if tools, ok := body["tools"].([]any); ok && len(tools) > 0 {
+			assertVerificationProbeTools(t, turn, tools)
+			writeContractResponse(w, body, contractToolSearchResponse("client"))
+			return
+		}
+		writeContractResponse(w, body, contractTextResponse("ack", false))
 	}
 }
 
@@ -434,8 +434,8 @@ func TestAgenticVerifierSuccess_StoreFalseEchoFlowCanonical(t *testing.T) {
 	if len(bodies) < 3 {
 		t.Fatalf("expected >=3 responses bodies, got %d", len(bodies))
 	}
-	if countFunctionCallingProbeBodies(bodies) != 0 {
-		t.Fatal("native success must skip the function-calling probe")
+	if countFunctionCallingProbeBodies(bodies) != 1 {
+		t.Fatal("native success must miss the function-calling probe once, then run tool_search")
 	}
 	for i, body := range bodies {
 		if store, ok := body["store"].(bool); !ok || store {
@@ -991,10 +991,14 @@ func TestAgenticVerifier_RejectsInvalidModelSearchArgsNoRewrite(t *testing.T) {
 		badArgs := badArgs
 		t.Run(fmt.Sprintf("%v", badArgs), func(t *testing.T) {
 			fake := &contractFakeResponsesServer{handler: func(turn int, body map[string]any, w http.ResponseWriter, r *http.Request) {
+				if isFunctionCallingProbeRequest(body) {
+					writeContractResponse(w, body, contractTextResponse("nope", false))
+					return
+				}
 				switch turn {
 				case 1:
 					writeContractResponse(w, body, contractTextResponse("ack", false))
-				case 2:
+				default:
 					writeContractResponse(w, body, map[string]any{
 						"id": "resp_ts", "object": "response", "status": "completed", "model": "gpt-test",
 						"output": []map[string]any{{
@@ -1004,11 +1008,6 @@ func TestAgenticVerifier_RejectsInvalidModelSearchArgsNoRewrite(t *testing.T) {
 						}},
 						"usage": contractUsage(false),
 					})
-				default:
-					if !isFunctionCallingProbeRequest(body) {
-						t.Errorf("turn %d must be the function-calling probe after invalid search args", turn)
-					}
-					writeContractResponse(w, body, contractTextResponse("nope", false))
 				}
 			}}
 			srv := fake.start(t)
@@ -1047,6 +1046,9 @@ func TestAgenticVerifierExactClientSearchWireProof(t *testing.T) {
 	for _, b := range bodies {
 		tools, ok := b["tools"].([]any)
 		if !ok || len(tools) == 0 {
+			continue
+		}
+		if isFunctionCallingProbeRequest(b) {
 			continue
 		}
 		assertVerificationProbeTools(t, 0, tools)
@@ -1147,18 +1149,12 @@ func isFunctionCallingProbeRequest(body map[string]any) bool {
 
 func TestAgenticVerifierPhase3ExactEchoIsFunctionCalling(t *testing.T) {
 	fake := &contractFakeResponsesServer{handler: func(turn int, body map[string]any, w http.ResponseWriter, r *http.Request) {
-		switch turn {
-		case 1:
-			writeContractResponse(w, body, contractTextResponse("ack", false))
-		case 2:
-			writeContractResponse(w, body, contractTextResponse("no search", true))
-		default:
-			if !isFunctionCallingProbeRequest(body) {
-				t.Errorf("turn %d must be the function-calling probe", turn)
-			}
+		if isFunctionCallingProbeRequest(body) {
 			nonce := extractVerificationNonceFromBody(body)
 			writeContractResponse(w, body, contractEchoCallResponse(nonce))
+			return
 		}
+		writeContractResponse(w, body, contractTextResponse("ack", false))
 	}}
 	srv := fake.start(t)
 	v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
@@ -1176,24 +1172,21 @@ func TestAgenticVerifierPhase3ExactEchoIsFunctionCalling(t *testing.T) {
 	}
 }
 
-func TestAgenticVerifierPhase2HTTP400EntersPhase3(t *testing.T) {
-	for _, status := range []int{http.StatusBadRequest, http.StatusUnprocessableEntity} {
+func TestAgenticVerifierPhase2HTTP400AfterFunctionCallingNoneIsNone(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusForbidden, http.StatusUnprocessableEntity} {
 		status := status
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			fake := &contractFakeResponsesServer{handler: func(turn int, body map[string]any, w http.ResponseWriter, r *http.Request) {
-				switch turn {
-				case 1:
-					writeContractResponse(w, body, contractTextResponse("ack", false))
-				case 2:
-					w.WriteHeader(status)
-					_, _ = w.Write([]byte(`{"error":"tool_search not supported"}`))
-				default:
-					if !isFunctionCallingProbeRequest(body) {
-						t.Errorf("turn %d must be the function-calling probe after HTTP %d", turn, status)
-					}
-					nonce := extractVerificationNonceFromBody(body)
-					writeContractResponse(w, body, contractEchoCallResponse(nonce))
+				if isFunctionCallingProbeRequest(body) {
+					writeContractResponse(w, body, contractTextResponse("no echo", true))
+					return
 				}
+				if turn == 1 {
+					writeContractResponse(w, body, contractTextResponse("ack", false))
+					return
+				}
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(`{"error":"tool_search not supported"}`))
 			}}
 			srv := fake.start(t)
 			v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
@@ -1201,27 +1194,27 @@ func TestAgenticVerifierPhase2HTTP400EntersPhase3(t *testing.T) {
 			})}
 			caps, err := v.Verify(context.Background(), newVerifierConfig(srv.URL))
 			if err != nil {
-				t.Fatalf("Phase 2 HTTP %d must enter Phase 3, got %v", status, err)
+				t.Fatalf("native-search HTTP %d after function-calling none must stay none, got %v", status, err)
 			}
-			if caps.ToolCalling != modelconfig.ToolCallingFunctionCalling {
-				t.Fatalf("got toolCalling=%q want function_calling", caps.ToolCalling)
-			}
-			if countFunctionCallingProbeBodies(fake.snapshotBodies()) != 1 {
-				t.Fatal("Phase 2 400/422 must run the function-calling probe")
+			if caps.ToolCalling != modelconfig.ToolCallingNone {
+				t.Fatalf("got toolCalling=%q want none", caps.ToolCalling)
 			}
 		})
 	}
 }
 
-func TestAgenticVerifierPhase2InfraDoesNotEnterPhase3(t *testing.T) {
+func TestAgenticVerifierPhase2InfraAfterFunctionCallingNoneStaysError(t *testing.T) {
 	fake := &contractFakeResponsesServer{handler: func(turn int, body map[string]any, w http.ResponseWriter, r *http.Request) {
-		switch turn {
-		case 1:
-			writeContractResponse(w, body, contractTextResponse("ack", false))
-		default:
-			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte(`{"error":"upstream"}`))
+		if isFunctionCallingProbeRequest(body) {
+			writeContractResponse(w, body, contractTextResponse("no echo", true))
+			return
 		}
+		if turn == 1 {
+			writeContractResponse(w, body, contractTextResponse("ack", false))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"upstream"}`))
 	}}
 	srv := fake.start(t)
 	v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
@@ -1231,22 +1224,16 @@ func TestAgenticVerifierPhase2InfraDoesNotEnterPhase3(t *testing.T) {
 	if !errors.Is(err, modelconfig.ErrVerificationUpstream) {
 		t.Fatalf("want upstream ERROR, got %v", err)
 	}
-	if countFunctionCallingProbeBodies(fake.snapshotBodies()) != 0 {
-		t.Fatal("Phase 2 infra must not enter Phase 3")
-	}
 }
 
 func TestAgenticVerifierPhase3HTTP400IsNone(t *testing.T) {
 	fake := &contractFakeResponsesServer{handler: func(turn int, body map[string]any, w http.ResponseWriter, r *http.Request) {
-		switch turn {
-		case 1:
-			writeContractResponse(w, body, contractTextResponse("ack", false))
-		case 2:
-			writeContractResponse(w, body, contractTextResponse("no search", true))
-		default:
+		if isFunctionCallingProbeRequest(body) {
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = w.Write([]byte(`{"error":"tools not supported"}`))
+			return
 		}
+		writeContractResponse(w, body, contractTextResponse("ack", false))
 	}}
 	srv := fake.start(t)
 	v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
@@ -1263,15 +1250,12 @@ func TestAgenticVerifierPhase3HTTP400IsNone(t *testing.T) {
 
 func TestAgenticVerifierPhase3AuthStaysError(t *testing.T) {
 	fake := &contractFakeResponsesServer{handler: func(turn int, body map[string]any, w http.ResponseWriter, r *http.Request) {
-		switch turn {
-		case 1:
-			writeContractResponse(w, body, contractTextResponse("ack", false))
-		case 2:
-			writeContractResponse(w, body, contractTextResponse("no search", true))
-		default:
+		if isFunctionCallingProbeRequest(body) {
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"error":"nope"}`))
+			return
 		}
+		writeContractResponse(w, body, contractTextResponse("ack", false))
 	}}
 	srv := fake.start(t)
 	v := &modelConfigVerifier{client: srv.Client(), egress: loopbackModelEgress, secrets: secretOpenerFunc(func(context.Context, string, string, func([]byte) error) error {
@@ -1326,8 +1310,11 @@ func TestIsAgenticToolSearchCapabilityMissHTTP(t *testing.T) {
 	if !isAgenticToolSearchCapabilityMiss(fmt.Errorf("%w: HTTP_STATUS_422", modelconfig.ErrVerificationUpstream)) {
 		t.Fatal("422 must be a Phase 2 capability miss")
 	}
-	if isAgenticToolSearchCapabilityMiss(modelconfig.ErrUpstreamAuthentication) {
-		t.Fatal("401/403 auth must stay infra")
+	if !isAgenticToolSearchCapabilityMiss(modelconfig.ErrUpstreamAuthentication) {
+		t.Fatal("Phase 2 403-as-auth (xAI alpha tool_search gate) must fall through")
+	}
+	if !isAgenticToolSearchCapabilityMiss(fmt.Errorf("%w: HTTP_STATUS_403", modelconfig.ErrVerificationUpstream)) {
+		t.Fatal("403 must be a Phase 2 capability miss")
 	}
 	if isAgenticToolSearchCapabilityMiss(fmt.Errorf("%w: HTTP_STATUS_401", modelconfig.ErrVerificationUpstream)) {
 		t.Fatal("401 must stay infra")
