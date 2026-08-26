@@ -1330,7 +1330,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	bridge, bridgeErr := chatruntimebridge.NewBridge(chatruntimebridge.Dependencies{
 		Sessions: chatRepository, Results: chatService, Content: chatObjects,
 		Agents: agentRepository, Models: modelRepository, Runs: runRepository,
-		Events: runtimeProtocol, PlatformCalls: runtimeProtocol, Steps: runRepository,
+		Events: runtimeProtocol, PlatformCalls: runtimeProtocol, LiveTools: runtimeProtocol, Steps: runRepository,
 		Files: aapFileDomain, FilesConfig: &filesCfg,
 		FileOpener:         newPlatformToolFileAccess(aapFileDomain, aapFileSecure),
 		ModelTurns:         &chatModelTurnRecorder{inner: modelTurnContent},

@@ -116,6 +116,9 @@ type Dependencies struct {
 	// PlatformCalls projects platform InvokableTool calls without tool_invocations.
 	// Production assigns the same *NativeProtocolRecorder as Events.
 	PlatformCalls chatruntime.PlatformToolCallProjector
+	// LiveTools projects HTTP tool progress ticks onto AAP item.delta progress.
+	// Production assigns the same *NativeProtocolRecorder as Events. Optional in tests.
+	LiveTools chatruntime.LiveToolCallProjector
 	// Files is the AAP file service used to ingest / list / promote outbound files.
 	Files outboundFileService
 	// FilesConfig is the files HTTP + runtimeOutboundAttachments / runtimeInboundRead gate. Nil denies inject.
@@ -152,6 +155,7 @@ type Bridge struct {
 	delegation        *DelegationDeps
 	toolDisclosure    config.RuntimeFeatureRollout
 	platformCalls     chatruntime.PlatformToolCallProjector
+	liveTools         chatruntime.LiveToolCallProjector
 	files             outboundFileService
 	filesCfg          *config.AgentAccessFilesConfig
 	fileOpener        toolruntime.PlatformFileOpener
@@ -214,6 +218,7 @@ func NewBridge(deps Dependencies) (*Bridge, error) {
 		sessions: deps.Sessions, results: deps.Results, content: deps.Content,
 		agents: deps.Agents, models: deps.Models, runs: deps.Runs,
 		events: deps.Events, steps: deps.Steps, modelTurns: deps.ModelTurns,
+		liveTools: deps.LiveTools,
 		toolInvoker:       deps.ToolInvoker,
 		confirmations:     deps.Confirmations,
 		agenticEngine:     deps.AgenticEngine,
@@ -522,7 +527,12 @@ func (b *Bridge) buildPipelineToolsFrom(
 		principalSnap := run.PrincipalSnapshot
 		capturedRun := run
 		capturedJob := job
-		live, _ := b.events.(chatruntime.LiveToolCallProjector)
+		live := b.liveTools
+		if live == nil {
+			if projector, ok := b.events.(chatruntime.LiveToolCallProjector); ok {
+				live = projector
+			}
+		}
 		pt, err := einoruntime.NewPipelineTool(einoruntime.PipelineToolConfig{
 			Info:     info,
 			Pipeline: b.toolInvoker,
