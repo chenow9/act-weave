@@ -131,8 +131,9 @@ func TestLoadedDeferredToolNamesFromSession_AbsentVsCorrupt(t *testing.T) {
 //
 //  1. first run: client tool_search loads echo definition, then HITL interrupts
 //  2. checkpoint serializes the loaded-name set
-//  3. Resume: model attempts the same select search → ErrToolSearchAlreadyLoaded
-//  4. no duplicate schema disclosure; loaded state remains intact
+//  3. Resume: model select:s the same tool again — search succeeds (re-disclose,
+//     no newly-loaded names) and the run finishes without NodeRunError
+//  4. echo business tool is not invoked by the duplicate search itself
 func TestLoadedSet_CheckpointInterruptResume_AlreadyLoaded(t *testing.T) {
 	ctx := context.Background()
 
@@ -150,7 +151,8 @@ func TestLoadedSet_CheckpointInterruptResume_AlreadyLoaded(t *testing.T) {
 	// 1) tool_search select:echo_tool
 	// 2) hitl interrupt
 	// After resume:
-	// 3) tool_search select:echo_tool again → must fail AlreadyLoaded
+	// 3) tool_search select:echo_tool again → re-disclose, do not fail the run
+	// 4) final text
 	mdl := &scriptedAgenticModel{
 		responses: []*schema.AgenticMessage{
 			agenticFunctionCall(ClientToolSearchToolName, "search-1",
@@ -158,6 +160,7 @@ func TestLoadedSet_CheckpointInterruptResume_AlreadyLoaded(t *testing.T) {
 			agenticFunctionCall("hitl_tool", "hitl-1", `{"q":"need"}`),
 			agenticFunctionCall(ClientToolSearchToolName, "search-2",
 				`{"query":"select:echo_tool","max_results":1}`),
+			agenticmsg.AssistantText("done"),
 		},
 	}
 
@@ -217,7 +220,7 @@ func TestLoadedSet_CheckpointInterruptResume_AlreadyLoaded(t *testing.T) {
 		t.Fatalf("echo invoked before resume: %d", echo.calls.Load())
 	}
 
-	// --- Resume: model attempts same search → AlreadyLoaded ---
+	// --- Resume: model select:s the same tool — search must not fail the run ---
 	targets := map[string]any{}
 	for _, id := range interruptIDs {
 		targets[id] = "yes"
@@ -227,7 +230,6 @@ func TestLoadedSet_CheckpointInterruptResume_AlreadyLoaded(t *testing.T) {
 		t.Fatalf("ResumeWithParams: %v", err)
 	}
 	var resumeErr error
-	var sawAlreadyLoaded bool
 	for {
 		ev, ok := iter2.Next()
 		if !ok {
@@ -238,18 +240,13 @@ func TestLoadedSet_CheckpointInterruptResume_AlreadyLoaded(t *testing.T) {
 		}
 		if ev.Err != nil {
 			resumeErr = ev.Err
-			if errors.Is(ev.Err, ErrToolSearchAlreadyLoaded) ||
-				strings.Contains(ev.Err.Error(), "already loaded") {
-				sawAlreadyLoaded = true
-			}
 			break
 		}
 	}
-	if !sawAlreadyLoaded {
-		t.Fatalf("resume want ErrToolSearchAlreadyLoaded, got err=%v", resumeErr)
+	if resumeErr != nil {
+		t.Fatalf("resume duplicate select must not fail the run, got %v", resumeErr)
 	}
-	// No duplicate disclosure: echo still never executed as a business tool, and
-	// second search must not return a successful tool_search_output with echo schema.
+	// Duplicate search re-discloses schema only; it must not invoke echo.
 	if echo.calls.Load() != 0 {
 		t.Fatalf("echo must not execute on duplicate search path: %d", echo.calls.Load())
 	}
@@ -364,10 +361,10 @@ func TestLoadedState_SemanticCatalog_TypedRunnerOverlays(t *testing.T) {
 		}
 	})
 	t.Run("valid_deferred_already_loaded", func(t *testing.T) {
-		// Valid deferred echo already loaded → select again is AlreadyLoaded.
+		// Valid deferred echo already loaded → select again re-discloses, no error.
 		err := runWithLoaded(t, []string{"echo_tool"})
-		if !errors.Is(err, ErrToolSearchAlreadyLoaded) {
-			t.Fatalf("want AlreadyLoaded, got %v", err)
+		if err != nil {
+			t.Fatalf("repeat select of loaded deferred must not fail, got %v", err)
 		}
 	})
 }
@@ -932,7 +929,7 @@ func TestLoadedSet_ConcurrentRunsRaceIsolation(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			// Each run: search once for echo, then search again → AlreadyLoaded.
+			// Each run: search once for echo, then search again (re-disclose) then text.
 			mdl := &scriptedAgenticModel{
 				responses: []*schema.AgenticMessage{
 					agenticFunctionCall(ClientToolSearchToolName, fmt.Sprintf("s1-%d", i),
@@ -963,8 +960,8 @@ func TestLoadedSet_ConcurrentRunsRaceIsolation(t *testing.T) {
 					break
 				}
 			}
-			if runErr == nil || !errors.Is(runErr, ErrToolSearchAlreadyLoaded) {
-				errCh <- fmt.Errorf("run %d want AlreadyLoaded, got %v", i, runErr)
+			if runErr != nil {
+				errCh <- fmt.Errorf("run %d duplicate select must not fail, got %v", i, runErr)
 				return
 			}
 			successes.Add(1)

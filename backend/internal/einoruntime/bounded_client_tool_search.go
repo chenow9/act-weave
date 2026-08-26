@@ -47,8 +47,10 @@ var (
 	// that push the run-local cumulative loaded-deferred count above the caller
 	// maxLoaded ceiling.
 	ErrToolSearchLoadCapExceeded = errors.New("einoruntime tool search: cumulative loaded definitions cap exceeded")
-	// ErrToolSearchAlreadyLoaded is returned when a direct select names only tools
-	// that were already loaded in this run (stable typed omit/reject semantics).
+	// ErrToolSearchAlreadyLoaded is retained for tests that still name the
+	// historical fail-closed path. Repeat select of already-loaded tools now
+	// re-discloses their schemas with an empty newly-loaded set instead of
+	// failing the run.
 	ErrToolSearchAlreadyLoaded = errors.New("einoruntime tool search: selected tools already loaded")
 	// ErrToolSearchLoadedStateInvalid is returned when checkpoint/session loaded-set
 	// state is present but corrupt (wrong type, nil elements, non-string, empty/
@@ -386,7 +388,10 @@ func executeBoundedToolSearch(catalog *ToolCatalogSnapshot, argumentsJSON string
 				return nil, nil, err
 			}
 		}
-		// Omit already-loaded direct selections (stable typed semantics).
+		// Omit already-loaded names when the select also includes new tools.
+		// If every selected name is already loaded, re-disclose those schemas
+		// (newlyLoaded stays empty) so the model can invoke them instead of
+		// failing the run with NodeRunError.
 		if len(loadedSet) > 0 {
 			filtered := make([]string, 0, len(selected))
 			sawNew := false
@@ -397,10 +402,9 @@ func executeBoundedToolSearch(catalog *ToolCatalogSnapshot, argumentsJSON string
 				sawNew = true
 				filtered = append(filtered, name)
 			}
-			if !sawNew && len(selected) > 0 {
-				return nil, nil, fmt.Errorf("%w: all selected tools already loaded", ErrToolSearchAlreadyLoaded)
+			if sawNew {
+				selected = filtered
 			}
-			selected = filtered
 		}
 		if len(selected) > maxResults {
 			selected = selected[:maxResults]

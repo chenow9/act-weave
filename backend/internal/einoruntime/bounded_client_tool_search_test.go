@@ -481,9 +481,16 @@ func TestBoundedSearch_RunLocalLoadedUniqueness(t *testing.T) {
 		t.Fatalf("first load: tools=%d newly=%d", len(first), len(newly))
 	}
 	loaded := mergeLoadedDeferredToolNames(nil, newly)
-	// Repeat select of same tools → already loaded.
-	if _, _, err := executeBoundedToolSearch(cat, `{"query":"select:alpha_one,alpha_two"}`, loaded, MaxLoadedDefinitionsPerRun); !errors.Is(err, ErrToolSearchAlreadyLoaded) {
+	// Repeat select of same tools re-discloses schemas and loads nothing new.
+	again, newlyAgain, err := executeBoundedToolSearch(cat, `{"query":"select:alpha_one,alpha_two"}`, loaded, MaxLoadedDefinitionsPerRun)
+	if err != nil {
 		t.Fatalf("repeat select: %v", err)
+	}
+	if len(again) != 2 || len(newlyAgain) != 0 {
+		t.Fatalf("repeat select: tools=%d newly=%d", len(again), len(newlyAgain))
+	}
+	if errors.Is(err, ErrToolSearchAlreadyLoaded) {
+		t.Fatal("repeat select must not fail closed as AlreadyLoaded")
 	}
 	// Keyword for alpha must omit already-loaded alpha_one/two.
 	kw, newly2, err := executeBoundedToolSearch(cat, `{"query":"alpha","max_results":5}`, loaded, MaxLoadedDefinitionsPerRun)
