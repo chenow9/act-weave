@@ -24,6 +24,9 @@ sdk/typescript/dist/
 examples/**/node_modules/
 backend/vendor/
 backend/.local/
+backend/config.local.yaml
+docker-compose.override.yml
+docker-compose.override.yaml
 data/
 screenshots/
 .qa-artifacts/

@@ -92,7 +92,7 @@ Do not copy the development keys and bootstrap administrator settings in `backen
 | Domain and transport | Public HTTPS base URL, TLS termination, trusted reverse proxy, CORS, and network-access rules. Configuration validation requires an absolute HTTPS AAP token endpoint outside loopback. |
 | Upstream integration | Provider/Connection endpoints, credentials, scopes, environments, outbound identity, and host allowlists. |
 
-YAML has lower precedence than environment variables, and `ACTWEAVE_CONFIG_FILE` can point to a protected configuration file. `backend/config.yaml` and validation in `backend/internal/config` are authoritative for fields.
+YAML has lower precedence than environment variables, and `ACTWEAVE_CONFIG_FILE` can point to a protected configuration file. For local `go run`, `backend/config.local.yaml` (gitignored) is preferred when present unless `ACTWEAVE_CONFIG_LOCAL=0`. `backend/config.yaml` and validation in `backend/internal/config` are authoritative for fields.
 
 ## Database and object storage
 

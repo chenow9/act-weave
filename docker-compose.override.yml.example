@@ -1,0 +1,15 @@
+# Copy to docker-compose.override.yml (gitignored). Compose merges it automatically
+# with docker-compose.yml. Use this for LAN IPs, extra_hosts, ACR image overlays,
+# and mounting backend/config.local.yaml. Do not commit the override.
+#
+# Ignore the override for one command:
+#   docker compose -f docker-compose.yml up --build
+#
+# Uncomment to run the backend container against the gitignored local YAML:
+
+# services:
+#   backend:
+#     extra_hosts:
+#       - "host.docker.internal:host-gateway"
+#     volumes:
+#       - ./backend/config.local.yaml:/app/config.yaml:ro

@@ -92,7 +92,7 @@ docker pull crpi-jmyvlpzp0j558pln.cn-hangzhou.personal.cr.aliyuncs.com/chenow/ac
 | 域名与传输 | 公开 HTTPS base URL、TLS 终结、受信任反向代理、CORS 和网络访问规则。配置校验要求 AAP token endpoint 在非 loopback 场景为绝对 HTTPS URL。 |
 | 上游集成 | Provider/Connection 的端点、凭证、scope、环境、出站身份和主机允许列表。 |
 
-配置读取优先级为 YAML 文件低于环境变量，可用 `ACTWEAVE_CONFIG_FILE` 指定受保护配置文件。更多字段以 `backend/config.yaml` 和 `backend/internal/config` 的校验为准。
+配置读取优先级为 YAML 文件低于环境变量，可用 `ACTWEAVE_CONFIG_FILE` 指定受保护配置文件。本地 `go run` 在存在 `backend/config.local.yaml`（已 gitignore）时优先使用它，除非设置 `ACTWEAVE_CONFIG_LOCAL=0`。更多字段以 `backend/config.yaml` 和 `backend/internal/config` 的校验为准。
 
 ## 数据库与对象存储
 

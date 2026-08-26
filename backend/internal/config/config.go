@@ -15,8 +15,10 @@ import (
 )
 
 const (
-	ConfigFileEnv     = "ACTWEAVE_CONFIG_FILE"
-	DefaultConfigFile = "config.yaml"
+	ConfigFileEnv         = "ACTWEAVE_CONFIG_FILE"
+	LocalConfigDisableEnv = "ACTWEAVE_CONFIG_LOCAL"
+	DefaultConfigFile     = "config.yaml"
+	LocalConfigFile       = "config.local.yaml"
 )
 
 type LookupEnv func(string) (string, bool)
@@ -377,20 +379,59 @@ type BootstrapAdminConfig struct {
 }
 
 func LoadFromEnvironment(lookup LookupEnv) (Config, string, error) {
-	path := DefaultConfigFile
-	if lookup != nil {
-		if value, ok := lookup(ConfigFileEnv); ok {
-			path = strings.TrimSpace(value)
-			if path == "" {
-				return Config{}, "", fmt.Errorf("%s must not be empty", ConfigFileEnv)
-			}
-		}
+	path, err := ResolveConfigFile(lookup)
+	if err != nil {
+		return Config{}, "", err
 	}
 	loaded, err := Load(path, lookup)
 	if err != nil {
 		return Config{}, path, err
 	}
 	return loaded, path, nil
+}
+
+// ResolveConfigFile picks the YAML path used at process start.
+//
+// Precedence:
+//  1. ACTWEAVE_CONFIG_FILE, if set (must be non-empty)
+//  2. config.local.yaml in the process working directory, unless
+//     ACTWEAVE_CONFIG_LOCAL is 0/false/no/off
+//  3. config.yaml
+func ResolveConfigFile(lookup LookupEnv) (string, error) {
+	if lookup != nil {
+		if value, ok := lookup(ConfigFileEnv); ok {
+			path := strings.TrimSpace(value)
+			if path == "" {
+				return "", fmt.Errorf("%s must not be empty", ConfigFileEnv)
+			}
+			return path, nil
+		}
+	}
+	if localConfigEnabled(lookup) && regularFileExists(LocalConfigFile) {
+		return LocalConfigFile, nil
+	}
+	return DefaultConfigFile, nil
+}
+
+func localConfigEnabled(lookup LookupEnv) bool {
+	if lookup == nil {
+		return true
+	}
+	value, ok := lookup(LocalConfigDisableEnv)
+	if !ok {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return true
+	}
+}
+
+func regularFileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 func Load(path string, lookup LookupEnv) (Config, error) {

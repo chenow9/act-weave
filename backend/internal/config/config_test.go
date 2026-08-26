@@ -199,6 +199,63 @@ func TestLoadFromEnvironmentUsesConfiguredPath(t *testing.T) {
 	}
 }
 
+func TestLoadFromEnvironmentRejectsEmptyConfiguredPath(t *testing.T) {
+	_, _, err := LoadFromEnvironment(lookup(map[string]string{ConfigFileEnv: "  "}))
+	if err == nil || !strings.Contains(err.Error(), ConfigFileEnv) {
+		t.Fatalf("expected empty %s error, got %v", ConfigFileEnv, err)
+	}
+}
+
+func TestLoadFromEnvironmentPrefersLocalConfig(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile(DefaultConfigFile, []byte(validConfigYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	localYAML := strings.Replace(validConfigYAML, "postgres://file-database", "postgres://local-database", 1)
+	if err := os.WriteFile(LocalConfigFile, []byte(localYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, usedPath, err := LoadFromEnvironment(nil)
+	if err != nil {
+		t.Fatalf("load local: %v", err)
+	}
+	if usedPath != LocalConfigFile || loaded.Database.DSN != "postgres://local-database" {
+		t.Fatalf("prefer local: path=%q dsn=%q", usedPath, loaded.Database.DSN)
+	}
+
+	loaded, usedPath, err = LoadFromEnvironment(lookup(map[string]string{LocalConfigDisableEnv: "0"}))
+	if err != nil {
+		t.Fatalf("load with local disabled: %v", err)
+	}
+	if usedPath != DefaultConfigFile || loaded.Database.DSN != "postgres://file-database" {
+		t.Fatalf("disable local: path=%q dsn=%q", usedPath, loaded.Database.DSN)
+	}
+
+	explicit := writeConfig(t, strings.Replace(validConfigYAML, "postgres://file-database", "postgres://explicit-database", 1))
+	loaded, usedPath, err = LoadFromEnvironment(lookup(map[string]string{ConfigFileEnv: explicit}))
+	if err != nil {
+		t.Fatalf("load explicit: %v", err)
+	}
+	if usedPath != explicit || loaded.Database.DSN != "postgres://explicit-database" {
+		t.Fatalf("explicit path must win: path=%q dsn=%q", usedPath, loaded.Database.DSN)
+	}
+}
+
+func TestLoadFromEnvironmentUsesDefaultWhenLocalMissing(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile(DefaultConfigFile, []byte(validConfigYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, usedPath, err := LoadFromEnvironment(nil)
+	if err != nil {
+		t.Fatalf("load default: %v", err)
+	}
+	if usedPath != DefaultConfigFile || loaded.Database.DSN != "postgres://file-database" {
+		t.Fatalf("missing local: path=%q dsn=%q", usedPath, loaded.Database.DSN)
+	}
+}
+
 func TestCheckedInDevelopmentConfigurationIsValid(t *testing.T) {
 	loaded, err := Load(filepath.Join("..", "..", "config.yaml"), nil)
 	if err != nil {

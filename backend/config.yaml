@@ -1,5 +1,12 @@
-# Local-development configuration. Production deployments should use a protected
-# copy and override secrets through the documented ACTWEAVE_* environment variables.
+# Checked-in local-development defaults. Do not put machine-specific values here.
+# Copy to config.local.yaml (gitignored) and edit that file instead:
+#   cp config.yaml config.local.yaml
+# `go run ./cmd/server` (cwd: backend/) prefers config.local.yaml when present.
+# Switch back to this file: ACTWEAVE_CONFIG_LOCAL=0
+# or ACTWEAVE_CONFIG_FILE=config.yaml
+# Compose still bakes this file into the image; mount a local copy via
+# docker-compose.override.yml (also gitignored; see the example next to compose).
+# Production: ACTWEAVE_CONFIG_FILE plus ACTWEAVE_* environment overrides.
 server:
   address: ":8082"
 

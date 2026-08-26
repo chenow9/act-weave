@@ -4,6 +4,8 @@
 
 本页收集仓库已有的开发入口。运行前后端分离模式前，先确保 PostgreSQL、Redis、MinIO 和 `backend/config.yaml` 中的本地配置可用；最短全栈路径仍是 `docker compose up --build`。
 
+机器相关的后端配置写在 `backend/config.local.yaml`（已 gitignore）。在 `backend/` 下执行 `go run ./cmd/server` 或 `go run ./cmd/migrate` 时，若该文件存在则优先使用。复制一份即可：`cp config.yaml config.local.yaml`，之后只改副本。单次切回仓库文件：`ACTWEAVE_CONFIG_LOCAL=0` 或 `ACTWEAVE_CONFIG_FILE=config.yaml`。Compose 仍使用镜像内的 `config.yaml`；局域网、extra_hosts、挂载本地配置等实验项放在已 gitignore 的 `docker-compose.override.yml`（可从 `docker-compose.override.yml.example` 复制）。`docker compose -f docker-compose.yml up` 会忽略 override。
+
 ## 运行要求
 
 | 区域 | 仓库依据 |
@@ -38,7 +40,9 @@ npm run e2e:disclosure
 
 ```bash
 cd backend
+cp -n config.yaml config.local.yaml   # 只需一次；之后改 config.local.yaml
 go run ./cmd/server
+# ACTWEAVE_CONFIG_LOCAL=0 go run ./cmd/server   # 使用仓库内 config.yaml
 ```
 
 常用校验：

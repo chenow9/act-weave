@@ -4,6 +4,8 @@
 
 This page gathers existing development entry points. Before running frontend and backend separately, make PostgreSQL, Redis, MinIO, and the local configuration in `backend/config.yaml` available. The shortest full-stack path remains `docker compose up --build`.
 
+Machine-specific backend settings belong in `backend/config.local.yaml` (gitignored). From `backend/`, `go run ./cmd/server` and `go run ./cmd/migrate` use that file when it exists. Copy the checked-in file once (`cp config.yaml config.local.yaml`) and edit the copy. To force the committed file for one process, set `ACTWEAVE_CONFIG_LOCAL=0` or `ACTWEAVE_CONFIG_FILE=config.yaml`. Compose still uses the image copy of `config.yaml`; put host mounts, extra hosts, and other lab overrides in gitignored `docker-compose.override.yml` (start from `docker-compose.override.yml.example`). `docker compose -f docker-compose.yml up` ignores the override.
+
 ## Runtime requirements
 
 | Area | Repository evidence |
@@ -38,7 +40,9 @@ npm run e2e:disclosure
 
 ```bash
 cd backend
+cp -n config.yaml config.local.yaml   # once; then edit config.local.yaml
 go run ./cmd/server
+# ACTWEAVE_CONFIG_LOCAL=0 go run ./cmd/server   # committed config.yaml
 ```
 
 Useful checks:

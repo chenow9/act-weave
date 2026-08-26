@@ -22,9 +22,9 @@ func main() {
 	_ = flag.Bool("once", true, "run a single purge pass and exit")
 	flag.Parse()
 
-	cfgPath := os.Getenv(config.ConfigFileEnv)
-	if cfgPath == "" {
-		cfgPath = config.DefaultConfigFile
+	cfgPath, err := config.ResolveConfigFile(os.LookupEnv)
+	if err != nil {
+		log.Fatalf("resolve config: %v", err)
 	}
 	cfg, err := config.Load(cfgPath, os.LookupEnv)
 	if err != nil {
