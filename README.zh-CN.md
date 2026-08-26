@@ -1,12 +1,14 @@
 # ActWeave（织行）
 
-[English](./README.md) · [快速开始](./docs/getting-started.zh-CN.md) · [文档导航](./docs/README.zh-CN.md) · [架构](./docs/architecture.zh-CN.md) · [AAP 接入](./docs/aap-integration-guide.zh-CN.md)
+[产品介绍](https://act-weave.grok.me/) · [English](./README.md) · [快速开始](./docs/getting-started.zh-CN.md) · [文档导航](./docs/README.zh-CN.md) · [架构](./docs/architecture.zh-CN.md) · [AAP 接入](./docs/aap-integration-guide.zh-CN.md)
 
 > **面向企业业务系统的 Agent 控制平面与运行接入平台。**
 
 ActWeave 将已有 HTTP API 和 OpenAPI 服务治理为可测试、可版本化、可发布的 Tool；在此基础上配置 Agent 与 Workflow，并通过独立的运行接入面向 Web、App、BFF、业务系统及其他 Agent 开放能力。一次运行可沿 Conversation、Run、模型、委派、Workflow 与 Tool 调用追踪。
 
-**项目状态：活跃开发中。** 当前仓库未见 Git tag 或 GitHub Release，因此本文不对生产就绪性或支持等级作承诺；请在上线前自行完成部署、安全与集成验证。
+公开产品介绍见 [act-weave.grok.me](https://act-weave.grok.me/)。
+
+**项目状态：活跃开发中。** 仓库会打 beta Git tag，不对生产就绪性或支持等级作承诺；请在上线前自行完成部署、安全与集成验证。
 
 ## ActWeave 是什么
 

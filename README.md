@@ -1,12 +1,14 @@
 # ActWeave
 
-[中文](./README.zh-CN.md) · [Quick start](./docs/getting-started.md) · [Documentation](./docs/README.md) · [Architecture](./docs/architecture.md) · [AAP integration](./docs/aap-integration-guide.md)
+[Product intro](https://act-weave.grok.me/) · [中文](./README.zh-CN.md) · [Quick start](./docs/getting-started.md) · [Documentation](./docs/README.md) · [Architecture](./docs/architecture.md) · [AAP integration](./docs/aap-integration-guide.md)
 
 > **An Agent control plane and runtime access platform for enterprise systems.**
 
 ActWeave governs existing HTTP APIs and OpenAPI services as testable, versioned, publishable Tools; composes them into Agents and Workflows; and exposes them to web clients, apps, BFFs, business systems, and other Agents through a separate runtime plane. A run can be traced across its Conversation, Run, model turns, delegation, Workflow, and Tool calls.
 
-**Project status: active development.** No Git tag or GitHub Release is present in this checkout, so this documentation makes no production-readiness or support-level claim. Validate deployment, security, and integrations before any rollout.
+The public product introduction is at [act-weave.grok.me](https://act-weave.grok.me/).
+
+**Project status: active development.** The repository publishes beta Git tags and makes no production-readiness or support-level claim. Validate deployment, security, and integrations before any rollout.
 
 ## What is ActWeave?
 

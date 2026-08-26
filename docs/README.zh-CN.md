@@ -8,7 +8,7 @@
 
 | 你想做什么 | 从这里开始 |
 | --- | --- |
-| 了解 ActWeave 解决的问题和产品闭环 | [项目首页](../README.zh-CN.md) · [概念](./concepts.zh-CN.md) |
+| 了解 ActWeave 解决的问题和产品闭环 | [产品介绍](https://act-weave.grok.me/) · [项目首页](../README.zh-CN.md) · [概念](./concepts.zh-CN.md) |
 | 在本地启动控制台与后端 | [快速开始](./getting-started.zh-CN.md) |
 | 了解控制面、运行面和数据组件 | [系统架构](./architecture.zh-CN.md) |
 | 浏览 Console 页面与截图 | [产品导览](./product-tour.zh-CN.md) |

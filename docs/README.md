@@ -8,7 +8,7 @@ This documentation is organized as “understand the boundary first, then integr
 
 | Goal | Start here |
 | --- | --- |
-| Understand the problem and product loop | [Project home](../README.md) · [Concepts](./concepts.md) |
+| Understand the problem and product loop | [Product intro](https://act-weave.grok.me/) · [Project home](../README.md) · [Concepts](./concepts.md) |
 | Start console and backend locally | [Getting started](./getting-started.md) |
 | Understand the control plane, runtime plane, and data components | [Architecture](./architecture.md) |
 | Browse console pages and screenshots | [Product tour](./product-tour.md) |
