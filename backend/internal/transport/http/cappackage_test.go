@@ -74,11 +74,11 @@ func TestV1CapabilityPackageExportPreviewImportRoundTrip(t *testing.T) {
 
 func TestV1CapabilityPackagePreviewBlocksUnknownProviderAndSecrets(t *testing.T) {
 	f := newPackageHTTPFixture(t)
-	blocked := f.request(t, http.MethodPost, f.base+"/packages/__command/preview", map[string]any{
+	autoBound := f.request(t, http.MethodPost, f.base+"/packages/__command/preview", map[string]any{
 		"yaml": validPackageYAML("missing-provider", "no-such-provider", "api-test"),
 	}, f.token, nil)
-	if blocked.Code != http.StatusOK || !strings.Contains(blocked.Body.String(), `"action":"blocked"`) {
-		t.Fatalf("blocked preview status=%d body=%s", blocked.Code, blocked.Body.String())
+	if autoBound.Code != http.StatusOK || !strings.Contains(autoBound.Body.String(), `"canImport":true`) {
+		t.Fatalf("unique-connection auto-bind status=%d body=%s", autoBound.Code, autoBound.Body.String())
 	}
 	secretYAML := strings.ReplaceAll(
 		validPackageYAML("secret-tool", "API", "api-test"),
@@ -91,8 +91,36 @@ func TestV1CapabilityPackagePreviewBlocksUnknownProviderAndSecrets(t *testing.T)
 	assertErrorResponse(t, rejected, http.StatusUnprocessableEntity, "VALIDATION_ERROR")
 }
 
-func TestV1CapabilityPackagePreviewRemapsForeignProviderToLocalConnection(t *testing.T) {
+func TestV1CapabilityPackagePreviewAutoBindsForeignProviderToUniqueConnection(t *testing.T) {
 	f := newPackageHTTPFixture(t)
+	yaml := validPackageYAML("get-orders", "Foreign API", "prod")
+	ok := f.request(t, http.MethodPost, f.base+"/packages/__command/preview", map[string]any{
+		"yaml": yaml,
+	}, f.token, nil)
+	if ok.Code != http.StatusOK || !strings.Contains(ok.Body.String(), `"canImport":true`) {
+		t.Fatalf("auto-bind preview status=%d body=%s", ok.Code, ok.Body.String())
+	}
+
+	imported := f.request(t, http.MethodPost, f.base+"/packages/__command/import", map[string]any{
+		"yaml": yaml,
+	}, f.token, nil)
+	if imported.Code != http.StatusOK || !strings.Contains(imported.Body.String(), `"action":"create"`) {
+		t.Fatalf("auto-bind import status=%d body=%s", imported.Code, imported.Body.String())
+	}
+}
+
+func TestV1CapabilityPackagePreviewRemapsForeignProviderWhenMultipleConnections(t *testing.T) {
+	f := newPackageHTTPFixture(t)
+	otherID := uuid.NewString()
+	if _, err := f.connections.Create(t.Context(), connection.NewConnection{
+		ID: otherID, WorkspaceID: f.workspaceID, ProviderID: f.providerID,
+		Name: "API other", Alias: "api-other", Environment: "TEST",
+		OutboundIdentity: json.RawMessage(`{"schemaVersion":"outbound-connection.v1","mode":"REQUEST_PASSTHROUGH","requestPassthrough":{"maxResidenceSeconds":600}}`),
+		GrantedScopes:    json.RawMessage(`[]`), Policy: json.RawMessage(`{}`),
+		MigrationState: connection.MigrationStateNone, CreatedBy: v1AdminUserID,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	yaml := validPackageYAML("get-orders", "Foreign API", "prod")
 	blocked := f.request(t, http.MethodPost, f.base+"/packages/__command/preview", map[string]any{
 		"yaml": yaml,
@@ -164,7 +192,8 @@ func TestV1CapabilityPackageWorkflowExportRemapsToolSlug(t *testing.T) {
 
 type packageHTTPFixture struct {
 	*toolOpenAPIFixture
-	workflows *workflow.Repository
+	workflows   *workflow.Repository
+	connections *connection.Repository
 }
 
 func newPackageHTTPFixture(t *testing.T) *packageHTTPFixture {
@@ -268,7 +297,8 @@ func newPackageHTTPFixture(t *testing.T) *packageHTTPFixture {
 			v1AuthFixture: base, workspaceID: wid, providerID: pid, connectionID: cid,
 			base: "/api/v1/workspaces/" + wid, token: decodeTokenResponse(t, login).AccessToken,
 		},
-		workflows: workflows,
+		workflows:   workflows,
+		connections: connections,
 	}
 }
 

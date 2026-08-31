@@ -75,10 +75,26 @@ watch(
     dragging.value = false;
     dragDepth = 0;
     if (props.workspaceId) {
-      void connectionsStore.loadServiceConnectionCatalog();
+      void Promise.all([connectionsStore.loadServiceConnectionCatalog(), providersStore.loadProviders()]);
     }
   },
 );
+
+watch([remapKeys, connectionOptions], () => {
+  if (busy.value || connectionOptions.value.length !== 1 || remapKeys.value.length === 0) return;
+  const only = connectionOptions.value[0]?.value;
+  if (!only) return;
+  let changed = false;
+  const next = { ...remaps.value };
+  for (const key of remapKeys.value) {
+    if (next[key]) continue;
+    next[key] = only;
+    changed = true;
+  }
+  if (!changed) return;
+  remaps.value = next;
+  void runPreview();
+});
 
 function close() {
   emit("update:open", false);
@@ -102,6 +118,12 @@ function itemDetail(item: PackagePreview["items"][number]) {
 
 function reasonLabel(reason: string | undefined) {
   if (!reason) return "";
+  if (reason === "this workspace has no service connections") {
+    return t("packages.reasonNoConnections");
+  }
+  if (reason === "this workspace has multiple connections; remap to a local connection") {
+    return t("packages.reasonMultipleConnections");
+  }
   if (reason.startsWith("provider ") && reason.includes("was not found")) {
     return t("packages.reasonProviderMissing");
   }
@@ -265,6 +287,24 @@ async function applyImport() {
       <p :class="preview.canImport ? 'is-ok' : 'is-blocked'">
         {{ preview.canImport ? t("packages.canImport") : t("packages.cannotImport") }}
       </p>
+      <div v-if="remapKeys.length" class="capability-package-remap">
+        <strong>{{ t("packages.remapConnection") }}</strong>
+        <p class="capability-package-note">{{ t("packages.remapHint") }}</p>
+        <p v-if="!connectionOptions.length" class="capability-package-error">{{ t("packages.remapNeedConnection") }}</p>
+        <label v-for="key in remapKeys" :key="key" class="capability-package-remap-row">
+          <span>{{ key.replace("::", " / ") }}</span>
+          <AppSelect
+            :model-value="remaps[key] || ''"
+            :options="connectionOptions"
+            :placeholder="t('packages.targetConnection')"
+            :disabled="!connectionOptions.length"
+            @update:model-value="
+              remaps[key] = String($event || '');
+              void runPreview();
+            "
+          />
+        </label>
+      </div>
       <div class="capability-package-table-wrap">
         <table class="capability-package-table">
           <thead>
@@ -290,24 +330,6 @@ async function applyImport() {
             </tr>
           </tbody>
         </table>
-      </div>
-      <div v-if="remapKeys.length" class="capability-package-remap">
-        <strong>{{ t("packages.remapConnection") }}</strong>
-        <p class="capability-package-note">{{ t("packages.remapHint") }}</p>
-        <p v-if="!connectionOptions.length" class="capability-package-error">{{ t("packages.remapNeedConnection") }}</p>
-        <label v-for="key in remapKeys" :key="key" class="capability-package-remap-row">
-          <span>{{ key.replace("::", " / ") }}</span>
-          <AppSelect
-            :model-value="remaps[key] || ''"
-            :options="connectionOptions"
-            :placeholder="t('packages.targetConnection')"
-            :disabled="!connectionOptions.length"
-            @update:model-value="
-              remaps[key] = String($event || '');
-              void runPreview();
-            "
-          />
-        </label>
       </div>
     </div>
     <template #footer>

@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { describe, expect, it, vi } from "vitest";
 
 import { useConnectionsStore } from "../stores/connections";
+import { useProvidersStore } from "../stores/providers";
 import { createTestI18n } from "../test-utils/i18n";
 import CapabilityPackageDialog from "./CapabilityPackageDialog.vue";
 
@@ -11,6 +12,8 @@ function mountDialog(open = true) {
   setActivePinia(pinia);
   const connections = useConnectionsStore();
   connections.loadServiceConnectionCatalog = vi.fn().mockResolvedValue(undefined);
+  const providers = useProvidersStore();
+  providers.loadProviders = vi.fn().mockResolvedValue([]);
 
   return mount(CapabilityPackageDialog, {
     props: { open, workspaceId: "ws-1" },
@@ -35,7 +38,7 @@ describe("CapabilityPackageDialog", () => {
     expect(dropzone.text()).toContain("选择配置文件");
     expect(dropzone.text()).toContain("拖放到此处");
     expect(wrapper.get(".management-dialog-description").text()).toContain("只生成草稿");
-    expect(wrapper.get(".capability-package-note").text()).toContain("相同 slug");
+    expect(wrapper.get(".capability-package-note").text()).toContain("当前业务空间");
     expect(wrapper.find(".capability-package-preview").exists()).toBe(false);
 
     wrapper.unmount();

@@ -561,6 +561,11 @@ func graphRef(data Object, primary, fallback string) string {
 	return ""
 }
 
+const (
+	reasonNoConnections       = "this workspace has no service connections"
+	reasonMultipleConnections = "this workspace has multiple connections; remap to a local connection"
+)
+
 func resolveProviderAndConnection(
 	providerName, alias string,
 	catalog *workspaceCatalog,
@@ -573,19 +578,57 @@ func resolveProviderAndConnection(
 	} else if found {
 		return bound.ProviderID, bound.ID, ""
 	}
-	providerValue, ok := catalog.providersByName[strings.ToLower(providerName)]
-	if !ok {
-		return "", "", "provider " + providerName + " was not found in this workspace"
-	}
-	if alias == "" {
-		return "", "", "connection alias is required"
-	}
-	for _, item := range catalog.connections {
-		if item.ProviderID == providerValue.ID && strings.EqualFold(item.Alias, alias) {
-			return providerValue.ID, item.ID, ""
+	if providerValue, ok := catalog.providersByName[strings.ToLower(providerName)]; ok {
+		if alias != "" {
+			for _, item := range catalog.connections {
+				if item.ProviderID == providerValue.ID && strings.EqualFold(item.Alias, alias) {
+					return providerValue.ID, item.ID, ""
+				}
+			}
+		}
+		if only, ok := uniqueConnection(connectionsForProvider(catalog.connections, providerValue.ID)); ok {
+			return only.ProviderID, only.ID, ""
 		}
 	}
-	return "", "", "connection alias " + alias + " was not found for provider " + providerName
+	if alias != "" {
+		if only, ok := uniqueConnection(connectionsByAlias(catalog.connections, alias)); ok {
+			return only.ProviderID, only.ID, ""
+		}
+	}
+	if len(catalog.connections) == 0 {
+		return "", "", reasonNoConnections
+	}
+	if only, ok := uniqueConnection(catalog.connections); ok {
+		return only.ProviderID, only.ID, ""
+	}
+	return "", "", reasonMultipleConnections
+}
+
+func connectionsForProvider(connections []connection.Connection, providerID string) []connection.Connection {
+	matched := make([]connection.Connection, 0)
+	for _, item := range connections {
+		if item.ProviderID == providerID {
+			matched = append(matched, item)
+		}
+	}
+	return matched
+}
+
+func connectionsByAlias(connections []connection.Connection, alias string) []connection.Connection {
+	matched := make([]connection.Connection, 0)
+	for _, item := range connections {
+		if strings.EqualFold(item.Alias, alias) {
+			matched = append(matched, item)
+		}
+	}
+	return matched
+}
+
+func uniqueConnection(connections []connection.Connection) (connection.Connection, bool) {
+	if len(connections) != 1 {
+		return connection.Connection{}, false
+	}
+	return connections[0], true
 }
 
 // lookupBoundConnection resolves an explicit remap. TargetConnectionID may point
