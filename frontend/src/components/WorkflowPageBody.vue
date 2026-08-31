@@ -12,6 +12,7 @@ import WorkflowReadinessPanel from "./workflow/WorkflowReadinessPanel.vue";
 import WorkflowRevisionDiff from "./workflow/WorkflowRevisionDiff.vue";
 import WorkflowRevisionPanel from "./workflow/WorkflowRevisionPanel.vue";
 import WorkspaceContextState from "./WorkspaceContextState.vue";
+import CapabilityPackageDialog from "./CapabilityPackageDialog.vue";
 import { useI18n } from "vue-i18n";
 import { useWorkflowPageContext } from "../composables/useWorkflowPageContext";
 
@@ -79,6 +80,9 @@ const {
   closeWorkflowMetadata,
   openWorkflowEditor,
   openCreateWorkflow,
+  packageDialogOpen,
+  openPackageImport,
+  onPackageImported,
   openIntentGenerateEditor,
   openEditWorkflow,
   saveWorkflowMetadata,
@@ -116,6 +120,10 @@ void WorkspaceContextState;
       icon="fa-solid fa-diagram-project"
     >
       <template #actions>
+        <button class="ghost-button" type="button" :disabled="!hasWorkspaceContext" @click="openPackageImport">
+          <i class="fa-solid fa-file-arrow-up" aria-hidden="true" />
+          <span>{{ t("packages.importConfig") }}</span>
+        </button>
         <button
           class="ghost-button workflow-generate-from-intent-button"
           type="button"
@@ -240,6 +248,9 @@ void WorkspaceContextState;
               </button>
               <button class="primary-button" type="button" @click="openCreateWorkflow">
                 {{ t("workflow.newWorkflow") }}
+              </button>
+              <button class="ghost-button" type="button" @click="openPackageImport">
+                {{ t("packages.importConfig") }}
               </button>
             </div>
           </div>
@@ -528,5 +539,11 @@ void WorkspaceContextState;
         <i class="fa-solid fa-xmark" />
       </button>
     </div>
+    <CapabilityPackageDialog
+      :open="packageDialogOpen"
+      :workspace-id="workspaces.activeWorkspaceId || workspaces.items[0]?.id || ''"
+      @update:open="packageDialogOpen = $event"
+      @imported="onPackageImported"
+    />
   </div>
 </template>

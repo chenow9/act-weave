@@ -7,6 +7,7 @@ import ManagementRowActions from "./ManagementRowActions.vue";
 import ManagementSegmentedFilter from "./ManagementSegmentedFilter.vue";
 import ManagementSummaryStrip from "./ManagementSummaryStrip.vue";
 import ToolTestDialog from "./ToolTestDialog.vue";
+import CapabilityPackageDialog from "./CapabilityPackageDialog.vue";
 import WorkspaceContextState from "./WorkspaceContextState.vue";
 import { useI18n } from "vue-i18n";
 import { useToolsPageContext } from "../composables/useToolsPageContext";
@@ -16,6 +17,7 @@ const { t } = useI18n();
 const scp = useToolsPageContext();
 const {
   toolsStore,
+  workspaces,
   router,
   query,
   selectedStatusFilter,
@@ -35,6 +37,7 @@ const {
   batchTestProgress,
   batchTestNeedsPassthrough,
   canTestWorkspace,
+  canEditWorkspace,
   actionNote,
   actionNoteTone,
   riskConfirmationVisible,
@@ -88,6 +91,10 @@ const {
   providerForTool,
   connectionForTool,
   formatToolTableUpdatedAt,
+  packageDialogOpen,
+  openPackageImport,
+  exportSelectedTools,
+  onPackageImported,
 } = scp;
 void ManagementList;
 void ManagementPageHeader;
@@ -112,6 +119,15 @@ void getToolTypeLabel;
         <button class="ghost-button tool-header-secondary" type="button" @click="router.push('/openapi-imports')">
           <i class="fa-solid fa-file-import" />
           <span>{{ t("common.import") }} OpenAPI</span>
+        </button>
+        <button
+          class="ghost-button tool-header-secondary"
+          type="button"
+          :disabled="!hasWorkspaceContext || !canEditWorkspace"
+          @click="openPackageImport"
+        >
+          <i class="fa-solid fa-file-arrow-up" />
+          <span>{{ t("packages.importConfig") }}</span>
         </button>
         <button
           class="primary-button tool-header-primary"
@@ -195,8 +211,18 @@ void getToolTypeLabel;
           </button>
           <button
             type="button"
-            class="management-list-batch-action is-danger"
+            class="management-list-batch-action"
             :disabled="!selectedTools.length || batchTesting || batchDeleting || batchForcePublishing"
+            :title="t('packages.exportConfig')"
+            @click="exportSelectedTools"
+          >
+            <i class="fa-solid fa-file-export" aria-hidden="true" />
+            <span>{{ t("packages.exportConfig") }}</span>
+          </button>
+          <button
+            type="button"
+            class="management-list-batch-action is-danger"
+            :disabled="!selectedTools.length || batchDeleting || batchTesting || batchForcePublishing"
             :title="batchDeleting ? t('tools.batchDeleting') : t('tools.batchDeleteTitle')"
             @click="openBatchDeleteConfirmation"
           >
@@ -312,6 +338,9 @@ void getToolTypeLabel;
               <button class="primary-button" type="button" @click="openCreateTool">{{ t("tools.createTool") }}</button
               ><button class="ghost-button" type="button" @click="router.push('/openapi-imports')">
                 {{ t("tools.fromOpenapi") }}
+              </button>
+              <button class="ghost-button" type="button" @click="openPackageImport">
+                {{ t("packages.importConfig") }}
               </button>
             </div>
           </div>
@@ -490,5 +519,11 @@ void getToolTypeLabel;
 
     <div v-if="actionNote" class="action-toast" :class="{ error: actionNoteTone === 'error' }">{{ actionNote }}</div>
     <ToolTestDialog v-model="testDialogVisible" :tool="testDialogTool" />
+    <CapabilityPackageDialog
+      :open="packageDialogOpen"
+      :workspace-id="workspaces.activeWorkspaceId || workspaces.items[0]?.id || ''"
+      @update:open="packageDialogOpen = $event"
+      @imported="onPackageImported"
+    />
   </div>
 </template>

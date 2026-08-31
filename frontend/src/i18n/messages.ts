@@ -19,6 +19,7 @@ import enAgentAccess from "../locales/en/agentAccess.json";
 import enUsers from "../locales/en/users.json";
 import enModelApis from "../locales/en/modelApis.json";
 import enConnections from "../locales/en/connections.json";
+import enPackages from "../locales/en/packages.json";
 import zhA2UI from "../locales/zh-CN/a2ui.json";
 import zhAuth from "../locales/zh-CN/auth.json";
 import zhCommon from "../locales/zh-CN/common.json";
@@ -38,6 +39,7 @@ import zhAgentAccess from "../locales/zh-CN/agentAccess.json";
 import zhUsers from "../locales/zh-CN/users.json";
 import zhModelApis from "../locales/zh-CN/modelApis.json";
 import zhConnections from "../locales/zh-CN/connections.json";
+import zhPackages from "../locales/zh-CN/packages.json";
 
 export const messages = {
   "zh-CN": {
@@ -59,6 +61,7 @@ export const messages = {
     users: zhUsers,
     modelApis: zhModelApis,
     connections: zhConnections,
+    packages: zhPackages,
     a2ui: zhA2UI,
   },
   en: {
@@ -80,6 +83,7 @@ export const messages = {
     users: enUsers,
     modelApis: enModelApis,
     connections: enConnections,
+    packages: enPackages,
     a2ui: enA2UI,
   },
 } as const satisfies Record<AppLocale, Record<string, unknown>>;

@@ -63,6 +63,7 @@ import {
   normalizeWorkflowGraphDraft,
 } from "../utils/workflow-graph";
 import { isAxiosError } from "axios";
+import { exportWorkflowPackage, packageErrorMessage } from "../services/capability-package";
 
 export function createWorkflowPageModel() {
   interface WorkflowMetadataDraft {
@@ -116,6 +117,7 @@ export function createWorkflowPageModel() {
   const workflowToolCatalogWorkspaceId = ref("");
   const workflowToolCatalogError = ref("");
 
+  const packageDialogOpen = ref(false);
   const workflowQuery = ref("");
   const workflowDetailVisible = ref(false);
   const workflowEditorVisible = ref(false);
@@ -2145,6 +2147,7 @@ export function createWorkflowPageModel() {
             } satisfies ManagementRowAction,
           ]
         : []),
+      { key: "export", label: tt("packages.exportConfig"), icon: "fa-solid fa-file-export" },
       { key: "delete", label: tt("workflow.deleteWorkflow"), icon: "fa-solid fa-trash", tone: "danger" },
     ];
   }
@@ -2170,7 +2173,29 @@ export function createWorkflowPageModel() {
       void runWorkflowProduction(workflow);
       return;
     }
+    if (actionKey === "export") {
+      void exportWorkflowConfig(workflow);
+      return;
+    }
     if (actionKey === "delete") void deleteWorkflow(workflow);
+  }
+
+  function openPackageImport() {
+    packageDialogOpen.value = true;
+  }
+
+  async function exportWorkflowConfig(workflow: WorkflowSummary) {
+    try {
+      await exportWorkflowPackage(workflow.workspaceId, workflow.id);
+      workflowActionNote.value = tt("packages.exported", { name: workflow.slug || workflow.name });
+    } catch (error) {
+      workflowActionNote.value = packageErrorMessage(error, tt("packages.exportFailed", { error: String(error) }));
+    }
+  }
+
+  function onPackageImported() {
+    void loadWorkflowRegistry({ page: 1 });
+    workflowActionNote.value = tt("packages.imported", { n: 1 });
   }
 
   async function deleteWorkflow(workflow: WorkflowSummary) {
@@ -3003,5 +3028,9 @@ export function createWorkflowPageModel() {
     isCompilationCurrentForDraft,
     extractTrialRunInputSchema,
     actionErrorMessage,
+    packageDialogOpen,
+    openPackageImport,
+    exportWorkflowConfig,
+    onPackageImported,
   };
 }

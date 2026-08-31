@@ -26,6 +26,7 @@ import (
 	"actweave/backend/internal/authn"
 	"actweave/backend/internal/authz"
 	"actweave/backend/internal/capability"
+	"actweave/backend/internal/cappackage"
 	"actweave/backend/internal/chat"
 	"actweave/backend/internal/chatruntime"
 	"actweave/backend/internal/chatruntimebridge"
@@ -945,6 +946,16 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	if err != nil {
 		return nil, err
 	}
+	packageService, err := cappackage.NewService(
+		toolRepository, workflowRepository, providerRepository, connectionRepository, nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+	packageRoutes, err := httptransport.NewPackageRoutes(authorizer, packageService)
+	if err != nil {
+		return nil, err
+	}
 	chatRepository, err := chat.NewRepository(db)
 	if err != nil {
 		return nil, err
@@ -1611,7 +1622,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		Registrars: []httptransport.V1RouteRegistrar{
 			authRoutes, workspaceRoutes, agentAccessRoutes, configurationRoutes, agentRoutes,
 			delegationRoutes,
-			toolRoutes, workflowRoutes, generateSessionRoutes, chatRoutes, auditRoutes, agentAuditRoutes,
+			toolRoutes, workflowRoutes, packageRoutes, generateSessionRoutes, chatRoutes, auditRoutes, agentAuditRoutes,
 			overviewRoutes, a2uiCatalogRoutes,
 		},
 		AgentAccessRegistrars: []httptransport.AgentAccessV1RouteRegistrar{

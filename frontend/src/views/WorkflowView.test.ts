@@ -439,6 +439,7 @@ describe("workflow view P1.4", () => {
       "edit",
       "validate",
       "trial-run",
+      "export",
       "delete",
     ]);
     expect(menu!.querySelector('button[title="查看详情"]')?.getAttribute("aria-label")).toBe("查看详情");
@@ -481,12 +482,13 @@ describe("workflow view P1.4", () => {
     await flushPromises();
     await wrapper.vm.$nextTick();
 
-    await wrapper.get('button[aria-label="更多编排操作"]').trigger("click");
+    const actionCell = wrapper.get('td[data-column-key="actions"]');
+    await actionCell.get("button.management-row-actions-trigger").trigger("click");
     const validateButton = document.body.querySelector<HTMLButtonElement>('button[data-action-key="validate"]')!;
     validateButton.click();
     await wrapper.vm.$nextTick();
 
-    await wrapper.get('button[aria-label="更多编排操作"]').trigger("click");
+    await actionCell.get("button.management-row-actions-trigger").trigger("click");
     const pendingValidateButton = document.body.querySelector<HTMLButtonElement>('button[data-action-key="validate"]')!;
     expect(pendingValidateButton.disabled).toBe(true);
     expect(pendingValidateButton.getAttribute("aria-busy")).toBe("true");

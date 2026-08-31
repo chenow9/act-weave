@@ -202,7 +202,7 @@ func allV1ContractRegistrars() []V1RouteRegistrar {
 	}
 	return []V1RouteRegistrar{
 		&AuthUserRoutes{}, &WorkspaceRoutes{}, &ConfigurationRoutes{}, &AgentCapabilityRoutes{},
-		&ToolOpenAPIRoutes{}, &WorkflowRoutes{}, &GenerateSessionRoutes{}, &ChatExecutionRoutes{}, &AuditRoutes{},
+		&ToolOpenAPIRoutes{}, &WorkflowRoutes{}, &PackageRoutes{}, &GenerateSessionRoutes{}, &ChatExecutionRoutes{}, &AuditRoutes{},
 		&AgentAccessManagementRoutes{}, catalogRoutes,
 	}
 }
@@ -345,6 +345,7 @@ func v1ContractRoutes() []v1ContractRoute {
 		{http.MethodGet, root + "/workspaces/:wid/openapi-imports/:id", false},
 		{http.MethodDelete, root + "/workspaces/:wid/openapi-imports/:id", false},
 		{http.MethodPost, root + "/workspaces/:wid/openapi-imports/:id:generate-tools", false},
+		{http.MethodGet, root + "/workspaces/:wid/tools/:id:export", false},
 
 		{http.MethodGet, root + "/workspaces/:wid/workflows", false},
 		{http.MethodPost, root + "/workspaces/:wid/workflows", false},
@@ -367,6 +368,10 @@ func v1ContractRoutes() []v1ContractRoute {
 		{http.MethodPost, root + "/workspaces/:wid/workflows/:id/revisions/:rid:activate", false},
 		{http.MethodPost, root + "/workspaces/:wid/workflows/:id/revisions/:rid:execute", false},
 		{http.MethodGet, root + "/workspaces/:wid/workflows/:id/readiness", false},
+		{http.MethodGet, root + "/workspaces/:wid/workflows/:id:export", false},
+		{http.MethodPost, root + "/workspaces/:wid/packages:export", false},
+		{http.MethodPost, root + "/workspaces/:wid/packages:preview", false},
+		{http.MethodPost, root + "/workspaces/:wid/packages:import", false},
 
 		{http.MethodGet, root + "/workspaces/:wid/chat/sessions", false},
 		{http.MethodPost, root + "/workspaces/:wid/chat/sessions", false},
