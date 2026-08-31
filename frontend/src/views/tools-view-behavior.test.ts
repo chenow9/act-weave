@@ -409,6 +409,7 @@ describe("tools view detail behavior", () => {
       "edit",
       "publish",
       "availability",
+      "export",
       "delete",
     ]);
     expect(menu!.querySelector<HTMLButtonElement>('button[data-action-key="publish"]')?.disabled).toBe(true);

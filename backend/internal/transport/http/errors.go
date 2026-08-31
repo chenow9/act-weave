@@ -17,6 +17,7 @@ import (
 	"actweave/backend/internal/authn"
 	"actweave/backend/internal/authz"
 	"actweave/backend/internal/capability"
+	"actweave/backend/internal/cappackage"
 	"actweave/backend/internal/chat"
 	"actweave/backend/internal/connection"
 	"actweave/backend/internal/execution"
@@ -525,7 +526,8 @@ func isNotFound(err error) bool {
 		errors.Is(err, execution.ErrConfirmationNotFound) ||
 		errors.Is(err, execution.ErrConfirmationResumeNotFound) || errors.Is(err, storedobject.ErrNotFound) ||
 		errors.Is(err, protocolevent.ErrRunScopeNotFound) ||
-		errors.Is(err, openapiimport.ErrNotFound) || errors.Is(err, audit.ErrNotFound) ||
+		errors.Is(err, openapiimport.ErrNotFound) || errors.Is(err, cappackage.ErrNotFound) ||
+		errors.Is(err, audit.ErrNotFound) ||
 		errors.Is(err, agentaudit.ErrNotFound) ||
 		errors.Is(err, provider.ErrNotFound) || errors.Is(err, agentaccess.ErrRepositoryNotFound) ||
 		errors.Is(err, aap.ErrConversationNotFound) || errors.Is(err, aap.ErrRunNotFound) ||
@@ -552,6 +554,7 @@ func isConflict(err error) bool {
 		errors.Is(err, execution.ErrConfirmationResumeConflict) ||
 		errors.Is(err, execution.ErrConfirmationResumeExecuting) ||
 		errors.Is(err, storedobject.ErrConflict) || errors.Is(err, openapiimport.ErrConflict) ||
+		errors.Is(err, cappackage.ErrConflict) ||
 		errors.Is(err, audit.ErrConflict) || errors.Is(err, provider.ErrConflict) ||
 		errors.Is(err, agentaccess.ErrRepositoryConflict) ||
 		errors.Is(err, agentaccess.ErrLastActiveCredential) ||
@@ -577,6 +580,8 @@ func isInvalid(err error) bool {
 		errors.Is(err, ErrAAPRunEventsRequestInvalid) ||
 		errors.Is(err, ErrAAPInteractionDecisionReqInvalid) ||
 		errors.Is(err, storedobject.ErrInvalid) || errors.Is(err, openapiimport.ErrInvalid) ||
+		errors.Is(err, cappackage.ErrInvalid) || errors.Is(err, cappackage.ErrTooLarge) ||
+		errors.Is(err, cappackage.ErrBlocked) ||
 		errors.Is(err, audit.ErrInvalid) || errors.Is(err, audit.ErrPayloadRequired) ||
 		errors.Is(err, agentaudit.ErrInvalid) ||
 		errors.Is(err, provider.ErrInvalid) || errors.Is(err, smartdag.ErrInvalid) ||

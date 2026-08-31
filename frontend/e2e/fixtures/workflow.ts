@@ -30,7 +30,7 @@ export const WORKFLOW_E2E = {
   baseURL: environment?.E2E_BASE_URL || "http://127.0.0.1:4173",
   fixedTime: "2026-07-18T09:15:00+08:00",
   workflowName: "E2E 条件分支编排",
-  toolOptionLabel: "取消订单工具 · tool.cancel-order",
+  toolOptionLabel: "取消订单工具",
   revisionId: "rev-001",
 } as const;
 
@@ -418,6 +418,7 @@ function modelConfigDTO(config: ModelApiConfig) {
 }
 
 function toolDTO(tool: Tool) {
+  const headVersion = toolVersionDTO(tool);
   return {
     id: tool.id,
     providerId: tool.providerId,
@@ -432,6 +433,19 @@ function toolDTO(tool: Tool) {
     createdAt: tool.createdAt,
     updatedAt: tool.updatedAt,
     lockVersion: tool.lockVersion,
+    // List catalog (workflow editor picker) reads headVersion, not /versions.
+    headVersion: {
+      id: headVersion.id,
+      versionNo: headVersion.versionNo,
+      lifecycleStatus: headVersion.lifecycleStatus,
+      executorType: headVersion.executorType,
+      defaultConnectionId: headVersion.defaultConnectionId,
+      actionSchemaVersion: headVersion.actionSchemaVersion,
+      actionConfig: headVersion.actionConfig,
+      inputSchema: headVersion.inputSchema,
+      outputSchema: headVersion.outputSchema,
+      lockVersion: headVersion.lockVersion,
+    },
   };
 }
 

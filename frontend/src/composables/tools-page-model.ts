@@ -31,6 +31,7 @@ import {
   toolHasConnectionAttention,
 } from "../utils/tool-governance";
 import { getToolProtocolLabel, getToolTypeLabel } from "../utils/tool-presentation";
+import { exportCapabilityPackage, exportToolPackage, packageErrorMessage } from "../services/capability-package";
 import { buildDefaultToolTestInput } from "../utils/tool-test-inputs";
 import { useWorkspaceStore } from "../stores/workspaces";
 import type {
@@ -97,6 +98,7 @@ export function createToolsPageModel(options: { surface?: "list" | "workspace" }
   const router = useRouter();
   const route = useRoute();
 
+  const packageDialogOpen = ref(false);
   const query = ref("");
   const selectedStatusFilter = ref<ToolStatusFilter>("all");
   const selectedToolTypeFilter = ref<ToolTypeFilter>("all");
@@ -1162,6 +1164,7 @@ export function createToolsPageModel(options: { surface?: "list" | "workspace" }
         disabledReason: publishable ? undefined : tt("tools.publishNeedsPassingTest"),
       },
       { key: "availability", label: toolAvailabilityActionLabel(tool), icon: toolAvailabilityActionIcon(tool) },
+      { key: "export", label: tt("packages.exportConfig"), icon: "fa-solid fa-file-export" },
       { key: "delete", label: tt("tools.deleteTool"), icon: "fa-solid fa-trash", tone: "danger" },
     ];
   }
@@ -1187,7 +1190,40 @@ export function createToolsPageModel(options: { surface?: "list" | "workspace" }
       openRiskConfirmation(tool.status === "Disabled" ? "enable" : "disable", tool);
       return;
     }
+    if (actionKey === "export") {
+      void exportToolConfig(tool);
+      return;
+    }
     if (actionKey === "delete") openRiskConfirmation("delete", tool);
+  }
+
+  function openPackageImport() {
+    packageDialogOpen.value = true;
+  }
+
+  async function exportToolConfig(tool: Tool) {
+    try {
+      await exportToolPackage(tool.workspaceId, tool.id);
+      setActionFeedback(tt("packages.exported", { name: tool.slug || tool.name }), "success");
+    } catch (error) {
+      setActionFeedback(packageErrorMessage(error, tt("packages.exportFailed", { error: String(error) })), "error");
+    }
+  }
+
+  async function exportSelectedTools() {
+    const workspaceId = workspaces.activeWorkspaceId || selectedTools.value[0]?.workspaceId;
+    if (!workspaceId || !selectedTools.value.length) return;
+    try {
+      await exportCapabilityPackage(workspaceId, { toolIds: selectedTools.value.map((item) => item.id) });
+      setActionFeedback(tt("packages.exported", { name: `${selectedTools.value.length}` }), "success");
+    } catch (error) {
+      setActionFeedback(packageErrorMessage(error, tt("packages.exportFailed", { error: String(error) })), "error");
+    }
+  }
+
+  async function onPackageImported() {
+    await loadToolRegistry({ page: 1 });
+    setActionFeedback(tt("packages.imported", { n: 1 }), "success");
   }
 
   function loadToolRegistry(overrides: ToolListQuery = {}) {
@@ -2319,5 +2355,10 @@ export function createToolsPageModel(options: { surface?: "list" | "workspace" }
     leaveToolWorkspace,
     initWorkspaceFromRoute,
     syncPathParamsFromEndpoint,
+    packageDialogOpen,
+    openPackageImport,
+    exportToolConfig,
+    exportSelectedTools,
+    onPackageImported,
   };
 }
