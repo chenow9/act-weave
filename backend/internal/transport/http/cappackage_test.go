@@ -91,6 +91,35 @@ func TestV1CapabilityPackagePreviewBlocksUnknownProviderAndSecrets(t *testing.T)
 	assertErrorResponse(t, rejected, http.StatusUnprocessableEntity, "VALIDATION_ERROR")
 }
 
+func TestV1CapabilityPackagePreviewRemapsForeignProviderToLocalConnection(t *testing.T) {
+	f := newPackageHTTPFixture(t)
+	yaml := validPackageYAML("get-orders", "Foreign API", "prod")
+	blocked := f.request(t, http.MethodPost, f.base+"/packages/__command/preview", map[string]any{
+		"yaml": yaml,
+	}, f.token, nil)
+	if blocked.Code != http.StatusOK || !strings.Contains(blocked.Body.String(), `"action":"blocked"`) {
+		t.Fatalf("blocked foreign preview status=%d body=%s", blocked.Code, blocked.Body.String())
+	}
+
+	payload := map[string]any{
+		"yaml": yaml,
+		"connectionBindings": []map[string]any{{
+			"provider":           "Foreign API",
+			"connection":         "prod",
+			"targetConnectionId": f.connectionID,
+		}},
+	}
+	ok := f.request(t, http.MethodPost, f.base+"/packages/__command/preview", payload, f.token, nil)
+	if ok.Code != http.StatusOK || !strings.Contains(ok.Body.String(), `"canImport":true`) {
+		t.Fatalf("remapped preview status=%d body=%s", ok.Code, ok.Body.String())
+	}
+
+	imported := f.request(t, http.MethodPost, f.base+"/packages/__command/import", payload, f.token, nil)
+	if imported.Code != http.StatusOK || !strings.Contains(imported.Body.String(), `"action":"create"`) {
+		t.Fatalf("remapped import status=%d body=%s", imported.Code, imported.Body.String())
+	}
+}
+
 func TestV1CapabilityPackageWorkflowExportRemapsToolSlug(t *testing.T) {
 	f := newPackageHTTPFixture(t)
 	created := f.request(t, http.MethodPost, f.base+"/tools", map[string]any{

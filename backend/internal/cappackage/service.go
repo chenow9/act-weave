@@ -475,22 +475,18 @@ func (s *Service) previewTool(spec ToolSpec, catalog *workspaceCatalog, bindings
 		Kind: KindTool, Slug: spec.Slug, Name: spec.Name,
 		Provider: spec.Provider, Connection: spec.Connection, Action: ActionCreate,
 	}
-	providerValue, ok := catalog.providersByName[strings.ToLower(strings.TrimSpace(spec.Provider))]
-	if !ok {
-		item.Action = ActionBlocked
-		item.Reason = "provider " + spec.Provider + " was not found in this workspace"
-		return item
-	}
-	item.ResolvedProviderID = providerValue.ID
-	connectionID, reason := resolveConnection(spec.Provider, spec.Connection, providerValue.ID, catalog.connections, bindings)
+	providerID, connectionID, reason := resolveProviderAndConnection(
+		spec.Provider, spec.Connection, catalog, bindings,
+	)
 	if reason != "" {
 		item.Action = ActionBlocked
 		item.Reason = reason
 		return item
 	}
+	item.ResolvedProviderID = providerID
 	item.ResolvedConnectionID = connectionID
 	if existing, exists := catalog.toolBySlug[spec.Slug]; exists {
-		if existing.ProviderID != providerValue.ID {
+		if existing.ProviderID != providerID {
 			item.Action = ActionBlocked
 			item.Reason = "slug already exists on a different provider"
 			item.ExistingID = existing.CapabilityID
@@ -565,12 +561,41 @@ func graphRef(data Object, primary, fallback string) string {
 	return ""
 }
 
-func resolveConnection(
-	providerName, alias, providerID string,
+func resolveProviderAndConnection(
+	providerName, alias string,
+	catalog *workspaceCatalog,
+	bindings []ConnectionBinding,
+) (providerID, connectionID, reason string) {
+	providerName = strings.TrimSpace(providerName)
+	alias = strings.TrimSpace(alias)
+	if bound, found, bindErr := lookupBoundConnection(providerName, alias, catalog.connections, bindings); bindErr != "" {
+		return "", "", bindErr
+	} else if found {
+		return bound.ProviderID, bound.ID, ""
+	}
+	providerValue, ok := catalog.providersByName[strings.ToLower(providerName)]
+	if !ok {
+		return "", "", "provider " + providerName + " was not found in this workspace"
+	}
+	if alias == "" {
+		return "", "", "connection alias is required"
+	}
+	for _, item := range catalog.connections {
+		if item.ProviderID == providerValue.ID && strings.EqualFold(item.Alias, alias) {
+			return providerValue.ID, item.ID, ""
+		}
+	}
+	return "", "", "connection alias " + alias + " was not found for provider " + providerName
+}
+
+// lookupBoundConnection resolves an explicit remap. TargetConnectionID may point
+// at any connection in the destination workspace so a package can be imported
+// when Provider names differ (another workspace / namespace).
+func lookupBoundConnection(
+	providerName, alias string,
 	connections []connection.Connection,
 	bindings []ConnectionBinding,
-) (string, string) {
-	alias = strings.TrimSpace(alias)
+) (connection.Connection, bool, string) {
 	for _, binding := range bindings {
 		if !strings.EqualFold(strings.TrimSpace(binding.Provider), providerName) {
 			continue
@@ -580,32 +605,31 @@ func resolveConnection(
 		}
 		if id := strings.TrimSpace(binding.TargetConnectionID); id != "" {
 			for _, item := range connections {
-				if item.ID == id && item.ProviderID == providerID {
-					return item.ID, ""
+				if item.ID == id {
+					return item, true, ""
 				}
 			}
-			return "", "connection binding target was not found"
+			return connection.Connection{}, false, "connection binding target was not found"
 		}
 		targetAlias := strings.TrimSpace(binding.TargetConnection)
 		if targetAlias == "" {
 			continue
 		}
+		var matches []connection.Connection
 		for _, item := range connections {
-			if item.ProviderID == providerID && strings.EqualFold(item.Alias, targetAlias) {
-				return item.ID, ""
+			if strings.EqualFold(item.Alias, targetAlias) {
+				matches = append(matches, item)
 			}
 		}
-		return "", "connection alias " + targetAlias + " was not found for this provider"
-	}
-	if alias == "" {
-		return "", "connection alias is required"
-	}
-	for _, item := range connections {
-		if item.ProviderID == providerID && strings.EqualFold(item.Alias, alias) {
-			return item.ID, ""
+		if len(matches) == 1 {
+			return matches[0], true, ""
 		}
+		if len(matches) == 0 {
+			return connection.Connection{}, false, "connection alias " + targetAlias + " was not found for this provider"
+		}
+		return connection.Connection{}, false, "connection alias " + targetAlias + " matches more than one connection"
 	}
-	return "", "connection alias " + alias + " was not found for provider " + providerName
+	return connection.Connection{}, false, ""
 }
 
 func (s *Service) importTool(
