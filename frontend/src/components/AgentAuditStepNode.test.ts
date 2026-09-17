@@ -1,8 +1,13 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { mount } from "@vue/test-utils";
 import AgentAuditStepNode from "./AgentAuditStepNode.vue";
 import type { AgentAuditStep } from "../types/domain";
 import { createTestI18n } from "../test-utils/i18n";
+
+const stepNodeSource = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "AgentAuditStepNode.vue"), "utf8");
 
 const stubs = {
   formatLatency: (ms: number) => `${ms}ms`,
@@ -207,5 +212,34 @@ describe("AgentAuditStepNode origin-aware path", () => {
     expect(w.get("h3").text()).toContain("(019fca7b → 5290c409)");
     expect(w.get("h3").text()).not.toMatch(/Agent 调用/);
     w.unmount();
+  });
+
+  it("renders a long unbroken tool result string inside json-view", () => {
+    const longPath =
+      "400 Bad Request: model file not found: /ai_inside_model/kite_zklf_train/scripts/runs/defect/" +
+      "yolov11_20260617012641672".repeat(8);
+    const w = mountStep({
+      type: "tool",
+      title: "工具调用: get_api_v1_analysis_jobs",
+      timeOffsetMs: 20,
+      latencyMs: 14,
+      params: { pageNum: 1, pageSize: 100, sortBy: "createTime", order: "DESC" },
+      result: { failureMessage: longPath },
+    });
+    const views = w.findAll(".json-view");
+    expect(views).toHaveLength(2);
+    expect(views[1].text()).toContain(longPath);
+    expect(views[1].text()).toContain("failureMessage");
+    w.unmount();
+  });
+});
+
+describe("AgentAuditStepNode overflow contract", () => {
+  it("lets tool JSON panes shrink and wrap unbroken strings", () => {
+    expect(stepNodeSource).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)/);
+    expect(stepNodeSource).toMatch(/\.tool-grid\s*>\s*\*\s*\{[^}]*min-width:\s*0/s);
+    expect(stepNodeSource).toMatch(/\.timeline-item\s*\{[^}]*min-width:\s*0/s);
+    expect(stepNodeSource).toMatch(/\.json-view\s*\{[^}]*white-space:\s*pre-wrap/s);
+    expect(stepNodeSource).toMatch(/\.json-view\s*\{[^}]*overflow-wrap:\s*anywhere/s);
   });
 });

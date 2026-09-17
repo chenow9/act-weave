@@ -967,6 +967,10 @@ async function runAction(action: () => Promise<void>, fallback: string) {
     align-self: flex-start;
   }
 }
+.audit-step-anchor {
+  min-width: 0;
+  max-width: 100%;
+}
 .audit-step-anchor:focus {
   outline: 3px solid rgba(220, 38, 38, 0.25);
   outline-offset: 5px;
@@ -1323,6 +1327,7 @@ async function runAction(action: () => Promise<void>, fallback: string) {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  min-width: 0;
 }
 .timeline-item {
   display: flex;
@@ -1384,9 +1389,10 @@ async function runAction(action: () => Promise<void>, fallback: string) {
 }
 .tool-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1rem;
   margin-top: 0.85rem;
+  min-width: 0;
 }
 .json-label {
   font-size: 0.7rem;
@@ -1405,6 +1411,10 @@ async function runAction(action: () => Promise<void>, fallback: string) {
   font-size: 0.78rem;
   overflow: auto;
   max-height: 280px;
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .timeline-sentinel {
   height: 1px;

@@ -191,6 +191,8 @@ function delegationPath(step: AgentAuditStep): string {
 .timeline-item {
   display: flex;
   gap: 0.75rem;
+  min-width: 0;
+  max-width: 100%;
 }
 .timeline-item.nested {
   margin-top: 0.25rem;
@@ -353,12 +355,17 @@ function delegationPath(step: AgentAuditStep): string {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  min-width: 0;
 }
 .tool-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.5rem;
   margin-top: 0.5rem;
+  min-width: 0;
+}
+.tool-grid > * {
+  min-width: 0;
 }
 .json-label {
   font-size: 0.75rem;
@@ -373,11 +380,21 @@ function delegationPath(step: AgentAuditStep): string {
   padding: 0.4rem;
   overflow: auto;
   max-height: 12rem;
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .step-content {
   margin: 0.35rem 0 0;
   font-size: 0.85rem;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 720px) {
+  .tool-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .muted {
   color: #6b7280;
