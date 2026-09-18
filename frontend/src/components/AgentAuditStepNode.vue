@@ -26,6 +26,19 @@ const expanded = ref(!(props.step.collapsed || (props.step.depth != null && prop
 /** Locale-aware title — backend still ships fixed Chinese step titles. */
 const displayTitle = computed(() => localizedAuditStepTitle(props.step, t));
 
+const compactionResultLabel = computed(() => {
+  const params = props.step.params;
+  let result = "";
+  if (params && typeof params === "object" && !Array.isArray(params) && "result" in params) {
+    result = String((params as { result?: unknown }).result ?? "");
+  }
+  const key = result.trim().toLowerCase();
+  if (key === "completed") return t("logs.compactionResultCompleted");
+  if (key === "fallback") return t("logs.compactionResultFallback");
+  if (key === "failed") return t("logs.compactionResultFailed");
+  return result.trim();
+});
+
 function toggle() {
   expanded.value = !expanded.value;
 }
@@ -109,7 +122,28 @@ function delegationPath(step: AgentAuditStep): string {
           </button>
           {{ displayTitle }}
         </h3>
-        <span v-if="step.latencyMs != null" class="mono pill">{{ formatLatency(step.latencyMs) }}</span>
+        <span v-if="step.latencyMs != null" class="mono pill" data-testid="step-latency">{{
+          formatLatency(step.latencyMs)
+        }}</span>
+        <span
+          v-if="step.type === 'reasoning' && step.tokensKnown"
+          class="mono pill"
+          data-testid="reasoning-tokens"
+        >
+          {{ t("logs.tokensPrompt", { n: step.inputTokens ?? "—" }) }}
+          · {{ t("logs.tokensCompletion", { n: step.outputTokens ?? "—" }) }}
+          · {{ t("logs.tokensTotal", { n: step.totalTokens ?? "—" }) }}
+          <template v-if="step.cachedInputTokens">
+            · {{ t("logs.tokensCached", { n: step.cachedInputTokens }) }}
+          </template>
+        </span>
+        <span
+          v-else-if="step.type === 'reasoning'"
+          class="mono pill muted"
+          data-testid="reasoning-tokens-unknown"
+        >
+          {{ t("logs.tokensUnknown") }}
+        </span>
         <span
           v-if="step.type === 'agent_delegation' && step.tokensKnown"
           class="mono pill"
@@ -122,7 +156,7 @@ function delegationPath(step: AgentAuditStep): string {
           class="mono pill muted"
           data-testid="delegation-tokens-unknown"
         >
-          tok unknown
+          {{ t("logs.tokensUnknown") }}
         </span>
         <span v-if="step.type === 'agent_delegation'" class="mono pill" data-testid="delegation-attempts">
           {{ t("logs.attempts", { attempt: step.attemptCount ?? 0, retry: step.retryCount ?? 0 }) }}
@@ -146,6 +180,20 @@ function delegationPath(step: AgentAuditStep): string {
       <p v-if="stepText(step)" class="step-content" :class="{ reasoning: step.type === 'reasoning' }">
         {{ stepText(step) }}
       </p>
+      <div v-if="step.type === 'context_compaction'" class="compact-meta" data-testid="compaction-meta">
+        <div v-if="step.beforeTokens != null">
+          <span class="json-label">{{ t("logs.compactionBefore") }}</span>
+          <span class="mono">{{ step.beforeTokens }}</span>
+        </div>
+        <div v-if="step.afterTokens != null">
+          <span class="json-label">{{ t("logs.compactionAfter") }}</span>
+          <span class="mono">{{ step.afterTokens }}</span>
+        </div>
+        <div v-if="compactionResultLabel">
+          <span class="json-label">{{ t("logs.compactionResult") }}</span>
+          <span>{{ compactionResultLabel }}</span>
+        </div>
+      </div>
       <div v-if="step.type === 'tool'" class="tool-grid">
         <div>
           <div class="json-label">{{ t("logs.params") }}</div>
@@ -355,6 +403,19 @@ function delegationPath(step: AgentAuditStep): string {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  min-width: 0;
+}
+.compact-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+}
+.compact-meta > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
   min-width: 0;
 }
 .tool-grid {

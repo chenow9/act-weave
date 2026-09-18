@@ -89,8 +89,12 @@ type Dependencies struct {
 	//   - 1..64 accepted as-is
 	//   - negative or >64 → NewBridge error
 	MaxToolInvocations int
-	Logger             *slog.Logger
-	Now                func() time.Time
+	// RunTimeout is the wall-clock budget for one Enqueue/Execute or continue
+	// drive. 0 → chatruntime.ContinueTimeout (5m). Negative → NewBridge error.
+	// The config layer enforces the operator range (30s..30m).
+	RunTimeout time.Duration
+	Logger     *slog.Logger
+	Now        func() time.Time
 	// AgentAuditDebug enables richer MODEL_TURN payloads (reasoning bodies).
 	// Loaded once from process config; default false. Required for audit UI
 	// to show LLM thinking (output_summary.reasoning).
@@ -146,6 +150,7 @@ type Bridge struct {
 	textSinkFactory   TextSinkFactory
 	maxIterations     int
 	maxTools          int
+	runTimeout        time.Duration
 	logger            *slog.Logger
 	now               func() time.Time
 	agentAuditDebug   bool
@@ -214,18 +219,22 @@ func NewBridge(deps Dependencies) (*Bridge, error) {
 	if err != nil {
 		return nil, err
 	}
+	runTimeout, err := normalizeBridgeRunTimeout(deps.RunTimeout)
+	if err != nil {
+		return nil, err
+	}
 	return &Bridge{
 		sessions: deps.Sessions, results: deps.Results, content: deps.Content,
 		agents: deps.Agents, models: deps.Models, runs: deps.Runs,
 		events: deps.Events, steps: deps.Steps, modelTurns: deps.ModelTurns,
-		liveTools: deps.LiveTools,
+		liveTools:         deps.LiveTools,
 		toolInvoker:       deps.ToolInvoker,
 		confirmations:     deps.Confirmations,
 		agenticEngine:     deps.AgenticEngine,
 		checkpointTTL:     deps.CheckpointTTL,
 		buildAgenticModel: deps.BuildAgenticModel,
 		textSinkFactory:   deps.TextSinkFactory,
-		maxIterations:     maxIter, maxTools: maxTools,
+		maxIterations:     maxIter, maxTools: maxTools, runTimeout: runTimeout,
 		logger: logger, now: now, agentAuditDebug: deps.AgentAuditDebug,
 		assemblies:         deps.Assemblies,
 		compact:            deps.Compact,
@@ -260,13 +269,30 @@ func normalizeBridgeMaxToolInvocations(max int) (int, error) {
 	return max, nil
 }
 
+func normalizeBridgeRunTimeout(timeout time.Duration) (time.Duration, error) {
+	if timeout == 0 {
+		return ContinueTimeout, nil
+	}
+	if timeout < 0 {
+		return 0, fmt.Errorf("chatruntimebridge: RunTimeout must be 0 (default %s) or positive, got %s", ContinueTimeout, timeout)
+	}
+	return timeout, nil
+}
+
+func (b *Bridge) driveTimeout() time.Duration {
+	if b == nil || b.runTimeout <= 0 {
+		return ContinueTimeout
+	}
+	return b.runTimeout
+}
+
 // Enqueue starts asynchronous execution for a CHAT AgentRun.
 func (b *Bridge) Enqueue(job agentrun.Job) {
 	job = normalizeJob(job)
 	if !jobReady(job) {
 		return
 	}
-	timeoutContext, timeoutCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	timeoutContext, timeoutCancel := context.WithTimeout(context.Background(), b.driveTimeout())
 	runContext, runCancel := context.WithCancelCause(timeoutContext)
 	active, registered := b.registerActiveRun(job.WorkspaceID, job.RunID, "initial", runCancel)
 	if !registered {
@@ -337,7 +363,7 @@ func (b *Bridge) EnqueueContinueWithLifecycle(
 	if !jobReady(job) {
 		return
 	}
-	timeoutContext, timeoutCancel := context.WithTimeout(context.Background(), ContinueTimeout)
+	timeoutContext, timeoutCancel := context.WithTimeout(context.Background(), b.driveTimeout())
 	runContext, runCancel := context.WithCancelCause(timeoutContext)
 	active, registered := b.registerActiveRun(job.WorkspaceID, job.RunID, "continue", runCancel)
 	if !registered {
@@ -1462,18 +1488,7 @@ func (b *Bridge) recordModelTurn(
 	if b.agentAuditDebug {
 		reasoningForAudit = reasoningTextForAudit(turn)
 	}
-	inputSummary, _ := json.Marshal(map[string]any{
-		"source":          "chatruntimebridge",
-		"hasReasoning":    strings.TrimSpace(reasoningForAudit) != "",
-		"contentLength":   len(strings.TrimSpace(turn.Content)),
-		"reasoningTokens": turn.ReasoningTokens,
-		"hasToolCalls":    turn.HasToolCalls,
-		"tokensKnown":     turn.TokensKnown,
-		// Prompt-cache hits are the only observable proof that the frozen,
-		// cache-stable assembly is being rewarded upstream; nothing else in the
-		// audit trail can be used to reconstruct it after the fact.
-		"cachedPromptTokens": turn.CachedPromptTokens,
-	})
+	inputSummary, _ := json.Marshal(modelTurnInputSummary(turn, reasoningForAudit))
 	modelStep := execution.AppendAgentRunStepInput{
 		ID: stepID, WorkspaceID: job.WorkspaceID, RunID: job.RunID,
 		StepType: "MODEL", InputSummary: inputSummary, AgentID: run.AgentID,
@@ -1505,14 +1520,20 @@ func (b *Bridge) recordModelTurn(
 			turn.ToolCalling = disc.ToolCalling
 		}
 	}
-	payload, err := json.Marshal(buildModelTurnAuditPayload(turn, true, b.agentAuditDebug))
+	payload, err := json.Marshal(buildModelTurnAuditPayload(turn, !turn.Failed, b.agentAuditDebug))
 	if err != nil {
 		return err
+	}
+	newStatus := "SUCCEEDED"
+	errorCode := ""
+	if turn.Failed {
+		newStatus = "FAILED"
+		errorCode = "INVOCATION_FAILED"
 	}
 	if _, err := b.modelTurns.Record(ctx, chatruntime.ModelTurnRecordInput{
 		WorkspaceID: job.WorkspaceID, StepID: stepID,
 		Content: payload, CreatedByType: run.TriggeredByType, CreatedByID: run.TriggeredByID,
-		ExpectedStatus: "RUNNING", NewStatus: "SUCCEEDED",
+		ExpectedStatus: "RUNNING", NewStatus: newStatus, ErrorCode: errorCode,
 		Reasoning: reasoningForAudit,
 	}); err != nil {
 		return fmt.Errorf("record MODEL turn evidence: %w", err)
@@ -1576,6 +1597,15 @@ func buildModelTurnAuditPayload(turn einoruntime.ModelTurn, ok, agentAuditDebug 
 	if turn.ReasoningTokens > 0 {
 		payload["reasoningTokens"] = turn.ReasoningTokens
 	}
+	if ms := modelTurnInferenceLatencyMs(turn); ms != nil {
+		payload["inferenceLatencyMs"] = *ms
+		if !turn.StartedAt.IsZero() {
+			payload["inferenceStartedAt"] = turn.StartedAt.UTC().Format(time.RFC3339Nano)
+		}
+		if !turn.EndedAt.IsZero() {
+			payload["inferenceEndedAt"] = turn.EndedAt.UTC().Format(time.RFC3339Nano)
+		}
+	}
 	if !agentAuditDebug {
 		return payload
 	}
@@ -1583,6 +1613,47 @@ func buildModelTurnAuditPayload(turn einoruntime.ModelTurn, ok, agentAuditDebug 
 		payload["reasoning"] = text
 	}
 	return payload
+}
+
+func modelTurnInputSummary(turn einoruntime.ModelTurn, reasoningForAudit string) map[string]any {
+	summary := map[string]any{
+		"source":             "chatruntimebridge",
+		"hasReasoning":       strings.TrimSpace(reasoningForAudit) != "",
+		"contentLength":      len(strings.TrimSpace(turn.Content)),
+		"reasoningTokens":    turn.ReasoningTokens,
+		"hasToolCalls":       turn.HasToolCalls,
+		"tokensKnown":        turn.TokensKnown,
+		"cachedPromptTokens": turn.CachedPromptTokens,
+	}
+	if turn.TokensKnown {
+		summary["promptTokens"] = turn.PromptTokens
+		summary["completionTokens"] = turn.CompletionTokens
+		summary["totalTokens"] = turn.TotalTokens
+	}
+	if ms := modelTurnInferenceLatencyMs(turn); ms != nil {
+		summary["inferenceLatencyMs"] = *ms
+		if !turn.StartedAt.IsZero() {
+			summary["inferenceStartedAt"] = turn.StartedAt.UTC().Format(time.RFC3339Nano)
+		}
+		if !turn.EndedAt.IsZero() {
+			summary["inferenceEndedAt"] = turn.EndedAt.UTC().Format(time.RFC3339Nano)
+		}
+	}
+	if turn.Failed {
+		summary["failed"] = true
+	}
+	return summary
+}
+
+func modelTurnInferenceLatencyMs(turn einoruntime.ModelTurn) *int64 {
+	if turn.StartedAt.IsZero() || turn.EndedAt.IsZero() {
+		return nil
+	}
+	ms := turn.EndedAt.Sub(turn.StartedAt).Milliseconds()
+	if ms < 0 {
+		ms = 0
+	}
+	return &ms
 }
 
 func normalizeJob(job agentrun.Job) agentrun.Job {

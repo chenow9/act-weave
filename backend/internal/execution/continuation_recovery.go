@@ -22,14 +22,30 @@ var (
 	ErrRuntimeContinueNotClaimed   = errors.New("runtime continue lease was not acquired")
 )
 
-// DefaultRuntimeContinueLease bounds how long one replica owns a continue drive.
-// Must cover chatruntime EnqueueContinue's 5-minute timeout plus a small buffer so
-// a live continue cannot be reclaimed mid-flight. Owners renew before expiry and
+// DefaultRuntimeContinueLease bounds how long one replica owns a continue drive
+// when the caller does not pass a lease derived from the configured run timeout.
+// Must cover the default 5-minute run timeout plus a small buffer so a live
+// continue cannot be reclaimed mid-flight. Owners renew before expiry and
 // call CompleteRuntimeContinue when the drive finishes (success or failure).
 const DefaultRuntimeContinueLease = 6 * time.Minute
 
-// MaxRuntimeContinueLease is the upper bound accepted by Claim/Renew.
-const MaxRuntimeContinueLease = 10 * time.Minute
+// RuntimeContinueLeaseBuffer is added to a configured run timeout when deriving
+// the continue lease (timeout + buffer).
+const RuntimeContinueLeaseBuffer = time.Minute
+
+// MaxRuntimeContinueLease is the upper bound accepted by Claim/Renew. It covers
+// the maximum agent-run timeout (30m) plus RuntimeContinueLeaseBuffer.
+const MaxRuntimeContinueLease = 31 * time.Minute
+
+// ContinueLeaseForRunTimeout returns a continue lease that covers timeout plus
+// RuntimeContinueLeaseBuffer, falling back to DefaultRuntimeContinueLease when
+// timeout is non-positive or the derived value is out of range.
+func ContinueLeaseForRunTimeout(timeout time.Duration) time.Duration {
+	if timeout <= 0 {
+		return DefaultRuntimeContinueLease
+	}
+	return normalizeRuntimeContinueLease(timeout + RuntimeContinueLeaseBuffer)
+}
 
 // RecoverableApprovedContinuation is an approved decision whose durable
 // checkpoint has not yet reached a terminal resume status.

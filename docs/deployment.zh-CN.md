@@ -120,6 +120,7 @@ PostgreSQL 是配置、运行记录、协议事件和审计元数据的事实来
 | AAP 主运行面 | `agentAccess.feature` 在仓库本地配置中开启；生产可用 workspace/client allowlist 收敛。 |
 | AAP 文件 | `agentAccess.files.enabled: false`；打开后还受 workspace/client allowlist 和配额约束。图片组装用 `runtimeMultimodal`；可选 PDF 按需读取用 `runtimeInboundRead`；出站附件用 `runtimeOutboundAttachments`。 |
 | 上下文 LLM 压缩 | `runtime.sessionContext.compaction.enabled: false`；请依据运行手册逐步开启。 |
+| Agent 一次执行墙钟 | `runtime.agentRun.timeoutSeconds` 默认 300（合法 30..1800）。环境变量：`ACTWEAVE_RUNTIME_AGENT_RUN_TIMEOUT_SECONDS`。Continue 租约为超时 + 60s。AAP Run SSE 每 15 秒有 `: ping` 心跳，空闲网关不会因为调大该预算而断开；不必把代理 idle 超时跟 run 超时绑在一起。 |
 | Tool 强制发布 | 仅平台管理员、且 `tools.allowForcePublish` 配置允许时可用；不是常规发布策略。 |
 | A2A 的无认证模式 | 默认拒绝；仅在显式环境开关下可用于本地测试。 |
 | 工具披露（`platform_bounded` / `carry_all`） | 仓库内 `backend/config.yaml` 将 `runtime.toolDisclosure.enabled` 与 `allowAllWorkspaces` 设为 true。省略该 YAML 键时仍加载为 `enabled: false`（不会被促销）。`client_bounded` 仍是原生生产的唯一模式；`platform_bounded` / `carry_all` 是额外的 Agentic 模式。就绪检查接受 v1 或 v2 三档能力。 |

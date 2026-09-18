@@ -100,5 +100,22 @@
   "params": "参数",
   "result": "结果",
   "delegationInput": "委派输入",
-  "delegationOutput": "委派输出"
+  "delegationOutput": "委派输出",
+  "tokensUnknown": "用量未知",
+  "tokensPrompt": "输入 {n}",
+  "tokensCompletion": "输出 {n}",
+  "tokensTotal": "合计 {n}",
+  "tokensCached": "缓存 {n}",
+  "tokensReasoning": "推理 {n}",
+  "compactionBefore": "压缩前",
+  "compactionAfter": "压缩后",
+  "compactionResult": "结果",
+  "compactionResultCompleted": "完成",
+  "compactionResultFallback": "已回退",
+  "compactionResultFailed": "失败",
+  "assemblyUsage": "装配 {used} / {ceiling}",
+  "assemblyOmitted": "省略 {n} 轮",
+  "compactionIdle": "压缩：未触发",
+  "compactionTriggered": "压缩：已触发",
+  "compactionTriggeredResult": "压缩：{result}"
 }

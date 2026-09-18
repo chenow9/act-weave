@@ -1864,6 +1864,9 @@ type chatConfirmationContinue struct {
 	recovery *execution.ContinuationRecoveryService
 	// checkpoints deletes eino gob rows on cancel when einoChatResume is present.
 	checkpoints einoCheckpointDeleter
+	// continueLease covers the configured run timeout plus buffer. Zero uses
+	// execution.DefaultRuntimeContinueLease.
+	continueLease time.Duration
 }
 
 type aapInteractionContinuation struct {
@@ -1874,6 +1877,16 @@ type aapInteractionContinuation struct {
 	// recovery provides the shared multi-replica continue lease used by both
 	// the normal approval path and Recovery Worker.
 	recovery *execution.ContinuationRecoveryService
+	// continueLease covers the configured run timeout plus buffer. Zero uses
+	// execution.DefaultRuntimeContinueLease.
+	continueLease time.Duration
+}
+
+func continueLeaseOrDefault(lease time.Duration) time.Duration {
+	if lease > 0 {
+		return lease
+	}
+	return execution.DefaultRuntimeContinueLease
 }
 
 // runtimeContinueLease adapts ContinuationRecoveryService to agentrun.ContinueLifecycle.
@@ -1940,9 +1953,10 @@ func (service *aapInteractionContinuation) ContinueApprovedInteraction(
 	// here, so only one replica can schedule EnqueueContinue for a confirmation.
 	var lifecycle agentrun.ContinueLifecycle
 	if service.recovery != nil {
+		lease := continueLeaseOrDefault(service.continueLease)
 		claim, claimErr := service.recovery.ClaimRuntimeContinue(
 			ctx, run.WorkspaceID, decision.Confirmation.ID, run.ID,
-			execution.DefaultRuntimeContinueLease,
+			lease,
 		)
 		if claimErr != nil {
 			return claimErr
@@ -1951,7 +1965,7 @@ func (service *aapInteractionContinuation) ContinueApprovedInteraction(
 			recovery:       service.recovery,
 			confirmationID: decision.Confirmation.ID,
 			claimID:        claim.ClaimID,
-			lease:          execution.DefaultRuntimeContinueLease,
+			lease:          lease,
 		}
 	}
 	service.eino.EnqueueContinueWithLifecycle(
@@ -1999,12 +2013,13 @@ func (service *chatConfirmationContinue) Confirm(
 		if confirmationID == "" {
 			confirmationID = strings.TrimSpace(result.Resume.Checkpoint.ConfirmationID)
 		}
+		lease := continueLeaseOrDefault(service.continueLease)
 		claim, claimErr := service.recovery.ClaimRuntimeContinue(
 			ctx,
 			result.Confirmation.WorkspaceID,
 			confirmationID,
 			result.Confirmation.RunID,
-			execution.DefaultRuntimeContinueLease,
+			lease,
 		)
 		if claimErr != nil {
 			// Decision is already durable. Another replica owns the continue
@@ -2019,7 +2034,7 @@ func (service *chatConfirmationContinue) Confirm(
 			recovery:       service.recovery,
 			confirmationID: confirmationID,
 			claimID:        claim.ClaimID,
-			lease:          execution.DefaultRuntimeContinueLease,
+			lease:          lease,
 		}
 	}
 

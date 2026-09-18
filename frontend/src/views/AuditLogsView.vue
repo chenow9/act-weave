@@ -309,6 +309,17 @@ function formatLatency(ms?: number | null) {
   return `${(ms / 1000).toFixed(2)}s`;
 }
 
+function compactionHeader(compaction: { triggered: boolean; result?: string }) {
+  if (!compaction.triggered) return t("logs.compactionIdle");
+  const key = (compaction.result || "").toLowerCase();
+  if (!key) return t("logs.compactionTriggered");
+  let result = compaction.result || "";
+  if (key === "completed") result = t("logs.compactionResultCompleted");
+  else if (key === "fallback") result = t("logs.compactionResultFallback");
+  else if (key === "failed") result = t("logs.compactionResultFailed");
+  return t("logs.compactionTriggeredResult", { result });
+}
+
 function formatTime(value?: string) {
   if (!value) return "—";
   const date = new Date(value);
@@ -760,6 +771,34 @@ async function runAction(action: () => Promise<void>, fallback: string) {
             <span
               >{{ t("logs.totalLatency") }} <strong>{{ formatLatency(agentAudit.selected.latencyMs) }}</strong></span
             >
+            <span
+              v-if="agentAudit.selected.contextAssembly"
+              class="mono"
+              data-testid="trace-assembly"
+            >
+              {{
+                t("logs.assemblyUsage", {
+                  used: agentAudit.selected.contextAssembly.estimatedTotalTokens,
+                  ceiling: agentAudit.selected.contextAssembly.hardInputCeilingTokens,
+                })
+              }}
+              · {{ agentAudit.selected.contextAssembly.mode }}
+              <template v-if="agentAudit.selected.contextAssembly.omittedPrefixCount">
+                ·
+                {{
+                  t("logs.assemblyOmitted", {
+                    n: agentAudit.selected.contextAssembly.omittedPrefixCount,
+                  })
+                }}
+              </template>
+            </span>
+            <span
+              v-if="agentAudit.selected.compaction"
+              class="mono"
+              data-testid="trace-compaction"
+            >
+              {{ compactionHeader(agentAudit.selected.compaction) }}
+            </span>
           </div>
         </div>
       </div>

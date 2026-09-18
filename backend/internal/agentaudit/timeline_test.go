@@ -132,4 +132,97 @@ func TestPageTimelineSteps(t *testing.T) {
 	}
 }
 
+func TestBuildTimeline_ModelTurnUsageAndInferenceLatency(t *testing.T) {
+	base := time.Date(2026, 7, 22, 10, 0, 0, 0, time.UTC)
+	finished := base.Add(2 * time.Second)
+	runs := []RunFact{{
+		ID: "r1", TraceID: "trace-usage", Status: "SUCCEEDED",
+		StartedAt: base, FinishedAt: &finished,
+	}}
+	steps := []StepFact{{
+		ID: "s1", RunID: "r1", SequenceNo: 1, StepType: "MODEL", Status: "SUCCEEDED",
+		StartedAt: base.Add(20 * time.Millisecond), FinishedAt: ptrTime(base.Add(40 * time.Millisecond)),
+		InputSummary: json.RawMessage(`{
+			"tokensKnown": true,
+			"promptTokens": 100,
+			"completionTokens": 20,
+			"totalTokens": 120,
+			"cachedPromptTokens": 80,
+			"reasoningTokens": 5,
+			"inferenceLatencyMs": 1234
+		}`),
+		ModelTurn: map[string]any{"reasoning": "plan"},
+	}}
+	detail := BuildTimeline(runs, nil, steps, true)
+	if detail.Compaction == nil || detail.Compaction.Triggered {
+		t.Fatalf("compaction: %+v", detail.Compaction)
+	}
+	var reasoning Step
+	for _, step := range detail.Steps {
+		if step.Type == "reasoning" {
+			reasoning = step
+		}
+	}
+	if !reasoning.TokensKnown || reasoning.InputTokens == nil || *reasoning.InputTokens != 100 {
+		t.Fatalf("tokens: %+v", reasoning)
+	}
+	if reasoning.OutputTokens == nil || *reasoning.OutputTokens != 20 || reasoning.TotalTokens == nil || *reasoning.TotalTokens != 120 {
+		t.Fatalf("out/tot: %+v", reasoning)
+	}
+	if reasoning.CachedInputTokens == nil || *reasoning.CachedInputTokens != 80 {
+		t.Fatalf("cached: %+v", reasoning)
+	}
+	if reasoning.LatencyMs == nil || *reasoning.LatencyMs != 1234 {
+		t.Fatalf("inference latency must come from input_summary, got %+v", reasoning.LatencyMs)
+	}
+}
+
+func TestBuildTimeline_LegacyModelTurnOmitsPersistLatency(t *testing.T) {
+	base := time.Date(2026, 7, 22, 10, 0, 0, 0, time.UTC)
+	finished := base.Add(time.Second)
+	detail := BuildTimeline(
+		[]RunFact{{ID: "r1", TraceID: "t", Status: "SUCCEEDED", StartedAt: base, FinishedAt: &finished}},
+		nil,
+		[]StepFact{{
+			ID: "s1", RunID: "r1", SequenceNo: 1, StepType: "MODEL", Status: "SUCCEEDED",
+			StartedAt: base, FinishedAt: ptrTime(base.Add(14 * time.Millisecond)),
+			InputSummary: json.RawMessage(`{"tokensKnown":false}`),
+			ModelTurn:    map[string]any{"reasoning": "x"},
+		}},
+		true,
+	)
+	for _, step := range detail.Steps {
+		if step.Type == "reasoning" && step.LatencyMs != nil {
+			t.Fatalf("legacy persist window must not be shown as inference: %d", *step.LatencyMs)
+		}
+	}
+}
+
+func TestBuildTimeline_CompactionMetadata(t *testing.T) {
+	base := time.Date(2026, 7, 22, 10, 0, 0, 0, time.UTC)
+	finished := base.Add(time.Second)
+	detail := BuildTimeline(
+		[]RunFact{{ID: "r1", TraceID: "t", Status: "SUCCEEDED", StartedAt: base, FinishedAt: &finished}},
+		nil,
+		[]StepFact{{
+			ID: "s1", RunID: "r1", SequenceNo: 1, StepType: "CONTEXT_COMPACTION", Status: "SUCCEEDED",
+			StartedAt: base, FinishedAt: ptrTime(base.Add(time.Second)),
+			OutputSummary: json.RawMessage(`{"result":"completed","beforeTokens":9000,"afterTokens":4000}`),
+		}},
+		true,
+	)
+	if detail.Compaction == nil || !detail.Compaction.Triggered || detail.Compaction.Result != "completed" {
+		t.Fatalf("compaction summary: %+v", detail.Compaction)
+	}
+	var compact Step
+	for _, step := range detail.Steps {
+		if step.Type == "context_compaction" {
+			compact = step
+		}
+	}
+	if compact.BeforeTokens == nil || *compact.BeforeTokens != 9000 || compact.AfterTokens == nil || *compact.AfterTokens != 4000 {
+		t.Fatalf("compact tokens: %+v", compact)
+	}
+}
+
 func ptrTime(t time.Time) *time.Time { return &t }

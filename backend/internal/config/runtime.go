@@ -34,6 +34,18 @@ const (
 	// fails closed instead of being clamped.
 	MaxModelVerificationTimeoutSeconds = 600
 
+	// DefaultAgentRunTimeoutSeconds is the wall-clock budget for one Enqueue
+	// Execute (or continue) drive, covering every model round and tool call
+	// in that drive. Matches the historical hardcoded 5-minute deadline.
+	DefaultAgentRunTimeoutSeconds = 300
+	// MinAgentRunTimeoutSeconds is the smallest accepted explicit budget.
+	MinAgentRunTimeoutSeconds = 30
+	// MaxAgentRunTimeoutSeconds bounds the operator-configurable run deadline.
+	MaxAgentRunTimeoutSeconds = 1800
+	// AgentRunContinueLeaseBufferSeconds is added on top of the run timeout
+	// so a live continue cannot be reclaimed before the drive's own deadline.
+	AgentRunContinueLeaseBufferSeconds = 60
+
 	// Workflow engine modes. After Load/applyRuntimeDefaults (P0 / no-reinvent):
 	// omitted engine stages "eino" (compose CoreGraphRunner). Explicit
 	// "wrapper" remains the emergency rollback valve. "eino_core" is an
@@ -328,6 +340,54 @@ func (tuning ModelVerificationTuning) Timeout() time.Duration {
 	return time.Duration(tuning.TimeoutSeconds) * time.Second
 }
 
+// AgentRunTuning holds the wall-clock budget for one agent Enqueue/Execute
+// (or continue) drive. Same contract as ModelVerificationTuning: 0 → default
+// via Normalized / applyRuntimeDefaults; negative and above-maximum fail closed
+// (no silent clamp).
+type AgentRunTuning struct {
+	TimeoutSeconds int `yaml:"timeoutSeconds"`
+}
+
+// Normalized applies the zero-value default. Hostile values are left unchanged.
+func (tuning AgentRunTuning) Normalized() AgentRunTuning {
+	out := tuning
+	if out.TimeoutSeconds == 0 {
+		out.TimeoutSeconds = DefaultAgentRunTimeoutSeconds
+	}
+	return out
+}
+
+// Timeout returns the configured budget as a duration without applying defaults.
+func (tuning AgentRunTuning) Timeout() time.Duration {
+	return time.Duration(tuning.TimeoutSeconds) * time.Second
+}
+
+// Validate accepts 0 (default applied later) or Min..Max seconds.
+func (tuning AgentRunTuning) Validate() error {
+	return validateAgentRunTimeoutSeconds(tuning.TimeoutSeconds)
+}
+
+// ContinueLease returns timeout + AgentRunContinueLeaseBufferSeconds after
+// Normalized(). Callers that have not Normalized a zero value get the default
+// timeout plus buffer.
+func (tuning AgentRunTuning) ContinueLease() time.Duration {
+	n := tuning.Normalized()
+	return n.Timeout() + time.Duration(AgentRunContinueLeaseBufferSeconds)*time.Second
+}
+
+func validateAgentRunTimeoutSeconds(seconds int) error {
+	if seconds == 0 {
+		return nil
+	}
+	if seconds < MinAgentRunTimeoutSeconds || seconds > MaxAgentRunTimeoutSeconds {
+		return fmt.Errorf(
+			"runtime.agentRun.timeoutSeconds must be 0 (default %d) or %d..%d, got %d",
+			DefaultAgentRunTimeoutSeconds, MinAgentRunTimeoutSeconds, MaxAgentRunTimeoutSeconds, seconds,
+		)
+	}
+	return nil
+}
+
 // Validate accepts 0 (meaning the default is applied later) or
 // 1..MaxModelVerificationTimeoutSeconds. Negative and larger values fail closed.
 func (tuning ModelVerificationTuning) Validate() error {
@@ -362,6 +422,9 @@ type RuntimeConfig struct {
 	Agent    RuntimeFeatureRollout `yaml:"agent"`
 	Workflow WorkflowRuntimeConfig `yaml:"workflow"`
 	Eino     EinoRuntimeTuning     `yaml:"eino"`
+	// AgentRun is the wall-clock budget for one chat Enqueue/Execute or continue.
+	// Omitted / zero maps to DefaultAgentRunTimeoutSeconds (300s).
+	AgentRun AgentRunTuning `yaml:"agentRun"`
 	// ModelVerification is the outer budget for model config verification.
 	// Omitted / zero maps to DefaultModelVerificationTimeoutSeconds (120s).
 	ModelVerification ModelVerificationTuning `yaml:"modelVerification"`
@@ -523,6 +586,7 @@ func (cfg RuntimeConfig) Normalized() RuntimeConfig {
 		Agent:             cfg.Agent.Normalized(),
 		Workflow:          cfg.Workflow.Normalized(),
 		Eino:              cfg.Eino.Normalized(),
+		AgentRun:          cfg.AgentRun.Normalized(),
 		ModelVerification: cfg.ModelVerification.Normalized(),
 		SessionContext:    cfg.SessionContext.Normalized(),
 		ToolDisclosure:    cfg.ToolDisclosure.Normalized(),
@@ -573,6 +637,9 @@ func (config *Config) applyRuntimeDefaults() {
 	// validateRuntimeConfig to reject.
 	if config.Runtime.ModelVerification.TimeoutSeconds == 0 {
 		config.Runtime.ModelVerification.TimeoutSeconds = DefaultModelVerificationTimeoutSeconds
+	}
+	if config.Runtime.AgentRun.TimeoutSeconds == 0 {
+		config.Runtime.AgentRun.TimeoutSeconds = DefaultAgentRunTimeoutSeconds
 	}
 
 	// Stage agent engine=eino when the operator did not set the field.
@@ -666,6 +733,13 @@ func (config *Config) applyRuntimeEnvironment(lookup LookupEnv) error {
 		}
 		config.Runtime.ModelVerification.TimeoutSeconds = value
 	}
+	if raw, ok := lookup("ACTWEAVE_RUNTIME_AGENT_RUN_TIMEOUT_SECONDS"); ok {
+		value, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err != nil {
+			return errors.New("ACTWEAVE_RUNTIME_AGENT_RUN_TIMEOUT_SECONDS must be an integer")
+		}
+		config.Runtime.AgentRun.TimeoutSeconds = value
+	}
 	return nil
 }
 
@@ -696,6 +770,9 @@ func validateRuntimeConfig(cfg RuntimeConfig) error {
 	// Normalized() before handing the duration to NewVerificationService, so 0
 	// stays accepted here. Negative and above-maximum always fail closed.
 	if err := validateModelVerificationTimeoutSeconds(cfg.ModelVerification.TimeoutSeconds); err != nil {
+		return err
+	}
+	if err := validateAgentRunTimeoutSeconds(cfg.AgentRun.TimeoutSeconds); err != nil {
 		return err
 	}
 	return nil

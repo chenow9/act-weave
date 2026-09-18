@@ -268,6 +268,10 @@ func TestCheckedInDevelopmentConfigurationIsValid(t *testing.T) {
 		t.Fatalf("checked-in modelVerification.timeoutSeconds=%d want %d",
 			loaded.Runtime.ModelVerification.TimeoutSeconds, DefaultModelVerificationTimeoutSeconds)
 	}
+	if loaded.Runtime.AgentRun.TimeoutSeconds != DefaultAgentRunTimeoutSeconds {
+		t.Fatalf("checked-in agentRun.timeoutSeconds=%d want %d",
+			loaded.Runtime.AgentRun.TimeoutSeconds, DefaultAgentRunTimeoutSeconds)
+	}
 	if !loaded.Runtime.ToolDisclosure.Enabled || !loaded.Runtime.ToolDisclosure.AllowAllWorkspaces {
 		t.Fatalf("checked-in toolDisclosure must be enabled + allowAll, got %+v", loaded.Runtime.ToolDisclosure)
 	}

@@ -101,10 +101,15 @@ type Step struct {
 	RemoteEndpointRef string `json:"remoteEndpointRef,omitempty"`
 	ProtocolStatus    string `json:"protocolStatus,omitempty"`
 	// Token usage (null when unknown — never invent 0 for A2A without usage).
-	InputTokens  *int64 `json:"inputTokens,omitempty"`
-	OutputTokens *int64 `json:"outputTokens,omitempty"`
-	TotalTokens  *int64 `json:"totalTokens,omitempty"`
-	TokensKnown  bool   `json:"tokensKnown,omitempty"`
+	InputTokens       *int64 `json:"inputTokens,omitempty"`
+	OutputTokens      *int64 `json:"outputTokens,omitempty"`
+	TotalTokens       *int64 `json:"totalTokens,omitempty"`
+	CachedInputTokens *int64 `json:"cachedInputTokens,omitempty"`
+	ReasoningTokens   *int64 `json:"reasoningTokens,omitempty"`
+	TokensKnown       bool   `json:"tokensKnown,omitempty"`
+	// Compaction before/after token counts (context_compaction steps only).
+	BeforeTokens *int64 `json:"beforeTokens,omitempty"`
+	AfterTokens  *int64 `json:"afterTokens,omitempty"`
 	// Dispatch attempt/retry (execution only; not finalize-outbox).
 	// Pointer + omitempty: nil omits (non-delegation steps); non-nil including 0
 	// serializes so pre-dispatch failures stay visible as attemptCount:0 / retryCount:0.
@@ -129,12 +134,35 @@ type TraceDetail struct {
 	Steps      []Step               `json:"steps"`
 	RunIDs     []string             `json:"runIds"`
 	Failure    *TraceFailureSummary `json:"failure,omitempty"`
+	// ContextAssembly is the run-start token-window manifest (omit when absent).
+	ContextAssembly *ContextAssemblySummary `json:"contextAssembly,omitempty"`
+	// Compaction reports whether any CONTEXT_COMPACTION step ran on this trace.
+	Compaction *CompactionSummary `json:"compaction,omitempty"`
 	// Step pagination (timeline can be long: many MODEL/TOOL/output cards).
 	// StepTotal is the full built timeline length; Steps is one page slice.
 	StepTotal  int  `json:"stepTotal"`
 	StepOffset int  `json:"stepOffset"`
 	StepLimit  int  `json:"stepLimit"`
 	HasMore    bool `json:"hasMore"`
+}
+
+// ContextAssemblySummary is the body-free run-start assembly shown on the trace header.
+type ContextAssemblySummary struct {
+	Mode                   string `json:"mode"`
+	EstimatedTotalTokens   int64  `json:"estimatedTotalTokens"`
+	HardInputCeilingTokens int64  `json:"hardInputCeilingTokens"`
+	OmittedPrefixCount     int    `json:"omittedPrefixCount"`
+	HasSummary             bool   `json:"hasSummary"`
+	ToolSearchMode         string `json:"toolSearchMode,omitempty"`
+	ImmediateToolCount     int    `json:"immediateToolCount,omitempty"`
+	ImmediateToolsTokens   int64  `json:"immediateToolsTokens,omitempty"`
+	ToolsOverheadTokens    int64  `json:"toolsOverheadTokens,omitempty"`
+}
+
+// CompactionSummary is whether LLM compact ran (not the process gate).
+type CompactionSummary struct {
+	Triggered bool   `json:"triggered"`
+	Result    string `json:"result,omitempty"`
 }
 
 // TraceFailureSummary keeps the first-screen diagnosis independent from timeline pagination.
@@ -195,6 +223,7 @@ type StepFact struct {
 	RawObjectID   string
 	StartedAt     time.Time
 	FinishedAt    *time.Time
+	ErrorCode     string
 	// ModelTurn is optional parsed MODEL_TURN object body when available.
 	ModelTurn map[string]any
 	// Tool params/result when resolved for the step.

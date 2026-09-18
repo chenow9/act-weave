@@ -1576,7 +1576,11 @@ export interface AgentAuditStep {
   inputTokens?: number | null;
   outputTokens?: number | null;
   totalTokens?: number | null;
+  cachedInputTokens?: number | null;
+  reasoningTokens?: number | null;
   tokensKnown?: boolean;
+  beforeTokens?: number | null;
+  afterTokens?: number | null;
   /** Execution dispatch attempts (not finalize-outbox retries). */
   attemptCount?: number;
   retryCount?: number;
@@ -1652,6 +1656,21 @@ export interface AgentAuditTraceDetail {
     timeOffsetMs: number;
     runId?: string;
     stepId?: string;
+  };
+  contextAssembly?: {
+    mode: string;
+    estimatedTotalTokens: number;
+    hardInputCeilingTokens: number;
+    omittedPrefixCount: number;
+    hasSummary: boolean;
+    toolSearchMode?: string;
+    immediateToolCount?: number;
+    immediateToolsTokens?: number;
+    toolsOverheadTokens?: number;
+  };
+  compaction?: {
+    triggered: boolean;
+    result?: string;
   };
   /** Full timeline length after build (not just this page). */
   stepTotal?: number;

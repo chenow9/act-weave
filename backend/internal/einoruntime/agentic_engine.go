@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
@@ -383,13 +384,16 @@ func processTypedMessageVariant(
 		// Deltas are projected from this single drain, chunk by chunk as the model
 		// produces them: the stream can only be consumed once, and a client that
 		// receives the answer only after the turn ends is not streaming at all.
+		started := time.Now().UTC()
 		chunks, streamErr := drainAndCloseAgenticMessageStream(mv.MessageStream,
 			func(chunk *schema.AgenticMessage) error {
 				return projectAgenticChunkDelta(ctx, chunk, projector)
 			})
+		ended := time.Now().UTC()
 		// Detach so a later closeTypedEventMessageStream cannot double-Close.
 		mv.MessageStream = nil
 		if streamErr != nil {
+			notifyFailedAgenticTurn(ctx, projector, chunks, started, ended)
 			return streamErr
 		}
 		// Strict: empty drained stream is ErrEmptyConcat (errors.Is), same as
@@ -397,11 +401,12 @@ func processTypedMessageVariant(
 		// from a zero-chunk stream (stream already Closed exactly once above).
 		concatenated, err := agenticmsg.ConcatStream(chunks)
 		if err != nil {
+			notifyFailedAgenticTurn(ctx, projector, chunks, started, ended)
 			return err
 		}
 		// The concatenated message, not the chunks, is the authority for the
 		// completed turn: it carries merged usage and the assembled tool calls.
-		if err := projectAgenticModelTurn(ctx, concatenated, projector); err != nil {
+		if err := projectAgenticModelTurnAt(ctx, concatenated, projector, started, ended); err != nil {
 			return err
 		}
 		// Any Validate failure already failed closed in ConcatStream / chunks.

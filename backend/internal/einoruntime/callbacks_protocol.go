@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
@@ -54,6 +55,13 @@ type ModelTurn struct {
 	// keeps the historical MODEL_TURN payload.
 	ToolSearchMode string
 	ToolCalling    string
+	// StartedAt / EndedAt bound the stream drain (or non-stream assemble).
+	// Zero means unknown; audit must not invent persist-time as inference.
+	StartedAt time.Time
+	EndedAt   time.Time
+	// Failed is true when the stream ended with an error (timeout, reset, etc.).
+	// Failed turns still reach the audit trail even with empty content.
+	Failed bool
 }
 
 // ModelTurnObserver is an optional ProtocolProjector extension. When the
@@ -146,8 +154,13 @@ func ProjectAgentEvent(ctx context.Context, event *adk.AgentEvent, projector Pro
 
 	if mv.IsStreaming && mv.MessageStream != nil {
 		mv.MessageStream.SetAutomaticClose()
+		started := time.Now().UTC()
 		agg, err := projectStreamDeltas(ctx, mv.MessageStream, projector)
+		ended := time.Now().UTC()
+		stampModelTurnTimes(&agg, started, ended)
 		if err != nil {
+			agg.Failed = true
+			_ = notifyModelTurn(ctx, projector, agg)
 			return err
 		}
 		if agg.Content != "" {
@@ -197,14 +210,26 @@ func notifyModelTurn(ctx context.Context, projector ProtocolProjector, turn Mode
 		return nil
 	}
 	// Record tool-only / usage-only MODEL turns (empty content+reasoning still audit).
-	// Only skip truly empty framing with no tool calls and no usage evidence.
-	if strings.TrimSpace(turn.Content) == "" && strings.TrimSpace(turn.Reasoning) == "" &&
+	// Only skip truly empty framing with no tool calls, no usage, and no failure.
+	if !turn.Failed && strings.TrimSpace(turn.Content) == "" && strings.TrimSpace(turn.Reasoning) == "" &&
 		!turn.HasToolCalls && !turn.TokensKnown {
 		return nil
 	}
 	turn.Content = strings.TrimSpace(turn.Content)
 	turn.Reasoning = strings.TrimSpace(turn.Reasoning)
 	return observer.OnModelTurn(ctx, turn)
+}
+
+func stampModelTurnTimes(turn *ModelTurn, started, ended time.Time) {
+	if turn == nil {
+		return
+	}
+	if !started.IsZero() {
+		turn.StartedAt = started.UTC()
+	}
+	if !ended.IsZero() {
+		turn.EndedAt = ended.UTC()
+	}
 }
 
 func projectStreamDeltas(

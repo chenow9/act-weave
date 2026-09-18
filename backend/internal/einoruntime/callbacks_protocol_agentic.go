@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/cloudwego/eino/schema"
 
@@ -58,6 +59,15 @@ func projectAgenticModelTurn(
 	message *schema.AgenticMessage,
 	projector ProtocolProjector,
 ) error {
+	return projectAgenticModelTurnAt(ctx, message, projector, time.Time{}, time.Time{})
+}
+
+func projectAgenticModelTurnAt(
+	ctx context.Context,
+	message *schema.AgenticMessage,
+	projector ProtocolProjector,
+	started, ended time.Time,
+) error {
 	if projector == nil || message == nil {
 		return nil
 	}
@@ -68,12 +78,33 @@ func projectAgenticModelTurn(
 	if err != nil {
 		return err
 	}
+	stampModelTurnTimes(&turn, started, ended)
 	if text != "" {
 		if err := projector.OnTextComplete(ctx, text); err != nil {
 			return err
 		}
 	}
 	return notifyModelTurn(ctx, projector, turn)
+}
+
+func notifyFailedAgenticTurn(
+	ctx context.Context,
+	projector ProtocolProjector,
+	chunks []*schema.AgenticMessage,
+	started, ended time.Time,
+) {
+	turn := ModelTurn{Failed: true}
+	stampModelTurnTimes(&turn, started, ended)
+	if len(chunks) > 0 {
+		if concatenated, err := agenticmsg.ConcatStream(chunks); err == nil {
+			if built, _, berr := agenticModelTurn(concatenated); berr == nil {
+				built.Failed = true
+				stampModelTurnTimes(&built, started, ended)
+				turn = built
+			}
+		}
+	}
+	_ = notifyModelTurn(ctx, projector, turn)
 }
 
 // projectAgenticCompleteMessage projects a non-streaming assistant turn as a

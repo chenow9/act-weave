@@ -100,5 +100,22 @@
   "params": "Parameters",
   "result": "Result",
   "delegationInput": "Delegation input",
-  "delegationOutput": "Delegation output"
+  "delegationOutput": "Delegation output",
+  "tokensUnknown": "Usage unknown",
+  "tokensPrompt": "in {n}",
+  "tokensCompletion": "out {n}",
+  "tokensTotal": "tot {n}",
+  "tokensCached": "cache {n}",
+  "tokensReasoning": "reason {n}",
+  "compactionBefore": "Before",
+  "compactionAfter": "After",
+  "compactionResult": "Result",
+  "compactionResultCompleted": "completed",
+  "compactionResultFallback": "fell back",
+  "compactionResultFailed": "failed",
+  "assemblyUsage": "Assembly {used} / {ceiling}",
+  "assemblyOmitted": "omitted {n} turns",
+  "compactionIdle": "Compaction: not triggered",
+  "compactionTriggered": "Compaction: triggered",
+  "compactionTriggeredResult": "Compaction: {result}"
 }

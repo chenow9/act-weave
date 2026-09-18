@@ -39,6 +39,55 @@ function mountStep(step: AgentAuditStep, depth = 0) {
   });
 }
 
+describe("AgentAuditStepNode reasoning usage", () => {
+  it("shows inference latency and token pills on reasoning cards", () => {
+    const w = mountStep({
+      type: "reasoning",
+      title: "大模型推理",
+      timeOffsetMs: 14930,
+      latencyMs: 12400,
+      tokensKnown: true,
+      inputTokens: 100,
+      outputTokens: 20,
+      totalTokens: 120,
+      cachedInputTokens: 80,
+      content: "plan",
+    });
+    expect(w.get('[data-testid="step-latency"]').text()).toContain("12400");
+    expect(w.get('[data-testid="reasoning-tokens"]').text()).toContain("100");
+    expect(w.get('[data-testid="reasoning-tokens"]').text()).toContain("80");
+    w.unmount();
+  });
+
+  it("hides latency when inference duration is unknown", () => {
+    const w = mountStep({
+      type: "reasoning",
+      title: "大模型推理",
+      timeOffsetMs: 100,
+      tokensKnown: false,
+      content: "plan",
+    });
+    expect(w.find('[data-testid="step-latency"]').exists()).toBe(false);
+    expect(w.get('[data-testid="reasoning-tokens-unknown"]').text().length).toBeGreaterThan(0);
+    w.unmount();
+  });
+
+  it("renders compaction before/after tokens", () => {
+    const w = mountStep({
+      type: "context_compaction",
+      title: "上下文 Compact 完成",
+      timeOffsetMs: 50,
+      beforeTokens: 9000,
+      afterTokens: 4000,
+      params: { result: "completed" },
+    });
+    const meta = w.get('[data-testid="compaction-meta"]').text();
+    expect(meta).toContain("9000");
+    expect(meta).toContain("4000");
+    w.unmount();
+  });
+});
+
 describe("AgentAuditStepNode origin-aware path", () => {
   it("EXTERNAL inbound shows externalAgentRef → targetAgentId and depth=0", () => {
     const step: AgentAuditStep = {

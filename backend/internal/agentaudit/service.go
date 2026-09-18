@@ -219,7 +219,13 @@ func (s *Service) GetTrace(ctx context.Context, workspaceID, traceID string, fil
 	}
 	// Build full ordered timeline, then page the presentation slice so the
 	// audit UI can infinite-scroll without shipping every tool body at once.
-	detail := PageTimelineSteps(BuildTimeline(runs, messages, steps, s.debugMode), filter)
+	full := BuildTimeline(runs, messages, steps, s.debugMode)
+	if asm, err := s.loadPrimaryAssembly(ctx, workspaceID, ids); err != nil {
+		return TraceDetail{}, err
+	} else if asm != nil {
+		full.ContextAssembly = asm
+	}
+	detail := PageTimelineSteps(full, filter)
 	if err := s.enrichStepAgentNames(ctx, workspaceID, detail.Steps); err != nil {
 		return TraceDetail{}, err
 	}
@@ -517,6 +523,7 @@ func (s *Service) loadSteps(ctx context.Context, workspaceID string, runIDs []st
 		SELECT s.id, s.run_id, s.sequence_no, s.step_type, s.status,
 		       COALESCE(s.input_summary, '{}'::jsonb), COALESCE(s.output_summary, '{}'::jsonb),
 		       COALESCE(s.raw_object_id::text,''), s.started_at, s.finished_at,
+		       COALESCE(s.error_code,''),
 		       COALESCE(s.agent_id::text,''), COALESCE(s.delegation_id::text,''),
 		       COALESCE(s.parent_step_id::text,''),
 		       COALESCE(d.child_run_id::text,''),
@@ -554,7 +561,7 @@ func (s *Service) loadSteps(ctx context.Context, workspaceID string, runIDs []st
 		var attempt, retry int
 		if err := rows.Scan(
 			&step.ID, &step.RunID, &step.SequenceNo, &step.StepType, &step.Status,
-			&input, &output, &step.RawObjectID, &step.StartedAt, &finished,
+			&input, &output, &step.RawObjectID, &step.StartedAt, &finished, &step.ErrorCode,
 			&step.AgentID, &step.DelegationID, &step.ParentStepID,
 			&step.ChildRunID, &step.ParentDelegationID, &step.CallerAgentID, &step.TargetAgentID,
 			&step.ExternalAgentRef, &step.Mode, &step.Protocol, &step.Origin,
@@ -621,4 +628,46 @@ func (s *Service) loadSteps(ctx context.Context, workspaceID string, runIDs []st
 		out = append(out, step)
 	}
 	return out, rows.Err()
+}
+
+func (s *Service) loadPrimaryAssembly(ctx context.Context, workspaceID string, runIDs []string) (*ContextAssemblySummary, error) {
+	if s == nil || s.db == nil || len(runIDs) == 0 {
+		return nil, nil
+	}
+	var (
+		mode, toolSearchMode                              string
+		estimated, ceiling, toolsOverhead, immediateTools int64
+		omitted, immediateCount                           int
+		summaryID                                         sql.NullString
+	)
+	err := s.db.QueryRowContext(ctx, `
+		SELECT a.mode, a.estimated_total_tokens, a.hard_input_ceiling_tokens,
+		       a.omitted_prefix_count, a.summary_id, a.tool_search_mode,
+		       a.immediate_tool_count, a.immediate_tools_tokens, a.tools_overhead_tokens
+		FROM agent_run_context_assemblies a
+		JOIN agent_runs r ON r.workspace_id = a.workspace_id AND r.id = a.run_id
+		WHERE a.workspace_id = $1 AND a.run_id = ANY($2::uuid[])
+		ORDER BY r.started_at ASC, a.run_id ASC
+		LIMIT 1
+	`, workspaceID, pq.Array(runIDs)).Scan(
+		&mode, &estimated, &ceiling, &omitted, &summaryID, &toolSearchMode,
+		&immediateCount, &immediateTools, &toolsOverhead,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load context assembly: %w", err)
+	}
+	return &ContextAssemblySummary{
+		Mode:                   strings.TrimSpace(mode),
+		EstimatedTotalTokens:   estimated,
+		HardInputCeilingTokens: ceiling,
+		OmittedPrefixCount:     omitted,
+		HasSummary:             summaryID.Valid && strings.TrimSpace(summaryID.String) != "",
+		ToolSearchMode:         strings.TrimSpace(toolSearchMode),
+		ImmediateToolCount:     immediateCount,
+		ImmediateToolsTokens:   immediateTools,
+		ToolsOverheadTokens:    toolsOverhead,
+	}, nil
 }

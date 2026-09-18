@@ -22,6 +22,8 @@ func TestRuntimeConfig(t *testing.T) {
 	t.Run("MaxToolInvocationsContract", testRuntimeMaxToolInvocationsContract)
 	t.Run("ModelVerificationTimeoutContract", testRuntimeModelVerificationTimeoutContract)
 	t.Run("ModelVerificationTimeoutLoadPaths", testRuntimeModelVerificationTimeoutLoadPaths)
+	t.Run("AgentRunTimeoutContract", testRuntimeAgentRunTimeoutContract)
+	t.Run("AgentRunTimeoutLoadPaths", testRuntimeAgentRunTimeoutLoadPaths)
 	t.Run("ToolDisclosureOmittedDeniesAllWorkspaces", testRuntimeToolDisclosureOmittedDeniesAllWorkspaces)
 	t.Run("ToolDisclosureExplicitEnable", testRuntimeToolDisclosureExplicitEnable)
 }
@@ -650,6 +652,128 @@ runtime:
 	direct.Runtime.ModelVerification.TimeoutSeconds = -1
 	if err := direct.ValidateServer(); err == nil {
 		t.Fatal("negative modelVerification must fail ValidateServer")
+	}
+}
+
+func testRuntimeAgentRunTimeoutContract(t *testing.T) {
+	if DefaultAgentRunTimeoutSeconds != 300 {
+		t.Fatalf("default agent run timeout must stay 300s, got %d", DefaultAgentRunTimeoutSeconds)
+	}
+	if n := (AgentRunTuning{}).Normalized(); n.TimeoutSeconds != DefaultAgentRunTimeoutSeconds {
+		t.Fatalf("0 normalize: got %d want %d", n.TimeoutSeconds, DefaultAgentRunTimeoutSeconds)
+	}
+	for _, preserved := range []int{MinAgentRunTimeoutSeconds, 300, 900, MaxAgentRunTimeoutSeconds} {
+		if n := (AgentRunTuning{TimeoutSeconds: preserved}).Normalized(); n.TimeoutSeconds != preserved {
+			t.Fatalf("%d normalize: got %d", preserved, n.TimeoutSeconds)
+		}
+	}
+	for _, hostile := range []int{-1, 1, 29, MaxAgentRunTimeoutSeconds + 1, 100000} {
+		if n := (AgentRunTuning{TimeoutSeconds: hostile}).Normalized(); n.TimeoutSeconds != hostile {
+			t.Fatalf("%d must not be silently defaulted/clamped: got %d", hostile, n.TimeoutSeconds)
+		}
+	}
+	if got := (AgentRunTuning{}).Normalized().Timeout(); got != 300*time.Second {
+		t.Fatalf("normalized zero Timeout(): got %v want 300s", got)
+	}
+	if got := (AgentRunTuning{}).Timeout(); got > 0 {
+		t.Fatalf("un-normalized zero Timeout() must not be positive: %v", got)
+	}
+	if got := (AgentRunTuning{TimeoutSeconds: 900}).ContinueLease(); got != 16*time.Minute {
+		t.Fatalf("ContinueLease(900s)=%s want 16m", got)
+	}
+	for _, ok := range []int{0, MinAgentRunTimeoutSeconds, 300, 900, MaxAgentRunTimeoutSeconds} {
+		if err := (AgentRunTuning{TimeoutSeconds: ok}).Validate(); err != nil {
+			t.Fatalf("Validate(%d) unexpected: %v", ok, err)
+		}
+	}
+	for _, bad := range []int{-1, 1, 29, MaxAgentRunTimeoutSeconds + 1} {
+		err := (AgentRunTuning{TimeoutSeconds: bad}).Validate()
+		if err == nil {
+			t.Fatalf("Validate(%d) must fail", bad)
+		}
+		if !strings.Contains(err.Error(), "runtime.agentRun.timeoutSeconds") {
+			t.Fatalf("Validate(%d) error must name the config key, got %v", bad, err)
+		}
+	}
+}
+
+func testRuntimeAgentRunTimeoutLoadPaths(t *testing.T) {
+	path := writeConfig(t, validConfigYAML)
+
+	loaded, err := Load(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Runtime.AgentRun.TimeoutSeconds != DefaultAgentRunTimeoutSeconds {
+		t.Fatalf("omitted agentRun must default to %d, got %d",
+			DefaultAgentRunTimeoutSeconds, loaded.Runtime.AgentRun.TimeoutSeconds)
+	}
+	if err := loaded.ValidateServer(); err != nil {
+		t.Fatalf("default agentRun must validate: %v", err)
+	}
+
+	explicit, err := Load(writeConfig(t, validConfigYAML+`
+runtime:
+  agentRun:
+    timeoutSeconds: 900
+`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if explicit.Runtime.AgentRun.TimeoutSeconds != 900 {
+		t.Fatalf("yaml timeoutSeconds=900: got %d", explicit.Runtime.AgentRun.TimeoutSeconds)
+	}
+
+	overridden, err := Load(writeConfig(t, validConfigYAML+`
+runtime:
+  agentRun:
+    timeoutSeconds: 300
+`), lookup(map[string]string{
+		"ACTWEAVE_RUNTIME_AGENT_RUN_TIMEOUT_SECONDS": "600",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overridden.Runtime.AgentRun.TimeoutSeconds != 600 {
+		t.Fatalf("env override: got %d want 600", overridden.Runtime.AgentRun.TimeoutSeconds)
+	}
+
+	if _, err := Load(path, lookup(map[string]string{
+		"ACTWEAVE_RUNTIME_AGENT_RUN_TIMEOUT_SECONDS": "not-a-number",
+	})); err == nil {
+		t.Fatal("non-integer timeout env must fail Load")
+	} else if strings.Contains(err.Error(), "not-a-number") {
+		t.Fatalf("Load error must not leak the raw value: %v", err)
+	}
+
+	for _, bad := range []struct {
+		raw  string
+		want int
+	}{
+		{raw: "-1", want: -1},
+		{raw: "0", want: DefaultAgentRunTimeoutSeconds},
+		{raw: "29", want: 29},
+		{raw: "1801", want: 1801},
+	} {
+		cfg, err := Load(path, lookup(map[string]string{
+			"ACTWEAVE_RUNTIME_AGENT_RUN_TIMEOUT_SECONDS": bad.raw,
+		}))
+		if err != nil {
+			t.Fatalf("Load(%s): %v", bad.raw, err)
+		}
+		if cfg.Runtime.AgentRun.TimeoutSeconds != bad.want {
+			t.Fatalf("env %s: got %d want %d", bad.raw, cfg.Runtime.AgentRun.TimeoutSeconds, bad.want)
+		}
+		validateErr := cfg.ValidateServer()
+		if bad.want == DefaultAgentRunTimeoutSeconds {
+			if validateErr != nil {
+				t.Fatalf("env %s (default) must validate: %v", bad.raw, validateErr)
+			}
+			continue
+		}
+		if validateErr == nil {
+			t.Fatalf("env %s must fail ValidateServer", bad.raw)
+		}
 	}
 }
 

@@ -12,6 +12,21 @@ import (
 	"actweave/backend/internal/execution"
 )
 
+func TestContinueLeaseForRunTimeout(t *testing.T) {
+	if got := execution.ContinueLeaseForRunTimeout(0); got != execution.DefaultRuntimeContinueLease {
+		t.Fatalf("zero timeout: got %s want default %s", got, execution.DefaultRuntimeContinueLease)
+	}
+	if got := execution.ContinueLeaseForRunTimeout(5 * time.Minute); got != 6*time.Minute {
+		t.Fatalf("5m timeout: got %s want 6m", got)
+	}
+	if got := execution.ContinueLeaseForRunTimeout(15 * time.Minute); got != 16*time.Minute {
+		t.Fatalf("15m timeout: got %s want 16m", got)
+	}
+	if got := execution.ContinueLeaseForRunTimeout(30 * time.Minute); got != execution.MaxRuntimeContinueLease {
+		t.Fatalf("30m timeout: got %s want max %s", got, execution.MaxRuntimeContinueLease)
+	}
+}
+
 func TestContinuationRecoveryRedrivesDispatchWithoutDuplicateSideEffect(t *testing.T) {
 	ctx := context.Background()
 	db, runs, confirmations := newConfirmationResumeFixture(t)
@@ -128,10 +143,13 @@ func TestContinuationRecoveryRedrivesDispatchWithoutDuplicateSideEffect(t *testi
 	if err != nil || firstClaim.ClaimID == "" {
 		t.Fatalf("first claim=%+v err=%v", firstClaim, err)
 	}
-	// Default lease must cover chatruntime ContinueTimeout (5m).
+	// Default lease must cover the default run timeout (5m) plus buffer.
 	if execution.DefaultRuntimeContinueLease < 5*time.Minute {
-		t.Fatalf("DefaultRuntimeContinueLease=%s must cover 5m runtime timeout",
+		t.Fatalf("DefaultRuntimeContinueLease=%s must cover default 5m run timeout",
 			execution.DefaultRuntimeContinueLease)
+	}
+	if got := execution.ContinueLeaseForRunTimeout(5 * time.Minute); got != 6*time.Minute {
+		t.Fatalf("ContinueLeaseForRunTimeout(5m)=%s want 6m", got)
 	}
 	if firstClaim.ClaimExpiresAt.Before(time.Now().UTC().Add(5 * time.Minute).Add(-time.Second)) {
 		t.Fatalf("claim expiry %s does not cover 5m runtime window", firstClaim.ClaimExpiresAt)

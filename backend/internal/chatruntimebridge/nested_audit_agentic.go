@@ -158,11 +158,17 @@ func (m *nestedAuditAgenticModel) record(
 			}
 		}
 	}
-	inputSummary, _ := json.Marshal(map[string]any{
+	inputSummaryMap := map[string]any{
 		"source": "chatruntimebridge.nested.agentic", "hasReasoning": reasoning != "",
 		"contentLength": len(content), "hasToolCalls": hasToolCalls,
 		"tokensKnown": usage.Known,
-	})
+	}
+	if usage.Known {
+		inputSummaryMap["promptTokens"] = usage.PromptTokens
+		inputSummaryMap["completionTokens"] = usage.CompletionTokens
+		inputSummaryMap["totalTokens"] = usage.TotalTokens
+	}
+	inputSummary, _ := json.Marshal(inputSummaryMap)
 	runID := firstNonEmpty(rc.RunID, rc.ParentRunID)
 	modelStep := execution.AppendAgentRunStepInput{
 		ID: stepID, WorkspaceID: rc.WorkspaceID, RunID: runID,

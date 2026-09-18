@@ -254,7 +254,36 @@ func BuildTimeline(
 	if list.Status == "error" {
 		detail.Failure = findTraceFailure(out)
 	}
+	detail.Compaction = compactionSummaryFromSteps(out)
 	return detail
+}
+
+func compactionSummaryFromSteps(steps []Step) *CompactionSummary {
+	var found *CompactionSummary
+	var walk func([]Step)
+	walk = func(items []Step) {
+		for _, step := range items {
+			if step.Type == "context_compaction" {
+				summary := &CompactionSummary{Triggered: true}
+				var params map[string]any
+				_ = json.Unmarshal(step.Params, &params)
+				if params != nil {
+					if res, _ := params["result"].(string); strings.TrimSpace(res) != "" {
+						summary.Result = strings.ToLower(strings.TrimSpace(res))
+					}
+				}
+				if found == nil {
+					found = summary
+				}
+			}
+			walk(step.Children)
+		}
+	}
+	walk(steps)
+	if found == nil {
+		return &CompactionSummary{Triggered: false}
+	}
+	return found
 }
 
 func findTraceFailure(steps []Step) *TraceFailureSummary {
@@ -301,6 +330,9 @@ func withAttribution(s Step, fact StepFact) Step {
 	s.ParentStepID = fact.ParentStepID
 	if s.Status == "" {
 		s.Status = fact.Status
+	}
+	if s.ErrorCode == "" && strings.TrimSpace(fact.ErrorCode) != "" {
+		s.ErrorCode = strings.TrimSpace(fact.ErrorCode)
 	}
 	// Propagate joined delegation identity when present (nested MODEL/TOOL under del).
 	if fact.ChildRunID != "" && s.ChildRunID == "" {
@@ -620,13 +652,7 @@ func modelReasoningStep(base time.Time, step StepFact, debugMode bool) Step {
 		TimeOffsetMs: offsetMs(base, step.StartedAt),
 		RunID:        step.RunID, StepID: step.ID,
 	}
-	if step.FinishedAt != nil {
-		latency := step.FinishedAt.Sub(step.StartedAt).Milliseconds()
-		if latency < 0 {
-			latency = 0
-		}
-		result.LatencyMs = &latency
-	}
+	applyModelTurnUsage(&result, step.InputSummary)
 	reasoning := ""
 	if step.ModelTurn != nil {
 		if value, ok := step.ModelTurn["reasoning"].(string); ok {
@@ -646,6 +672,53 @@ func modelReasoningStep(base time.Time, step StepFact, debugMode bool) Step {
 	result.Content = reasoning
 	result.ContentState = ContentPlain
 	return result
+}
+
+func applyModelTurnUsage(result *Step, inputSummary json.RawMessage) {
+	if result == nil || len(inputSummary) == 0 {
+		return
+	}
+	var in map[string]any
+	if json.Unmarshal(inputSummary, &in) != nil || in == nil {
+		return
+	}
+	if known, _ := in["tokensKnown"].(bool); known {
+		result.TokensKnown = true
+		if v, ok := jsonInt64(in["promptTokens"]); ok {
+			result.InputTokens = &v
+		}
+		if v, ok := jsonInt64(in["completionTokens"]); ok {
+			result.OutputTokens = &v
+		}
+		if v, ok := jsonInt64(in["totalTokens"]); ok {
+			result.TotalTokens = &v
+		}
+	}
+	if v, ok := jsonInt64(in["cachedPromptTokens"]); ok && v > 0 {
+		result.CachedInputTokens = &v
+	}
+	if v, ok := jsonInt64(in["reasoningTokens"]); ok && v > 0 {
+		result.ReasoningTokens = &v
+	}
+	if v, ok := jsonInt64(in["inferenceLatencyMs"]); ok {
+		result.LatencyMs = &v
+	}
+}
+
+func jsonInt64(value any) (int64, bool) {
+	switch n := value.(type) {
+	case float64:
+		return int64(n), true
+	case int:
+		return int64(n), true
+	case int64:
+		return n, true
+	case json.Number:
+		i, err := n.Int64()
+		return i, err == nil
+	default:
+		return 0, false
+	}
 }
 
 // compactStep renders CONTEXT_COMPACTION permanently visible metadata.
@@ -699,6 +772,12 @@ func compactStep(base time.Time, step StepFact, debugMode bool) Step {
 		if v, ok := out[key]; ok {
 			meta[key] = v
 		}
+	}
+	if v, ok := jsonInt64(out["beforeTokens"]); ok {
+		result.BeforeTokens = &v
+	}
+	if v, ok := jsonInt64(out["afterTokens"]); ok {
+		result.AfterTokens = &v
 	}
 	// Fixed D6-A fields when fallback.
 	if strings.EqualFold(resStr, "fallback") {

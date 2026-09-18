@@ -136,6 +136,12 @@ runtime:
   eino:
     maxIterations: 16
     maxToolInvocations: 32
+  # Wall-clock budget for one chat Enqueue/Execute (or continue) drive, covering
+  # every model round and tool call in that drive. Omitted → 300s; accepted
+  # range 30..1800; env override ACTWEAVE_RUNTIME_AGENT_RUN_TIMEOUT_SECONDS.
+  # AAP Run SSE heartbeats (: ping) every 15s keep proxy idle connections alive.
+  agentRun:
+    timeoutSeconds: 300
   # Outer budget for one model config verification attempt. Must stay at or above
   # the sum of the inner probe budgets (Responses stream 30s + client tool_search
   # 45s + function calling 30s) plus a 15s connectivity allowance (30+45+30+15)

@@ -388,6 +388,37 @@ func TestProjectAgentEvent_StreamDeltas(t *testing.T) {
 	if len(rec.ModelTurns) != 1 || rec.ModelTurns[0].Content != "ABC" || rec.ModelTurns[0].Reasoning != "" {
 		t.Fatalf("model turns = %+v", rec.ModelTurns)
 	}
+	if rec.ModelTurns[0].StartedAt.IsZero() || rec.ModelTurns[0].EndedAt.IsZero() {
+		t.Fatalf("stream turn missing inference bounds: %+v", rec.ModelTurns[0])
+	}
+	if rec.ModelTurns[0].Failed {
+		t.Fatal("successful stream must not be marked failed")
+	}
+}
+
+func TestProjectAgentEvent_StreamErrorNotifiesFailedTurn(t *testing.T) {
+	t.Parallel()
+	sr, sw := schema.Pipe[*schema.Message](4)
+	go func() {
+		_ = sw.Send(&schema.Message{Role: schema.Assistant, Content: "partial"}, nil)
+		_ = sw.Send(nil, context.DeadlineExceeded)
+		sw.Close()
+	}()
+	event := adk.EventFromMessage(nil, sr, schema.Assistant, "")
+	rec := &RecordingProjector{}
+	if err := ProjectAgentEvent(context.Background(), event, rec); err == nil {
+		t.Fatal("expected stream error")
+	}
+	if len(rec.ModelTurns) != 1 {
+		t.Fatalf("failed stream must still record a MODEL turn: %+v", rec.ModelTurns)
+	}
+	turn := rec.ModelTurns[0]
+	if !turn.Failed || turn.Content != "partial" {
+		t.Fatalf("failed turn = %+v", turn)
+	}
+	if turn.StartedAt.IsZero() || turn.EndedAt.IsZero() {
+		t.Fatalf("failed turn missing inference bounds: %+v", turn)
+	}
 }
 
 func TestProjectAgentEvent_StreamReasoningAggregatedSeparately(t *testing.T) {

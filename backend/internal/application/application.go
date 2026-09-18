@@ -1352,6 +1352,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 		TextSinkFactory:    textSinkFactory,
 		MaxIterations:      runtimeCfg.Eino.MaxIterations,
 		MaxToolInvocations: runtimeCfg.Eino.MaxToolInvocations,
+		RunTimeout:         runtimeCfg.AgentRun.Timeout(),
 		ToolDisclosure:     runtimeCfg.ToolDisclosure,
 		AgentAuditDebug:    config.AgentAuditDebug,
 		Assemblies:         assemblyRepo,
@@ -1426,9 +1427,11 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	// Approval path and Recovery Worker share ContinueApprovedInteraction, which
 	// acquires the durable runtime continue lease before EnqueueContinue.
 	// ContinueDispatcher (PR16): einoChatResume only; chatLoop-only → invalid.
+	continueLease := execution.ContinueLeaseForRunTimeout(runtimeCfg.AgentRun.Timeout())
 	interactionContinuation := &aapInteractionContinuation{
 		runs: runRepository, protocol: runtimeProtocol,
 		eino: einoRuntime, recovery: continuationRecovery,
+		continueLease: continueLease,
 	}
 	if err := aapInteractionDecisions.ConfigureContinuation(interactionContinuation); err != nil {
 		return nil, err
@@ -1515,6 +1518,7 @@ func Open(ctx context.Context, config Config) (_ *Application, returnErr error) 
 	chatConfirmationAPI := &chatConfirmationContinue{
 		inner: chatConfirmations, eino: einoRuntime,
 		recovery: continuationRecovery, checkpoints: einoCheckpoints,
+		continueLease: continueLease,
 	}
 	// 运行调试台 one-shot attach store (checklist #11).
 	var debugAttach *outboundidentity.DebugAttachmentStore
